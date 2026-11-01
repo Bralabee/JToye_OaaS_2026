@@ -5,7 +5,14 @@ import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOperatorEntranceScene } from "@/components/marketing/operator-entrance-scene"
 import { SafeImage } from "@/components/ui/safe-image"
 import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
-import { formatRate, formatSetupLine, PRICING, PRICING_CARD_FEE_LINE } from "@/lib/pricing"
+import {
+  formatRate,
+  formatSetupLine,
+  PRICING,
+  PRICING_CARD_FEE_LINE,
+  STRIPE_UK_PRICING_LINK_TEXT,
+  STRIPE_UK_PRICING_URL,
+} from "@/lib/pricing"
 
 /**
  * Every price figure comes from the shared module (lib/pricing.ts), the same
@@ -235,7 +242,7 @@ export function OperatorPitch() {
               ))}
             </tbody>
           </table>
-          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE} See the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
+          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE} Current rates are on{" "}<a href={STRIPE_UK_PRICING_URL} target="_blank" rel="noopener noreferrer" className={INLINE_LINK_CLASS}>{STRIPE_UK_PRICING_LINK_TEXT}<span className="sr-only"> (opens in a new tab)</span></a>. See the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
         </div>
       </section>
 

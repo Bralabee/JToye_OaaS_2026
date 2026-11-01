@@ -28,7 +28,7 @@ import {
   PLATFORM_NOT_SELLER_COPY,
 } from "@/components/storefront/seller-block"
 import { NO_VAT_REGISTRATION_COPY } from "@/components/storefront/no-vat-registration-note"
-import { formatSetupLine, PRICING, PRICING_CARD_FEE_LINE } from "@/lib/pricing"
+import { formatSetupLine, PRICING, PRICING_CARD_FEE_LINE, STRIPE_UK_PRICING_URL } from "@/lib/pricing"
 import { getCompanyInfo } from "@/lib/company"
 import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -96,6 +96,18 @@ describe("/legal/terms quotes the checkout's operative wording verbatim", () => 
     expect(text).toContain(PRICING.paygLabel)
     expect(text).toContain(formatSetupLine(PRICING))
     expect(text).toContain(PRICING_CARD_FEE_LINE)
+  })
+
+  // SW-CLR-06 (owner ruling 2026-11-01): the quoted card-fee line carries the same
+  // Stripe UK pricing link as /for-operators, from the same constant.
+  it("links Stripe's UK pricing page beside the card-fee line, in a new tab", () => {
+    const main = renderMain()
+    const link = within(main).getByRole("link", { name: /stripe.s uk pricing/i })
+    expect(link).toHaveAttribute("href", STRIPE_UK_PRICING_URL)
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(link.getAttribute("rel") ?? "").toMatch(/\bnoopener\b/)
+    expect(link).toHaveAccessibleName(/opens in a new tab/i)
+    expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)
   })
 })
 

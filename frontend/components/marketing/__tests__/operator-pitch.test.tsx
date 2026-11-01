@@ -1,8 +1,9 @@
 import fs from "fs"
 import path from "path"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
+import { PRICING_CARD_FEE_LINE, STRIPE_UK_PRICING_URL } from "@/lib/pricing"
 import ForOperatorsPage from "@/app/for-operators/page"
 
 /**
@@ -345,5 +346,19 @@ describe("OperatorPitch contact and terms routes (persona swarm, SW-CLR-04 and S
     const terms = pricing?.querySelector('a[href="/legal/terms"]')
     expect(terms).not.toBeNull()
     expect(terms).toHaveTextContent(/terms of use/i)
+  })
+  // SW-CLR-06 (owner ruling 2026-11-01): no rate is printed; the card-fee sentence
+  // links Stripe's UK pricing page, from the constant lib/pricing.ts pins.
+  it("links Stripe's UK pricing page from the card-fee sentence, in a new tab", () => {
+    const { container } = render(<OperatorPitch />)
+    const pricing = container.querySelector("#pricing") as HTMLElement
+    expect(pricing).not.toBeNull()
+    const link = within(pricing).getByRole("link", { name: /stripe.s uk pricing/i })
+    expect(link).toHaveAttribute("href", STRIPE_UK_PRICING_URL)
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(link.getAttribute("rel") ?? "").toMatch(/\bnoopener\b/)
+    expect(link).toHaveAccessibleName(/opens in a new tab/i)
+    // It sits beside the fee sentence, not elsewhere on the page.
+    expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)
   })
 })
