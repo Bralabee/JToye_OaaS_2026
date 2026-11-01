@@ -66,12 +66,13 @@ GRADLE="core-java/build.gradle.kts"
 ROOT_GRADLE="build.gradle.kts"
 WRAPPER="gradle/wrapper/gradle-wrapper.properties"
 PKG="frontend/package.json"
+MCP_PKG="mcp-server/package.json"
 GOMOD="edge-go/go.mod"
 COMPOSE="docker-compose.full-stack.yml"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 
-for f in "$GRADLE" "$PKG" "$GOMOD" "$ROOT_GRADLE" "$WRAPPER" "$COMPOSE"; do
+for f in "$GRADLE" "$PKG" "$MCP_PKG" "$GOMOD" "$ROOT_GRADLE" "$WRAPPER" "$COMPOSE"; do
 	[ -r "$ROOT/$f" ] || void "cannot read $f — cannot resolve actual versions"
 done
 
@@ -87,6 +88,15 @@ g() {
 # npm dependency -> version, with any ^ or ~ range prefix stripped.
 n() {
 	command grep -oE "\"$1\": \"[^\"]*\"" "$PKG" | head -1 |
+		sed -E 's/.*": "//; s/"$//; s/^[\^~]//'
+}
+
+# mcp-server npm dependency -> version, range prefix stripped. The MCP server has its own
+# manifest; until 2026-11-01 (#1086 review) no row read it, so STACK.md kept claiming
+# `typescript: ~5.9` under a 153/153 PASS while mcp-server/package.json had moved to ~7.0
+# -- the same blindness the Go row's comment describes, one manifest over.
+m() {
+	command grep -oE "\"$1\": \"[^\"]*\"" "$MCP_PKG" | head -1 |
 		sed -E 's/.*": "//; s/"$//; s/^[\^~]//'
 }
 
@@ -218,6 +228,13 @@ SPECS=(
 	"Framer Motion|(Framer Motion|framer-motion) [0-9]+\.[0-9]+\.[0-9]+|$(n framer-motion)"
 	"Recharts|Recharts [0-9]+\.[0-9]+\.[0-9]+|$(n recharts)"
 	"Gin|Gin v[0-9]+\.[0-9]+\.[0-9]+|$(gin_version)"
+	# The mcp-server rows (2026-11-01, #1086 review): the claims STACK.md makes about the
+	# MCP server's own manifest. The TypeScript claim is a range (`~7.0`) and the vitest
+	# claim a major (`^5`), as the manifest writes them, so each row compares what the
+	# manifest says after the same prefix strip the frontend rows use.
+	"TypeScript (mcp-server)|typescript: ~[0-9]+\.[0-9]+|$(m typescript)"
+	"MCP SDK|@modelcontextprotocol/sdk \^?[0-9]+\.[0-9]+\.[0-9]+|$(m '@modelcontextprotocol/sdk')"
+	"vitest|vitest \^?[0-9]+(\.[0-9]+)*|$(m vitest)"
 )
 
 # Every actual must resolve, or the comparison is meaningless rather than clean.
