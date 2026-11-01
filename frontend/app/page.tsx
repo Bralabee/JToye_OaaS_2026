@@ -261,10 +261,23 @@ export default async function Home() {
                 {/* The tracked-caps eyebrow "Independent UK kitchens" is gone
                     (D14): "independent" is in the sentence below, and "UK" is in
                     the trust strip. Three lines at every width is the owner's
-                    ruled exception to taste-skill's two-line rule (D14 item 2). */}
+                    ruled exception to taste-skill's two-line rule (D14 item 2).
+
+                    The min-height is a CLS reservation, measured, not styling.
+                    The size-adjusted fallback face sets this line NARROWER than
+                    Work Sans, so before the web font arrives the h1 takes two
+                    lines where Work Sans takes three, and the swap pushed the
+                    whole first screen down by one line (throttled 375px: CLS
+                    0.2025 against the route's 0.1793 baseline; 1440px: 0.157
+                    against 0.1316). Measured per width on the built page, Work
+                    Sans takes three lines at 360-413px (34px) and at every
+                    width from 1024px (56px, the half-width column is capped by
+                    the band), so exactly those ranges reserve three line boxes
+                    (3 x leading 1.04 = 3.12em). Elsewhere both faces take the
+                    same count, or the gap is a single phone-to-tablet band. */}
                 <h1
                   data-hero-headline
-                  className="text-[34px] font-extrabold leading-[1.04] tracking-[-0.03em] text-brand-900 [text-wrap:balance] sm:text-5xl lg:text-[56px]"
+                  className="text-[34px] font-extrabold leading-[1.04] tracking-[-0.03em] text-brand-900 [text-wrap:balance] max-[413px]:min-h-[3.12em] sm:text-5xl lg:min-h-[3.12em] lg:text-[56px]"
                 >
                   Order from local kitchens. Or run yours.
                 </h1>
