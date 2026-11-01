@@ -1,0 +1,170 @@
+30-22 FIX ON PR #1065 — the two NOT MET gaps closed (owner ruling 2026-11-01: "you fix it. you tackle the gaps.")
+=====================================================================================================
+Base of the fix: #1065 head 217003b52ef2a71c6d3301eda428bc4aa8264c70 (the head 30-21-22-adopt-1065.txt measured).
+New #1065 head:  1f69a7f09df5ec53138b8675aee731e07bfb202f (pushed 2026-11-01, fast-forward 217003b5..1f69a7f0;
+                 `gh pr view 1065 --json headRefOid` -> 1f69a7f0..., DRAFT, OPEN).
+Where: a detached scratch checkout of 217003b5 (.../scratchpad/wt-1065), never Antigravity's -agy-p30-w21
+  worktree and never the main checkout. Pushed with `git push origin HEAD:agy/30-21-22-refund-e2e` after
+  `git ls-remote` read the remote branch still at 217003b5 (unmoved) and merge-base proved a fast-forward.
+  The detached HEAD is the owner-authorised exception for this dispatch (the per-agent branch allow-list
+  of the executor's commit guard does not apply; SEQUENTIAL=true).
+Commits (first-parent): b7a827ac test RED -> 29d419c4 fix -> 7537f8df merge origin/main (bf98cde5) -> 1f69a7f0 counts.
+Probe values: every "secret" below is a FAKE sk_test_ composed at run time (sk_test_LeakProbe<epoch><rand>),
+  sent only to a local 127.0.0.1 server or a closed port; never a real key, never api.stripe.com.
+
+-------------------------------------------------------------------------
+GAP 1 — T-30-87: the CI sandbox sk_test_ in a PUBLIC artifact
+-------------------------------------------------------------------------
+Harness (scratch, not committed): a Playwright config that imports the REAL frontend/playwright.config.ts
+  (use.trace "retain-on-failure", retries 0) and overrides only testDir/outputDir/reporter(json)/projects
+  (desktop); node_modules from `npm ci` in wt-1065/frontend (rc 0). A local server answers 401 to every
+  request; a second arm targets a closed port. Search: every file under the output dir and the JSON report,
+  zip members expanded (unzip -p | grep -caF; -c reads everything, so no SIGPIPE/pipefail inversion).
+
+RED (the spec's Stripe call shape at 217003b5, l.148-149 + l.196-206, transcribed: Playwright `request`
+  fixture, headers { Authorization: `Bearer ${stripeKey}` }):
+  run rc=1 (2 tests failed, as designed)
+  search fake key -> rc=0, files_with_value=4:
+    test-results/<HTTP-error test>/trace.zip              (3 lines)
+    test-results/<connection-refused test>/trace.zip      (6 lines)
+    test-results/<connection-refused test>/error-context.md (1 line)
+    report.json (the JSON reporter's output)               (3 lines)
+  negative control (a value never sent) -> rc=1, files_with_value=0
+  WIDER THAN THE ADOPTION FOUND: on a transport error APIRequestContext's call log lists every request
+  header, so the key is in the ERROR MESSAGE too, not only the trace:
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:47899
+    Call log:
+      - → GET http://127.0.0.1:47899/v1/refunds?payment_intent=pi_probe
+        - user-agent: Playwright/1.64.1 (x64; ubuntu 24.04) node/22.23
+        - accept: */*
+        - accept-encoding: gzip,deflate,br
+        - Authorization: Bearer <FAKE_KEY>
+  That message lands in e2e-artifacts/report-stripe.json, which the nightly uploads. `trace: "off"` alone
+  therefore cannot close T-30-87 (measured below, layer arm 2).
+
+FIX (29d419c4), three layers plus a lint:
+  L1 frontend/e2e/stripe-test-api.ts: every Stripe call through Node `fetch` (stripeTestClient); the key is
+     read there (requireStripeTestSecretKey moved from the spec) and held in a closure; errors are built
+     there, with the key redacted. The spec no longer names https://api.stripe.com or reads the env var.
+  L2 stripe-refund-flow.spec.ts: `test.use(STRIPE_SPEC_ARTIFACTS)` at the TOP LEVEL (trace "off", video "off";
+     worker options, so not inside the describe).
+  L3 e2e-nightly.yml: the Stripe run passes `--output "$RUNNER_TEMP/stripe-test-results"` (not an upload
+     path). Side benefit: Playwright empties its output dir at the start of a run, so at 217003b5 the Stripe
+     run also WIPED frontend/test-results/ — the main run's failure traces — before the upload.
+  L4 (the execution point) e2e-nightly.yml step "Gate — no Stripe secret in the uploaded artifacts (T-30-87)",
+     `if: always()`, immediately before "Upload Playwright report and traces":
+     `STRIPE_WEBHOOK_SECRET=<last .env value> bash scripts/check-stripe-ci-keys.sh --scan-artifacts
+      frontend/e2e-artifacts frontend/playwright-report frontend/test-results`
+     -> any file holding the sk_test_ or the `stripe listen` whsec (zip members read; an unreadable zip too)
+     is DELETED before the upload and the job goes red (rc 1); no secret to scan for, or zero files, is VOID
+     (rc 2), never clean. Header FAIL-CLOSED list gains this line.
+  Lint: check-stripe-ci-keys.sh --lint asserts L1-L4 structurally (non-comment lines only).
+
+GREEN (same harness, same two failing scenarios, the REAL module and the REAL test.use):
+  run rc=1 (2 tests failed), traces=0
+  search fake key over output dir + JSON report + run log -> rc=1, files_with_value=0
+  the fixed client's transport error reads:
+    "Error: Stripe GET /v1/refunds?payment_intent=pi_probe did not complete (TypeError: connect ECONNREFUSED 127.0.0.1:47899)"
+Layer isolation (each layer alone, same scenarios):
+  arm 1 fetch client, trace LEFT ON (retain-on-failure): 2 failed, traces=2, files_with_value=0, rc=1
+        -> L1 alone closes all three paths (Playwright never sees the header)
+  arm 2 old request fixture, trace OFF: 2 failed, traces=0, files_with_value=3 (error-context.md,
+        report.json, run log), rc=0 -> L2 alone is NOT sufficient (the call-log path)
+Positive control (the search can see the value): the GREEN output copied, a trace.zip planted whose
+  0-trace.network holds `Authorization: Bearer <fake>` -> rc=0 (1 file); plus a plain planted.md -> rc=0 (2 files).
+
+The scan (L4) over the REAL probe artifacts (copies laid out as e2e-artifacts/ + test-results/):
+  RED tree:   rc=1 "FAIL: 4 of 6 artifact file(s) held a Stripe secret ...; each was deleted before upload"
+              LEAK lines name exactly the 4 files the independent search found (report-stripe.json, two
+              trace.zip, one error-context.md); "absent: playwright-report"; a re-search afterwards rc=1 (0 files)
+  GREEN tree: rc=0 "OK: scanned 4 artifact file(s) under 3 path(s) for 1 Stripe secret(s); none found"
+
+check-stripe-ci-keys.sh --selftest: 18/18 rc=0 (was 6/6). New arms: scan-clean (0), scan-plain (1, file
+  deleted, clean file kept), scan-zip (1), scan-whsec (1), scan-badzip (1), scan-void-nosecret (2),
+  scan-void-nothing (2), lint-real (0, this tree), lint-trace / lint-request / lint-output / lint-noscan (1 each,
+  one layer removed from a copy of the real files); no-echo extended to the whsec fixture.
+  The first lint-real run FAILED (rc 1): the lint matched the FAIL-CLOSED header comment naming --scan-artifacts
+  instead of the step, so the coverage check read the wrong line. Fixed by anchoring every nightly match to
+  non-comment lines (^[^#]*); then 18/18.
+Break arms on the committed fix (clean -> arm -> clean, restores sha256-verified against the HEAD blob
+  33ec45ce988ce80c):
+  clean0 18/18 rc=0
+  arm A (zip members not read: `*.zip) n=0`; 1 target line, 0 left): 17/18 rc=1
+        "FAIL scan-zip rc=0 (want 1): OK: scanned 2 artifact file(s) ... none found"; restore equal=yes
+  arm B (the leak branch reports but does not delete; 1 target): rc=1 "FAIL scan-plain-deleted the leaking
+        file is still on disk"; restore equal=yes
+  clean1 18/18 rc=0
+Nightly structure (plan T2 verify 2, yaml.safe_load, jtoye-ops): the 8 properties True plus
+  scan-before-upload True (the scan step precedes the upload and is `if: always()`) -> true=9 rc=0.
+  check-gate-enforcement rc=0; check-ci-docs-skip-wiring rc=0 and --selftest rc=0.
+Not covered by any layer, recorded: the vendor Keycloak password and the ephemeral KEYCLOAK_CLIENT_SECRET flow
+  through Playwright in every spec of the main run (pre-existing, per-run generated, destroyed with the stack);
+  the Stripe run's own output now never uploads, and the scan reads only the two Stripe secrets.
+
+-------------------------------------------------------------------------
+GAP 2 — the refund read-back is EXACTLY one refund, polled, and the page shows Refunded
+-------------------------------------------------------------------------
+Copy read, not guessed: OrderDetailPanel.tsx l.88 STATUS_CONFIG.REFUNDED label "Refunded", rendered as the
+  header Badge (l.241-247); refund history heading "Refunds ({refunds.length})" (l.456); each row
+  "£{formatPounds(amount)}" (l.470). Any refund, partial included, moves the order to REFUNDED: RefundService
+  step 8 sends REFUND_REQUESTED (l.256-259) and OrderStateMachineConfig targets REFUNDED (l.130, l.137).
+  POST /api/v1/orders/{id}/confirm returns OrderDto (OrderController l.371-374).
+RED (b7a827ac): frontend/__tests__/stripe-refund-readback.test.ts (11 cases) against
+  frontend/e2e/stripe-test-api.ts holding a faithful transcription of 217003b5 l.288-309 (one read; >= 1
+  refunds; refunds[0] checked):  Tests: 8 failed, 3 passed, 11 total  (jest rc=1)
+    "refuses a duplicate refund (two refunds for one intent)": Expected: "violated"  Received: "settled"
+    also failing: has_more, no-refund-yet (pending), refund pending, no charge id, poll-then-settle,
+    late duplicate on the confirming read, deadline
+GREEN (29d419c4): judgeRefundReadback + pollRefundReadback:
+  settles ONLY on exactly one refund for the intent, re_ id, 100 pence, a ch_ charge id, status succeeded,
+  on TWO consecutive reads one interval apart; > 1 refund or has_more -> violated at once (a refund never
+  disappears); pending/requires_action -> keep polling; failed/canceled/other -> violated; 30 s deadline ->
+  violated with the last reason.  Tests: 11 passed, 11 total (jest rc=0)
+Spec (29d419c4): the 30 s poll replaces the single GET; the charge is ALWAYS read (GET /v1/charges/<id>,
+  200, payment_intent == intent, livemode false) — the PaymentIntent livemode fallback is gone; the page
+  must show heading "Refunds (1)" (exact), the "£1.00" row (exact) and the "Refunded" badge (exact, strict
+  locator, no .first()); the vendor confirm must return status CONFIRMED. `rg 'test\.skip'` on the spec rc=1.
+What could NOT be run here: the spec itself against Stripe TEST mode (needs the owner's CI sandbox keys and
+  a keyed core-java with a forwarder) — that is 30-23 Task 2's live nightly, by design. The structure is
+  proven: e2e typecheck 58 files clean rc 0, ESLint on the three files rc 0, the listing switch below.
+
+-------------------------------------------------------------------------
+MERGE FROM BASE (7537f8df) and counts (1f69a7f0)
+-------------------------------------------------------------------------
+origin/main had moved to bf98cde5 (#1067, after #1068). `git merge origin/main`: conflicts in AGENTS.md,
+  CLAUDE.md, docs/CHANGELOG.md; HANDOFF.md, README.md, docs/metrics.json auto-merged.
+  AGENTS.md / CLAUDE.md: one hunk each, the two sides differed ONLY in numbers (digits-normalised diff
+    empty) -> main's line in the merge commit; regenerated in 1f69a7f0.
+  docs/CHANGELOG.md: both sides kept by hand, #1065's entry above #1067's and #1068's (no "take theirs");
+    headings main=370, 217003b5=369, merged=371; `comm` against main differs by exactly the #1065 heading.
+    The #1065 entry updated for the fix (read-back rule, Node fetch + trace off, --scan-artifacts/--lint,
+    18-arm selftest, $RUNNER_TEMP output).
+  docs-freshness --write: jest 3261/275 -> 3272/276, total 6767 -> 6778 (Java 3128/433 from main).
+  check-doc-metrics before the prose edit: rc=1, 12 FAIL lines (README/CLAUDE/AGENTS: 6767, 3261, 275, and
+    "49 specs" in CLAUDE/AGENTS from main's line) — the fail direction; after: PASS 37/37 rc=0.
+
+-------------------------------------------------------------------------
+GATES ON THE PUSHED HEAD 1f69a7f0 (each rc recorded)
+-------------------------------------------------------------------------
+  docs-freshness rc=0 (6778) | check-doc-metrics rc=0 (37/37) | check-changelog-contract rc=0 (85 merged
+  feat/fix PRs cited — red on 217003b5 for #1068, now green) | check-changelog-cites-pr --pr 1065 rc=0 |
+  check-doc-versions rc=0 (153) | check-claims rc=0 (56) | check-handoff-contract rc=0 |
+  check-test-block-counter rc=0 | check-project-version rc=0 | check-env-example-contract rc=0 |
+  check-geo-attribution rc=0 | check-doc-citations rc=0 (46, 7 uncheckable) | check-e2e-typecheck rc=0 (58) |
+  check-e2e-baseurl-contract rc=0 | check-playwright-mobile-contract rc=0 |
+  check-e2e-skip-budget --lint-conf rc=0 (2 ALLOW) and --selftest rc=0 (14) |
+  check-stripe-ci-keys --selftest rc=0 (18/18) and --lint rc=0 | check-gate-enforcement rc=0 |
+  check-ci-docs-skip-wiring rc=0 and --selftest rc=0 |
+  check-test-count-oracle playwright rc=0 (196/196, 50/50) and jest rc=0 (3272/3272, 276/276)
+    (the all-families run VOIDs rc 2 here only because mcp-server/node_modules is absent — recorded, not a pass)
+  ESLint on the three changed frontend files rc=0 | shellcheck -S warning on the script rc=0 |
+  gitleaks git --log-opts=origin/main..HEAD --redact: "no leaks found" rc=0 (~90 KB)
+  Plan T1 verify 1 on 1f69a7f0: arc=0 brc=0 default_lists_stripe=0 keyed_desktop=1 keyed_mobile=0 draft=2
+    (432 tests in 45 files, unchanged)
+  check-branch-behind-base.sh immediately before the push: rc=0 "0 behind" (9 ahead of bf98cde5)
+  pre-push hook (repo): "all checks passed" (P-3 no secrets, P-4 claims) on 217003b5..1f69a7f0 (6 commits)
+
+Not done here, by design: the D3 round on the fix commits (round 3, /review-verify 1065, the orchestrator's),
+  the CI sandbox keys and the live nightly (30-23), marking #1065 ready (30-23). The PR body still describes
+  the 6-arm selftest and the >= 1 read-back; the review round should read this file, not the body.
+Antigravity: the -agy-p30-w21 worktree is now behind the pushed branch; `git pull --ff-only` there.
