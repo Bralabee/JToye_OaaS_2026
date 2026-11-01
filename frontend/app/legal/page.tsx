@@ -32,7 +32,7 @@ export const metadata: Metadata = {
  * consumer order data. They are different relationships and the prose on each
  * page must not be edited into contradicting the other.
  *
- * The four documents linked below are built in later plans of this phase, so
+ * The documents linked below are built in later plans of this phase, so
  * some of these routes 404 until those land. That is expected here; end-to-end
  * reachability is asserted once, in 31-17, rather than four times.
  */
@@ -55,6 +55,12 @@ const POLICY_DOCUMENTS = [
     title: "Data retention schedule",
     description:
       "How long J'Toye keeps each category of data, the lawful basis, and whether the period is enforced automatically.",
+  },
+  {
+    href: "/legal/terms",
+    title: "Terms of use",
+    description:
+      "How ordering through J'Toye works: who runs the platform, who you are buying from, cancellation, VAT, and the terms for food businesses on the pilot.",
   },
   {
     href: "/legal/accessibility",
