@@ -88,3 +88,11 @@ as the D4 lock.
 - **Review when:** the first tenant's own photographs arrive (D10), or a storefront branding run
   (branded own-domain storefronts, D6's trigger) needs the storefront to carry a kitchen's identity
   rather than J'Toye's.
+
+## D12 · 2026-11-01 · Kitchen cards on the landing show the name, not the placeholder logo
+The seeded logos (`public/brand/logo-*.png`) are placeholders with gradient fills and one reads
+"BV": the only gradient a visitor would see, against `gradient-decoration` ban.
+- **Status: KEEP** (Sanmi, landing run step 6). The landing's kitchen row sets the kitchen's name in
+  type, with its cuisine and Open/Paused/Closed state; no logo image.
+- **Review when:** the first vendor uploads a real logo — then the row shows uploaded logos and
+  keeps the name for kitchens without one.
