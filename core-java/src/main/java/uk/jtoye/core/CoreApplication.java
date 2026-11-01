@@ -1,5 +1,8 @@
 package uk.jtoye.core;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -29,6 +32,9 @@ public class CoreApplication {
      * rewritten by the container, and a relative reference resolves against whatever scheme and host
      * the client actually used (RFC 9110 10.2.2), with no forwarded header believed at all.
      */
+    @Operation(summary = "Redirect to the API documentation")
+    @ApiResponse(responseCode = "302", description = "Found: Location is /swagger-ui.html, a relative reference",
+            headers = @Header(name = HttpHeaders.LOCATION, description = "/swagger-ui.html"))
     @GetMapping("/")
     public ResponseEntity<Void> redirectToSwagger() {
         return ResponseEntity.status(HttpStatus.FOUND).header(HttpHeaders.LOCATION, "/swagger-ui.html").build();
