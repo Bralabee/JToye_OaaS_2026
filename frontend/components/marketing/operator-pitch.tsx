@@ -4,6 +4,7 @@ import { useRef } from "react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOperatorEntranceScene } from "@/components/marketing/operator-entrance-scene"
 import { SafeImage } from "@/components/ui/safe-image"
+import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import { formatRate, formatSetupLine, PRICING, PRICING_CARD_FEE_LINE } from "@/lib/pricing"
 
 /**
@@ -202,7 +203,7 @@ export function OperatorPitch() {
                   </div>
                 ))}
               </dl>
-              <p className="mt-7 border-l-[3px] border-amber-500 pl-4 text-[15px] font-medium text-slate-700">You remain the Food Business Operator. Recipe accuracy and cross-contamination are still yours.</p>
+              <p className="mt-7 border-l-[3px] border-amber-500 pl-4 text-[15px] font-medium text-slate-700">{OPERATOR_FBO_LINE}</p>
             </div>
           </div>
         </div>
@@ -264,7 +265,7 @@ export function OperatorPitch() {
                 <a href="/dashboard/onboarding" className={CTA_CLASS}>Start your application</a>
                 <a href="/contact" className={INLINE_LINK_CLASS}>Contact us</a>
               </div>
-              <p className="mt-3.5 text-sm text-slate-600">A person reviews every application, and nothing is charged until a plan is agreed.</p>
+              <p className="mt-3.5 text-sm text-slate-600">{OPERATOR_APPLICATION_REVIEW_LINE}</p>
             </div>
           </div>
         </div>

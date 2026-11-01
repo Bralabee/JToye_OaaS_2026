@@ -5,6 +5,7 @@ import {
   resolveControllerContact,
   resolvePublicContact,
 } from "@/lib/company"
+import { OPERATOR_APPLICATION_REVIEW_LINE } from "@/lib/operator-copy"
 import { PublicShell } from "@/components/public/public-shell"
 
 export const metadata: Metadata = {
@@ -126,9 +127,8 @@ export default function ContactPage() {
           Food businesses
         </h2>
         <p className="mt-4 text-base leading-relaxed text-slate-600">
-          J&apos;Toye runs an assisted pilot for food businesses. A person
-          reviews every application, and nothing is charged until a plan is
-          agreed. See the{" "}
+          J&apos;Toye runs an assisted pilot for food businesses.{" "}
+          {OPERATOR_APPLICATION_REVIEW_LINE} See the{" "}
           <Link href="/for-operators" className={LINK_CLASS}>
             operator page
           </Link>{" "}

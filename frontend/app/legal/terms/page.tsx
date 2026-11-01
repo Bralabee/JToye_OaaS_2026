@@ -8,6 +8,7 @@ import {
 } from "@/components/storefront/seller-block"
 import { NO_VAT_REGISTRATION_COPY } from "@/components/storefront/no-vat-registration-note"
 import { getCompanyInfo } from "@/lib/company"
+import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import {
   formatRate,
   formatSetupLine,
@@ -120,12 +121,12 @@ export default function TermsPage() {
 
       {/* Source: components/marketing/operator-pitch.tsx (/for-operators): the
           plan table (figures from lib/pricing.ts), the two pricing footnotes,
-          the application line and the Food Business Operator line. */}
+          and the application and Food Business Operator lines, both imported
+          from lib/operator-copy.ts. */}
       <PolicySection heading={SECTIONS[4]}>
         <p>
-          J&apos;Toye runs an assisted pilot for food businesses. A person
-          reviews every application, and nothing is charged until a plan is
-          agreed. The plans are:
+          J&apos;Toye runs an assisted pilot for food businesses.{" "}
+          {OPERATOR_APPLICATION_REVIEW_LINE} The plans are:
         </p>
         <ul className="list-disc space-y-2 pl-6">
           <li>
@@ -144,10 +145,7 @@ export default function TermsPage() {
         <p>
           {formatSetupLine(PRICING)} {PRICING_CARD_FEE_LINE}
         </p>
-        <p>
-          You remain the Food Business Operator. Recipe accuracy and
-          cross-contamination are still yours.
-        </p>
+        <p>{OPERATOR_FBO_LINE}</p>
         <p>
           The full pilot description is on the{" "}
           <Link href="/for-operators" className={LINK}>

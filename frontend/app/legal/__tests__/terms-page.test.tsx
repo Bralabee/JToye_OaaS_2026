@@ -27,6 +27,7 @@ import {
 import { NO_VAT_REGISTRATION_COPY } from "@/components/storefront/no-vat-registration-note"
 import { formatSetupLine, PRICING, PRICING_CARD_FEE_LINE } from "@/lib/pricing"
 import { getCompanyInfo } from "@/lib/company"
+import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import { getCustomerSession } from "@/lib/customer-auth"
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -68,6 +69,9 @@ describe("/legal/terms quotes the checkout's operative wording verbatim", () => 
     ["the platform-not-seller statement", PLATFORM_NOT_SELLER_COPY],
     ["the no-cancellation statement", CANCELLATION_STATEMENT_COPY],
     ["the no-VAT-registration line", NO_VAT_REGISTRATION_COPY],
+    // PR 1080 round 1: the two operator-page sentences, imported rather than retyped.
+    ["the operator application-review line", OPERATOR_APPLICATION_REVIEW_LINE],
+    ["the Food Business Operator line", OPERATOR_FBO_LINE],
   ])("carries %s", (_label, copy) => {
     const main = renderMain()
     expect(main.textContent).toContain(copy)
