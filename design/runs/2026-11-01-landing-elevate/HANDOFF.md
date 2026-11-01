@@ -20,9 +20,8 @@ in this worktree. Load `design-run` first.
 
 ## Next, in order
 
-1. **Doc-metrics gate is red:** README/CLAUDE.md/AGENTS.md quote old test counts. Run
-   `scripts/docs-freshness.sh --write` and `scripts/check-doc-metrics.sh` (conda env `jtoye-ops`),
-   fix the prose counts, commit.
+1. ~~Doc-metrics gate red~~ DONE 2026-11-01: counts updated (jest 3450/292, total 6992), both doc
+   gates pass, branch pushed to origin. Re-run them if more tests land.
 2. `git fetch && git log HEAD..origin/main` must be empty (merge `origin/main` if not, never rebase
    a pushed branch).
 3. Open the PR as a DRAFT to get its number, add the `docs/CHANGELOG.md` entry
