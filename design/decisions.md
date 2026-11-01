@@ -67,3 +67,43 @@ and the dish tiles.
 - **Status: SUPERSEDED 2026-11-01** by `rulings.tsv` `gradient-decoration` ban, page and app. A run
   that touches one of these surfaces replaces its gradient; new work adds none, whatever the
   existing code does.
+
+## D10 · 2026-11-01 · Imagery: open-collection pictures now, the kitchens' own later
+No food photography exists (brief). Sanmi chose, at design-run step 1 of the landing run, real and
+credited pictures of the subject's world from the open collections (taste-skill `assets.mjs`;
+commercial-use licences only; credit line in the footer; `design/runs/<run>/assets/credits.json`
+records each source) over licensed stock, a shoot, or type-and-colour only.
+- **Status: KEEP.** A found picture shows the world around a kitchen and is never presented as a
+  kitchen's own dish, room or person.
+- **Review when:** a tenant's own photos exist through the Phase 24 media pipeline; then they
+  replace the found pictures on the surfaces that show that kitchen.
+
+## D11 · 2026-11-01 · Identity approved as drafted from The Pass (`identity.md`)
+Sanmi picked The Pass at step 3 of the landing run (A of four; `runs/2026-11-01-landing/direction.md`)
+and approved the identity drafted from it at step 4 without change: stone ground, oxblood, amber as
+the one action colour, Work Sans alone, a plain voice, the order ticket on the pass as the device,
+the plate settling on load as the only motion. Oxblood and Work Sans are kept on their merits, not
+as the D4 lock.
+- **Status: KEEP.**
+- **Review when:** the first tenant's own photographs arrive (D10), or a storefront branding run
+  (branded own-domain storefronts, D6's trigger) needs the storefront to carry a kitchen's identity
+  rather than J'Toye's.
+
+## D12 · 2026-11-01 · Kitchen cards on the landing show the name, not the placeholder logo
+The seeded logos (`public/brand/logo-*.png`) are placeholders with gradient fills and one reads
+"BV": the only gradient a visitor would see, against `gradient-decoration` ban.
+- **Status: KEEP** (Sanmi, landing run step 6). The landing's kitchen row sets the kitchen's name in
+  type, with its cuisine and Open/Paused/Closed state; no logo image.
+- **Review when:** the first vendor uploads a real logo — then the row shows uploaded logos and
+  keeps the name for kitchens without one.
+
+## D13 · 2026-11-01 · Identity re-ruled light and warm: "Market day"
+The Pass build lost the blind A/B to the old landing (`runs/2026-11-01-landing/verdict.md`): too
+dark and heavy, less clear and friendly, food fading after the hero (rubric R8–R10).
+- **Status: KEEP** (Sanmi). The Pass's structure stays; the identity changes (`identity.md`): white
+  ground, jollof-tomato brand, palm-oil yellow action, leaf for open and trust; no oxblood field, no
+  dark ground. The first screen carries the search and two plain doors. Supersedes D11's palette.
+- **Kitchen cards (amends D12):** the kitchen's own banner when it exists, otherwise a credited
+  open-collection photo of its cuisine captioned as an example ("Jollof — example photo"), so
+  nothing implies it is that kitchen's dish.
+- **Review when:** the rebuild's blind A/B (the run's second look).

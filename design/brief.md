@@ -48,4 +48,6 @@ operators to "Run your food business". Everything else supports that.
   label, slot picker, storefront menu).
 - **No food photography.** Emoji stand-ins are no longer allowed (lifted 2026-11-01), so a run
   must choose a source before it builds: the kitchens' own photos, a commissioned shoot,
-  licensed stock, or open-collection pictures (taste-skill `assets.mjs`, credited). **Open: Sanmi.**
+  licensed stock, or open-collection pictures (taste-skill `assets.mjs`, credited).
+  **RULED by Sanmi 2026-11-01 (D10): open-collection pictures now, credited; each kitchen's own photos
+  replace them as tenants upload through the Phase 24 media pipeline.**

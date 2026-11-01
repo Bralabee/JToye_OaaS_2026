@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J'Toye: order from kitchens near you</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=zodiak@100,300&display=swap" rel="stylesheet">
+<style>
+  /* ---- tokens: the dealt palette and type system (dark-room.md §3, §4) ---- */
+  :root {
+    --bg: #1c1c1c;
+    --surface: #262626;
+    --surface-2: #313130;
+    --ink: #f1f1ef;
+    --muted: #9a9b96;
+    --accent: #8fa68e;
+    --accent-press: #7d937c;
+    --accent-ink: #1c1c1c;
+    --field-1: #c8c5ba;
+    --field-1-ink: #1c1c1c;
+
+    --display: "Zodiak", "Times New Roman", serif;
+    --text: "Hanken Grotesk", Arial, sans-serif;
+
+    --step-small: clamp(0.8125rem, 0.79rem + 0.1vw, 0.875rem);     /* 13-14px: legal line only */
+    --step-body: clamp(1.125rem, 1.05rem + 0.3vw, 1.3125rem);      /* 18-21px */
+    --step-lead: clamp(1.5rem, 1.1rem + 1.4vw, 2.25rem);           /* 24-36px: statements, list names */
+    --step-head: clamp(1.75rem, 0.95rem + 3vw, 4rem);            /* 28-64px: h1 and every h2 */
+    --step-display: clamp(2.75rem, 5.2vw, 6.25rem);                /* 44-100px: the closing line */
+
+    --margin: 32px;
+    --gap: 24px;
+    --section: 160px;
+    --col: 12;
+  }
+  @media (max-width: 900px) {
+    :root { --margin: 20px; --gap: 16px; --section: 96px; --step-display: clamp(2.75rem, 11vw, 5rem); }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--ink); -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--text);
+    font-size: var(--step-body);
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: 0;
+    overflow-x: clip;
+  }
+  img { display: block; max-width: 100%; }
+  a { color: inherit; text-decoration: none; }
+  p { margin: 0; }
+  h1, h2, h3 { margin: 0; font-weight: 300; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  .display { font-family: var(--display); font-weight: 300; letter-spacing: -0.01em; line-height: 1.0; text-wrap: balance; }
+  .muted { color: var(--muted); }
+
+  /* text links: feedback on every control, by underline weight and ink */
+  .link { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 0.18em; text-decoration-color: var(--muted); transition: text-decoration-color 150ms ease, color 150ms ease; }
+  .link:hover, .link:focus-visible { text-decoration-color: currentColor; }
+
+  /* the one button shape: square, flat, sage */
+  .button {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 52px; padding: 0 24px;
+    background: var(--accent); color: var(--accent-ink);
+    font: 500 var(--step-body)/1.2 var(--text);
+    border: 0; border-radius: 0; cursor: pointer; white-space: nowrap;
+    transition: background-color 150ms ease, transform 120ms ease;
+  }
+  .button:hover, .button:focus-visible { background: var(--accent-press); }
+  .button:active { transform: translateY(1px); }
+
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gap); padding-inline: var(--margin); }
+
+  main { position: relative; z-index: 1; background: var(--bg); }
+  .section { padding-block: var(--section); }
+  .section > .heading, .section .heading { font-size: var(--step-head); }
+
+  /* ------------------------------------------------------------------ */
+  /* HERO: inset photograph, crossing wordmark                            */
+  /* ------------------------------------------------------------------ */
+  .hero { position: relative; min-height: 100svh; display: grid; grid-template-columns: 47% minmax(0, 1fr); }
+  .hero__pic { position: sticky; top: var(--margin); align-self: start; height: calc(100svh - var(--margin) * 2); margin: var(--margin) 0 var(--margin) var(--margin); }
+  .hero__pic img { width: 100%; height: 100%; object-fit: cover; object-position: 42% 50%; filter: brightness(0.78) contrast(1.05); }
+  .hero__right { position: relative; display: flex; flex-direction: column; padding: var(--margin) var(--margin) 28px 48px; min-height: 100svh; }
+  .nav { display: flex; justify-content: flex-end; align-items: center; gap: 36px; font-size: var(--step-body); }
+  .nav .button { min-height: 44px; }
+  .hero__menu { display: none; }
+  .hero__copy { margin-block: auto; padding-block: 16px; }
+  .hero__copy h1 { font-size: var(--step-head); text-transform: uppercase; letter-spacing: 0.01em; }
+  .hero__lead { margin-top: 24px; max-width: 30rem; font-size: var(--step-body); line-height: 1.55; }
+  .search { margin-top: 24px; }
+  .search label { display: block; font-weight: 500; margin-bottom: 10px; }
+  .search__row { display: flex; gap: 8px; }
+  .search input {
+    flex: 1 1 0; width: 0; min-width: 0; height: 52px; padding: 0 16px;
+    font: 400 var(--step-body)/1.2 var(--text); color: var(--ink);
+    background: var(--surface-2); border: 0; border-radius: 0;
+  }
+  .search input::placeholder { color: var(--muted); opacity: 1; }
+  .search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+  .cats { margin-top: 18px; display: flex; flex-wrap: wrap; column-gap: 20px; row-gap: 6px; font-size: var(--step-body); }
+  .wordmark {
+    margin-top: 16px;
+    margin-left: -7vw;              /* crosses the photograph's lower-right corner */
+    align-self: stretch;
+    text-align: left;
+    font-family: var(--display); font-weight: 100; letter-spacing: -0.04em; line-height: 1.0;
+    /* spans the corner to the right margin on one line (2.25em measured for "j'toye" at this tracking); on a short screen it is capped so the first screen still holds it */
+    font-size: min(calc((60vw - var(--margin) - 48px) / 2.25), calc(100svh - 520px));
+    white-space: nowrap;
+    position: relative; z-index: 2;
+    transform-origin: 100% 100%;
+    color: var(--ink);
+  }
+  .wordmark a { display: inline-block; }
+  /* the one motion moment: the monument scales down a few percent as the first screen leaves (dark-room.md §8) */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .wordmark { animation: settle linear both; animation-timeline: view(); animation-range: exit 0% exit 100%; }
+      @keyframes settle { from { transform: scale(1); } to { transform: scale(0.94); } }
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LIST: sticky photograph, active list                                 */
+  /* ------------------------------------------------------------------ */
+  .list { align-items: start; }
+  .list__pic { grid-column: 1 / 6; position: sticky; top: 12vh; margin: 0; width: min(34vw, 100%); }
+  .list__stack { position: relative; aspect-ratio: 4 / 5; }
+  .list__stack img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 300ms ease; filter: brightness(0.85) contrast(1.05); }
+  .list__cap { margin-top: 14px; font-size: var(--step-body); display: none; }
+  .list__body { grid-column: 7 / 12; }
+  .list__body h2 { font-size: var(--step-head); margin-bottom: 48px; }
+  .rows { display: flex; flex-direction: column; }
+  .row { position: relative; min-height: 58px; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; column-gap: 16px; padding-block: 8px; cursor: pointer; }
+  .row input { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; } /* visually hidden radio, keyboard reachable */
+  .row img { width: 44px; height: 44px; filter: saturate(0.4) brightness(0.8); transition: filter 300ms ease; }
+  .row__name { font-family: var(--display); font-weight: 300; font-size: clamp(1.25rem, 1.6vw, 1.5rem); line-height: 1.1; letter-spacing: -0.01em; color: var(--muted); transition: color 200ms ease; }
+  .row__meta { text-align: right; font-size: var(--step-body); color: var(--muted); white-space: nowrap; }
+  .row__meta b { font-weight: 500; color: var(--muted); display: block; }
+  .row:has(input:checked) .row__name { color: var(--ink); }
+  .row:has(input:checked) img { filter: none; }
+  .row:has(input:checked) .row__meta b { color: var(--accent); }
+  .row:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
+  /* the active row lights its picture on the left, and its caption */
+  .list:has(#k1:checked) .pic-1, .list:has(#k2:checked) .pic-2, .list:has(#k3:checked) .pic-3 { opacity: 1; }
+  .list:has(#k1:checked) .cap-1, .list:has(#k2:checked) .cap-2, .list:has(#k3:checked) .cap-3 { display: block; }
+  @supports not selector(:has(a)) { .pic-1 { opacity: 1; } .cap-1 { display: block; } .row__name { color: var(--ink); } }
+
+  /* ------------------------------------------------------------------ */
+  /* HOW IT WORKS: row of moments                                          */
+  /* ------------------------------------------------------------------ */
+  .how__top { padding-inline: var(--margin); }
+  .how__top h2 { font-size: var(--step-head); }
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; padding-inline: var(--margin); margin-top: 56px; list-style: none; margin-inline: 0; padding-block: 0; }
+  .step { display: flex; flex-direction: column; }
+  .step h3 { font: 500 var(--step-body)/1.3 var(--text); }
+  .step p { margin-top: 10px; max-width: 34ch; }
+  .step figure { margin: 0; margin-top: var(--air, 100px); aspect-ratio: 4 / 5; }
+  .step figure img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.85) contrast(1.05); }
+  .step:nth-child(1) { --air: 80px; }
+  .step:nth-child(2) { --air: 140px; }
+  .step:nth-child(3) { --air: 110px; }
+
+  /* ------------------------------------------------------------------ */
+  /* PROOF: three facts as statements                                      */
+  /* ------------------------------------------------------------------ */
+  .proof { padding-inline: var(--margin); }
+  .proof h2 { font: 500 var(--step-body)/1.4 var(--text); margin-bottom: 32px; }
+  .proof p { font-family: var(--display); font-weight: 300; font-size: var(--step-lead); line-height: 1.2; letter-spacing: -0.01em; max-width: 60ch; }
+  .proof p + p { margin-top: 0.9em; }
+
+  /* ------------------------------------------------------------------ */
+  /* SHOWCASE: band of unequal panels                                      */
+  /* ------------------------------------------------------------------ */
+  .show__head { grid-column: 3 / 13; font-size: var(--step-head); margin-bottom: 64px; }
+  .band { display: flex; height: 68svh; min-height: 420px; }
+  .band figure { position: relative; margin: 0; min-width: 0; flex: 2 1 0; }
+  .band figure:nth-child(1) { flex-grow: 5; }
+  .band figure:nth-child(3) { flex-grow: 3; }
+  .band img { width: 100%; height: 100%; object-fit: cover; }
+  .band figcaption { position: absolute; top: 24px; left: 24px; max-width: calc(100% - 48px); padding: 10px 14px; background: rgba(28, 28, 28, 0.82); color: var(--ink); font: 500 var(--step-body)/1.3 var(--text); }
+  .captions { margin-top: 32px; row-gap: 24px; }
+  .captions p { grid-column: span 3; max-width: 32ch; }
+
+  /* ------------------------------------------------------------------ */
+  /* CTA: first step, already open                                          */
+  /* ------------------------------------------------------------------ */
+  .cta { background: var(--field-1); color: var(--field-1-ink); min-height: 90svh; padding-block: 40px; align-items: stretch; }
+  .cta__words { grid-column: 1 / 6; align-self: end; }
+  .cta__words h2 { font-size: var(--step-display); line-height: 0.92; letter-spacing: -0.02em; }
+  .cta__words p { margin-top: 24px; max-width: 30ch; font-size: var(--step-body); }
+  .cta__words .button { margin-top: 28px; }
+  .cta .button:focus-visible { outline-color: var(--field-1-ink); }
+  .cta__screen { grid-column: 7 / 12; align-self: center; justify-self: center; width: 440px; max-width: 100%; margin: 0; }
+  .cta__crop { position: relative; aspect-ratio: 504 / 380; overflow: clip; }
+  /* a real screenshot (kitchen-cook-sheet.webp, 1280 x 800) cropped to its "New orders" strip: x 256-760, y 420-800 */
+  .cta__crop img { position: absolute; width: calc(1280 / 504 * 100%); max-width: none; left: calc(-256 / 504 * 100%); top: calc(-420 / 380 * 100%); }
+  .cta__screen figcaption { margin-top: 12px; font-size: var(--step-body); }
+
+  /* ------------------------------------------------------------------ */
+  /* FOOTER: columns above, wordmark below (the page slides away to show it) */
+  /* ------------------------------------------------------------------ */
+  footer { position: sticky; bottom: 0; z-index: 0; min-height: 100svh; display: grid; grid-template-rows: auto 1fr auto; padding: 40px var(--margin) 24px; background: var(--bg); }
+  .cols { row-gap: 32px; padding-inline: 0; }
+  .cols > div { font-size: var(--step-body); color: var(--muted); }
+  .cols > div > :first-child { color: var(--ink); font-weight: 500; }
+  .cols ul { list-style: none; margin: 0; padding: 0; }
+  .cols li { margin-top: 4px; }
+  .cols a:hover, .cols a:focus-visible { color: var(--ink); }
+  .col-1 { grid-column: 1 / 4; }
+  .col-2 { grid-column: 4 / 6; }
+  .col-3 { grid-column: 6 / 8; }
+  .col-4 { grid-column: 8 / 13; }
+  .credits { font-size: 1rem; line-height: 1.5; max-width: 62ch; }
+  .credits a { text-decoration: underline; text-underline-offset: 0.15em; text-decoration-color: var(--muted); }
+  .credits a:hover, .credits a:focus-visible { text-decoration-color: var(--ink); color: var(--ink); }
+  .foot__mark { align-self: end; }
+  .foot__mark svg { display: block; width: 100%; height: auto; font-family: var(--display); font-weight: 100; fill: var(--ink); }
+  .legal { margin-top: 20px; font-size: var(--step-small); color: var(--ink); }
+
+  /* ------------------------------------------------------------------ */
+  /* PHONE: its own composition (the sheet's "On a phone" notes)            */
+  /* ------------------------------------------------------------------ */
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+    .hero__pic { position: relative; top: auto; height: 54svh; margin: var(--margin) var(--margin) 0; }
+    .hero__pic img { object-position: 42% 50%; }
+    .hero__right { min-height: 0; padding: 0 var(--margin) 40px; display: flex; flex-direction: column; position: static; }
+    .nav { position: absolute; top: 24px; left: 24px; right: 24px; justify-content: space-between; z-index: 3; }
+    .nav .link { display: none; }
+    .hero__menu { display: inline-block; padding: 8px 12px; background: rgba(28, 28, 28, 0.82); }
+    .wordmark { order: -1; margin: -3vw 0 0 0; font-size: 21vw; text-align: left; letter-spacing: -0.04em; align-self: flex-start; }
+    .hero__copy { margin: 0; padding: 20px 0 0; max-width: none; }
+    .hero__lead { margin-top: 16px; }
+    .search { margin-top: 24px; }
+    .cats { margin-top: 16px; }
+
+    .list { display: block; padding-inline: 0; padding-top: 0; }
+    .list__pic { position: sticky; top: 0; width: 100%; z-index: 1; background: var(--bg); }
+    .list__stack { aspect-ratio: auto; height: 38svh; }
+    .list__cap { margin: 12px var(--margin) 0; }
+    .list__body { padding: 40px var(--margin) 0; }
+    .list__body h2 { margin-bottom: 32px; }
+    .row { min-height: 56px; }
+    .row__meta { white-space: normal; }
+
+    /* the steps stack: a sideways row reads as clipped text at the edge (inspect: edge-text), so each moment is its own band */
+    .steps { grid-template-columns: 1fr; gap: 48px; margin-top: 40px; }
+    .step figure { max-width: 420px; }
+    .step:nth-child(1) { --air: 24px; }
+    .step:nth-child(2) { --air: 40px; }
+    .step:nth-child(3) { --air: 32px; }
+
+    .show__head { grid-column: 1 / -1; margin-bottom: 32px; }
+    .band { display: grid; grid-template-columns: 36fr 28fr 36fr; grid-template-rows: 1fr 1fr; height: 84svh; min-height: 0; }
+    .band figure { flex: none; }
+    .band figure:nth-child(1) { grid-column: 1 / 3; grid-row: 1; }
+    .band figure:nth-child(2) { grid-column: 3 / 4; grid-row: 1; }
+    .band figure:nth-child(3) { grid-column: 1 / 2; grid-row: 2; }
+    .band figure:nth-child(4) { grid-column: 2 / 4; grid-row: 2; }
+    .band figcaption { top: 12px; left: 12px; max-width: calc(100% - 24px); padding: 8px 10px; }
+    .captions { margin-top: 24px; }
+    .captions p { grid-column: 1 / -1; max-width: none; }
+
+    .cta { min-height: 84svh; display: flex; flex-direction: column; justify-content: space-between; padding: 40px var(--margin); }
+    .cta__words { align-self: auto; }
+    .cta__words p { max-width: none; }
+    .cta__words .button { width: 100%; min-height: 52px; }
+    .cta__screen { width: 100%; margin-top: 40px; }
+
+    footer { padding: 40px var(--margin) 20px; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; row-gap: 32px; column-gap: var(--gap); }
+    .col-1, .col-2, .col-3, .col-4 { grid-column: auto; }
+    .col-4 { grid-column: 1 / -1; }
+    .foot__mark { padding-top: 20svh; }
+    .legal { font-size: var(--step-small); }
+  }
+  @media (min-width: 600px) and (max-width: 900px) {
+    .step { display: grid; grid-template-columns: 1fr 1fr; column-gap: var(--gap); align-items: start; }
+    .step h3 { grid-column: 1; }
+    .step p { grid-column: 1; }
+    .step figure { grid-column: 2; grid-row: 1 / 3; margin-top: var(--air); max-width: none; }
+  }
+  @media (min-width: 1850px) {
+    .cta__words h2 { font-weight: 100; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- HERO -->
+  <header class="hero">
+    <figure class="hero__pic">
+      <img src="../../assets/suya-seller.jpg" width="1920" height="1280" fetchpriority="high"
+           alt="A suya seller at a roadside stand slices grilled beef over a table of meat laid on newspaper, in the haze of late afternoon.">
+    </figure>
+    <div class="hero__right">
+      <nav class="nav" aria-label="Site">
+        <a class="hero__menu" href="#site-nav">Menu</a>
+        <a class="link" href="#how">How it works</a>
+        <a class="link" href="/for-operators">For kitchens</a>
+        <a class="button" href="/shop">Find kitchens</a>
+      </nav>
+      <div class="hero__copy">
+        <h1 class="display">Order from kitchens near you</h1>
+        <p class="hero__lead">Independent cooks in your area, jollof to jerk, from their own storefront. Nothing to download.</p>
+        <form class="search" action="/shop" method="get" role="search">
+          <label for="q">Postcode or dish</label>
+          <div class="search__row">
+            <input id="q" name="q" type="search" placeholder="SE15 or jollof" autocomplete="postal-code" enterkeyhint="search">
+            <button class="button" type="submit">Find kitchens</button>
+          </div>
+        </form>
+        <p class="cats">
+          <a class="link" href="/shop?q=grill">Grill</a>
+          <a class="link" href="/shop?q=jollof">Jollof</a>
+          <a class="link" href="/shop?q=caribbean">Caribbean</a>
+          <a class="link" href="/shop?q=south+asian">South Asian</a>
+          <a class="link" href="/shop?q=vegan">Vegan</a>
+          <a class="link" href="/shop?q=desserts">Desserts</a>
+        </p>
+      </div>
+      <p class="wordmark"><a href="/" aria-label="J'Toye, home">j'toye</a></p>
+    </div>
+  </header>
+
+  <!-- LIST -->
+  <section class="section grid list" aria-labelledby="list-h">
+    <figure class="list__pic">
+      <div class="list__stack">
+        <img class="pic-1" src="../../assets/panoramio-3174.jpg" width="1920" height="1078" loading="lazy" style="object-position: 47% 50%"
+             alt="The entrance of Rye Lane Market in Peckham, a brick and white building with a blue doorway under a small arched sign, photographed in 2011.">
+        <img class="pic-2" src="../../assets/jollof-rice-with-vegetable.jpg" width="1920" height="1440" loading="lazy"
+             alt="A plate of jollof rice with a fried egg and cooked green vegetable, with a spoon resting on the rice.">
+        <img class="pic-3" src="../../assets/brixton-market-sw9-geograph-org-uk-2022036.jpg" width="1024" height="768" loading="lazy" style="object-position: 45% 50%"
+             alt="A street in Brixton Market, SW9, with a fishmonger's blue awning, a fruit barrow and shoppers, photographed in 2007.">
+      </div>
+      <figcaption class="list__cap cap-1 muted">Rye Lane Market entrance, Peckham, 2011</figcaption>
+      <figcaption class="list__cap cap-2 muted">Jollof rice with vegetable, 2013</figcaption>
+      <figcaption class="list__cap cap-3 muted">Brixton Market, SW9, 2007</figcaption>
+    </figure>
+    <div class="list__body">
+      <h2 class="display" id="list-h">Kitchens on J'Toye</h2>
+      <div class="rows" role="radiogroup" aria-label="Kitchens">
+        <label class="row">
+          <input type="radio" name="kitchen" id="k1" checked>
+          <img src="../../assets/logo-peckham-jollof.png" width="400" height="400" loading="lazy" alt="Peckham Jollof logo">
+          <span class="row__name">Peckham Jollof</span>
+          <span class="row__meta"><b>Open</b>Rye Lane, SE15</span>
+        </label>
+        <label class="row">
+          <input type="radio" name="kitchen" id="k2">
+          <img src="../../assets/logo-mama-ades.png" width="400" height="400" loading="lazy" alt="Mama Ade's logo">
+          <span class="row__name">Mama Ade's</span>
+          <span class="row__meta"><b>Paused</b>Peckham</span>
+        </label>
+        <label class="row">
+          <input type="radio" name="kitchen" id="k3">
+          <img src="../../assets/logo-brixton-grill.png" width="400" height="400" loading="lazy" alt="Brixton Grill logo">
+          <span class="row__name">Brixton Grill</span>
+          <span class="row__meta"><b>Closed</b>Brixton Market, SW9</span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section how" id="how" aria-labelledby="how-h">
+    <div class="how__top">
+      <h2 class="display" id="how-h">Three steps, no app</h2>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <h3>Find a kitchen</h3>
+        <p>Search by postcode or dish; every kitchen shows its hygiene rating and hours.</p>
+        <figure>
+          <img src="../../assets/93-bruce-grove-scorpios-chicken-1413263680.jpg" width="1920" height="1801" loading="lazy"
+               alt="A Caribbean restaurant and jerk bar on Bruce Grove, Tottenham: a yellow fascia, green shopfront and an Open sign in the door, photographed in 2007.">
+        </figure>
+      </li>
+      <li class="step">
+        <h3>Order and pay</h3>
+        <p>Delivery or collection; card, or cash on collection where the kitchen allows it; allergens on every item.</p>
+        <figure>
+          <img src="../../assets/storefront-menu.webp" width="960" height="640" loading="lazy" style="object-position: 30% 50%"
+               alt="A J'Toye storefront menu on the web: a kitchen's mains with prices, preparation times, allergens listed under each dish, and an Add button.">
+        </figure>
+      </li>
+      <li class="step">
+        <h3>Follow it</h3>
+        <p>A tracking page from the kitchen to your door; no account needed.</p>
+        <figure>
+          <img src="../../assets/jerk-chicken-as-served-july-05.jpg" width="1920" height="1319" loading="lazy"
+               alt="Jerk chicken with salad and cucumber in an open takeaway box, set down on dry grass.">
+        </figure>
+      </li>
+    </ol>
+  </section>
+
+  <!-- PROOF -->
+  <section class="section proof" aria-labelledby="proof-h">
+    <h2 id="proof-h">What you can trust</h2>
+    <p>UK food-hygiene rating, verified when the kitchen joins.</p>
+    <p>Allergen information on every item, with "may contain" where the kitchen says so.</p>
+    <p>No app to download. A web page, reached by link or QR.</p>
+  </section>
+
+  <!-- SHOWCASE -->
+  <section class="section show" aria-labelledby="show-h">
+    <div class="grid">
+      <h2 class="display show__head" id="show-h">Built around the service you already run</h2>
+    </div>
+    <div class="band">
+      <figure>
+        <img src="../../assets/storefront-menu.webp" width="960" height="640" loading="lazy" style="object-position: 18% 0"
+             alt="A J'Toye storefront on the web: the kitchen's name and opening state at the top, then its menu of mains with prices and allergens.">
+        <figcaption>Your own storefront</figcaption>
+      </figure>
+      <figure>
+        <img src="../../assets/slot-picker.webp" width="960" height="640" loading="lazy" style="object-position: 50% 0"
+             alt="The fulfilment window picker at checkout: order for now, or a Saturday lunch batch with the places left and its cutoff time.">
+        <figcaption>Slots with a cap</figcaption>
+      </figure>
+      <figure>
+        <img src="../../assets/kitchen-cook-sheet.webp" width="1280" height="800" loading="lazy" style="object-position: 40% 0"
+             alt="The consolidated kitchen cook sheet in the J'Toye dashboard: quantities to prepare per dish across accepted orders, with recorded allergens.">
+        <figcaption>One cook sheet per service</figcaption>
+      </figure>
+      <figure>
+        <img src="../../assets/ppds-label.webp" width="960" height="640" loading="lazy" style="object-position: 50% 50%"
+             alt="A printed food label for jollof rice with chicken: ingredients with the allergen celery in bold, produced and use-by dates, and the kitchen's name and address.">
+        <figcaption>Natasha's Law labels</figcaption>
+      </figure>
+    </div>
+    <div class="grid captions">
+      <p>Your menu, your prices, your link and QR.</p>
+      <p>"Saturday 12:00–14:00, 20 orders", closed at the cutoff.</p>
+      <p>Every order's lines totalled by dish.</p>
+      <p>Printed from the product, 14 allergens emphasised.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="grid cta" aria-labelledby="cta-h">
+    <div class="cta__words">
+      <h2 class="display" id="cta-h">Run your food business</h2>
+      <p>Take orders, run the kitchen, go live in a day.</p>
+      <a class="button" href="/for-operators">See how it works for kitchens</a>
+    </div>
+    <figure class="cta__screen" data-ui>
+      <div class="cta__crop">
+        <img src="../../assets/kitchen-cook-sheet.webp" width="1280" height="800" loading="lazy"
+             alt="The kitchen screen of the J'Toye dashboard: the last lines of a cook sheet, then two new orders waiting to be accepted.">
+      </div>
+      <figcaption>The kitchen screen: two new orders waiting to be accepted.</figcaption>
+    </figure>
+  </section>
+
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="grid cols">
+    <div class="col-1">
+      <p>J'Toye</p>
+      <p>Independent cooks in your area, jollof to jerk, from their own storefront. Nothing to download.</p>
+    </div>
+    <div class="col-2">
+      <p>Find kitchens</p>
+      <ul id="site-nav">
+        <li><a href="/shop">Find kitchens</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="/for-operators">For kitchens</a></li>
+      </ul>
+    </div>
+    <div class="col-3">
+      <p>Legal</p>
+      <ul>
+        <li><a href="/privacy">Privacy</a></li>
+        <li><a href="/terms">Terms</a></li>
+        <li><a href="/allergen-policy">Allergen policy</a></li>
+        <li><a href="/data-request">Data request</a></li>
+      </ul>
+    </div>
+    <div class="col-4">
+      <p>Pictures</p>
+      <p class="credits">Pictures: <a href="https://commons.wikimedia.org/wiki/File:Suya_Seller.jpg">“Suya Seller”</a> by FischerFotos, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:-_panoramio_(3174).jpg">“- panoramio (3174)”</a> by L Folan, <a href="https://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:Jollof_rice_with_vegetable.jpg">“Jollof rice with vegetable”</a> by Segun Famisa, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:Brixton_Market,_SW9_-_geograph.org.uk_-_2022036.jpg">“Brixton Market, SW9 - geograph.org.uk - 2022036”</a> by Phillip Perry, <a href="https://creativecommons.org/licenses/by-sa/2.0">CC BY-SA 2.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:93_Bruce_Grove_-_Scorpios_Chicken_(1413263680).jpg">“93 Bruce Grove - Scorpios Chicken (1413263680)”</a> by Alan Stanton, <a href="https://creativecommons.org/licenses/by-sa/2.0">CC BY-SA 2.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:Jerk_chicken_as_served_july_05.jpg">“Jerk chicken as served july 05”</a>, <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>, via Wikimedia Commons.</p>
+    </div>
+  </div>
+  <div></div>
+  <div class="foot__mark">
+    <svg viewBox="0 0 960 500" role="img" aria-label="j'toye"><text x="26" y="400" font-size="400" letter-spacing="-16" textLength="930" lengthAdjust="spacing">j'toye</text></svg>
+    <p class="legal">J'Toye Digital Ltd, company no. 16471464</p>
+  </div>
+</footer>
+</body>
+</html>
