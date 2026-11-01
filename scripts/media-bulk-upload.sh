@@ -319,13 +319,17 @@ shop_id_for() { printf '%s' "$shops_json" | jq -r --arg s "$1" '(.content // .)[
 # title can fall off it and a stop-word title never matches at all.
 # Fails CLOSED: a page that does not come back 200 returns rc 1, and the caller must not create
 # (a lookup refused by the rate limit followed by a create is a duplicate draft).
+# Sets FOUND_PID (empty when absent) and returns 0; returns 1 with HTTP holding the status of the
+# page that failed. Not "$(...)"-shaped, like create_product: a status set inside a command
+# substitution never reaches the caller (round 3 measured "lookup HTTP 000" for a 503).
 product_id_for() {
-  local shop="$1" title="$2" page=0 body id
+  local shop="$1" title="$2" page=0 body
+  FOUND_PID=""
   while :; do
     api_call GET "/api/v1/products?shopId=$shop&size=100&page=$page" ""; body="$RESP"
     [ "$HTTP" = 200 ] || return 1
-    id="$(printf '%s' "$body" | jq -r --arg t "$title" '(.content // [])[] | select((.title | ascii_downcase) == ($t | ascii_downcase)) | .id' | head -n1)"
-    [ -n "$id" ] && { printf '%s' "$id"; return 0; }
+    FOUND_PID="$(printf '%s' "$body" | jq -r --arg t "$title" '(.content // [])[] | select((.title | ascii_downcase) == ($t | ascii_downcase)) | .id' | head -n1)"
+    [ -n "$FOUND_PID" ] && return 0
     [ "$(page_is_last "$body")" = false ] || return 0
     page=$((page+1))
   done
@@ -402,7 +406,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
   if [ -z "$pid" ] && [ -z "$title" ]; then title="$(title_from_file "$file")"; title_source=filename; fi
   if [ -z "$pid" ]; then
-    pid="$(product_id_for "$shop" "$title")" || { say "FAILED  $tag: product lookup -> HTTP $HTTP (not creating)"; ledger "$file" "$sha" "$slug" - no "$mode" "$slot" - - FAILED - - - "lookup HTTP $HTTP"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; }
+    product_id_for "$shop" "$title" && pid="$FOUND_PID" || { say "FAILED  $tag: product lookup -> HTTP $HTTP (not creating)"; ledger "$file" "$sha" "$slug" - no "$mode" "$slot" - - FAILED - - - "lookup HTTP $HTTP"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; }
   fi
   ai_name=-; ai_conf=-; analysis=""
 
