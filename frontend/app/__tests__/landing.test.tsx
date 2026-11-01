@@ -337,43 +337,43 @@ describe("Landing content bands declare the Marketing tier (ORCH-04)", () => {
 })
 
 /**
- * SW-CLR-03 (swarm epic #964). The landing page promised "Independent UK
- * kitchens" and "go live in a day" while /for-operators — the page the operator
- * door leads to — describes an assisted pilot for established West African food
- * businesses in London. Two pages on one site making incompatible offers is the
- * finding; the landing copy is aligned to /for-operators, whose wording it now
- * reuses, rather than the other way round.
+ * SW-CLR-03 (swarm epic #964). The landing page promised "go live in a day"
+ * while /for-operators — the page the operator door leads to — says a person
+ * reviews every application and the setup is assisted. Two pages on one site
+ * making incompatible offers is the finding. The promise is removed here, in the
+ * rendered page and in both descriptions, and replaced with /for-operators'
+ * own wording.
  *
- * The overclaims are asserted ABSENT on the rendered page and in the metadata,
- * after a control that the hero actually rendered.
+ * DELIBERATELY NOT CHANGED: the "Independent UK kitchens" positioning. The
+ * swarm also flagged it against the pilot's West African, London scope, but
+ * design/brief.md (confirmed by the owner 2026-11-01) describes the subject as
+ * independent UK food businesses. Which one is right is an owner decision, so
+ * this file does not pin either way.
+ *
+ * The overclaim is asserted ABSENT, after a control that the hero rendered.
  */
-describe("Landing copy matches the /for-operators pilot (SW-CLR-03)", () => {
-  const OVERCLAIMS: Array<[string, RegExp]> = [
-    ["go live in a day", /go live in a day/i],
-    ["Independent UK kitchens", /independent uk kitchens/i],
-  ]
-
-  it.each(OVERCLAIMS)("the rendered page no longer says %s", async (_label, pattern) => {
+describe("Landing copy no longer promises go-live in a day (SW-CLR-03)", () => {
+  it("the rendered page no longer says go live in a day", async () => {
     const { container } = render(await Home())
     // Control: the hero rendered.
     expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument()
-    expect(container.textContent).not.toMatch(pattern)
+    expect(container.textContent).not.toMatch(/go live in a day/i)
   })
 
-  it.each(OVERCLAIMS)("the metadata no longer says %s", (_label, pattern) => {
+  it("the metadata no longer says go live in a day", () => {
     const og = homeMetadata.openGraph as { description?: string } | undefined
     // Control: both descriptions exist.
     expect(String(homeMetadata.description).length).toBeGreaterThan(0)
     expect(String(og?.description).length).toBeGreaterThan(0)
-    expect(String(homeMetadata.description)).not.toMatch(pattern)
-    expect(String(og?.description)).not.toMatch(pattern)
+    expect(String(homeMetadata.description)).not.toMatch(/go live in a day/i)
+    expect(String(og?.description)).not.toMatch(/go live in a day/i)
   })
 
-  it("names the pilot's actual scope: West African food businesses in London, assisted", async () => {
+  it("says what /for-operators says instead: an assisted setup and a reviewed application", async () => {
     const { container } = render(await Home())
     const text = container.textContent ?? ""
-    expect(text).toMatch(/west african food businesses in london/i)
-    expect(text).toMatch(/assisted pilot/i)
-    expect(String(homeMetadata.description)).toMatch(/in london/i)
+    expect(text).toMatch(/assisted setup/i)
+    expect(text).toMatch(/a person reviews every application/i)
+    expect(String(homeMetadata.description)).toMatch(/assisted setup/i)
   })
 })

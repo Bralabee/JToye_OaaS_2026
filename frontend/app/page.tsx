@@ -24,11 +24,13 @@ import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
 export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
   description:
-    "Order from established West African food businesses in London in minutes, or apply for the assisted pilot: direct ordering, scheduled fulfilment and allergen labels.",
+    "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders and manage your kitchen, with an assisted setup.",
   // SW-CLR-03 (swarm epic #964): this description used to promise "go live in a
-  // day" to any food business, while /for-operators describes an assisted pilot
-  // for established West African food businesses in London. The wording is now
-  // taken from /for-operators (its lede and its pilot section), not invented.
+  // day", while /for-operators says a person reviews every application and the
+  // setup is assisted. That promise is removed; "assisted setup" is the
+  // /for-operators wording. The positioning itself (UK-wide here, a West African
+  // London pilot there) is an open owner decision: design/brief.md, confirmed
+  // 2026-11-01, describes independent UK food businesses, so it is not narrowed.
   //
   // FE-5: canonical + Open Graph were missing on the landing page — the one
   // page most likely to be shared/linked externally. `alternates.canonical`
@@ -39,7 +41,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "J'Toye — Order from local kitchens, or run your own",
     description:
-      "Order from established West African food businesses in London in minutes, or apply for the assisted pilot: direct ordering, scheduled fulfilment and allergen labels.",
+      "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders and manage your kitchen, with an assisted setup.",
     url: "/",
     type: "website",
   },
@@ -237,7 +239,7 @@ export default async function Home() {
               {/* Left column — copy, search, doors */}
               <div>
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">
-                  🇬🇧 West African food businesses in London
+                  🇬🇧 Independent UK kitchens
                 </span>
                 <h1
                   data-hero-headline
@@ -246,10 +248,9 @@ export default async function Home() {
                   Order from local kitchens. Or run yours.
                 </h1>
                 <p className="mt-4 max-w-xl text-lg text-slate-600">
-                  J&apos;Toye connects hungry customers with established West
-                  African food businesses in London — order in minutes, or apply
-                  for the assisted pilot for direct ordering and scheduled
-                  fulfilment.
+                  J&apos;Toye connects hungry customers with independent food
+                  businesses — order in minutes, or apply to take your kitchen
+                  online with an assisted setup.
                 </p>
 
                 {/* C: discovery search + category chips. Both run a REAL query
@@ -294,7 +295,7 @@ export default async function Home() {
                     <Store className="h-8 w-8 text-gold" />
                     <span className="mt-4 text-lg font-bold">Run your food business</span>
                     <span className="mt-1 text-sm text-cream/80">
-                      Direct ordering, scheduled fulfilment and allergen labels, in an assisted pilot.
+                      Take orders and manage your kitchen. A person reviews every application.
                     </span>
                     <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-gold">
                       Learn more
