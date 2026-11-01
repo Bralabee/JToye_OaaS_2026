@@ -1,0 +1,11 @@
+# Skill-conflict rulings for J'Toye OaaS (design-run step 5). TAB-separated:
+# rule_id  scope  decision  date  who  why
+# All eight approved by Sanmi on 2026-11-01. Re-check: rule-check.sh conflicts --scope page|app --rulings design/rulings.tsv
+gradient-decoration	page	ban	2026-11-01	Sanmi	colour comes from food photography and one brand colour; the radial wash on the current landing is a template tell
+gradient-decoration	app	ban	2026-11-01	Sanmi	no gradients on grounds, buttons, cards, text or KPI tiles
+glass	page	ban	2026-11-01	Sanmi	dated template signal; backdrop blur is slow on the low-end Android phones vendors and customers use
+glass	app	ban	2026-11-01	Sanmi	as page: no glass, glows or backdrop blur
+card-hover	page	require	2026-11-01	Sanmi	clickable cards only (a card that is a link is a control: hover + focus feedback); static cards get none; hover stays gated off on touch (#503)
+section-entrance	page	avoid	2026-11-01	Sanmi	content is present at load; per-section fade-up is the commonest template tell and blanks screenshots
+ambient-motion	page	allow	2026-11-01	Sanmi	not required: at most one deliberate moment, chosen with the dealt direction; none elsewhere
+mono-labels	app	allow	2026-11-01	Sanmi	order numbers and references only; prices and times stay in the body face with tabular figures
