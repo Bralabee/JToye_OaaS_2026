@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J'Toye landing — elevate, before and after</title>
+<style>
+@font-face{font-family:"Work Sans";src:url("fonts/work-sans-latin.woff2") format("woff2");font-weight:100 900}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Work Sans",system-ui,sans-serif;background:#E8E5E4;color:#1E1814;padding:32px 24px 64px;font-size:16px;line-height:1.5}
+h1{font-size:28px;font-weight:700;color:#3A0B0D}
+h2{margin-top:48px;font-size:22px;font-weight:700;color:#3A0B0D}
+p{max-width:60em;margin-top:8px}
+.row{margin-top:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+figure{background:#fff;padding:12px;border-radius:8px}
+figcaption{font-size:14px;font-weight:600;margin-bottom:8px}
+iframe{border:0;display:block;background:#fff}
+.s{overflow:hidden}
+.s iframe{transform:scale(.5);transform-origin:0 0}
+a{color:#6E1D21}
+</style>
+</head>
+<body>
+<h1>Landing elevate — before and after</h1>
+<p>Before is a static copy of the current landing (origin/main 1fb15a8b). After keeps its structure, layout and copy and changes four things: dish photographs instead of emoji, the palette in <a href="../palette.md">palette.md</a>, the template tells removed, a tighter type scale. Open <a href="before.html">before.html</a> or <a href="after.html">after.html</a> alone to resize them yourself. Still images of each frame are in <code>shots/</code>.</p>
+
+<h2>(a) First screen, phone 390 × 844</h2>
+<div class="row">
+  <figure><figcaption>Before</figcaption><iframe src="before.html" width="390" height="844" title="Before, phone, first screen"></iframe></figure>
+  <figure><figcaption>After</figcaption><iframe src="after.html" width="390" height="844" title="After, phone, first screen"></iframe></figure>
+</div>
+
+<h2>(a) First screen, desktop 1280 × 800 (shown at half size)</h2>
+<div class="row">
+  <figure><figcaption>Before</figcaption><div class="s" style="width:640px;height:400px"><iframe src="before.html" width="1280" height="800" title="Before, desktop, first screen"></iframe></div></figure>
+  <figure><figcaption>After</figcaption><div class="s" style="width:640px;height:400px"><iframe src="after.html" width="1280" height="800" title="After, desktop, first screen"></iframe></div></figure>
+</div>
+
+<h2>(b) Kitchens and How it works, phone 390 wide</h2>
+<div class="row">
+  <figure><figcaption>Before</figcaption><iframe src="before.html#kitchens" width="390" height="1100" title="Before, phone, kitchens and how it works"></iframe></figure>
+  <figure><figcaption>After</figcaption><iframe src="after.html#kitchens" width="390" height="1100" title="After, phone, kitchens and how it works"></iframe></figure>
+</div>
+
+<h2>(b) Kitchens and How it works, desktop 1280 wide (shown at half size)</h2>
+<div class="row">
+  <figure><figcaption>Before</figcaption><div class="s" style="width:640px;height:450px"><iframe src="before.html#kitchens" width="1280" height="900" title="Before, desktop, kitchens and how it works"></iframe></div></figure>
+  <figure><figcaption>After</figcaption><div class="s" style="width:640px;height:450px"><iframe src="after.html#kitchens" width="1280" height="900" title="After, desktop, kitchens and how it works"></iframe></div></figure>
+</div>
+</body>
+</html>

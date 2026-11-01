@@ -1,0 +1,51 @@
+TASTESKILL · INSPECT   http://127.0.0.1:3201/
+
+MEASURED (first viewport listed)
+  hero headline   "Order from local kitchens. Or run yours."  7 words · 3 line(s) · 56px (4.4vw) · Work Sans 800 · tracking -0.03em · leading 1.04
+  @768px          2 line(s) · 48px
+  @390px          3 line(s) · 34px
+  typefaces       Work Sans 100%
+  sizes in use    12 / 14 / 16 / 18 / 20 / 28 / 56 px   body 14px / 1.5
+  colour          page #ffffff · sections #fbf6f0 #f4f2f0 #ffffff #3a0b0d · button #ffffff
+  page            3.3 screens · 370 words · 14 images · hero media none
+  headings        3 · longest 3 line(s) · median 3 words
+
+FAIL — fix every one of these
+  [headline-lines] @1280px  1 headline(s) wrap past two lines at 1280px: "Order from local kitchens. Or run yours." → 3 lines (7 words, 56px)
+      → Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 36px or less.
+  [micro-label] @1280px (+768, 390)  3 tiny uppercase letter-spaced labels (e.g. "For customers", "Legal", "For operators").
+      → Use sentence-case text at a readable size, or delete the label.
+  [hairline] @1280px (+768, 390)  3 thin rule(s)/divider line(s): header.sticky.top-0 1280px | div.mt-10.flex 1216px | div.mt-6.border-t 1216px
+      → Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields.
+  [body-size] @1280px (+768, 390)  Body text is 14px (the size most of the running text is set in).
+      → Body copy 16–20px. Map small sizes from blueprints onto your body step.
+  [focal-point] @1280px  The first screen has no dominant element: the largest type is 56px (4.4vw) and no single picture holds a third of the viewport.
+      → Make one thing lead: the headline at display size, or one large picture. A grid of many small pictures is not one thing; in blind tests jurors marked a first screen without a headline down every time. On the strongest studied sites the largest type has a median of 8.4vw.
+  [headline-lines] @390px  1 headline(s) wrap past two lines at 390px: "Order from local kitchens. Or run yours." → 3 lines (7 words, 34px)
+      → Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 24px or less.
+
+WARN — fix, or be able to defend
+  [outlined-box] @1280px (+768, 390)  1 box(es) drawn with a 1px outline.
+      → Prefer a filled surface or no box.
+  [palette-cream] @1280px (+768, 390)  Yellow-cream background (section #fbf6f0, text #fbf6f0, text #fbf6ef).
+      → Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.
+  [no-footage] @1280px  No video anywhere on the page.
+      → Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject.
+  [measure] @1280px (+768)  Longest paragraph runs about 203 characters per line.
+      → Cap paragraphs at 45–75 characters (max-width: 60ch).
+  [small-text] @1280px (+768, 390)  3 text block(s) under 13px.
+      → Nothing meant to be read goes below 13px.
+  [side-scroll] @768px (+390)  1 row(s) scroll sideways with content past their edge.
+      → Jurors and most visitors read a row cut at the edge as clipped, not as scrollable. Wrap it onto more lines, or end it inside the grid.
+
+LOOK AT THE RENDER — open these with your image viewer / Read tool before saying anything about quality:
+  desktop 1280px  design/runs/2026-11-01-landing-elevate/inspect-app-after/desktop-fold.jpg
+                  design/runs/2026-11-01-landing-elevate/inspect-app-after/desktop-page-01.jpg
+  scroll film     design/runs/2026-11-01-landing-elevate/inspect-app-after/desktop-film-01.jpg  (6 frames a row, a third of a screen apart)
+  tablet 768px    design/runs/2026-11-01-landing-elevate/inspect-app-after/tablet-fold.jpg
+                  design/runs/2026-11-01-landing-elevate/inspect-app-after/tablet-page-01.jpg
+  mobile 390px    design/runs/2026-11-01-landing-elevate/inspect-app-after/mobile-fold.jpg
+                  design/runs/2026-11-01-landing-elevate/inspect-app-after/mobile-page-01.jpg
+
+report: design/runs/2026-11-01-landing-elevate/inspect-app-after/report.json
+RESULT: 6 FAIL, 6 WARN — not done.

@@ -15,11 +15,14 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
  *
  * Three parts, each deliberate:
  *
- *  1. EDGE FADE. A gradient masks content at whichever end still has more to
- *     show. It is the affordance, so it must not lie: with the row at rest at
- *     the far left there is no left fade, and at the end there is no right
- *     fade. A fade that is always on reads as decoration and stops carrying
- *     information.
+ *  1. CARD PEEK (D14, owner ruling 2026-11-01). The cards (`shop-card.tsx`)
+ *     are 80% of the row on a phone, so the next one always shows at the edge
+ *     while there is one. This replaced an EDGE FADE — a white-to-transparent
+ *     gradient at whichever end had more to show — because the page's
+ *     `gradient-decoration` ruling bans gradients (design/rulings.tsv) and the
+ *     owner chose the peek over keeping the fade as an exception. The
+ *     `data-can-left` / `data-can-right` flags the fade read are kept: they
+ *     still drive the arrows, and the e2e spec reads them.
  *
  *  2. SNAP — proximity, not mandatory. Cards are `min-w`, so their real widths
  *     vary with content; mandatory snapping on uneven widths fights the user
@@ -27,11 +30,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
  *
  *  3. ARROWS — pointer-fine only. On touch the swipe IS the affordance and an
  *     arrow is redundant chrome; on a mouse there is no swipe, so the arrows
- *     are the only non-scrollbar way to move. Tailwind's `hover:` is NOT gated
- *     here (`future.hoverOnlyWhenSupported` is unset in tailwind.config.ts), so
- *     the pointer query is written out rather than assumed.
+ *     are the only non-scrollbar way to move. Tailwind's `hover:` gate
+ *     (`future.hoverOnlyWhenSupported`, issue 503) tests hover only, not the
+ *     pointer, so the pointer query is written out rather than assumed.
  *
- * Both fades and both arrows are driven by ONE pair of booleans — `canLeft` /
+ * Both arrows are driven by ONE pair of booleans — `canLeft` /
  * `canRight` — rather than by separate "at start", "at end" and "overflows"
  * flags. With separate flags each control needed a rule to show it and another
  * to hide it, and which won came down to the order Tailwind happened to emit
@@ -43,20 +46,16 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
  * never React state. Two reasons: a scroll handler that calls setState
  * re-renders the whole row on every frame, and `react-hooks/set-state-in-effect`
  * (the rule that bit PR 221) forbids the initial-sync pattern anyway. CSS reads
- * the attributes and animates opacity only, which stays off the main thread.
+ * the attributes.
  *
- * No-JS / pre-hydration contract: both flags default to `false`, so no fade and
- * no arrow renders and the row is natively scrollable regardless. If JS never
+ * No-JS / pre-hydration contract: both flags default to `false`, so no arrow
+ * renders and the row is natively scrollable regardless. If JS never
  * runs the user gets exactly the old behaviour — never a masked or frozen row.
  */
 
-// Strong ease-out. The built-in CSS easings are too weak to read as intentional
-// at this duration; 200ms is inside the <300ms budget for UI feedback.
-const FADE_EASE = "cubic-bezier(0.23,1,0.32,1)"
-
 // Subpixel tolerance. `scrollLeft` is fractional under browser zoom and on
 // HiDPI, so an exact `=== scrollWidth - clientWidth` end test never fires and
-// the right-hand fade would stay on forever at the end of the row.
+// the right-hand arrow would stay on forever at the end of the row.
 const EDGE_EPSILON_PX = 2
 
 // Nudge just under a viewport so a sliver of the outgoing card stays visible —
@@ -73,7 +72,7 @@ export function DishScroller({ children, label }: DishScrollerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
 
-  /** Reflect scroll position onto the wrapper so CSS can drive fades + arrows. */
+  /** Reflect scroll position onto the wrapper so CSS can drive the arrows. */
   const syncEdges = useCallback(() => {
     const wrapper = wrapperRef.current
     const scroller = scrollerRef.current
@@ -172,37 +171,14 @@ export function DishScroller({ children, label }: DishScrollerProps) {
         role="region"
         aria-label={label}
         tabIndex={0}
-        className="flex snap-x gap-4 overflow-x-auto scroll-px-4 overscroll-x-contain pb-2 [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 [&>*]:snap-start"
+        className="flex snap-x gap-4 overflow-x-auto scroll-px-4 overscroll-x-contain pb-2 [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 [&>*]:snap-start"
       >
         {children}
       </div>
 
-      {/* Fades sit above the row but must never eat a tap aimed at a card. */}
-      <EdgeFade side="left" />
-      <EdgeFade side="right" />
-
       <ScrollButton side="left" onClick={() => nudge(-1)} />
       <ScrollButton side="right" onClick={() => nudge(1)} />
     </div>
-  )
-}
-
-function EdgeFade({ side }: { side: "left" | "right" }) {
-  const shown =
-    side === "left"
-      ? "[[data-can-left=true]_>_&]:opacity-100"
-      : "[[data-can-right=true]_>_&]:opacity-100"
-
-  return (
-    <div
-      aria-hidden
-      style={{ transitionTimingFunction: FADE_EASE }}
-      className={[
-        "pointer-events-none absolute inset-y-0 w-10 opacity-0 transition-opacity duration-200",
-        side === "left" ? "left-0 bg-gradient-to-r from-white to-transparent" : "right-0 bg-gradient-to-l from-white to-transparent",
-        shown,
-      ].join(" ")}
-    />
   )
 }
 
@@ -227,7 +203,9 @@ function ScrollButton({ side, onClick }: { side: "left" | "right"; onClick: () =
       data-testid={`dish-scroll-${side}`}
       className={[
         "absolute top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full",
-        "border border-cream-100 bg-white/95 text-oxblood shadow-md backdrop-blur-sm",
+        // Flat: white on the warm-100 card it sits over, no outline, no shadow
+        // and no backdrop blur (the `glass` ban).
+        "bg-white text-brand-900",
         "transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97]",
         side === "left" ? "left-1" : "right-1",
         shown,

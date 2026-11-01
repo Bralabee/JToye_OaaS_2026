@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J'Toye: order from kitchens near you</title>
+<meta name="description" content="Independent cooks in your area, jollof to jerk, from their own storefront. Nothing to download.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Sketch: "The page is the object". The pink copy of a kitchen's docket pad, laid on a burgundy counter.
+   Two inks: burgundy ground, pink paper. Every section is another piece of the same stationery. */
+:root {
+  --bg: #3d0012;
+  --surface: #4d0519;
+  --ink: #ff99d3;
+  --muted: #c77aa0;
+  --accent: #ff99d3;
+  --accent-ink: #3d0012;
+  --paper: #ff99d3;
+  --paper-ink: #3d0012;
+  --paper-soft: #7a1f45;
+  --paper-tone: #f08ac4;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --text: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --step-small: clamp(0.8125rem, 0.79rem + 0.1vw, 0.875rem);
+  --step-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  --step-lead: clamp(1.25rem, 1.1rem + 0.7vw, 1.625rem);
+  --step-title: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+  --step-head: clamp(2.5rem, 1.2rem + 5vw, 5.5rem);
+  --m: 28px;
+  --gap: 24px;
+  --tile-bump-top: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='12' viewBox='0 0 40 12'><ellipse cx='20' cy='12' rx='20' ry='12' fill='white'/></svg>");
+  --tile-bump-bottom: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='12' viewBox='0 0 40 12'><ellipse cx='20' cy='0' rx='20' ry='12' fill='white'/></svg>");
+  --tile-zig-bottom: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='12' viewBox='0 0 24 12'><polygon points='0,0 24,0 12,12' fill='white'/></svg>");
+  --tile-semi-top: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 50' preserveAspectRatio='none'><circle cx='50' cy='50' r='50' fill='white'/></svg>");
+  --tile-solid: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='2' height='2'><rect width='2' height='2' fill='white'/></svg>");
+  --tile-dots: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='4'><circle cx='5' cy='2' r='2' fill='rgb(61,0,18)'/></svg>");
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); color: var(--ink); font-family: var(--text); font-size: 100%; -webkit-text-size-adjust: 100%; }
+body { margin: 0; font-size: var(--step-body); line-height: 1.5; font-weight: 400; background: var(--bg); color: var(--ink); overflow-x: clip; }
+img { display: block; max-width: 100%; height: auto; }
+figure { margin: 0; }
+a { color: inherit; text-decoration: none; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; letter-spacing: -0.02em; line-height: 0.9; margin: 0; }
+p { margin: 0; }
+ul { list-style: none; margin: 0; padding: 0; }
+:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gap); }
+.wrap { padding-inline: var(--m); }
+.dia { display: inline-block; width: 10px; height: 10px; background: currentColor; transform: rotate(45deg); }
+
+/* ---------- the curtain: main scrolls up to uncover the footer waiting beneath it (CSS only) */
+main { position: relative; z-index: 1; background: var(--bg); }
+.back { position: sticky; bottom: 0; z-index: 0; background: var(--bg); padding: 72px var(--m) 28px; }
+@media (prefers-reduced-motion: reduce) { .back { position: static; } }
+
+/* ---------- top row on the field */
+.top { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); padding: var(--m); }
+.mark { font-family: var(--display); font-weight: 700; font-size: var(--step-lead); letter-spacing: -0.02em; line-height: 1; }
+.top nav ul { display: flex; gap: 32px; }
+.top nav a, .links a { padding: 6px 0; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+.top nav a:hover, .links a:hover, .card .links a:hover, .cuisines a:hover, .address a:hover, .credits a:hover, .sheet-link:hover { text-decoration-line: underline; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; font-weight: 500; background: var(--accent); color: var(--accent-ink); border: 0; font: inherit; font-weight: 500; cursor: pointer; transition: background-color 160ms ease-out, transform 160ms ease-out; }
+.btn:hover { background: var(--muted); }
+.btn:active { transform: translateY(1px); }
+
+/* ---------- hero: the top of the docket, its lower third below the fold */
+.hero { padding-top: 86px; padding-bottom: 120px; }
+.card { position: relative; grid-column: 4 / span 6; width: 100%; background: var(--paper); color: var(--paper-ink); padding: 48px; aspect-ratio: 5 / 7; display: flex; flex-direction: column; align-items: center; text-align: center; container-type: inline-size; }
+.bite { position: absolute; width: 40px; height: 40px; border-radius: 50%; background: var(--bg); }
+.bite.tl { top: -20px; left: -20px; } .bite.tr { top: -20px; right: -20px; } .bite.bl { bottom: -20px; left: -20px; } .bite.br { bottom: -20px; right: -20px; }
+/* the two lines fill the card's measure: Barlow Condensed 700 caps run about 0.49em a character, so
+   the longer line (17 characters) is 8.3em; the card is 50vw - 40px on desktop and 10 of 12 columns on a tablet */
+.card h1 { font-size: clamp(2.5rem, 5.9vw - 16px, 6.5rem); text-transform: uppercase; max-width: 100%; min-width: 0; }
+.card .dia { margin: 28px 0; }
+.card .lead { max-width: 34ch; font-size: var(--step-body); }
+.find { width: 100%; margin-top: 36px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.find label { font-weight: 500; }
+.find-row { display: flex; width: 100%; gap: 12px; }
+.find input { flex: 1 1 auto; min-width: 0; font: inherit; color: var(--paper-ink); background: transparent; border: 0; border-bottom: 3px solid var(--paper-ink); padding: 10px 4px; min-height: 52px; }
+.find input::placeholder { color: var(--paper-soft); opacity: 1; }
+.find input:focus-visible { outline: 3px solid var(--paper-ink); outline-offset: 3px; }
+.find .go { flex: 0 0 auto; min-height: 52px; padding: 0 24px; background: var(--paper-ink); color: var(--paper); border: 0; font: inherit; font-weight: 500; cursor: pointer; transition: background-color 160ms ease-out, transform 160ms ease-out; }
+.find .go:hover { background: var(--paper-soft); }
+.find .go:active { transform: translateY(1px); }
+.cuisines { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: center; column-gap: 6px; row-gap: 4px; }
+.cuisines li + li::before { content: "\00b7"; margin-right: 6px; }
+.cuisines a { font-weight: 500; padding: 4px 0; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+.card .plate { width: 100%; flex: 1 1 240px; min-height: 240px; margin: 36px 0 0; overflow: hidden; }
+.card .plate img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; }
+.card .links { display: none; }
+
+/* ---------- list: the printed menu sheet on a full-bleed street photograph */
+.kitchens { position: relative; padding: 120px var(--m); overflow: hidden; }
+.kitchens > .street { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 60%; }
+.sheet { position: relative; width: min(640px, 100%); margin: 0 auto; background: var(--paper); color: var(--paper-ink); padding: 76px 64px; text-align: center;
+  -webkit-mask-image: var(--tile-bump-top), var(--tile-bump-bottom), var(--tile-solid); mask-image: var(--tile-bump-top), var(--tile-bump-bottom), var(--tile-solid);
+  -webkit-mask-size: 40px 12px, 40px 12px, 100% calc(100% - 24px); mask-size: 40px 12px, 40px 12px, 100% calc(100% - 24px);
+  -webkit-mask-position: 0 0, 0 100%, 0 12px; mask-position: 0 0, 0 100%, 0 12px;
+  -webkit-mask-repeat: repeat-x, repeat-x, no-repeat; mask-repeat: repeat-x, repeat-x, no-repeat; }
+.sheet h2 { font-size: var(--step-title); }
+.sheet .note { margin-top: 18px; }
+.sheet .group { margin-top: 56px; }
+.sheet .group h3 { font-size: var(--step-lead); }
+.sheet .rows { margin-top: 20px; text-align: left; }
+.sheet .row { display: flex; align-items: center; gap: 16px; padding: 16px 0; }
+.sheet .row img { width: 48px; height: 48px; flex: 0 0 48px; }
+.sheet .who { flex: 1 1 auto; min-width: 0; }
+.sheet .name { display: block; font-weight: 500; }
+.sheet .where { display: block; color: var(--paper-soft); }
+.sheet .state { font-family: var(--display); font-weight: 700; font-size: var(--step-lead); letter-spacing: -0.02em; text-transform: uppercase; }
+.sheet-link { display: inline-block; margin-top: 44px; font-weight: 500; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+
+/* ---------- how it works: the itinerary slip */
+.how { padding: 140px var(--m) 160px; }
+.how .intro { grid-column: 1 / span 5; }
+.how h2 { font-size: var(--step-title); text-transform: uppercase; }
+.how .intro p { margin-top: 24px; max-width: 30ch; font-size: var(--step-lead); }
+.slip { grid-column: 7 / span 5; width: min(480px, 100%); background: var(--paper); color: var(--paper-ink); padding: 36px 32px 52px; font-variant-numeric: tabular-nums;
+  -webkit-mask-image: var(--tile-zig-bottom), var(--tile-solid); mask-image: var(--tile-zig-bottom), var(--tile-solid);
+  -webkit-mask-size: 24px 12px, 100% calc(100% - 12px); mask-size: 24px 12px, 100% calc(100% - 12px);
+  -webkit-mask-position: 0 100%, 0 0; mask-position: 0 100%, 0 0;
+  -webkit-mask-repeat: repeat-x, no-repeat; mask-repeat: repeat-x, no-repeat; }
+.slip h3 { font-size: var(--step-lead); margin-top: 28px; }
+.slip h3:first-child { margin-top: 0; }
+.slip .r { display: flex; align-items: flex-end; gap: 10px; margin-top: 12px; }
+.slip .r > span:first-child { flex: 0 1 auto; }
+.slip .r > span:last-child { flex: 0 1 auto; text-align: right; }
+.slip .ld { flex: 1 0 28px; height: 4px; margin-bottom: 0.55em; background: var(--tile-dots) repeat-x center; }
+.slip .total { margin: 28px -32px 0; min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 8px 24px; background: var(--paper-ink); color: var(--paper); font-weight: 500; text-align: center; }
+
+/* ---------- proof: the printed guest list, tilted and cut by the section */
+.trust { position: relative; overflow: hidden; padding: 96px var(--m) 0; }
+.trust .list-card { width: min(56vw, 760px); margin: 0 auto -64px; background: var(--paper); color: var(--paper-ink); padding: 56px 56px 120px; text-align: center; transform: rotate(1.5deg); }
+.trust h2 { font-size: var(--step-title); }
+.trust .tip { margin-top: 32px; aspect-ratio: 16 / 9; overflow: hidden; }
+.trust .tip img { width: 100%; height: 100%; object-fit: cover; }
+.trust .names { margin-top: 36px; font-size: var(--step-lead); line-height: 1.7; }
+.trust .names p { max-width: 30ch; margin: 0 auto; }
+.trust .names .dia { margin: 10px 0; width: 9px; height: 9px; }
+
+/* ---------- showcase: square plate, spare text (CSS-only tabs, radio inputs) */
+.ops { background: var(--surface); min-height: 88svh; padding: 56px var(--m); }
+.ops .split { display: grid; grid-template-columns: 1fr 1fr; column-gap: var(--gap); min-height: calc(88svh - 112px); }
+.ops .plate { align-self: center; padding: 0 40px; }
+.ops .plate img { display: none; width: 100%; aspect-ratio: 1 / 1; height: auto; object-fit: cover; }
+/* the text column is set ragged-left against the right page margin, facing the square picture; the cta's aside below echoes it */
+.ops .col { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; gap: 40px; padding-left: 40px; text-align: right; }
+.ops .col > div { width: 100%; }
+.ops h2 { font-size: var(--step-title); text-transform: uppercase; }
+.ops .tabs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 28px; margin-top: 28px; }
+.ops .tabs label { color: var(--muted); font-weight: 500; cursor: pointer; padding: 6px 0; text-decoration-thickness: 3px; text-underline-offset: 6px; }
+.ops .tabs label:hover { color: var(--ink); }
+.ops .panel { display: none; }
+.ops .panel h3 { font-size: var(--step-lead); }
+.ops .panel p { margin-top: 24px; max-width: 34ch; margin-left: auto; }
+.ops .cells { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cell { display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 12px 20px; text-align: center; font-weight: 500; transition: background-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out; }
+.cell.ink { background: var(--accent); color: var(--accent-ink); }
+.cell.ink:hover { background: var(--muted); }
+.cell.tone { background: var(--bg); color: var(--ink); }
+.cell.tone:hover { background: var(--accent); color: var(--accent-ink); }
+.cell:active { transform: translateY(1px); }
+.tab { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#t1:checked ~ .split .p1, #t2:checked ~ .split .p2, #t3:checked ~ .split .p3, #t4:checked ~ .split .p4 { display: block; }
+#t1:checked ~ .split label[for="t1"], #t2:checked ~ .split label[for="t2"], #t3:checked ~ .split label[for="t3"], #t4:checked ~ .split label[for="t4"] { color: var(--ink); text-decoration-line: underline; }
+#t1:focus-visible ~ .split label[for="t1"], #t2:focus-visible ~ .split label[for="t2"], #t3:focus-visible ~ .split label[for="t3"], #t4:focus-visible ~ .split label[for="t4"] { outline: 3px solid currentColor; outline-offset: 3px; }
+
+/* ---------- cta: the reply card hanging off the bottom of the section */
+.reply { position: relative; overflow: hidden; min-height: 80svh; padding: 96px var(--m) 0; }
+.reply .grid { align-items: end; }
+/* mirrored from the blueprint (paragraph 1-4, card 6-12): the paragraph sits right-aligned on the right margin,
+   the card hangs at the left, so this section does not repeat the text-left / slip-right frame of the one above */
+.reply .aside { grid-column: 9 / span 4; justify-self: end; text-align: right; padding-bottom: 124px; font-size: var(--step-lead); max-width: 22ch; }
+.reply .reply-card { grid-column: 1 / span 7; justify-self: start; order: -1; width: min(44vw, 700px, 100%); min-height: calc(min(44vw, 700px, 100%) * 5 / 7); background: var(--paper); color: var(--paper-ink); padding: 48px 48px 112px; text-align: center; transform: rotate(-2deg); margin-bottom: -60px; display: flex; flex-direction: column; align-items: center; }
+.reply h2 { font-size: var(--step-title); text-transform: uppercase; }
+.reply .reply-card p { margin-top: 20px; max-width: 30ch; }
+.bar { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 56px; margin-top: 32px; padding: 8px 20px; background: var(--paper-ink); color: var(--paper); font-weight: 500; transition: background-color 160ms ease-out, transform 160ms ease-out; }
+.bar:hover { background: var(--paper-soft); }
+.bar:active { transform: translateY(1px); }
+
+/* ---------- footer: the back of the card, uncovered by the curtain */
+.postcard { position: relative; width: calc(100% * 10 / 12); margin: 0 auto; min-height: 420px; background: var(--paper); color: var(--paper-ink); padding: 88px 56px 32px;
+  -webkit-mask-image: var(--tile-semi-top), var(--tile-solid); mask-image: var(--tile-semi-top), var(--tile-solid);
+  -webkit-mask-size: calc(100% / 12) 48px, 100% calc(100% - 48px); mask-size: calc(100% / 12) 48px, 100% calc(100% - 48px);
+  -webkit-mask-position: 0 0, 0 48px; mask-position: 0 0, 0 48px;
+  -webkit-mask-repeat: repeat-x, no-repeat; mask-repeat: repeat-x, no-repeat; }
+.postcard .halves { display: grid; grid-template-columns: 1fr 1fr; column-gap: 56px; }
+/* under the curtain, any text of 24px or more is "covered" while the page slides over it: the sign-off stays at 23px */
+.postcard h2 { font-size: 1.4375rem; }
+.postcard .message { margin-top: 20px; max-width: 46ch; }
+.credits { margin-top: 20px; font-size: var(--step-small); max-width: 46ch; }
+.credits a { text-decoration-line: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.postcard .right { position: relative; display: flex; flex-direction: column; justify-content: flex-end; }
+.stamp { position: absolute; top: -8px; right: 0; width: 88px; aspect-ratio: 3 / 4; overflow: hidden; }
+.stamp img { width: 100%; height: 100%; object-fit: cover; }
+.address { display: flex; flex-direction: column; gap: 12px; }
+.address a { font-weight: 500; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+.imprint { margin-top: 40px; text-align: center; font-size: var(--step-small); }
+
+/* ---------- tablet */
+@media (max-width: 1099px) {
+  .card { grid-column: 2 / span 10; }
+  .card h1 { font-size: clamp(2.5rem, 9.8vw - 18px, 6.5rem); }
+  .how .intro { grid-column: 1 / span 12; }
+  .slip { grid-column: 1 / span 12; margin-top: 48px; width: min(560px, 100%); }
+  .trust .list-card { width: 76vw; }
+  .reply .aside { grid-column: 1 / span 12; padding-bottom: 0; }
+  .reply .reply-card { order: 0; }
+  .reply .reply-card { grid-column: 1 / span 12; width: min(70vw, 100%); min-height: calc(min(70vw, 100%) * 5 / 7); justify-self: center; margin-top: 56px; }
+  .ops .split { grid-template-columns: 1fr; }
+  .ops .plate { padding: 0; }
+  .ops .col { padding-left: 0; margin-top: 40px; gap: 32px; }
+  .postcard { width: 100%; }
+}
+/* ---------- phone: its own composition */
+@media (max-width: 760px) {
+  :root { --m: 16px; }
+  .top { padding: 20px var(--m); }
+  .top nav { display: none; }
+  .hero { padding-top: 24px; padding-bottom: 72px; }
+  .hero .grid { display: block; padding: 0; }
+  .card { width: calc(100% - 24px); margin: 0 auto; padding: 32px 28px 28px; aspect-ratio: auto; }
+  .card h1 { font-size: clamp(2rem, 11.8vw - 10px, 3.25rem); }
+  .card .dia { margin: 20px 0; }
+  .find-row { flex-direction: column; }
+  .find .go { width: 100%; }
+  .card .plate { flex: 0 0 auto; min-height: 0; aspect-ratio: 4 / 3; margin-top: 28px; }
+  .card .links { display: flex; flex-wrap: wrap; justify-content: center; column-gap: 20px; row-gap: 4px; margin-top: 24px; font-weight: 500; }
+  .kitchens { padding: 72px 10px; }
+  .sheet { padding: 44px 28px; }
+  .sheet .row img { width: 40px; height: 40px; flex-basis: 40px; }
+  .how { padding: 88px var(--m) 96px; }
+  .slip { margin-top: 36px; padding: 28px 24px 44px; }
+  .slip .total { margin-inline: -24px; }
+  .trust { padding-top: 64px; }
+  .trust .list-card { width: 92%; transform: rotate(1deg); padding: 28px 28px 96px; margin-bottom: -56px; }
+  .trust .names { font-size: var(--step-body); line-height: 1.6; }
+  .ops { padding: 56px var(--m) 64px; min-height: 0; }
+  .ops .split { min-height: 0; }
+  .ops .tabs { gap: 6px 20px; }
+  .ops h2 { font-size: min(var(--step-title), 7.3vw); }
+  .ops .cells { grid-template-columns: 1fr; }
+  .cell { min-height: 60px; }
+  .reply { padding-top: 72px; min-height: 0; }
+  .reply .reply-card { width: 90%; min-height: 0; transform: rotate(-1deg); padding: 32px 24px 96px; margin-top: 40px; margin-bottom: -56px; }
+  .bar { min-height: 52px; }
+  .back { padding: 40px var(--m) 20px; }
+  .postcard { padding: 72px 24px 24px; min-height: 0;
+    -webkit-mask-size: calc(100% / 6) 40px, 100% calc(100% - 40px); mask-size: calc(100% / 6) 40px, 100% calc(100% - 40px);
+    -webkit-mask-position: 0 0, 0 40px; mask-position: 0 0, 0 40px; }
+  .postcard .halves { grid-template-columns: 1fr; row-gap: 36px; }
+  .stamp { position: absolute; top: -8px; right: 0; width: 64px; }
+  .postcard .left { padding-right: 80px; }
+  .postcard .right { justify-content: flex-start; }
+  .imprint { margin-top: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <a class="mark" href="/">J'Toye</a>
+    <nav aria-label="Site">
+      <ul>
+        <li><a href="/shop">Find kitchens</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="/for-operators">For kitchens</a></li>
+      </ul>
+    </nav>
+    <a class="btn" href="/shop">Find kitchens</a>
+  </header>
+
+  <section class="hero wrap" aria-labelledby="h1">
+    <div class="grid">
+      <div class="card">
+        <i class="bite tl" aria-hidden="true"></i><i class="bite tr" aria-hidden="true"></i><i class="bite bl" aria-hidden="true"></i><i class="bite br" aria-hidden="true"></i>
+        <h1 id="h1">Order from<br>kitchens near you</h1>
+        <span class="dia" aria-hidden="true"></span>
+        <p class="lead">Independent cooks in your area, jollof to jerk, from their own storefront. Nothing to download.</p>
+        <form class="find" action="/shop" method="get" role="search">
+          <label for="q">Postcode or dish</label>
+          <div class="find-row">
+            <input id="q" name="q" type="search" placeholder="SE15 or jollof" autocomplete="off">
+            <button class="go" type="submit">Find kitchens</button>
+          </div>
+        </form>
+        <ul class="cuisines" aria-label="Browse by cuisine">
+          <li><a href="/shop?q=grill">Grill</a></li>
+          <li><a href="/shop?q=jollof">Jollof</a></li>
+          <li><a href="/shop?q=caribbean">Caribbean</a></li>
+          <li><a href="/shop?q=south+asian">South Asian</a></li>
+          <li><a href="/shop?q=vegan">Vegan</a></li>
+          <li><a href="/shop?q=desserts">Desserts</a></li>
+        </ul>
+        <figure class="plate">
+          <img src="../../assets/93-bruce-grove-scorpios-chicken-1413263680.jpg" width="1920" height="1801" alt="A Caribbean restaurant and jerk bar with a yellow fascia and a green shopfront on Bruce Grove, Tottenham" fetchpriority="high">
+        </figure>
+        <ul class="links" aria-label="Site, on a phone">
+          <li><a href="/shop">Find kitchens</a></li>
+          <li><a href="#how">How it works</a></li>
+          <li><a href="/for-operators">For kitchens</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="kitchens" aria-labelledby="h-list">
+    <img class="street" src="../../assets/brixton-market-sw9-geograph-org-uk-2022036.jpg" width="1024" height="768" alt="Market stalls, shoppers and a fishmonger's blue awning on a street in Brixton Market, SW9" loading="lazy">
+    <div class="sheet">
+      <h2 id="h-list">Kitchens on J'Toye</h2>
+      <p class="note">These are the kitchens, and whether they are cooking now.</p>
+      <div class="group">
+        <h3>Cooking near you</h3>
+        <ul class="rows">
+          <li class="row">
+            <img src="../../assets/logo-peckham-jollof.png" width="400" height="400" alt="Peckham Jollof logo" loading="lazy">
+            <span class="who"><span class="name">Peckham Jollof</span><span class="where">Rye Lane, SE15</span></span>
+            <span class="state">Open</span>
+          </li>
+          <li class="row">
+            <img src="../../assets/logo-mama-ades.png" width="400" height="400" alt="Mama Ade's logo" loading="lazy">
+            <span class="who"><span class="name">Mama Ade's</span><span class="where">Peckham</span></span>
+            <span class="state">Paused</span>
+          </li>
+          <li class="row">
+            <img src="../../assets/logo-brixton-grill.png" width="400" height="400" alt="Brixton Grill logo" loading="lazy">
+            <span class="who"><span class="name">Brixton Grill</span><span class="where">Brixton Market, SW9</span></span>
+            <span class="state">Closed</span>
+          </li>
+        </ul>
+      </div>
+      <a class="sheet-link" href="/shop">Find kitchens</a>
+    </div>
+  </section>
+
+  <section class="how" id="how" aria-labelledby="h-how">
+    <div class="grid">
+      <div class="intro">
+        <h2 id="h-how">Three steps, no app</h2>
+        <p>Find, order and pay, follow it. Nothing to download.</p>
+      </div>
+      <div class="slip">
+        <h3>Find a kitchen</h3>
+        <div class="r"><span>Search</span><span class="ld" aria-hidden="true"></span><span>by postcode or dish</span></div>
+        <div class="r"><span>Hygiene rating and hours</span><span class="ld" aria-hidden="true"></span><span>on every kitchen</span></div>
+        <h3>Order and pay</h3>
+        <div class="r"><span>Delivery</span><span class="ld" aria-hidden="true"></span><span>or collection</span></div>
+        <div class="r"><span>Card</span><span class="ld" aria-hidden="true"></span><span>or cash on collection</span></div>
+        <div class="r"><span>Cash</span><span class="ld" aria-hidden="true"></span><span>where the kitchen allows it</span></div>
+        <div class="r"><span>Allergens</span><span class="ld" aria-hidden="true"></span><span>on every item</span></div>
+        <h3>Follow it</h3>
+        <div class="r"><span>An account</span><span class="ld" aria-hidden="true"></span><span>not needed</span></div>
+        <p class="total">A tracking page from the kitchen to your door</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="trust" aria-labelledby="h-trust">
+    <div class="list-card">
+      <h2 id="h-trust">What you can trust</h2>
+      <figure class="tip">
+        <img src="../../assets/jollof-rice-with-vegetable.jpg" width="1920" height="1440" alt="A plate of jollof rice with a fried egg and cooked greens, a spoon resting on the rice" loading="lazy">
+      </figure>
+      <div class="names">
+        <p>UK food-hygiene rating, verified when the kitchen joins.</p>
+        <span class="dia" aria-hidden="true"></span>
+        <p>Allergen information on every item, with "may contain" where the kitchen says so.</p>
+        <span class="dia" aria-hidden="true"></span>
+        <p>No app to download. A web page, reached by link or QR.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="ops" aria-labelledby="h-ops">
+    <input class="tab" type="radio" name="ops" id="t1" checked>
+    <input class="tab" type="radio" name="ops" id="t2">
+    <input class="tab" type="radio" name="ops" id="t3">
+    <input class="tab" type="radio" name="ops" id="t4">
+    <div class="split">
+      <figure class="plate">
+        <img class="p1" src="../../assets/storefront-menu.webp" width="960" height="640" alt="The J'Toye storefront for a demo kitchen: mains with prices and the allergens listed on each item" loading="lazy">
+        <img class="p2" src="../../assets/slot-picker.webp" width="960" height="640" alt="The J'Toye slot picker at checkout: Saturday and Sunday batches with places left and a cutoff time" loading="lazy" style="object-position: 30% 50%">
+        <img class="p3" src="../../assets/kitchen-cook-sheet.webp" width="1280" height="800" alt="The J'Toye kitchen cook sheet: quantities to prepare per dish, with recorded allergens and a label button" loading="lazy" style="object-position: 62% 50%">
+        <img class="p4" src="../../assets/ppds-label.webp" width="960" height="640" alt="A J'Toye PPDS label for jollof rice with chicken: ingredients with the allergen in bold, use-by date and the business address" loading="lazy">
+      </figure>
+      <div class="col">
+        <div>
+          <h2 id="h-ops">Built around the service you already run</h2>
+          <div class="tabs" role="group" aria-label="What a kitchen gets">
+            <label for="t1">Storefront</label>
+            <label for="t2">Slots</label>
+            <label for="t3">Cook sheet</label>
+            <label for="t4">Labels</label>
+          </div>
+        </div>
+        <div>
+          <div class="panel p1"><h3>Your own storefront</h3><p>Your menu, your prices, your link and QR.</p></div>
+          <div class="panel p2"><h3>Slots with a cap</h3><p>"Saturday 12:00–14:00, 20 orders", closed at the cutoff.</p></div>
+          <div class="panel p3"><h3>One cook sheet per service</h3><p>Every order's lines totalled by dish.</p></div>
+          <div class="panel p4"><h3>Natasha's Law labels</h3><p>Printed from the product, 14 allergens emphasised.</p></div>
+        </div>
+        <div class="cells">
+          <a class="cell ink" href="/for-operators">See how it works for kitchens</a>
+          <a class="cell tone" href="/shop">Find kitchens</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="reply" aria-labelledby="h-reply">
+    <div class="grid">
+      <p class="aside">If you cook, this runs the service you already run.</p>
+      <div class="reply-card">
+        <h2 id="h-reply">Run your food business</h2>
+        <p>Take orders, run the kitchen, go live in a day.</p>
+        <a class="bar" href="/for-operators">See how it works for kitchens</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="back">
+  <div class="postcard">
+    <div class="halves">
+      <div class="left">
+        <h2>J'Toye</h2>
+        <p class="message">Independent cooks in your area, jollof to jerk, from their own storefront. Nothing to download.</p>
+        <p class="credits">Pictures: <a href="https://commons.wikimedia.org/wiki/File:93_Bruce_Grove_-_Scorpios_Chicken_(1413263680).jpg">"93 Bruce Grove - Scorpios Chicken (1413263680)"</a> by Alan Stanton, <a href="https://creativecommons.org/licenses/by-sa/2.0">CC BY-SA 2.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:Brixton_Market,_SW9_-_geograph.org.uk_-_2022036.jpg">"Brixton Market, SW9 - geograph.org.uk - 2022036"</a> by Phillip Perry, <a href="https://creativecommons.org/licenses/by-sa/2.0">CC BY-SA 2.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:Jollof_rice_with_vegetable.jpg">"Jollof rice with vegetable"</a> by Segun Famisa, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, via Wikimedia Commons; <a href="https://commons.wikimedia.org/wiki/File:Jerk_chicken_as_served_july_05.jpg">"Jerk chicken as served july 05"</a>, <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>, via Wikimedia Commons.</p>
+      </div>
+      <div class="right">
+        <figure class="stamp">
+          <img src="../../assets/jerk-chicken-as-served-july-05.jpg" width="1920" height="1319" alt="Jerk chicken with salad in a takeaway box, on grass" loading="lazy">
+        </figure>
+        <nav class="address" aria-label="Legal">
+          <a href="/legal/privacy">Privacy</a>
+          <a href="/legal">Terms</a>
+          <a href="/legal">Allergen policy</a>
+          <a href="/data-request">Data request</a>
+        </nav>
+      </div>
+    </div>
+    <p class="imprint">J'Toye Digital Ltd, company no. 16471464</p>
+  </div>
+</footer>
+</body>
+</html>

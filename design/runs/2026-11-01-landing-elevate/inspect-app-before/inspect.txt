@@ -1,0 +1,61 @@
+TASTESKILL · INSPECT   http://127.0.0.1:3202/
+
+MEASURED (first viewport listed)
+  hero headline   "Order from local kitchens. Or run yours."  7 words · 3 line(s) · 60px (4.7vw) · Work Sans 900 · tracking -0.025em · leading 1.03
+  @768px          2 line(s) · 60px
+  @390px          3 line(s) · 36px
+  typefaces       Work Sans 100%
+  sizes in use    12 / 14 / 16 / 18 / 24 / 30 / 60 px   body 14px / 1.5
+  colour          page #ffffff · sections #fbf6f0 #ffffff #3a0b0d · button #ffffff
+  page            2.9 screens · 348 words · 3 images · hero media none
+  headings        3 · longest 3 line(s) · median 4 words
+
+FAIL — fix every one of these
+  [headline-lines] @1280px  1 headline(s) wrap past two lines at 1280px: "Order from local kitchens. Or run yours." → 3 lines (7 words, 60px)
+      → Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 36px or less.
+  [eyebrow] @1280px (+768, 390)  1 eyebrow/kicker label(s) above headings: "🇬🇧 Independent UK kitchens" above "Order from local kitchens. Or run yours."
+      → Delete them. If the label carried real information, fold it into the headline or the supporting sentence.
+  [micro-label] @1280px (+768, 390)  4 tiny uppercase letter-spaced labels (e.g. "🇬🇧 Independent UK kitchens", "For customers", "Legal", "For operators").
+      → Use sentence-case text at a readable size, or delete the label.
+  [emoji] @1280px (+768, 390)  Emoji in the page: 🍗 🍚 🥘 🍛 🥗 🍰 🍜
+      → Remove. Use words or real imagery.
+  [gradient] @1280px (+768, 390)  6 gradient fill(s): div.pointer-events-none.absolute → radial-gradient(120% 90% at 85% -10%, rgb(253, 231, 200) 0%, rgba(0, 0, 0, 0) 55%) | a.group.flex → linear-gradient(to right bottom, lab(80.1641 16.6016 99.2089) 0%, lab(64.272 57.1788 90.3583) 100%) | div.grid.h-40 → linear-gradient(to right bottom in oklab, rgb(255, 255, 255) 0%, rgb(251, 233, 212) 100%)
+      → Use a flat colour or a real image. The only gradient allowed by default is a neutral scrim over a photo for legibility.
+  [shadow] @1280px (+768, 390)  24 box-shadow(s) on elements at rest: input#hero-search.w-full.rounded-full → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0 | button.inline-flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0 | a.inline-flex.items-center → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0
+      → Remove. Separate surfaces with a tone step or space. Shadows are for things that really float (menus, dialogs, sticky bars).
+  [hairline] @1280px (+768, 390)  5 thin rule(s)/divider line(s): header.sticky.top-0 1280px | section.border-t.border-cream-100 1280px | section.border-t.border-cream-100 1280px | div.mt-10.flex 1216px
+      → Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields.
+  [outlined-box] @1280px (+768, 390)  4 boxes drawn with a 1px outline.
+      → Define a surface by its fill (one tone step from the page) or leave the content unboxed.
+  [body-size] @1280px (+768, 390)  Body text is 14px (the size most of the running text is set in).
+      → Body copy 16–20px. Map small sizes from blueprints onto your body step.
+  [few-pictures] @1280px  Only 3 picture(s) on the page (3 photographs, footage or raster images, 0 interface fragments). Drawings in SVG do not count.
+      → Find real pictures of the subject's world with scripts/assets.mjs (photographs, archival images, maps, engravings, footage), download them to assets/ and give them room: a hero picture, one per section that has a subject, a full-width band. At least four, usually six to twelve.
+  [small-text] @1280px (+768, 390)  7 text blocks under 13px.
+      → Nothing meant to be read goes below 13px.
+  [headline-lines] @390px  1 headline(s) wrap past two lines at 390px: "Order from local kitchens. Or run yours." → 3 lines (7 words, 36px)
+      → Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 24px or less.
+  [covered-text] @390px  Large text lies under another element at some scroll position: "How it works" (screen 2, 100% hidden)
+      → Nothing may sit on top of a headline or statement. Move the picture, shorten the pinned run, or raise the text above it (z-index) and give it a ground.
+
+WARN — fix, or be able to defend
+  [palette-cream] @1280px (+768, 390)  Yellow-cream background (section #fbf6f0, text #fbf6f0, text #fbf6ef).
+      → Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.
+  [no-footage] @1280px  No video anywhere on the page.
+      → Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject.
+  [measure] @1280px (+768)  Longest paragraph runs about 203 characters per line.
+      → Cap paragraphs at 45–75 characters (max-width: 60ch).
+  [side-scroll] @390px  1 row(s) scroll sideways with content past their edge.
+      → Jurors and most visitors read a row cut at the edge as clipped, not as scrollable. Wrap it onto more lines, or end it inside the grid.
+
+LOOK AT THE RENDER — open these with your image viewer / Read tool before saying anything about quality:
+  desktop 1280px  design/runs/2026-11-01-landing-elevate/inspect-app-before/desktop-fold.jpg
+                  design/runs/2026-11-01-landing-elevate/inspect-app-before/desktop-page-01.jpg
+  scroll film     design/runs/2026-11-01-landing-elevate/inspect-app-before/desktop-film-01.jpg  (6 frames a row, a third of a screen apart)
+  tablet 768px    design/runs/2026-11-01-landing-elevate/inspect-app-before/tablet-fold.jpg
+                  design/runs/2026-11-01-landing-elevate/inspect-app-before/tablet-page-01.jpg
+  mobile 390px    design/runs/2026-11-01-landing-elevate/inspect-app-before/mobile-fold.jpg
+                  design/runs/2026-11-01-landing-elevate/inspect-app-before/mobile-page-01.jpg
+
+report: design/runs/2026-11-01-landing-elevate/inspect-app-before/report.json
+RESULT: 13 FAIL, 4 WARN — not done.

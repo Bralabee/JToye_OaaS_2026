@@ -2,6 +2,8 @@
 
 **Status: CONFIRMED by Sanmi, 2026-11-01 (design-run step 0).** The imagery source is still open (below).
 
+Elevate or redesign: elevate (Sanmi, 2026-11-01) — keep the current landing, replace emoji with real food pictures, remove the tells, palette from the brand (round 2 verdict; go-ahead "2").
+
 Surface type: **page** (read and scrolled). Scope for rulings and checks: `page`.
 
 ## Subject
@@ -48,4 +50,6 @@ operators to "Run your food business". Everything else supports that.
   label, slot picker, storefront menu).
 - **No food photography.** Emoji stand-ins are no longer allowed (lifted 2026-11-01), so a run
   must choose a source before it builds: the kitchens' own photos, a commissioned shoot,
-  licensed stock, or open-collection pictures (taste-skill `assets.mjs`, credited). **Open: Sanmi.**
+  licensed stock, or open-collection pictures (taste-skill `assets.mjs`, credited).
+  **RULED by Sanmi 2026-11-01 (D10): open-collection pictures now, credited; each kitchen's own photos
+  replace them as tenants upload through the Phase 24 media pipeline.**
