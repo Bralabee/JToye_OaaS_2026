@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The `/pay` Page: No Cookie Notice Over the Card Form, a Retry on the Resume Path, and No "Payment Received" for an Unreadable Intent (#1072) — 2026-11-01
+
+Owner ruling 2026-11-01, from PR #1064's review series (recorded finding 6, the round-2 residual, and the 30-20 360 px screenshot). Quick task `261101-no1`.
+
+- **`CookieNotice`:** renders nothing on `/pay` and `/pay/<segment>` (never a bare prefix, so `/payments` still shows it). On a 360 px phone the fixed bar covered the card form's Expiry date and Security code fields.
+  - `/pay` is not cookie-free. Stripe.js sets its own strictly necessary fraud-prevention cookies there. `/legal/cookies` discloses them, and `/pay`'s footer links that page.
+  - The notice only informs and gates nothing. The ConsentBanner branch still runs first, so a route never suppresses a future consent choice.
+- **`pay-client.tsx`, resume path:** after a reload resumes from `jtoyePayResume`, a failure to load Stripe.js or the Payment Element now shows "Try again", which reloads the page.
+  - It is not offered when the bundle has no publishable key, because a reload cannot add a build-time key.
+  - The first-visit state is unchanged.
+  - The reload goes through an exported `payNavigation.reload` seam, because jsdom 26's `Location` cannot be mocked.
+- **`pay-client.tsx`, Stripe's redirect return:** `redirect_status` no longer decides anything. An intent that cannot be read (no key, Stripe.js down, a rejected read, or Stripe answering `{ error }` for a garbage client secret) shows the check-failed alert, and its "Try again" reads the intent again. Before this, `?payment_intent_client_secret=<garbage>&redirect_status=succeeded` showed "Payment received".
+- **`30-UI-SPEC.md`:**
+  - the "link opened" row is amended;
+  - a new "return with an unreadable intent" row is added;
+  - the "payment received" row now states the redirect-return body.
+- **Tests:** twelve new Jest blocks. Nine were RED before their fix. Three are guards that pass before and after: the `/` and `/payments` control, banner precedence on `/pay`, and no Try again on a first visit. Break arms were run after each fix, including the review round-1 fixes. The full frontend run is 275/275 suites and 3273/3273 tests.
+
 ### List-Unsubscribe on Intermediate Order Emails, Phase 29 Gate Follow-Ups, and a Session-Burst Guard (#981, #979, #963) (#1066) — 2026-10-31
 
 - **#981, `EmailNotificationService` / `OrderStateChangeListener`:** CONFIRMED, PREPARING, READY and COMPLETED emails carry RFC 8058 `List-Unsubscribe` + `List-Unsubscribe-Post` and a footer link. They are sent only if `ConsentGate.allows(tenant, email, ORDERS)`. `order-received` (the statutory CCR 2013 reg 16 confirmation) and `order-cancelled` stay non-suppressible.
