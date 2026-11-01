@@ -94,8 +94,9 @@ Two ordering traps, both observed on this app:
 - **A screenshot cannot verify motion.** A 200ms ease-out and a 900ms linear are the same PNG.
   Motion is checked by reading the code, never by looking at an image.
 
-If a UI change needs reviewing rather than proving, that is `oaas-frontend`'s remit and its
-`frontend-craft-sequence` skill — hand it over rather than duplicating the judgement.
+If a UI change needs reviewing rather than proving, that is `design-run`'s look step — hand it
+over rather than duplicating the judgement, and never to the agent that built the change: the
+scorer must not be the builder.
 
 ## Escalate rather than decide
 
