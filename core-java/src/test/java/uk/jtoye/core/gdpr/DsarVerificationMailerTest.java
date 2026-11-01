@@ -105,7 +105,32 @@ class DsarVerificationMailerTest {
         SimpleMailMessage message = send("abc-_1", DsarRequest.RequestType.ERASURE);
 
         assertThat(message.getTo()).containsExactly("subject@example.test");
-        assertThat(message.getSubject()).isEqualTo("Confirm your data request");
+        assertThat(message.getSubject()).isEqualTo("Confirm your request to erase your data");
+    }
+
+    /**
+     * SW-SAM-08 (swarm epic #964): the two requests used to share one subject, so an inbox could not
+     * tell a copy request from an erasure until the message was opened, and the confirm page could
+     * not say which one a press would confirm.
+     */
+    @Test
+    void theSubjectSaysWhichRequestIsBeingConfirmed() {
+        assertThat(send("abc-_1", DsarRequest.RequestType.ACCESS).getSubject())
+                .isEqualTo("Confirm your request for a copy of your data");
+    }
+
+    @Test
+    void theLinkTellsTheConfirmPageWhichRequestItIs() {
+        assertThat(send("abc-_1", DsarRequest.RequestType.ERASURE).getText())
+                .as("the type rides in the fragment beside the token, after it, never in a query")
+                .contains(BASE + "#token=abc-_1&type=erasure")
+                .doesNotContain("?type=");
+    }
+
+    @Test
+    void anAccessLinkSaysAccess() {
+        assertThat(send("abc-_1", DsarRequest.RequestType.ACCESS).getText())
+                .contains(BASE + "#token=abc-_1&type=access");
     }
 
     @Test

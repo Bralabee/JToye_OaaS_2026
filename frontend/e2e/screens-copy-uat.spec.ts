@@ -1108,15 +1108,16 @@ test.describe("UAT gap G-37-6, live (37-59) @desktop-only", () => {
       expect(messages.length, `no invitation email reached Mailhog for ${address}`).toBeGreaterThan(0)
       const text = messageText(messages[0])
       annotate(testInfo, "invite-subject", messages[0].Content?.Headers?.Subject?.[0] ?? "(no subject header)")
-      const line = text.split(/\r?\n/).find((l) => l.includes(" for ")) ?? ""
+      // SW-TND-02 (swarm epic #964): the shop is named on the "Your role: … at {shop}" line.
+      const line = text.split(/\r?\n/).find((l) => l.startsWith("Your role: ")) ?? ""
       annotate(testInfo, "invite-line", line)
       expect
-        .soft(new RegExp(`for ${escapeRegExp(name)}\\r?\\n`).test(text), `G-37-6 defect 2 (Java): "for ${name}" then a line break`)
+        .soft(new RegExp(` at ${escapeRegExp(name)}\\r?\\n`).test(text), `G-37-6 defect 2 (Java): "at ${name}" then a line break`)
         .toBe(true)
       expect.soft(doubleFullStops(text), "no double full stop in the invitation").toEqual([])
 
       // INSTRUMENT ARM: the checker sees a planted double full stop before a line break.
-      const planted = doubleFullStops("has invited you to help run it on J'Toye as Staff for Peckham Jollof Co..\nAccept")
+      const planted = doubleFullStops("Your role: Staff at Peckham Jollof Co..\nAs Staff")
       expect(planted.length, "the double-full-stop checker must report a planted 'Co..'").toBeGreaterThan(0)
       annotate(testInfo, "arm-invite-copy", planted)
 
