@@ -10,13 +10,13 @@
  */
 import fs from "fs"
 import path from "path"
-import { PHOTOS, PHOTO_CREDIT_LINE, assignExamplePhotos } from "@/components/marketing/landing-photos"
+import { PHOTOS, PHOTO_CREDITS, PHOTO_DERIVATION_NOTE, assignExamplePhotos } from "@/components/marketing/landing-photos"
 import type { PublicShop } from "@/types/storefront"
 
 const PUBLIC = path.resolve(__dirname, "../../../public")
 const CREDITS = JSON.parse(
   fs.readFileSync(path.join(PUBLIC, "marketing/landing/credits.json"), "utf8")
-) as Array<{ src: string; width: number; height: number; creator: string; license: string }>
+) as Array<{ src: string; width: number; height: number; title: string; creator: string; license: string; licenseUrl: string; page: string; derivation: string }>
 
 /** Width and height read from the WebP header itself (VP8 / VP8L / VP8X). */
 function webpSize(file: string): [number, number] {
@@ -54,10 +54,17 @@ describe("landing photos — files, sizes and credits", () => {
     }
   })
 
-  it("names every credited creator in the visible credit line", () => {
-    for (const c of CREDITS) expect(PHOTO_CREDIT_LINE).toContain(c.creator)
-    // Control: the line is not simply a superset of any string.
-    expect(PHOTO_CREDIT_LINE).not.toContain("Nobody In Particular")
+  it("carries every credit record's title, creator, source page and licence link, byte for byte (review 1085)", () => {
+    expect(PHOTO_CREDITS.length).toBe(CREDITS.length)
+    for (const c of CREDITS) {
+      const got = PHOTO_CREDITS.find((p) => p.src === c.src)
+      expect(got).toEqual({ src: c.src, title: c.title, creator: c.creator, page: c.page, license: c.license, licenseUrl: c.licenseUrl })
+    }
+    // Every file was resized and re-encoded (credits.json derivation), so the page must say so.
+    for (const c of CREDITS) expect(c.derivation).toMatch(/resized/)
+    expect(PHOTO_DERIVATION_NOTE).toMatch(/resized/)
+    // Control: the ledger is not simply a superset of any record.
+    expect(PHOTO_CREDITS.find((p) => p.creator === "Nobody In Particular")).toBeUndefined()
   })
 })
 

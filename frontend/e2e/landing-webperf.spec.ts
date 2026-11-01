@@ -2,7 +2,8 @@
  * Throttled-mobile Core Web Vitals for `/` — the LCP-critical public route.
  *
  * WHY THIS ROUTE, NOW. 33-03 rewrites the landing page's main content row: the
- * emoji-and-gradient cards become REAL remote logos through `SafeImage`, and the
+ * emoji-and-gradient cards become REAL pictures (since D12/D14: the shop's own
+ * banner through `SafeImage`, else a credited example photo via next/image), and the
  * page becomes an async Server Component that fetches shops at request time.
  * Swapping placeholder gradients for network images is the single most reliable
  * way to introduce layout shift, and `/` is the first page every customer sees.
@@ -15,7 +16,7 @@
  *
  * TWO THINGS THIS DOES THAT THE PRECEDENT DOES NOT:
  *
- *  1. CLS IS MEASURED AFTER THE LOGOS RESOLVE. A CLS reading taken before the
+ *  1. CLS IS MEASURED AFTER THE CARD PICTURES RESOLVE. A CLS reading taken before the
  *     images load measures nothing — the shift has not happened yet. The whole
  *     reason this file exists is the image swap, so the assertion waits for the
  *     images to be `complete` before sampling.
@@ -89,7 +90,7 @@ async function measureVitals(page: Page): Promise<{ lcp: number; cls: number }> 
 
 /**
  * Wait until every <img> on the page has either loaded or failed. `complete` is
- * true in both cases, which is what we want: a broken logo still finishes
+ * true in both cases, which is what we want: a broken picture still finishes
  * reserving (or not reserving) its box, and hanging the test on a 404 would turn
  * a CLS assertion into a timeout.
  */
@@ -177,7 +178,7 @@ async function imagesSettled(page: Page) {
 test.describe("Landing route `/` — throttled-mobile CWV (33-03)", () => {
   test.use({ viewport: { width: 375, height: 812 }, isMobile: true })
 
-  test("holds LCP and CLS at a throttled mobile profile, with the real logos loaded", async ({
+  test("holds LCP and CLS at a throttled mobile profile, with the real card pictures loaded", async ({
     context,
     page,
   }) => {
@@ -241,7 +242,7 @@ test.describe("Landing route `/` — throttled-mobile CWV (33-03)", () => {
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1)
   })
 
-  test("every shop logo reserves its box before it loads (the CLS mechanism)", async ({ page }) => {
+  test("every card picture reserves its box before it loads (the CLS mechanism)", async ({ page }) => {
     // The budget assertion above can pass for the wrong reason — a slow CDN, a
     // cached image, a run where nothing happened to shift. This asserts the
     // MECHANISM directly: width and height attributes present on every card
@@ -254,7 +255,7 @@ test.describe("Landing route `/` — throttled-mobile CWV (33-03)", () => {
     const imgs = page.getByRole("region", { name: "Dishes cooking near you" }).locator("img")
     const count = await imgs.count()
     // Non-vacuity: an empty row would make the loop below assert nothing at all.
-    expect(count, "the kitchen row must contain at least one shop logo").toBeGreaterThan(0)
+    expect(count, "the kitchen row must contain at least one card picture (banner or example photo)").toBeGreaterThan(0)
 
     for (let i = 0; i < count; i++) {
       const img = imgs.nth(i)
@@ -365,7 +366,7 @@ test.describe("Landing route `/` — throttled-mobile CWV (33-03)", () => {
     // and not to this one (556, 593).
     await expect(page.getByRole("heading", { name: /near you/i })).toHaveCount(1)
     await imagesSettled(page)
-    // Let anything late — a reflowing heading, a logo swap — actually land.
+    // Let anything late — a reflowing heading, a picture swap — actually land.
     await page.waitForTimeout(1500)
 
     const anchorAfter = await howItWorksPageY(page)

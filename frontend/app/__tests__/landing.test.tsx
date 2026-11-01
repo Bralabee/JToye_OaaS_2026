@@ -429,7 +429,38 @@ describe("Landing elevate (D14)", () => {
     }
     const door = screen.getByRole("link", { name: /Order food near you/ })
     expect(door.querySelector("img")?.getAttribute("alt")).toBe("A plate of jollof rice with fried plantain")
-    expect(screen.getByText(/Photographs: Segun Famisa/)).toBeTruthy()
+    expect(screen.getByText(/^Photographs/)).toBeTruthy()
+  })
+
+  it("credits every photograph the way CC BY-SA 4.0 asks: title linked to its source, creator, licence linked, modification stated (review 1085)", async () => {
+    render(await Home())
+    const credits = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../../public/marketing/landing/credits.json"), "utf8")
+    ) as Array<{ title: string; creator: string; page: string; license: string; licenseUrl: string }>
+    expect(credits.length).toBe(8)
+    const line = screen.getByText(/^Photographs/).closest("p")!
+    expect(line.textContent).toMatch(/resized/i)
+    for (const c of credits) {
+      const title = within(line).getByRole("link", { name: c.title })
+      expect(title.getAttribute("href")).toBe(c.page)
+      expect(line.textContent).toContain(c.creator)
+      const licence = within(line).getAllByRole("link", { name: c.license })
+      expect(licence.map((a) => a.getAttribute("href"))).toContain(c.licenseUrl)
+    }
+    // Control: a name that is not in the ledger is not on the page.
+    expect(line.textContent).not.toContain("Nobody In Particular")
+  })
+
+  it("the How-it-works step icon still answers the data-step-active toggle HeroScene scrubs (review 1085)", async () => {
+    const { container } = render(await Home())
+    const steps = container.querySelectorAll("[data-hero-step]")
+    expect(steps.length).toBe(3)
+    for (const step of Array.from(steps)) {
+      const icon = step.querySelector("span")!
+      // hero-scene.tsx sets data-step-active on the step as the rail passes it;
+      // the icon is the only thing that ever read it, so it must still react.
+      expect(icon.getAttribute("class")).toMatch(/group-data-\[step-active=true\]:bg-/)
+    }
   })
 
   it("keeps the kitchen card's example-photo caption in D13's words", async () => {

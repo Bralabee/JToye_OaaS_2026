@@ -17,7 +17,7 @@ import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
 import { NearYouRow } from "@/components/marketing/near-you-row"
-import { PHOTOS, PHOTO_CREDIT_LINE, type LandingPhoto } from "@/components/marketing/landing-photos"
+import { PHOTOS, PHOTO_CREDITS, PHOTO_DERIVATION_NOTE, type LandingPhoto } from "@/components/marketing/landing-photos"
 import { loadShopList } from "@/lib/storefront-server"
 import { headers } from "next/headers"
 import { resolvePublicOrigin } from "@/lib/public-origin"
@@ -139,14 +139,17 @@ const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
  *              [@media(hover:hover) and (pointer:fine)] hover gate
  *   PRESERVED  every data-hero-* GSAP hook (none were in this row)
  *   PRESERVED  split-persona H1, both persona doors, header, footer
+ *   PRESERVED  the How-it-works step icon's data-step-active state (HeroScene
+ *              toggles it on scrub): brand-900 at rest, brand-700 once the rail
+ *              has passed, in place of the old white-to-oxblood swap (review 1085)
  *   REPLACED   /shop?q=… deep link -> /shop/{slug}: a real shop page instead of a
  *              search that might match nothing
- *   REPLACED   emoji + gradient -> the shop's real logoUrl through SafeImage with
- *              EXPLICIT width and height, so the box is reserved (CLS).
- *              Since D13/D14 the card shows the shop's own BANNER when it has
- *              one, else a credited example photo of its cuisine captioned
- *              "<Cuisine> — example photo"; no placeholder logo (D12). The box
- *              is still reserved by explicit width and height.
+ *   REPLACED   emoji + gradient -> a real picture through next/image or SafeImage
+ *              with EXPLICIT width and height, so the box is reserved (CLS):
+ *              since D13/D14 the shop's own BANNER when it has one, else a
+ *              credited example photo of its cuisine captioned
+ *              "<Cuisine> — example photo". The placeholder logoUrl that 33-03
+ *              first put here is no longer rendered at all (D12).
  *   REMOVED    hardcoded rating, FHRS badge and dish price — none exists on
  *              PublicShop, and attributing an invented rating to a REAL named
  *              business is worse than the fiction it replaces
@@ -430,7 +433,10 @@ export default async function Home() {
               </div>
               {steps.map((step) => (
                 <div key={step.title} data-hero-step className="group relative flex flex-col">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-brand-900 text-white">
+                  {/* HeroScene sets data-step-active on the step as the rail
+                      passes it (hero-scene.tsx): the icon answers with one ramp
+                      step, brand-900 to brand-700, matching the rail's fill. */}
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-brand-900 text-white transition-colors duration-150 group-data-[step-active=true]:bg-brand-700">
                     <step.icon aria-hidden className="h-[22px] w-[22px]" />
                   </span>
                   <h3 className="mt-4 text-xl font-bold leading-tight text-warm-900">{step.title}</h3>
@@ -462,7 +468,23 @@ export default async function Home() {
                 </span>
               ))}
             </Reveal>
-            <p className="mt-8 max-w-[70ch] text-sm text-warm-700">{PHOTO_CREDIT_LINE}</p>
+            {/* Each picture: title linked to its source page, creator, licence
+                linked; the modification stated once. What CC BY-SA 4.0 asks for. */}
+            <p className="mt-8 max-w-[70ch] text-sm text-warm-700">
+              Photographs ({PHOTO_DERIVATION_NOTE}), via Wikimedia Commons:{" "}
+              {PHOTO_CREDITS.map((c, i) => (
+                <span key={c.src}>
+                  <a href={c.page} className="underline decoration-warm-300 underline-offset-2 hover:decoration-warm-700">
+                    {c.title}
+                  </a>{" "}
+                  by {c.creator} (
+                  <a href={c.licenseUrl} className="underline decoration-warm-300 underline-offset-2 hover:decoration-warm-700">
+                    {c.license}
+                  </a>
+                  ){i < PHOTO_CREDITS.length - 1 ? "; " : "."}
+                </span>
+              ))}
+            </p>
           </div>
         </section>
       </HeroScene>

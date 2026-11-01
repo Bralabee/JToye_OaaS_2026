@@ -34,12 +34,35 @@ export const PHOTOS = {
   chana: { src: `${DIR}/chana-masala.webp`, width: 800, height: 600, alt: "Chana masala" },
 } satisfies Record<string, LandingPhoto>
 
+export interface PhotoCredit {
+  src: string
+  title: string
+  creator: string
+  /** The source page on Wikimedia Commons. */
+  page: string
+  license: string
+  licenseUrl: string
+}
+
 /**
- * The visible credit line, in the sketch's words. Seven creators share CC BY-SA
- * 4.0 and one picture is CC0; the per-file record is credits.json.
+ * The visible credits, one record per picture, mirrored from credits.json
+ * (landing-photos.test.ts holds the two byte-for-byte). CC BY-SA 4.0 §3(a)(1)
+ * asks for the creator, the title, a link to the licence and a note that the
+ * work was modified; a bare list of names is not that (review 1085).
  */
-export const PHOTO_CREDIT_LINE =
-  "Photographs: Segun Famisa, Skarfmacaronne, Bukky658, Onyenachi64, Halima Waziri, Xaymacan and Subhrajyoti07 (CC BY-SA 4.0); Andy Li (CC0); all via Wikimedia Commons."
+export const PHOTO_CREDITS: PhotoCredit[] = [
+  { src: "/marketing/landing/jollof-rice-with-vegetable.webp", title: "Jollof rice with vegetable", creator: "Segun Famisa", page: "https://commons.wikimedia.org/wiki/File:Jollof_rice_with_vegetable.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+  { src: "/marketing/landing/jollof-rice-and-dodo.webp", title: "Jollof rice and Dodo", creator: "Skarfmacaronne", page: "https://commons.wikimedia.org/wiki/File:Jollof_rice_and_Dodo.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+  { src: "/marketing/landing/suya-with-pepper-sauce.webp", title: "Suya with pepper sauce", creator: "Bukky658", page: "https://commons.wikimedia.org/wiki/File:Suya_with_pepper_sauce.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+  { src: "/marketing/landing/egusi-soup-with-pounded-yam.webp", title: "Egusi soup with pounded yam and assorted meats", creator: "Onyenachi64", page: "https://commons.wikimedia.org/wiki/File:Egusi_soup_with_pounded_yam_and_assorted_meats.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+  { src: "/marketing/landing/puff-puff.webp", title: "Puff Puff", creator: "Halima Waziri", page: "https://commons.wikimedia.org/wiki/File:Puff_Puff.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+  { src: "/marketing/landing/jamaican-rice-and-peas.webp", title: "Jamaican rice and peas 1", creator: "Xaymacan", page: "https://commons.wikimedia.org/wiki/File:Jamaican_rice_and_peas_1.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+  { src: "/marketing/landing/chana-masala.webp", title: "Chana Masala - Mohammed - Spice Of Life 2024-05-27", creator: "Andy Li", page: "https://commons.wikimedia.org/wiki/File:Chana_Masala_-_Mohammed_-_Spice_Of_Life_2024-05-27.jpg", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.en" },
+  { src: "/marketing/landing/mutton-biryani.webp", title: "A home made plate of mutton biryani served with chicken kassa cooked in the bengali style", creator: "Subhrajyoti07", page: "https://commons.wikimedia.org/wiki/File:A_home_made_plate_of_mutton_biryani_served_with_chicken_kassa_cooked_in_the_bengali_style.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
+]
+
+/** Every file was resized and re-encoded (credits.json `derivation`); the chip thumbnails are also centre-cropped. */
+export const PHOTO_DERIVATION_NOTE = "resized, re-encoded and in places cropped for the web"
 
 /**
  * Which pictures stand for which cuisine, matched against a kitchen's own tags

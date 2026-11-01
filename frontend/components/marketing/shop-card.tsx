@@ -2,7 +2,7 @@ import { useId } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { SafeImage } from "@/components/ui/safe-image"
-import { assignExamplePhotos, type ExamplePhoto } from "@/components/marketing/landing-photos"
+import type { ExamplePhoto } from "@/components/marketing/landing-photos"
 import { formatMiles } from "@/lib/distance"
 import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
@@ -88,14 +88,14 @@ export function ShopCard({
   shop: PublicShop
   /**
    * The credited cuisine picture this card shows when the shop has no banner
-   * (D13). `NearYouRow` assigns these across the whole row so two kitchens of
-   * one cuisine get two dishes; a card rendered alone works it out for itself.
+   * (D13). Required: `NearYouRow` assigns these across the whole row
+   * (`assignExamplePhotos`) so two kitchens of one cuisine get two dishes, and
+   * a card must not work it out for itself from a row of one (review 1085).
    * `null` means "no example photo" (no banner and no recognised cuisine).
    */
-  examplePhoto?: ExamplePhoto | null
+  examplePhoto: ExamplePhoto | null
 }) {
-  const example =
-    examplePhoto === undefined ? (assignExamplePhotos([shop]).get(shop.slug) ?? null) : examplePhoto
+  const example = examplePhoto
   const tags = firstTags(shop.tags)
   // 37-22 (UI-SPEC K3, theme 2): an open-state badge is printed ONLY when the server sent its
   // answer (openNow and the pause). This card used to make no openness claim at all, because the
@@ -137,9 +137,10 @@ export function ShopCard({
       // which is narrower than `future.hoverOnlyWhenSupported`.
       className="group relative shrink-0 basis-[80%] overflow-hidden rounded-xl bg-warm-100 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] sm:shrink sm:grow sm:basis-[260px] sm:min-w-[260px] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200"
     >
-      {/* The picture box is a fixed h-44 whichever picture fills it, so a card
-          with a banner, with an example photo and with neither are the same
-          height (CLS, and an even row). */}
+      {/* The picture box is a fixed h-44 whichever picture fills it, and the
+          caption slot below it a fixed h-7 whether or not there is a caption,
+          so a card with a banner, with an example photo and with neither are
+          the same height (CLS, and an even row). */}
       <figure className="m-0">
         <div className="relative h-44 w-full overflow-hidden bg-warm-200">
           {shop.bannerUrl ? (
@@ -153,7 +154,7 @@ export function ShopCard({
           ) : example ? (
             <Image
               src={example.photo.src}
-              alt={`${example.photo.alt} (example photo)`}
+              alt={example.photo.alt}
               width={example.photo.width}
               height={example.photo.height}
               sizes={CARD_IMAGE_SIZES}
@@ -191,10 +192,15 @@ export function ShopCard({
             </span>
           )}
         </div>
-        {!shop.bannerUrl && example && (
-          <figcaption className="px-4 pt-2 text-sm text-warm-700">
+        {/* "example photo" is said here, once; the alt names the dish only, so
+            a screen reader does not hear it twice per card. The slot is always
+            rendered at its full height (see the box comment above). */}
+        {!shop.bannerUrl && example ? (
+          <figcaption data-caption-slot className="h-7 px-4 pt-2 text-sm text-warm-700">
             {example.cuisine} — example photo
           </figcaption>
+        ) : (
+          <div data-caption-slot aria-hidden className="h-7" />
         )}
       </figure>
 
