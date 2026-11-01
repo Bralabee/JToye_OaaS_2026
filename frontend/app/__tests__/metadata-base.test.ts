@@ -58,6 +58,17 @@ const PAGES: Array<[string, Metadata]> = [
   ["/contact", contactMetadata],
 ]
 
+/**
+ * The pages that declare an og:url. A plain literal, not PAGES.filter(...):
+ * scripts/count-test-blocks.mjs resolves an .each table only when it is an
+ * array literal bound to a name, and fails closed otherwise. The completeness
+ * test below keeps this list honest against PAGES.
+ */
+const OG_PAGES: Array<[string, Metadata]> = [
+  ["/", homeMetadata],
+  ["/for-operators", operatorsMetadata],
+]
+
 describe("root layout metadataBase (SW-CLR-08)", () => {
   it("is the configured public origin", async () => {
     delete process.env.APP_PUBLIC_ORIGIN
@@ -89,7 +100,12 @@ describe("public pages resolve to absolute URLs under the root metadataBase (SW-
     expect(new URL(abs).pathname).toBe(path)
   })
 
-  it.each(PAGES.filter(([, m]) => m.openGraph?.url))(
+  it("OG_PAGES lists exactly the pages in PAGES that declare an og:url", () => {
+    const declared = PAGES.filter(([, m]) => m.openGraph?.url).map(([p]) => p)
+    expect(OG_PAGES.map(([p]) => p)).toEqual(declared)
+  })
+
+  it.each(OG_PAGES)(
     "%s og:url resolves absolute on the configured origin",
     async (path, meta) => {
       process.env.NEXTAUTH_URL = ORIGIN
