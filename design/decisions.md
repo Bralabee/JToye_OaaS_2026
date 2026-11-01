@@ -67,3 +67,13 @@ and the dish tiles.
 - **Status: SUPERSEDED 2026-11-01** by `rulings.tsv` `gradient-decoration` ban, page and app. A run
   that touches one of these surfaces replaces its gradient; new work adds none, whatever the
   existing code does.
+
+## D10 · 2026-11-01 · Imagery: open-collection pictures now, the kitchens' own later
+No food photography exists (brief). Sanmi chose, at design-run step 1 of the landing run, real and
+credited pictures of the subject's world from the open collections (taste-skill `assets.mjs`;
+commercial-use licences only; credit line in the footer; `design/runs/<run>/assets/credits.json`
+records each source) over licensed stock, a shoot, or type-and-colour only.
+- **Status: KEEP.** A found picture shows the world around a kitchen and is never presented as a
+  kitchen's own dish, room or person.
+- **Review when:** a tenant's own photos exist through the Phase 24 media pipeline; then they
+  replace the found pictures on the surfaces that show that kitchen.
