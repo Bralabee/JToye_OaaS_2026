@@ -86,3 +86,28 @@ returns empty across majors, the IllegalStateException becomes a silent 400, and
 Staging never saw it because its endpoints are pinned on endive. Fix 2: `stripe listen --latest --all-snapshot`.
 Cause of step 27: the gate ran after core-java was recreated with the Stripe key (18/18 on the run where it was not).
 Fix 3: the gate moves before the recreate. Fix 4 (H-3): HANDOFF.md on the branch updated. Third run: below.
+
+### Run 41297105542 on b8d31922 — SUCCESS (the real nightly, Stripe phase included)
+
+Head: ce9c92a1 (third 30-24 merge, #1073; counts 6797; four CHANGELOG entries each once) -> b8d31922 (fixes 2-4:
+`stripe listen --latest --all-snapshot` + the forwarded version printed; cart-identity gate moved before the
+recreate; HANDOFF.md dated block, check-handoff-contract rc 1 -> 0).
+
+    steps 1-30, 33 success; 31 (dump logs) and 32 (escalate) skipped on a green run
+    Phase 1: 434 tests, 430 passed, 0 failed, 4 skipped
+    Cart-identity gate: 18/18
+    Forwarded API version: 2026-10-28.endive
+    core-java after recreate: 127.0.0.1:9090, UP after 23 s
+    Stripe phase: 1 test, 1 passed, 0 failed, 0 skipped
+    STRIPE-REFUND order=ORD-00000000-20261101-DB978298 intent=pi_3UWwFrD29H13ktT51zOhfyo3 refund=re_3UWwFrD29H13ktT51yMfGTP3 amount=100 livemode=false
+    Events reached the app: pi_event=evt_3UWwFrD29H13ktT51LYSq0RJ rows=1  refund_event=evt_3UWwFrD29H13ktT51VHtMLJr rows=1
+    Skip budget: both reports, 435 tests, 4 skipped / budget 4, digest a66e064b matches the tree, PASS
+      report.json 4 (stomp-relay.spec.ts: "kitchen display page loads and connects to WebSocket",
+      "kitchen display receives order event within 2 seconds", desktop + mobile); report-stripe.json 0
+    Artifact secret scan: 136 files, no secret; whsec_ in the job log: 2 lines of script text, no value
+
+Plan 30-23 Task 3's "ALLOW retired, MAX_SKIPS measured" was done in the round-1 fix 0ebfaf66 (MAX_SKIPS 4); this run
+is the measured confirmation (4 of 4, the stomp-relay ALLOW's 2 x 2). The S-5 break arms were recorded in that fix's
+evidence (round 1, #1065). PR 6 marked READY on b8d31922. Recorded, not fixed (outside the workflow's scope):
+core-java's GlobalExceptionHandler turns an IllegalStateException into a 400 without logging, which is why the
+API-version mismatch left no trace; the owner may route it.
