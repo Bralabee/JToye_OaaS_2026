@@ -7,6 +7,7 @@ import com.stripe.model.Invoice;
 import com.stripe.model.PaymentMethod;
 import com.stripe.model.Price;
 import com.stripe.model.Subscription;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.CustomerUpdateParams;
 import com.stripe.param.PaymentMethodAttachParams;
@@ -21,8 +22,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import uk.jtoye.core.payment.dto.BillingSubscriptionDto;
 import uk.jtoye.core.payment.dto.BillingSubscriptionRequest;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.tenant.BillingPlanMode;
 import uk.jtoye.core.tenant.SubscriptionStatus;
 import uk.jtoye.core.tenant.Tenant;
@@ -33,7 +36,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
@@ -53,6 +58,9 @@ class StripeBillingServiceTest {
     @Mock
     private StripeConnectService stripeConnectService;
 
+    @Mock
+    private ShopRepository shopRepository;
+
     private StripeProperties stripeProperties;
     private StripeBillingService billingService;
     private UUID tenantId;
@@ -64,7 +72,8 @@ class StripeBillingServiceTest {
         stripeProperties.setApiKey("sk_test_phase30_mock");
         stripeProperties.setCurrency("gbp");
 
-        billingService = new StripeBillingService(stripeProperties, tenantRepository, stripeConnectService);
+        lenient().when(shopRepository.countByTenantId(any())).thenReturn(1L);
+        billingService = new StripeBillingService(stripeProperties, tenantRepository, stripeConnectService, shopRepository);
 
         tenantId = UUID.randomUUID();
         tenant = new Tenant();
@@ -102,7 +111,9 @@ class StripeBillingServiceTest {
             pmStatic.when(() -> PaymentMethod.retrieve("pm_card_visa")).thenReturn(mockPm);
             when(mockPm.attach(any(PaymentMethodAttachParams.class))).thenReturn(mockPm);
             priceStatic.when(() -> Price.create(any(PriceCreateParams.class))).thenReturn(mockPrice);
+            priceStatic.when(() -> Price.create(any(PriceCreateParams.class), any(RequestOptions.class))).thenReturn(mockPrice);
             subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class))).thenReturn(mockSub);
+            subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class), any(RequestOptions.class))).thenReturn(mockSub);
 
             BillingSubscriptionRequest req = new BillingSubscriptionRequest(
                     BillingPlanMode.SAAS_HYBRID_STANDARD, "pm_card_visa", null);
@@ -117,7 +128,7 @@ class StripeBillingServiceTest {
             assertThat(dto.effectiveFeeBps()).isEqualTo(50);
 
             ArgumentCaptor<PriceCreateParams> priceCaptor = ArgumentCaptor.forClass(PriceCreateParams.class);
-            priceStatic.verify(() -> Price.create(priceCaptor.capture()));
+            priceStatic.verify(() -> Price.create(priceCaptor.capture(), any(RequestOptions.class)));
             assertThat(priceCaptor.getValue().getUnitAmount()).isEqualTo(3900L);
             assertThat(priceCaptor.getValue().getCurrency()).isEqualTo("gbp");
         }
@@ -143,7 +154,9 @@ class StripeBillingServiceTest {
 
             customerStatic.when(() -> Customer.create(any(CustomerCreateParams.class))).thenReturn(mockCustomer);
             priceStatic.when(() -> Price.create(any(PriceCreateParams.class))).thenReturn(mockPrice);
+            priceStatic.when(() -> Price.create(any(PriceCreateParams.class), any(RequestOptions.class))).thenReturn(mockPrice);
             subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class))).thenReturn(mockSub);
+            subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class), any(RequestOptions.class))).thenReturn(mockSub);
 
             BillingSubscriptionRequest req = new BillingSubscriptionRequest(
                     BillingPlanMode.SAAS_FLAT_PREDICTABLE, null, null);
@@ -200,7 +213,9 @@ class StripeBillingServiceTest {
 
             customerStatic.when(() -> Customer.create(any(CustomerCreateParams.class))).thenReturn(mockCustomer);
             priceStatic.when(() -> Price.create(any(PriceCreateParams.class))).thenReturn(mockPrice);
+            priceStatic.when(() -> Price.create(any(PriceCreateParams.class), any(RequestOptions.class))).thenReturn(mockPrice);
             subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class))).thenReturn(mockSub);
+            subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class), any(RequestOptions.class))).thenReturn(mockSub);
             subStatic.when(() -> Subscription.retrieve("sub_walk_setup_01")).thenReturn(mockSub);
 
             BillingSubscriptionRequest req = new BillingSubscriptionRequest(
@@ -288,5 +303,96 @@ class StripeBillingServiceTest {
         billingService.handleSubscriptionDeleted(delEvent);
         assertThat(tenant.getSubscriptionStatus()).isEqualTo(SubscriptionStatus.CANCELED);
         verify(tenantRepository, times(3)).save(tenant);
+    }
+
+    // ------------------------------------------------------------------
+    // 30-25 (PAY-02 / D-04): per-location quantity + Stripe idempotency keys
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("30-25: per-location modes (SAAS_HYBRID_STANDARD, SAAS_FLAT_PREDICTABLE) set item quantity = tenant shop count and pass idempotency keys")
+    void subscribeOrUpdatePlan_perLocationModes_setsLocationQuantityAndIdempotencyKeys() throws Exception {
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(shopRepository.countByTenantId(tenantId)).thenReturn(3L);
+
+        for (BillingPlanMode mode : java.util.List.of(
+                BillingPlanMode.SAAS_HYBRID_STANDARD, BillingPlanMode.SAAS_FLAT_PREDICTABLE)) {
+            tenant.setStripeSubscriptionId(null);
+            Customer mockCustomer = mock(Customer.class);
+            lenient().when(mockCustomer.getId()).thenReturn("cus_loc_03");
+            Price mockPrice = mock(Price.class);
+            when(mockPrice.getId()).thenReturn("price_" + mode.name());
+            Subscription mockSub = mock(Subscription.class);
+            when(mockSub.getId()).thenReturn("sub_" + mode.name());
+            when(mockSub.getStatus()).thenReturn("active");
+
+            try (MockedStatic<Customer> customerStatic = mockStatic(Customer.class);
+                 MockedStatic<Price> priceStatic = mockStatic(Price.class);
+                 MockedStatic<Subscription> subStatic = mockStatic(Subscription.class)) {
+
+                customerStatic.when(() -> Customer.create(any(CustomerCreateParams.class))).thenReturn(mockCustomer);
+                priceStatic.when(() -> Price.create(any(PriceCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockPrice);
+                subStatic.when(() -> Subscription.create(any(SubscriptionCreateParams.class), any(RequestOptions.class)))
+                        .thenReturn(mockSub);
+
+                billingService.subscribeOrUpdatePlan(tenantId, new BillingSubscriptionRequest(mode, null, null));
+
+                ArgumentCaptor<RequestOptions> priceOpts = ArgumentCaptor.forClass(RequestOptions.class);
+                priceStatic.verify(() -> Price.create(any(PriceCreateParams.class), priceOpts.capture()));
+                assertThat(priceOpts.getValue().getIdempotencyKey())
+                        .startsWith("billing-price-" + tenantId + "-" + mode.name() + "-")
+                        .hasSizeGreaterThan(("billing-price-" + tenantId + "-" + mode.name() + "-").length());
+
+                ArgumentCaptor<SubscriptionCreateParams> subParams = ArgumentCaptor.forClass(SubscriptionCreateParams.class);
+                ArgumentCaptor<RequestOptions> subOpts = ArgumentCaptor.forClass(RequestOptions.class);
+                subStatic.verify(() -> Subscription.create(subParams.capture(), subOpts.capture()));
+                assertThat(subParams.getValue().getItems()).hasSize(1);
+                assertThat(subParams.getValue().getItems().get(0).getQuantity()).isEqualTo(3L);
+                assertThat(subOpts.getValue().getIdempotencyKey())
+                        .isEqualTo("billing-subscription-" + tenantId + "-price_" + mode.name());
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("30-25: per-account mode (WALK_SETUP_STEPDOWN) sets item quantity = 1 regardless of shop count; zero shops on per-location mode sets quantity = 0")
+    void subscribeOrUpdatePlan_walkSetupUsesQuantity1_andZeroShopsUsesQuantity0() throws Exception {
+        when(shopRepository.countByTenantId(tenantId)).thenReturn(5L);
+
+        assertThat(billingService.locationQuantity(tenantId, BillingPlanMode.WALK_SETUP_STEPDOWN)).isEqualTo(1L);
+        assertThat(billingService.locationQuantity(tenantId, BillingPlanMode.SAAS_HYBRID_STANDARD)).isEqualTo(5L);
+
+        when(shopRepository.countByTenantId(tenantId)).thenReturn(0L);
+        assertThat(billingService.locationQuantity(tenantId, BillingPlanMode.SAAS_HYBRID_STANDARD))
+                .as("zero shops bills quantity 0, never fabricated as 1")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("30-25 (T-30-96): when the location count query fails, subscribeOrUpdatePlan fails before any Price.create or Subscription.create call")
+    void subscribeOrUpdatePlan_countQueryFailure_propagatesWithoutCallingStripe() {
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(shopRepository.countByTenantId(tenantId))
+                .thenThrow(new DataAccessResourceFailureException("db connection lost"));
+
+        Customer mockCustomer = mock(Customer.class);
+        lenient().when(mockCustomer.getId()).thenReturn("cus_err_01");
+
+        try (MockedStatic<Customer> customerStatic = mockStatic(Customer.class);
+             MockedStatic<Price> priceStatic = mockStatic(Price.class);
+             MockedStatic<Subscription> subStatic = mockStatic(Subscription.class)) {
+
+            customerStatic.when(() -> Customer.create(any(CustomerCreateParams.class))).thenReturn(mockCustomer);
+
+            assertThatThrownBy(() -> billingService.subscribeOrUpdatePlan(
+                    tenantId, new BillingSubscriptionRequest(BillingPlanMode.SAAS_HYBRID_STANDARD, null, null)))
+                    .isInstanceOf(DataAccessResourceFailureException.class)
+                    .hasMessageContaining("db connection lost");
+
+            priceStatic.verifyNoInteractions();
+            subStatic.verifyNoInteractions();
+        }
     }
 }
