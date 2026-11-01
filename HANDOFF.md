@@ -1,8 +1,52 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 20/32 plans done; PR 5 (/pay page, #1064) merged and paid on staging; 30-21 (refund e2e) next; issue #1071 (edge Referrer-Policy) open
+# Handoff: Phase 30 (The Money Path, Executed) executing, 21/32 plans done; 30-21 adopted from PR 6 (#1065); 30-22 NOT MET on #1065 (two fixes needed before 30-23); issue #1071 (edge Referrer-Policy) open
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-11-01 small-hours delta (RESUME HERE; everything below is history).**
+**2026-11-01 adoption delta (RESUME HERE; everything below is history).**
+- **PR 6 is #1065**: DRAFT, by Antigravity, on `agy/30-21-22-refund-e2e`, head `217003b5`.
+  - It holds plans 30-21 and 30-22. Its D3 series is complete: round 1 admitted 4 and fixed 4, round 2 admitted 0, and the Review-Record is on `217003b5`.
+  - The owner's ruling (2026-11-01) was to adopt it if proven. It was re-measured in a detached checkout of that head. Evidence: `evidence/30-21-22-adopt-1065.txt`.
+  - This session did not push to, commit on, mark ready or post on #1065.
+- **30-21 is ADOPTED** (`30-21-SUMMARY.md`), and every must-have is MET.
+  - The S-5 selftest is 14/14. With the S-5 call removed, exactly the S-5 arms fail.
+  - `--lint-conf` is rc 0 on the real conf and rc 1 on a bare re-added ALLOW.
+  - The union probes behave: titles unioned, counts summed, a missing report VOID.
+  - The ops-contracts steps run on every PR.
+- **30-22 is HALTED, NOT MET** (`30-22-SUMMARY.md`, `status: halted`). There are two gaps, both on #1065:
+  1. The Stripe refund spec (frontend/e2e/stripe-refund-flow.spec.ts, line 304, which exists only on #1065) asserts **at least one** refund, where the must-have says exactly one. The fix is `toBe(1)`, polled up to 30 s. The plan's "page shows Refunded" assertion is also missing.
+  2. **T-30-87 (secret in an artifact):** `playwright.config.ts` has `trace: "retain-on-failure"`. The spec sends `Authorization: Bearer <sk_test_>` through APIRequestContext, and the nightly uploads `frontend/test-results/`. The repo is **PUBLIC**. Reproduced locally: a failing trace keeps the header in plaintext.
+     - Fix options: `test.use({ trace: "off" })` in the Stripe spec; or make the Stripe calls with Node `fetch`, which is not traced; or keep the Stripe run's test-results out of the upload.
+     - **Do not store the CI keys until this fix is on #1065.**
+  - Everything else measured MET:
+    - the collection switch, with the main listing losing exactly the moved test in each project;
+    - the DRAFT test byte-identical;
+    - the key guard at 6/6, with arms;
+    - nightly structure 8/8 (main 1/8);
+    - gate enforcement;
+    - the Stripe CLI 1.55.6 sha256 equal to the release's `stripe-linux-checksums.txt`, with a corrupted copy refused;
+    - A12: the CLI reads `STRIPE_API_KEY` from the environment.
+- **#1065 is now 1 behind main** (#1068 merged at 00:17Z during the measurement).
+  - It conflicts in `AGENTS.md`, `CLAUDE.md` and `docs/CHANGELOG.md`.
+  - The changelog contract is red on both trees until a base merge brings in #1068's entry.
+  - After the merge, run `docs-freshness --write`.
+- **Next, in order (the owner's or Antigravity's, on #1065):**
+  1. Fix both gaps.
+  2. Merge `origin/main`.
+  3. Run a D3 round on the fix commits (round 3+ is the owner's call, §14.4).
+  4. Re-measure 30-22's two failed checks and re-summarize it `complete`.
+  5. **Then 30-23** (owner checkpoint): create the CI Stripe sandbox, then `gh secret set STRIPE_TEST_SECRET_KEY` and `gh variable set CI_STRIPE_PUBLISHABLE_KEY`, then "ci keys set". After that come the branch nightly (S-3 red expected), the ALLOW retired from the measured count, the second nightly green, and #1065 marked ready.
+  6. Then 30-24: squash-merge, deploy watch, the main nightly, and the #61 comment.
+  - Branch-name note: 30-23 and 30-24 name `feat/30-pay01-refund-e2e`, but PR 6's branch is `agy/30-21-22-refund-e2e`. Dispatch with `--ref agy/30-21-22-refund-e2e`, or move the commits; the owner chooses.
+  - This worktree's `feat/30-pay01-refund-e2e` holds only the record commits (30-20 and the adoption), and is NOT pushed.
+- **Owner items carried forward:**
+  1. Choose the #1071 fix (edge Referrer-Policy on `/pay`).
+  2. Decide whether to persist the owning Stripe account on the order (30-17, round-1 finding 2).
+  3. Eyeball `evidence/30-20-pay-360.png`: does it fit 360 px? The cookie banner covers Expiry and Security code.
+  4. UI copy: the "You've paid £X" redirect copy, the resume-path dead-end copy, and the round-2 residual ("Payment received" shown for a garbage client secret).
+  5. New: #1065's PR body says `--report` counts a skip only if every report skipped it. The code unions, which is right; the body is wrong.
+  6. New: this session's A12 control printed the `stripe listen` signing secret of the account your local Stripe CLI is logged in to, read from the desktop keyring. It is not in any file. Rotate it if any local `.env` relies on it.
+
+**2026-11-01 small-hours delta (history; superseded by the 2026-11-01 adoption block above).**
 - **PR 5 (#1064, /pay) is MERGED** as `bff82097` (2026-10-31T23:01:48Z), after a two-round D3 series ending in a Review-Record on `e6df7cd3`. It is deployed: run 41250761893 succeeded, and digest parity is rc 0 for core-java, edge-go and frontend.
 - **30-20 is DONE.** See `30-20-SUMMARY.md` and `evidence/30-20-pay-live.txt` §7–8. **Phase 30 is 20/32.**
   - GREEN beside RED:
@@ -23,7 +67,7 @@
 - **Recurring flake (recorded, not filed):** Frontend E2E (public surfaces) fails on the Turbopack `next/font/google` resolve (a Google Fonts fetch on the runner). It hit PR attempt 1 and main's run for `eff54aa0`. It does not gate Deploy to Staging.
 
 **2026-10-31 midnight delta (history; superseded by the 2026-11-01 small-hours block above).**
-- **PR 5 is #1064, OPEN, from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 is done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
+- **PR 5 was #1064, open at the time, from `feat/30-pay-link-page`** (it merged as bff82097) (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 is done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
   - Merged from the base: `e310356b` (picking up #1058). `HANDOFF.md` was resolved by hand with both sides kept (checked by content).
   - OTP seam (owner decision expose-on-staging, `27ffb459`): base `"false"`, staging `"true"`, production `"false"`. Env `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`, plus a `${}` placeholder in `application.yml`. Production render: `true`=0, tag=1. Staging render: `true`=1.
   - OpenAPI snapshot (`fd6250de`): red before (rc 1), green after (rc 0). Additive only: 4 paths, 2 schemas, 3 `stripeAccountId`.
