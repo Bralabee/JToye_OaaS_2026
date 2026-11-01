@@ -182,9 +182,39 @@ describe("SW-CLR-13: an Add tap before hydration is not silently dropped", () =>
     for (const tag of addButtons) expect(tag).toMatch(/\sdisabled=""/)
   })
 
-  it("the hydrated client enables them", async () => {
-    await renderMenu()
-    expect(screen.getByRole("button", { name: "Add Jollof Rice to basket" })).toBeEnabled()
-    expect(screen.getByRole("button", { name: "Add Puff Puff to basket" })).toBeEnabled()
+  // PR #1075 review round 1 (inline 4435453169): the arm that stood here used render(), which
+  // never hydrates (it mounts with the CLIENT snapshot), so it passed on the pre-fix tree too. This
+  // one drives the real path: the server HTML is put in the DOM, checked BEFORE React attaches
+  // (disabled: a tap here has no handler), then hydrateRoot attaches to that same markup and the
+  // same buttons must become enabled. It fails if the gate is reverted (first half) and if the
+  // button never enables after hydration (second half).
+  it("hydrating the server HTML turns the same Add buttons from disabled to enabled", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const { hydrateRoot } = await import("react-dom/client")
+    const tree = <ShopDetailClient slug={shop.slug} initial={detail} />
+    const container = document.createElement("div")
+    container.innerHTML = renderToString(tree)
+    document.body.appendChild(container)
+    const adds = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label$=" to basket"]'))
+
+    // Before hydration: the server markup, no React handlers attached.
+    const before = adds()
+    expect(before).toHaveLength(2)
+    for (const b of before) expect(b.disabled).toBe(true)
+
+    let root: ReturnType<typeof hydrateRoot> | undefined
+    await act(async () => {
+      root = hydrateRoot(container, tree, { onRecoverableError: () => {} })
+    })
+    // After hydration: React adopted the SAME nodes (no client re-mount) and enabled them.
+    const after = adds()
+    expect(after).toHaveLength(2)
+    after.forEach((b, i) => {
+      expect(b).toBe(before[i])
+      expect(b.disabled).toBe(false)
+    })
+    act(() => root?.unmount())
+    container.remove()
   })
 })
