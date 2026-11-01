@@ -134,12 +134,17 @@ reverse_transfer), `cancelAbandonedPaymentIntent` and the payment-link redeem
 replay (`directChargeAccountFor`) — instead of being recorded when the intent
 is created. Read from the code 2026-11-01:
 
-- `PaymentService.createPaymentIntent` lines 240-262: with a routing decision the
+- `PaymentService.createPaymentIntent` lines 240-268: with a routing decision the
   intent goes on the connected account (DIRECT, header) or carries
-  `transfer_data.destination` (DESTINATION); WITHOUT one (no ENABLED Connect
-  account, or no onboarding model) it is a plain PLATFORM intent. The staging
-  card spec prints `account=none` for exactly this case, so platform intents are
-  a real path, not a theory.
+  `transfer_data.destination` (DESTINATION). WITHOUT one (no ENABLED Connect
+  account, or no onboarding model) the else branch (255-268) still asks
+  `resolveDestinationAccount` and would attach `transfer_data.destination` if it
+  answered — but that fallback is dead today: a non-empty answer needs
+  MARKETPLACE + ENABLED, which already yields a routing decision. So in practice
+  the no-decision intent is a plain PLATFORM intent; the staging card spec
+  prints `account=none` for exactly this case, so platform intents are a real
+  path, not a theory. V89 must either delete that else branch or stamp
+  DESTINATION inside it, never PLATFORM.
 - `RefundService` lines 224-241: the refund re-resolves routing and, for DIRECT,
   sends the Stripe-Account header with the stored `pi_`.
 
@@ -154,16 +159,27 @@ vendor can never refund those orders, and nothing in the current tests covers
 it (no IT changes routing between intent and refund).
 
 Recommendation: DO IT, as one `/gsd-quick` after Phase 30 closes and before the
-first production tenant connects Stripe. Shape (already approved on 2026-11-01):
-V89 adds nullable `orders.payment_settlement_mode` VARCHAR(32) (CHECK on the
-four SettlementPolicyMode values plus PLATFORM) and nullable
+first production tenant connects Stripe. WHETHER to do it is the open decision
+(HANDOFF.md says so); only the shape below was accepted when the morning's
+recommendations were approved. Shape: V89 adds nullable
+`orders.payment_settlement_mode` VARCHAR(32) (CHECK on the three
+SettlementPolicyMode values — DIRECT_CHARGE_VENDOR_MOR,
+DESTINATION_CHARGE_PLATFORM_MOR, SPLIT_DEPOSIT_VENDOR_MOR — plus PLATFORM) and nullable
 `orders.payment_stripe_account_id` VARCHAR(255), both mirrored on `orders_aud`
 in the same migration (Order is `@Audited`), no backfill and no DEFAULT (NULL =
-not recorded, the V63 rule) and therefore no tenant loop; the four intent
-writers (`createPaymentIntent`, the balance intent, the payment-link intent and
-`OrderPaymentLinkService`'s redeem) set both at creation; the three readers
-(refund, cancel-abandoned, redeem replay) use the recorded pair when present
-and fall back to today's derivation when NULL. Proof: an IT that creates a
+not recorded, the V63 rule) and therefore no tenant loop; the TWO intent
+writers — `PaymentService.createPaymentIntent` (`PaymentIntent.create` at line
+274) and `createBalancePaymentIntent` (line 388), which every caller goes
+through (the payment-link issue calls them at `OrderPaymentLinkService`
+207/209, the storefront at `PublicStorefrontService` 916/1583) — set both at
+creation; every reader that re-derives routing uses the recorded pair when
+present and falls back to today's derivation when NULL: `RefundService`,
+`cancelAbandonedPaymentIntent`, and `retrieveClientSecret(Order, String)`
+(lines 412-423) with both of its callers, the payment-link redeem
+(`OrderPaymentLinkService` 314/318) and the storefront's V50 idempotent replay
+(`PublicStorefrontService` 1197/1206). The redeem and the replay are READERS,
+not writers: they retrieve the stored `pi_` on the derived account, so a
+pre-Connect DRAFT order's replay would fail the same way a refund does. Proof: an IT that creates a
 platform intent, flips the shop to DIRECT with an ENABLED account, and refunds —
 RED on the unfixed tree (header sent), GREEN with the column; plus the break arm
 that removes the fallback and watches a pre-V89 order's refund fail. Two
