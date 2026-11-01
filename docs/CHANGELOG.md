@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Seven findings from the 2026-10-19 staging persona swarm, each re-checked on main first. Six fixed, one skipped. No migration.
 
-- **SW-JRD-15 (issue #826):** every order email names the shop and lists the items (name × qty), the total, and the delivery address or where to collect. Still plain text. The listener reads it under the event's tenant (`OrderEmailSummary`). The allergy note stays out. The Keycloak account mails are a realm template and are out of scope.
+- **SW-JRD-15 (issue #826):** every order email names the shop and lists the items (name × qty), a non-zero delivery fee, the total, and for a split-deposit order "Paid now" and "Balance due", then the delivery address or where to collect. Still plain text. The listener reads it under the event's tenant (`OrderEmailSummary`). The allergy note stays out. The Keycloak account mails are a realm template and are out of scope.
 - **SW-TND-02:** the staff invite's subject is now "{inviter} has invited you to help run {business} on J'Toye". The body names the role and the shop, then says in a sentence or two what the role can do, taken from the `ShopRole` model.
 - **SW-ADE-12:** the cancel email says "It was cancelled while it was: Awaiting payment." instead of `Previous status: DRAFT`. The words are the storefront's `ORDER_STATUS_COPY`, and a test checks they still match. The /track chip uses the same words.
 - **SW-SAM-08:** the DSAR confirmation subject now says which request it is ("for a copy of your data" or "to erase your data"). The link carries the type after the token, in the fragment. The confirm page names the request, but the type is display only: the press still posts just the token.
