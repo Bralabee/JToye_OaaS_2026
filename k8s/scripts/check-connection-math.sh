@@ -42,6 +42,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 COMPOSE="$REPO_ROOT/docker-compose.full-stack.yml"
 DEPLOYMENT="$REPO_ROOT/k8s/base/core-java-deployment.yaml"
+KEYCLOAK_COMPONENT="${KEYCLOAK_COMPONENT_FILE:-$REPO_ROOT/k8s/components/keycloak/keycloak.yaml}"
 APP_BASE="$REPO_ROOT/core-java/src/main/resources/application.yml"
 APP_PROD="$REPO_ROOT/core-java/src/main/resources/application-prod.yml"
 APP_STAGING="$REPO_ROOT/core-java/src/main/resources/application-staging.yml"
@@ -89,7 +90,7 @@ selftest() {
     SELFTEST_TMP="$(mktemp -d)"
     trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
     tmp="$SELFTEST_TMP"
-    [[ "$fmt" == tap ]] && { echo "TAP version 13"; echo "1..4"; }
+    [[ "$fmt" == tap ]] && { echo "TAP version 13"; echo "1..5"; }
 
     verdict() {
         # verdict <arm> <ok|WRONG> [detail] — inner output comes from GATE_OUT
@@ -154,6 +155,21 @@ selftest() {
         fi
     done
 
+    # Arm keycloak-pool-drift (#979): k8s/components/keycloak/keycloak.yaml
+    # KC_DB_POOL_MAX_SIZE disagreeing with docker-compose.full-stack.yml must
+    # fail rc 1 naming KC_DB_POOL_MAX_SIZE (using 19 so budget math still fits
+    # and the drift guard itself is what fires).
+    sed -E '/name: KC_DB_POOL_MAX_SIZE/{n;s/value: "[0-9]+"/value: "19"/;}' "$KEYCLOAK_COMPONENT" > "$tmp/keycloak-drift.yaml"
+    GATE_RC=0
+    GATE_OUT="$(KEYCLOAK_COMPONENT_FILE="$tmp/keycloak-drift.yaml" bash "$SELF" 2>&1)" || GATE_RC=$?
+    if (( GATE_RC != 1 )); then
+        verdict keycloak-pool-drift WRONG "expected drift FAIL rc 1 when k8s KC_DB_POOL_MAX_SIZE=19, got rc=$GATE_RC"
+    elif ! grep -q 'KC_DB_POOL_MAX_SIZE' <<<"$GATE_OUT"; then
+        verdict keycloak-pool-drift WRONG "rc 1 but output does not name KC_DB_POOL_MAX_SIZE"
+    else
+        verdict keycloak-pool-drift ok
+    fi
+
     (( wrong == 0 ))
 }
 
@@ -169,6 +185,9 @@ COMPOSE_MAX_CONNECTIONS=$(extract_number "$COMPOSE" \
 
 KEYCLOAK_POOL=$(extract_number "$COMPOSE" \
     'KC_DB_POOL_MAX_SIZE: "([0-9]+)"' '\1' 'Keycloak KC_DB_POOL_MAX_SIZE')
+
+KEYCLOAK_K8S_POOL="$(awk '/name: KC_DB_POOL_MAX_SIZE/{getline; if ($1=="value:") {gsub(/"/,"",$2); print $2}}' "$KEYCLOAK_COMPONENT")"
+[[ "$KEYCLOAK_K8S_POOL" =~ ^[0-9]+$ ]] || parse_fail "could not extract KC_DB_POOL_MAX_SIZE env value from $KEYCLOAK_COMPONENT"
 
 POOL_BASE=$(extract_number "$APP_BASE" \
     '\$\{DB_POOL_SIZE:([0-9]+)\}' '\1' 'base (dev) Hikari maximum-pool-size default')
@@ -246,8 +265,8 @@ done
 # k8s prod/staging: base HPA applies to BOTH overlays; each namespace points at
 # its own Postgres, so each must independently fit ITS OWN budget.
 K8S_REPLICAS=$(( MAX_REPLICAS + SURGE ))
-K8S_EXTRAS=$(( KEYCLOAK_POOL + PG_BACKUP + EXPORTER ))
-K8S_EXTRAS_DESC="keycloak($KEYCLOAK_POOL)+backup($PG_BACKUP)+exporter($EXPORTER)"
+K8S_EXTRAS=$(( KEYCLOAK_K8S_POOL + PG_BACKUP + EXPORTER ))
+K8S_EXTRAS_DESC="keycloak($KEYCLOAK_K8S_POOL)+backup($PG_BACKUP)+exporter($EXPORTER)"
 
 # Counterfactual, printed on EVERY run before any check can exit: the
 # production row is unchanged until Phase 32, but the Flexible Server it will
@@ -297,6 +316,11 @@ if (( POOL_K8S != POOL_PROD )); then
     fail "k8s DB_POOL_SIZE env ($POOL_K8S) != application-prod.yml default ($POOL_PROD). Keep them identical so the manifest and the profile tell the same story."
 fi
 echo "Drift guard: k8s DB_POOL_SIZE ($POOL_K8S) == application-prod.yml default ($POOL_PROD) — OK"
+
+if (( KEYCLOAK_K8S_POOL != KEYCLOAK_POOL )); then
+    fail "k8s Keycloak KC_DB_POOL_MAX_SIZE ($KEYCLOAK_K8S_POOL in $KEYCLOAK_COMPONENT) != docker-compose.full-stack.yml ($KEYCLOAK_POOL). Keep them identical so the k8s component and compose share one connection-budget line item (#979)."
+fi
+echo "Drift guard: k8s KC_DB_POOL_MAX_SIZE ($KEYCLOAK_K8S_POOL) == compose KC_DB_POOL_MAX_SIZE ($KEYCLOAK_POOL) — OK"
 
 # ---------------------------------------------------------------------------
 # HPA memory-pinning guard: the core-java HPA document must contain no memory

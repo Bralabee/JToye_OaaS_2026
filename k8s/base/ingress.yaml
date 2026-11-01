@@ -31,11 +31,21 @@ metadata:
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
 
     # Security Headers
+    #
+    # NO Referrer-Policy here: the apps own it (issue #1071). more_set_headers REPLACES an
+    # upstream header of the same name, so an edge line overwrote the frontend's no-referrer
+    # on /pay and /invite (single-use bearer tokens in the fragment) with
+    # strict-origin-when-cross-origin. The frontend sends strict-origin-when-cross-origin on
+    # every other route (frontend/next.config.mjs) and core-java sends it on every API and
+    # SSE response (SecurityConfig referrerPolicy), so no app response loses the header. A
+    # response the edge generates itself carries none, which a browser reads as the same
+    # strict-origin-when-cross-origin. Do not add it back: the pay-referrer arm of
+    # scripts/check-staging-edge.sh reads /pay through the live edge and fails if it is
+    # overwritten.
     nginx.ingress.kubernetes.io/configuration-snippet: |
       more_set_headers "X-Frame-Options: DENY";
       more_set_headers "X-Content-Type-Options: nosniff";
       more_set_headers "X-XSS-Protection: 1; mode=block";
-      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
       more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
       more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
 

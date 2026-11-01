@@ -36,13 +36,16 @@ function specDigest(): string {
 
 export default defineConfig({
   testDir: "./e2e",
-  // D-27 (Phase 29): a default local, CI or nightly run never touches a public
-  // host. Specs named staging-*.spec.ts sign in to the PUBLIC staging edge with a
-  // Key Vault credential, so they are not even COLLECTED unless STAGING_E2E is
-  // exactly "1" (not "true", not "yes": one spelling, so a stray value cannot
-  // switch it on). Ignoring rather than skipping keeps them out of the skip
-  // count, for the reason the mobile project's grepInvert gives below.
-  testIgnore: process.env.STAGING_E2E === "1" ? [] : ["**/staging-*.spec.ts"],
+  // D-27 (Phase 29) & Phase 30 plan 30-22 (PAY-01): a default local, CI or
+  // Phase-1 nightly run never touches a public staging host or Stripe test API.
+  // Specs named staging-*.spec.ts are collected only when STAGING_E2E === "1";
+  // specs named stripe-*.spec.ts are collected only when STRIPE_E2E === "1".
+  // Ignoring rather than skipping keeps them out of the skip count, for the
+  // reason the mobile project's grepInvert gives below.
+  testIgnore: [
+    ...(process.env.STAGING_E2E === "1" ? [] : ["**/staging-*.spec.ts"]),
+    ...(process.env.STRIPE_E2E === "1" ? [] : ["**/stripe-*.spec.ts"]),
+  ],
   // Playwright merges its own runtime keys (actualWorkers) into this object and
   // serialises the result as `config.metadata` in the JSON report.
   metadata: {

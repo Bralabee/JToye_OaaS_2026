@@ -1,0 +1,18 @@
+Phase 30 Plan 30-25 — D-04 / PAY-02 Per-Location Billing Quantity Decision
+Recorded at: 2026-10-31T20:49:00Z
+Selected option: all-shops
+
+Owner ruling (verbatim summary):
+1. Which shops count as locations:
+   Every non-deleted shop row belonging to the tenant (`shops` table, `ShopRepository.countByTenantId(UUID tenantId)` with an explicit `tenant_id` predicate in addition to PostgreSQL FORCE RLS).
+   Why: In the current vendor-onboarding state machine, only the initial onboarding shop is transitioned to `published = true` via `GO_LIVE`; additional shops created via `ShopService.createShop` start with `published = false`. Counting all tenant shops (`all-shops`) enables multi-location billing immediately on shop creation and deletion (`ShopService.createShop` and `ShopService.deleteShop`).
+2. Which `BillingPlanMode`s bill per location (`quantity = countByTenantId(tenantId)`):
+   - `SAAS_HYBRID_STANDARD` (£39/location/mo + 50 bps): per-location (`quantity = countByTenantId(tenantId)`).
+   - `SAAS_FLAT_PREDICTABLE` (£79–£149/location/mo + 0 bps): per-location (`quantity = countByTenantId(tenantId)`).
+   - `WALK_SETUP_STEPDOWN` (£195/mo during setup): per-account (`quantity = 1`).
+   - £0 recurring modes (`BATCH_PAYG_STARTER`, stepped-down `WALK_SETUP_STEPDOWN`): no Stripe subscription created.
+3. Zero-shop and error semantics:
+   - Zero shops yields `quantity = 0` (licensed price quantity 0 in Stripe; never silently fabricated as 1).
+   - A failure reading the location count propagates and aborts subscription creation or sync before any Stripe call — never falls back to a guessed quantity.
+4. Mid-cycle shop changes:
+   - `BillingLocationSync.syncAfterCommit(UUID tenantId, String eventToken)` updates the subscription item's `quantity` to the absolute current `locationQuantity(tenantId, mode)` after the shop transaction commits (using Stripe's default proration behaviour).

@@ -1,6 +1,7 @@
 # Handoff: Phase 30 (The Money Path, Executed) executing, 23/32 plans done; PR 6 (#1065) MERGED 6b3ff3e1 2026-11-01 after a green branch nightly; #1072 and #1073 merged (issue #1071 closed on the live edge); 30-24 Task 2 (the nightly on main, run 41299664811) in flight; then 30-25 onward
 
-- **2026-11-01 (RESUME HERE — 30-24 Task 2).** Branch `feat/30-pay01-refund-e2e` (record branch, worktree `JToye_OaaS_2026-p30-15`, NOT pushed; it is now many commits behind `origin/main` and needs `git merge origin/main` with regenerated counts and every CHANGELOG entry kept before its own PR). Done today:
+- **2026-11-01 (RESUME HERE — 30-24 Task 2).** Branch `feat/30-pay01-refund-e2e` (record branch, worktree `JToye_OaaS_2026-p30-15`, NOT pushed; `origin/main` at `6b3ff3e1` is merged into it, see the first sub-item below). Done today:
+  - **Base merge done (2026-11-01):** `git merge origin/main` brought in #1068, #1067, #1066, #1072, #1073 and #1065 (squash `6b3ff3e1`, whose own HANDOFF.md block now sits under this one as history). Only HANDOFF.md conflicted; the record branch's `.planning` records for 30-20..30-24 stand, and main's 30-25 SUMMARY and quick-task records came in unchanged. Still NOT pushed; it needs its own PR.
   - **30-23 COMPLETE** (`30-23-SUMMARY.md`, `evidence/30-23-pay01-branch-nightly.txt`): CI sandbox `jtoye-ci` = `acct_1UWtvjD29H13ktT5` (staging's is `acct_1U0tklDpS9ICNeRt`); repo secret `STRIPE_TEST_SECRET_KEY` + variable `CI_STRIPE_PUBLISHABLE_KEY` stored and verified. Four dispatched nightlies on PR 6's branch: 41288249740 (stripe listen needs `--all-snapshot`), 41291041531 (recreated core-java moved to :9091), 41293948964 (the CLI forwards the account default API version `2026-07-29.dahlia`, stripe-java pins `2026-09-30.endive`, typed deserialization empty → silent 400; staging works because its endpoints are pinned on endive; also the cart-identity gate timed out after the Stripe recreate), 41297105542 GREEN on `b8d31922` (`--latest --all-snapshot`, :9090 pin, gate before the recreate, skip-budget gates Phase 1 alone when the Stripe run did not run): Stripe 1/1, `STRIPE-REFUND … refund=re_3UWwFrD29H13ktT51yMfGTP3 amount=100 livemode=false`, both events rows, skip budget 4/4, artifact scan clean.
   - **PR 6 #1065 MERGED `6b3ff3e1`** (30-24 Task 1): review series round 3 (`/review-verify`) zero admissible, Review-Record on `b8d3192253e51ad84a7c7bc726bcdc539a66bb22`; pre-merge sitting head equality / 0 behind / required checks green / `check-stripe-pk-var.sh --environment staging` rc 0 with `STRIPE_PK_VAR` supplied (it is UNSET-red without it). Deploy run 41299627034; main nightly dispatched as run 41299664811 on `6b3ff3e1` — **30-24 Task 2: read its result, then write `30-24-SUMMARY.md`** (expected: Stripe phase green on main with the stored keys; the scheduled nightly tonight is the second proof).
   - **#1072 MERGED `50dee65a`** (owner-approved /pay trio: no cookie notice on /pay, Try again on the resume path for Stripe.js and Payment Element failures except with no publishable key, an unreadable intent is "couldn't check" never "Payment received"; UI-SPEC amended; two-round series). **#1073 MERGED `fd01dc0c`** (issue #1071 option "the apps own Referrer-Policy" + `metadata.referrer` on /pay + `check-staging-edge.sh` pay-referrer arm and strict `--only`; deploy 41295872214 success; live edge read: `/pay` → `referrer-policy: no-referrer` + `<meta name="referrer" content="no-referrer"/>`; WINDOWS 52 fixed, `evidence/30-20-pay-live.txt` §9).
@@ -9,8 +10,18 @@
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-11-01 round-1 fix delta (RESUME HERE; everything below is history).**
-- A round-1 review of `1f69a7f0` admitted two findings. Both are fixed in ONE commit, **`0ebfaf66`**, which is now the **#1065 head** (DRAFT, OPEN, read back with `gh pr view 1065 --json headRefOid`). It was a fast-forward push from the detached scratch checkout, and Antigravity's worktree was not touched. The other eight findings are recorded by the orchestrator and were not changed.
+**2026-11-01 delta, PR 6 (#1065, `agy/30-21-22-refund-e2e`, plans 30-21/30-22/30-24) (history, merged in from `origin/main` 2026-11-01: written on the #1065 branch before it merged as `6b3ff3e1`; superseded by the 2026-11-01 RESUME HERE block above).**
+- **The branch nightly is the open item.** Its first real dispatched runs each found one defect in `e2e-nightly.yml`, each fixed on the branch:
+  - `stripe listen` needs `--all-snapshot` (run 41288249740: without it stripe-cli 1.55.6 exits at once, "must specify events to forward").
+  - The core-java recreate is pinned to `:9090` with a `ports: !override` file (run 41291041531: the compose range `9090-9091` let Docker move it to `:9091`; the step now asserts the published port).
+  - The skip budget gates `report.json` alone when the Stripe run was skipped, and both reports otherwise, so a red step before Phase 2 no longer adds a VOID (round-1 recorded finding 9, observed on 41288249740).
+  - `stripe listen --latest` (run 41293948964: the account default `2026-07-29.dahlia` vs stripe-java 34.0.0's `2026-09-30.endive` made `payment_intent.succeeded` a silent 400; staging's endpoints are pinned to endive). The step prints the forwarded API version from the CLI's Ready line.
+  - The cart-identity gate runs before the Stripe recreate (C4 timed out placing a cash order once core-java ran with the CI Stripe key, run 41293948964).
+- **Three 30-24 merges from the base** (`3fbc86ab` #1066, `a033dfdc` #1072, `ce9c92a1` #1073): counts regenerated with `docs-freshness.sh --write`, every CHANGELOG entry kept.
+- **Next:** a green dispatched branch nightly (Stripe phase passed, STRIPE-REFUND line, events in `processed_stripe_events`, skip budget 4/4); then round 3 of the review series, which is the owner's under the 2026-10-25 ruling.
+
+**2026-11-01 round-1 fix delta (history; superseded by the 2026-11-01 PR 6 block above).**
+- A round-1 review of `1f69a7f0` admitted two findings. Both are fixed in ONE commit, **`0ebfaf66`**, which was then the **#1065 head** (the PR was a draft and still open at the time; read back then with `gh pr view 1065 --json headRefOid`). It was a fast-forward push from the detached scratch checkout, and Antigravity's worktree was not touched. The other eight findings are recorded by the orchestrator and were not changed.
   - **F1:** the refund `ALLOW` was stale, because #1065 deletes the test it exempted. It is deleted, and `MAX_SKIPS` goes from 6 to 4, the number measured in nightly 41158370941 (6 minus the deleted test's 2). Before the fix, the 4+0 two-report run was rc 1 on S-3, and a fifth skip passed under ceiling 6. After it, the same run is rc 0 and a fifth skip is rc 1 on S-1.
   - **F1 and 30-23:** 30-23's "ALLOW retired" step is **already done**. Its first branch nightly should be skip-budget GREEN at 4 of 4, not red on S-3. Any skip count other than 4 is the finding.
   - **F4:** the Stripe events check no longer pipes into `head`, which dies 141 under pipefail with no `::error`. Instead, jq picks `first(...)`. The window starts at the PaymentIntent's `created` (`created[gte]`) with `limit=100`, and a miss is an `::error` naming `has_more`.
@@ -26,7 +37,7 @@
 - **Antigravity:** its `-agy-p30-w21` worktree is behind again. Run `git pull --ff-only` there.
 
 **2026-11-01 fix delta (history; superseded by the round-1 fix block above).**
-- **Owner ruling 2026-11-01: "you fix it. you tackle the gaps."** Both 30-22 gaps are fixed on #1065. The pushes were fast-forwards from a detached scratch checkout; Antigravity's worktree was not touched. New head: **`1f69a7f0`** (DRAFT, OPEN, read back with `gh pr view 1065 --json headRefOid`). Commits:
+- **Owner ruling 2026-11-01: "you fix it. you tackle the gaps."** Both 30-22 gaps are fixed on #1065. The pushes were fast-forwards from a detached scratch checkout; Antigravity's worktree was not touched. New head: **`1f69a7f0`** (the PR was a draft and still open at the time; read back then with `gh pr view 1065 --json headRefOid`). Commits:
   - `b7a827ac`: RED, a Jest read-back test (8/11 fail on the old rule)
   - `29d419c4`: the fix
   - `7537f8df`: merge of `origin/main` `bf98cde5` (#1068, #1067)
@@ -54,7 +65,7 @@
 - This worktree's `feat/30-pay01-refund-e2e` holds only record commits and is NOT pushed.
 
 **2026-11-01 adoption delta (history; superseded by the fix block above).**
-- **PR 6 is #1065**: DRAFT, by Antigravity, on `agy/30-21-22-refund-e2e`, head `217003b5`.
+- **PR 6 is #1065** (a draft at the time; it merged as `6b3ff3e1` on 2026-11-01), by Antigravity, on `agy/30-21-22-refund-e2e`, head `217003b5`.
   - It holds plans 30-21 and 30-22. Its D3 series is complete: round 1 admitted 4 and fixed 4, round 2 admitted 0, and the Review-Record is on `217003b5`.
   - The owner's ruling (2026-11-01) was to adopt it if proven. It was re-measured in a detached checkout of that head. Evidence: `evidence/30-21-22-adopt-1065.txt`.
   - This session did not push to, commit on, mark ready or post on #1065.
@@ -1155,10 +1166,13 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 62 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 63 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-31 (agy/30-21-22-refund-e2e, Phase 30 30-21/30-22): 62 -> 63. check-stripe-ci-keys
+# refuses unset, empty, live or swapped CI Stripe sandbox keys unless STRIPE_TEST_SECRET_KEY and
+# CI_STRIPE_PUBLISHABLE_KEY are set; CI runs its --selftest in ops-contracts and the guard in e2e-nightly.
 # 2026-10-25 (PR #1045, the Antigravity bundle): 61 -> 62. check-synthesis-gate is rc 1 in
 # this bare loop until the active milestone's synthesis review (/qa-council + persona test)
 # is recorded in qa/synthesis-ledger.json with --record; CI runs only its --selftest.

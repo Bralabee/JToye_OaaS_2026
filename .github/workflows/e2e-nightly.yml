@@ -26,11 +26,17 @@
 #   below is therefore explicit rather than "everything" — see SERVICES.
 #
 # FAIL-CLOSED CONTRACT — every one of these is a FAILURE, never a pass:
+#   * the CI Stripe sandbox credentials fail `check-stripe-ci-keys.sh`
 #   * the stack does not become healthy within the deadline
-#   * the Playwright JSON report is absent, empty, or reports ZERO tests
-#   * `check-e2e-skip-budget.sh` exits non-zero (1 = violation, 2 = VOID)
+#   * the Playwright JSON report (main or Stripe phase) is absent, empty, or reports ZERO tests
+#   * `stripe listen --all-snapshot` does not reach Ready, or the payment_intent.succeeded / refund.* events do not land in processed_stripe_events
+#     (the background forwarder must name its events: without --all-snapshot stripe-cli exits at once)
+#   * `check-e2e-skip-budget.sh` exits non-zero across the union of both reports (1 = violation, 2 = VOID);
+#     on a night the Stripe phase never started (an earlier step failed) it gates the Phase 1 report alone
 #   * `check-backup-restore-drill.sh` exits non-zero (1 = an arm failed, 2 = VOID)
-#   `continue-on-error` appears NOWHERE in this file on purpose. A job that cannot go red
+#   * a file about to be uploaded holds the Stripe secret or the CLI's signing secret
+#     (`check-stripe-ci-keys.sh --scan-artifacts`, T-30-87; the file is deleted first)
+#   Step-level error swallowing appears NOWHERE in this file on purpose. A job that cannot go red
 #   is the exact failure mode #420 exists to remove.
 #
 # A11Y-5 (E1): `e2e/dashboard-a11y-nightly.spec.ts` runs as part of the SAME
@@ -47,10 +53,17 @@
 # job's fail-closed contract.
 #
 # CREDENTIALS
-#   No repository secret is consumed. All 18 of verify-env.sh's REQUIRED_VARS are
-#   generated per-run for a stack that lives ~40 minutes and is then destroyed. They must
-#   be genuinely random: verify-env.sh rejects the weak deny-list and any CHANGE_ME*
-#   value, so placeholders would fail the preflight rather than silently weaken the run.
+#   Phase 1 (the full cash/storefront/dashboard suite) runs against a core-java
+#   with STRIPE_API_KEY left empty so #793 (cash-checkout-no-stripe.spec.ts) can
+#   prove a cash checkout loads zero Stripe resources; all of verify-env.sh's
+#   REQUIRED_VARS are generated per-run for a stack that lives ~40 minutes and is
+#   then destroyed.
+#   Phase 2 (the Stripe test-mode phase, plan 30-22 / PAY-01) consumes ONE repository
+#   secret (`secrets.STRIPE_TEST_SECRET_KEY`, `sk_test_...`) and ONE repository variable
+#   (`vars.CI_STRIPE_PUBLISHABLE_KEY`, `pk_test_...`) from a dedicated CI Stripe sandbox
+#   account (D-09; never the staging Stripe account so `stripe listen` cannot steal or
+#   duplicate staging webhooks, Pitfall 5), guarded by `scripts/check-stripe-ci-keys.sh`
+#   before the stack starts.
 
 name: E2E Nightly (full stack)
 
@@ -87,10 +100,20 @@ jobs:
     name: Full Playwright suite against a real stack
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      CI_STRIPE_PUBLISHABLE_KEY: ${{ vars.CI_STRIPE_PUBLISHABLE_KEY }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Gate — Stripe test-mode CI keys (T-30-09, T-30-10)
+        run: |
+          set -euo pipefail
+          [ -n "${STRIPE_TEST_SECRET_KEY:-}" ] && echo "::add-mask::${STRIPE_TEST_SECRET_KEY}"
+          [ -n "${CI_STRIPE_PUBLISHABLE_KEY:-}" ] && echo "::add-mask::${CI_STRIPE_PUBLISHABLE_KEY}"
+          bash scripts/check-stripe-ci-keys.sh
 
       # The stack builds four images and pulls eight. A stock runner has ~14 GB free,
       # and a mid-build ENOSPC surfaces as an unrelated-looking compose error.
@@ -259,6 +282,7 @@ jobs:
           # client-IP digest behind the per-IP cash-order cap, exactly 64 hex characters or
           # core-java refuses to start. DERIVED for the same reason, generated the same way.
           echo "CLIENT_IP_HMAC_KEY=$(openssl rand -hex 32)" >> .env
+          echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${CI_STRIPE_PUBLISHABLE_KEY}" >> .env
 
           echo "appended $(wc -l < .env) total lines"
 
@@ -414,12 +438,6 @@ jobs:
 
           [ "$failed" -eq 0 ] || { echo "::error::$failed E2E test(s) failed"; exit 1; }
 
-      # S-1..S-4: total within budget, every skip declared, no stale ALLOW, and the
-      # matcher self-tested in both directions. Exits 2 (VOID) on an absent or stale
-      # report rather than passing.
-      - name: Enforce the declared skip budget
-        run: bash scripts/check-e2e-skip-budget.sh
-
       # R-16 / #459. WHY HERE AND NOT IN ci-cd.yaml: `frontend-e2e` there is
       # deliberately stack-free, and this script drives THREE real Keycloak
       # registrations against a live realm plus a placed order. The nightly is
@@ -459,8 +477,18 @@ jobs:
       # not have. The boundary is therefore: this class of check lives in the
       # nightly, and the PR lane covers the same invariants in jsdom.
       #
-      # Deliberately NO `continue-on-error` — that string appears nowhere in this
-      # file on purpose (see the header). The script fails closed on its own:
+      # AND IT RUNS BEFORE THE STRIPE PHASE (Phase 2), against the SAME cash-only core-java
+      # the suite ran on. Phase 2 recreates core-java with the CI Stripe key and leaves it that
+      # way, and C4 (place a cash order on peckham-jollof-co, wait for "Order confirmed") then
+      # times out: measured on branch nightly 41293948964 (17/18, "C4 threw: locator.waitFor:
+      # Timeout 45000ms exceeded", with core-java healthy on :9090), and on 41291041531; it was
+      # 18/18 on 41288249740, where the Stripe recreate never happened. So it sits straight
+      # after the Phase 1 verdict, keeping its `if:` on seed-fixtures. The price, accepted: the
+      # Phase 2 steps inherit success(), so a red gate here skips Phase 2 exactly as a red
+      # Phase 1 verdict already does (the skip budget then gates report.json alone).
+      #
+      # Deliberately no step-level error swallowing — that directive appears nowhere in
+      # this file on purpose (see the header). The script fails closed on its own:
       # exit 1 on any failed check, exit 2 when KC_SEED_USER_PASSWORD is unset or
       # when it runs fewer checks than it declares, and every arm pushes a
       # failing result from its catch so a thrown exception can never read as a
@@ -476,6 +504,282 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
         run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
+
+      # Phase 30 plan 30-22 (PAY-01): Phase 2 runs stripe-refund-flow.spec.ts against
+      # real Stripe test mode after Phase 1 has proven #793 (cash-checkout-no-stripe)
+      # on the cash-only stack.
+      - name: Install the Stripe CLI (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          STRIPE_CLI_VERSION="1.55.6"
+          STRIPE_CLI_SHA256="1759a13a0c48f15e11979696df7b5958a73a8e6c1b92bea2a3ccb73ea97d5854"
+          curl -fsSL "https://github.com/stripe/stripe-cli/releases/download/v${STRIPE_CLI_VERSION}/stripe_${STRIPE_CLI_VERSION}_linux_x86_64.tar.gz" \
+            -o /tmp/stripe-cli.tar.gz
+          echo "${STRIPE_CLI_SHA256}  /tmp/stripe-cli.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/stripe-cli.tar.gz -C /usr/local/bin stripe
+          rm -f /tmp/stripe-cli.tar.gz
+          stripe --version
+
+      - name: Start the Stripe forwarder
+        run: |
+          set -euo pipefail
+          # Derive the account's test webhook signing secret via env (never argv, T-30-12)
+          # and register it with GitHub Actions' log masker before writing to .env.
+          whsec=$(STRIPE_API_KEY="$STRIPE_TEST_SECRET_KEY" stripe listen --print-secret)
+          case "$whsec" in
+            whsec_*) echo "::add-mask::$whsec" ;;
+            *) echo "::error::stripe listen --print-secret did not return a whsec_ secret"; exit 1 ;;
+          esac
+
+          {
+            echo "STRIPE_API_KEY=${STRIPE_TEST_SECRET_KEY}"
+            echo "STRIPE_WEBHOOK_SECRET=${whsec}"
+            echo "STRIPE_CONNECT_WEBHOOK_SECRET=${whsec}"
+            echo "STRIPE_ENVIRONMENT_TAG=ci-nightly"
+          } >> .env
+
+          # --all-snapshot is REQUIRED, not a filter preference: without --events,
+          # --all-snapshot or --all-thin, stripe-cli exits at once with "must specify
+          # events to forward" (observed: branch nightly 41288249740, CLI 1.55.6; the
+          # --print-secret call above succeeds either way, so only this listener dies).
+          # Snapshot events are the classic v1 webhook payloads core-java parses
+          # (PaymentService: Webhook.constructEvent, then getDataObjectDeserializer() for
+          # payment_intent.*, refund.*, account.updated); --all-thin would forward thin
+          # events, which carry no data.object for those handlers to read.
+          #
+          # --latest is REQUIRED too: it picks the API VERSION the events are rendered in.
+          # Without it `stripe listen` forwards in the ACCOUNT DEFAULT, which on the CI sandbox
+          # (and staging) is 2026-07-29.dahlia, while stripe-java 34.0.0 pins
+          # 2026-09-30.endive. Its EventDataObjectDeserializer then returns no object,
+          # handlePaymentIntentSucceeded throws IllegalStateException, the global handler maps
+          # it to 400 WITHOUT a log line, and the order stays PENDING (observed: branch nightly
+          # 41293948964, pi_3UWvcED29H13ktT517xlBdrC, event api_version=2026-07-29.dahlia).
+          # Staging is unaffected because its two dashboard webhook endpoints are pinned to
+          # api_version=2026-09-30.endive. --latest forwards the newest version (2026-10-28.endive
+          # on 2026-11-01), which stripe-java accepts while the major name (endive) matches.
+          # When Stripe ships the next major before the SDK is bumped this breaks again, LOUDLY
+          # (the Stripe spec cannot reach CAPTURED) - that is the intended signal to bump
+          # stripe-java, not something to pin around. The version actually forwarded is printed
+          # below from the CLI's Ready line, so every run records it.
+          STRIPE_API_KEY="$STRIPE_TEST_SECRET_KEY" nohup stripe listen \
+            --all-snapshot \
+            --latest \
+            --forward-to http://localhost:9090/api/v1/public/payments/webhook \
+            --forward-connect-to http://localhost:9090/api/v1/public/payments/webhook/connect \
+            > "$RUNNER_TEMP/stripe-listen.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/stripe-listen.pid"
+
+          deadline=$(( SECONDS + 60 ))
+          ready=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            kill -0 "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || {
+              echo "::error::stripe listen exited prematurely"
+              cat "$RUNNER_TEMP/stripe-listen.log" >&2 || true
+              exit 1
+            }
+            if grep -q "Ready" "$RUNNER_TEMP/stripe-listen.log" 2>/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          [ "$ready" -eq 1 ] || {
+            echo "::error::stripe listen did not become ready within 60s"
+            cat "$RUNNER_TEMP/stripe-listen.log" >&2 || true
+            exit 1
+          }
+          # Record the API version the forwarder renders events in. The Ready line ALSO carries
+          # the webhook signing secret, so only the version fragment is printed, never the line.
+          # One sed that quits on the first match: no pipe into head (pipefail, SIGPIPE 141).
+          api_version=$(sed -n '/You are using Stripe API Version \[/{s/.*\(You are using Stripe API Version \[[^]]*\]\).*/\1/p;q}' \
+            "$RUNNER_TEMP/stripe-listen.log")
+          [ -n "$api_version" ] || {
+            echo "::error::stripe listen is Ready but its log names no 'Stripe API Version [...]' - the forwarded version is unrecorded"
+            exit 1
+          }
+          echo "stripe listen: $api_version"
+
+      # THE HOST PORT IS PINNED FOR THIS RECREATE. Compose publishes core-java on the RANGE
+      # 127.0.0.1:9090-9091 (so `--scale core-java=2` can give replica 2 :9091), and Docker
+      # hands out range ports round-robin: a plain --force-recreate moved core-java to :9091
+      # (observed: branch nightly 41291041531, `docker compose ps` at the end of the job showed
+      # "Up 7 minutes (healthy) 127.0.0.1:9091->9090/tcp"), so this probe, the forwarder
+      # (--forward-to localhost:9090) and the browser (NEXT_PUBLIC_API_URL=localhost:9090) all
+      # lost it. Reproduced on a scratch compose project: range recreates alternate
+      # :19091, :19090, :19091; with the `!override` below three recreates all stay on :19090.
+      # The override replaces ONLY core-java's ports (rendered config otherwise identical) and
+      # is used only here — the stack-up step is the only other `up`, and it runs before this.
+      # A fixed port cannot silently move: if 9090 were still held, `up` fails "port is already
+      # allocated", and the published-port check below fails in seconds, not after 300s.
+      - name: Recreate core-java with the CI Stripe key
+        run: |
+          set -euo pipefail
+          docker compose version
+          pin="$RUNNER_TEMP/core-java-port-pin.yml"
+          cat > "$pin" <<'YAML'
+          services:
+            core-java:
+              ports: !override
+                - "${JTOYE_BIND_HOST:-127.0.0.1}:9090:9090"
+          YAML
+          docker compose -f "$COMPOSE_FILE" -f "$pin" up -d --no-deps --force-recreate core-java
+          published=$(docker compose -f "$COMPOSE_FILE" -f "$pin" port core-java 9090)
+          echo "core-java published on: $published"
+          case "$published" in
+            *:9090) ;;
+            *) echo "::error::core-java is published on '$published' after the recreate, not :9090"; exit 1 ;;
+          esac
+          deadline=$(( SECONDS + 300 ))
+          up_core=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            status=$(curl -fsS http://localhost:9090/actuator/health 2>/dev/null | jq -r '.status // empty' || true)
+            if [ "$status" = "UP" ]; then
+              up_core=1
+              echo "core-java UP (Stripe test mode) after ${SECONDS}s"
+              break
+            fi
+            sleep 3
+          done
+          [ "$up_core" -eq 1 ] || {
+            echo "::error::core-java did not become UP within 300s after Stripe recreate"
+            docker compose -f "$COMPOSE_FILE" logs --tail 200 core-java
+            exit 1
+          }
+          accepts=$(curl -fsS http://localhost:9090/api/v1/public/shops/mama-ades-kitchen | jq -r '.acceptsCardPayments')
+          [ "$accepts" = "true" ] || {
+            echo "::error::mama-ades-kitchen acceptsCardPayments is '$accepts' (expected true)"
+            exit 1
+          }
+
+      # T-30-87: this run holds the CI sandbox sk_test_, and the artifact below is PUBLIC for 14
+      # days. Three layers keep the secret out of it: the spec sends every Stripe call through
+      # frontend/e2e/stripe-test-api.ts (Node fetch — no Playwright trace, call log or report
+      # ever sees the header) with traces and video off; this run's Playwright output goes to
+      # $RUNNER_TEMP, which is not uploaded (and so no longer wipes frontend/test-results/, the
+      # main run's failure traces — Playwright empties its output dir at the start of a run);
+      # and the scan step before the upload deletes any file that still holds a secret.
+      - name: Run the Stripe-keyed specs
+        id: stripe-run
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          STRIPE_E2E: '1'
+          STRIPE_E2E_EVIDENCE: e2e-artifacts/stripe-refund.json
+        run: |
+          set -uo pipefail
+          mkdir -p e2e-artifacts
+          set -a; . ../.env; set +a
+          export E2E_VENDOR_PASSWORD="${KC_SEED_USER_PASSWORD}"
+          npx playwright test e2e/stripe-refund-flow.spec.ts --project=desktop --output "$RUNNER_TEMP/stripe-test-results" --reporter=json > e2e-artifacts/report-stripe.json || true
+
+      - name: Assert the Stripe report is real, zero skips, zero failures
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          report=e2e-artifacts/report-stripe.json
+          [ -s "$report" ] || { echo "::error::no Stripe Playwright report at $report"; exit 1; }
+          total=$(jq '[.. | objects | select(has("results")) | .results] | flatten | length' "$report")
+          case "$total" in ''|*[!0-9]*) echo "::error::could not count tests in $report"; exit 1 ;; esac
+          [ "$total" -gt 0 ] || { echo "::error::Stripe report contains ZERO test results"; exit 1; }
+
+          passed=$(jq '[.. | objects | select(has("results")) | .results[]? | select(.status == "passed")] | length' "$report")
+          failed=$(jq '[.. | objects | select(has("results")) | .results[]? | select(.status == "failed" or .status == "timedOut" or .status == "interrupted")] | length' "$report")
+          skipped=$(jq '[.. | objects | select(has("results")) | .results[]? | select(.status == "skipped")] | length' "$report")
+          echo "stripe_phase: total=$total passed=$passed failed=$failed skipped=$skipped"
+          echo "### E2E nightly (Stripe phase): $passed passed, $failed failed, $skipped skipped (of $total)" >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$passed" -ge 1 ] || { echo "::error::Stripe phase passed $passed test(s) (expected >= 1)"; exit 1; }
+          [ "$failed" -eq 0 ] || { echo "::error::$failed Stripe E2E test(s) failed"; exit 1; }
+          [ "$skipped" -eq 0 ] || { echo "::error::$skipped Stripe E2E test(s) skipped — PAY-01 requires zero skips in the Stripe phase"; exit 1; }
+
+      - name: Stripe events reached the app
+        run: |
+          set -euo pipefail
+          ev=frontend/e2e-artifacts/stripe-refund.json
+          [ -s "$ev" ] || { echo "::error::missing $ev from Stripe spec"; exit 1; }
+          pi=$(jq -r '.intent // empty' "$ev")
+          re=$(jq -r '.refund // empty' "$ev")
+          [ -n "$pi" ] && [ -n "$re" ] || { echo "::error::missing intent or refund id in $ev"; exit 1; }
+          # $pi goes into a URL path below: Stripe ids only.
+          case "$pi" in pi_*[!A-Za-z0-9_]*|pi_) echo "::error::intent id '$pi' is not a Stripe id"; exit 1 ;; pi_*) ;; *) echo "::error::intent id '$pi' is not a Stripe id"; exit 1 ;; esac
+
+          cfg="$RUNNER_TEMP/stripe-curl.cfg"
+          umask 077
+          printf 'header = "Authorization: Bearer %s"\n' "$STRIPE_TEST_SECRET_KEY" > "$cfg"
+          trap 'rm -f "$cfg"' EXIT
+
+          # No pipe into `head` anywhere here: under pipefail a producer still writing when head
+          # exits dies 141 and `set -e` aborts the step with no ::error (the refund query matches
+          # up to three events). Each response is captured whole, then jq picks the FIRST match
+          # itself. The window starts at the PaymentIntent's own `created`, so other runs on the
+          # shared sandbox before it cannot push this run's events off the page; limit=100 is the
+          # API maximum. Every miss is an ::error naming has_more, never a silent empty.
+          pi_obj=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/payment_intents/$pi") \
+            || { echo "::error::could not read PaymentIntent $pi from Stripe"; exit 1; }
+          since=$(jq -r '.created // empty' <<<"$pi_obj") || { echo "::error::PaymentIntent $pi: response is not JSON"; exit 1; }
+          case "$since" in ''|*[!0-9]*) echo "::error::PaymentIntent $pi has no numeric created ('$since')"; exit 1 ;; esac
+          pi_page=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?type=payment_intent.succeeded&created%5Bgte%5D=$since&limit=100") \
+            || { echo "::error::could not list payment_intent.succeeded events since $since"; exit 1; }
+          re_page=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?types%5B%5D=refund.created&types%5B%5D=refund.updated&types%5B%5D=charge.refunded&created%5Bgte%5D=$since&limit=100") \
+            || { echo "::error::could not list refund events since $since"; exit 1; }
+          pi_ev=$(jq -r --arg id "$pi" 'first(.data[] | select(.data.object.id == $id) | .id) // empty' <<<"$pi_page") \
+            || { echo "::error::payment_intent.succeeded event list is not JSON"; exit 1; }
+          re_ev=$(jq -r --arg re "$re" --arg pi "$pi" 'first(.data[] | select(.data.object.id == $re or .data.object.payment_intent == $pi) | .id) // empty' <<<"$re_page") \
+            || { echo "::error::refund event list is not JSON"; exit 1; }
+          [ -n "$pi_ev" ] || { echo "::error::no payment_intent.succeeded event for $pi since $since (has_more=$(jq -r '.has_more' <<<"$pi_page"))"; exit 1; }
+          [ -n "$re_ev" ] || { echo "::error::no refund event for $re ($pi) since $since (has_more=$(jq -r '.has_more' <<<"$re_page"))"; exit 1; }
+
+          set -a; . ./.env; set +a
+          db="${POSTGRES_DB:-jtoye}"
+          pi_rows=$(docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" -d "$db" -tAc \
+            "SELECT count(*) FROM processed_stripe_events WHERE event_id = '$pi_ev';")
+          re_rows=$(docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" -d "$db" -tAc \
+            "SELECT count(*) FROM processed_stripe_events WHERE event_id = '$re_ev';")
+          echo "processed_stripe_events: pi_event=$pi_ev rows=$pi_rows refund_event=$re_ev rows=$re_rows"
+          [ "${pi_rows:-0}" -ge 1 ] || { echo "::error::event $pi_ev not found in processed_stripe_events"; exit 1; }
+          [ "${re_rows:-0}" -ge 1 ] || { echo "::error::event $re_ev not found in processed_stripe_events"; exit 1; }
+
+      # S-1..S-5 across the union of Phase 1 (cash/full) and Phase 2 (Stripe): total
+      # within budget, every skip declared with a justification + REMOVE WHEN block,
+      # no stale ALLOW, and both reports stamped with the current e2e-spec-digest.
+      #
+      # WHICH REPORTS, AND WHY IT IS NOT SIMPLY SKIPPED WITHOUT PHASE 2. `stripe-run` has
+      # no `if:`, so it inherits success() and is SKIPPED whenever any earlier step failed:
+      # the Phase 1 verdict (a red test), the cart-identity gate, the Stripe CLI install, the
+      # forwarder, or the core-java recreate. Its `|| true` makes it `success` whenever it did run. So:
+      #   stripe-run skipped -> no report-stripe.json can exist. Gating on it anyway VOIDed
+      #     (exit 2) on top of the real failure (observed: run 41288249740, the forwarder
+      #     failed and this step added "no Playwright JSON report at
+      #     frontend/e2e-artifacts/report-stripe.json"). Skipping the step instead would drop
+      #     the PHASE 1 budget on exactly those nights, and Phase 1 had run (432 results).
+      #     So it gates report.json ALONE: the union is the same 4 skips either way, because
+      #     the Stripe phase may carry 0 (its own assert step fails on any skip there).
+      #   anything else (success, failure, cancelled) -> the Stripe run started, so its
+      #     report must exist: both reports are gated and a missing one stays VOID.
+      # A night with NO Stripe keys never gets here: the key gate (step 2) exits 1 before
+      # the stack starts, `stack-up` is skipped, and this step's `if:` is false — the job
+      # is red at the key gate by design ("do not skip the Stripe E2E phase").
+      - name: Enforce the declared skip budget
+        if: always() && steps.stack-up.outcome == 'success'
+        env:
+          STRIPE_RUN_OUTCOME: ${{ steps.stripe-run.outcome }}
+        run: |
+          set -uo pipefail
+          reports=(--report frontend/e2e-artifacts/report.json)
+          if [ "$STRIPE_RUN_OUTCOME" = skipped ]; then
+            echo "::warning::the Stripe phase did not run (an earlier step failed); gating the Phase 1 report alone"
+          else
+            reports+=(--report frontend/e2e-artifacts/report-stripe.json)
+          fi
+          bash scripts/check-e2e-skip-budget.sh "${reports[@]}"
+
+      - name: Stop the Stripe forwarder
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/stripe-listen.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/stripe-listen.pid"
+          fi
 
       # BLOB-06 (Phase 36). The two-arm restore drill of docs/runbooks/backups.md, EXECUTED.
       # Every check inside the backup pipeline (the size floor, `pg_restore --list`) passes on
@@ -509,6 +813,20 @@ jobs:
               ;;
           esac
           bash scripts/check-backup-restore-drill.sh
+
+      # T-30-87, the execution point: whatever wrote it, a file that holds the CI sandbox secret
+      # or the `stripe listen` signing secret is deleted here, before the upload below can
+      # publish it, and the job goes red (exit 1). Zip members (trace.zip) are read, not
+      # skipped. Runs on every outcome, like the upload it guards; with no secret to look for
+      # (the key gate already failed) it is VOID (exit 2), never a quiet pass.
+      - name: Gate — no Stripe secret in the uploaded artifacts (T-30-87)
+        if: always()
+        run: |
+          set -uo pipefail
+          whsec=""
+          if [ -f .env ]; then whsec=$(command grep -E '^STRIPE_WEBHOOK_SECRET=' .env | tail -n 1 | cut -d= -f2-); fi
+          STRIPE_WEBHOOK_SECRET="$whsec" bash scripts/check-stripe-ci-keys.sh --scan-artifacts \
+            frontend/e2e-artifacts frontend/playwright-report frontend/test-results
 
       - name: Upload Playwright report and traces
         if: always()
@@ -622,4 +940,9 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose -f "$COMPOSE_FILE" down -v --remove-orphans
+        run: |
+          if [ -f "$RUNNER_TEMP/stripe-listen.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/stripe-listen.pid"
+          fi
+          docker compose -f "$COMPOSE_FILE" down -v --remove-orphans

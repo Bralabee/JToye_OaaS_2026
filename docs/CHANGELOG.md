@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Unskipped Stripe Test-Mode Refund E2E and an S-5 Skip-Budget Gate (Phase 30 30-21/30-22, PAY-01) (#1065) — 2026-10-31
+
+- **`scripts/check-e2e-skip-budget.sh`:** rule S-5 says every `ALLOW` line needs a justification comment and a `# REMOVE WHEN:` line. New `--lint-conf` mode. `--report` can be repeated to evaluate the union of all skipped specs across reports (with matching spec digests). New `--selftest` (14 fixtures).
+- **`frontend/e2e/stripe-refund-flow.spec.ts`:** a storefront card order confirmed with `pm_card_visa`, captured by the webhook and refunded for £1.00 from the vendor dashboard. The refund is read back from Stripe for up to 30 s: exactly one refund for the PaymentIntent (`succeeded`, 100), settled on two consecutive reads, and its charge `livemode=false`. The page must show `Refunds (1)` and the `Refunded` status. Stripe calls go through `frontend/e2e/stripe-test-api.ts` (Node `fetch`), never Playwright's `request` fixture, and the spec turns traces and video off: a Playwright trace, and on a transport error its call log, kept the `sk_test_` header in plaintext (T-30-87). `__tests__/stripe-refund-readback.test.ts` proves the read-back rule on every PR. It runs only when `STRIPE_E2E=1`. The environment-dependent paid-refund test leaves `vendor-refund-flow.spec.ts`, and its skip-budget `ALLOW` goes with it: `MAX_SKIPS` 6 → 4, the stomp-relay skips measured in nightly 41158370941.
+- **`scripts/check-stripe-ci-keys.sh`:** refuses missing, swapped or live Stripe keys before any Stripe step. `--scan-artifacts` deletes any artifact file holding the secret or the `stripe listen` signing secret (zip members read) and fails. `--lint` checks the spec, the helper and the nightly keep their layers. The selftest has 18 arms.
+- **`e2e-nightly.yml`:** a Stripe Phase 2 after the cash suite. It validates the keys, installs stripe-cli v1.55.6 (sha256 pinned), forwards webhooks, runs the refund spec with zero skips and checks the skip budget across both reports. The Stripe run writes its Playwright output under `$RUNNER_TEMP`, which is not uploaded, and the artifacts are scanned for the secret before the upload.
+- **`ci-cd.yaml` ops-contracts:** runs both selftests and `--lint-conf`.
+
+### The Apps Own Referrer-Policy, So /pay's no-referrer Reaches the Browser (#1071) (#1073) — 2026-11-01
+
+On staging, `/pay` answered with `Referrer-Policy: strict-origin-when-cross-origin`, and so did `/invite`. The frontend sends `no-referrer` on both pages, but the ingress `configuration-snippet` replaced it, because `more_set_headers` overwrites an upstream header that has the same name.
+
+- **k8s:** the `Referrer-Policy` line is removed from the base `jtoye-ingress` snippet and from both staging copies. INV-15 requires those copies to carry every base line, so all three change together. The frontend (`next.config.mjs`) and core-java (`SecurityConfig`) already send the header, so no app response loses it. The grafana, keycloak and mailpit Ingresses keep their own line. The goldens lose exactly three lines.
+- **`frontend/app/pay/page.tsx`:** `metadata.referrer` is `"no-referrer"`. The document now carries `<meta name="referrer" content="no-referrer">`, which no edge can overwrite. The Jest test failed before the change and passes after it.
+- **`scripts/check-staging-edge.sh`:**
+  - New `pay-referrer` arm: it requires exactly one `Referrer-Policy: no-referrer` on app-staging `/pay`. It fails on the pre-deploy edge and on the `--fail-arms` probe.
+  - New `--only <arm>` flag runs a single arm.
+  - The `staging-edge-probe` job now runs the new arm after each staging deploy.
+
+### The `/pay` Page: No Cookie Notice Over the Card Form, a Retry on the Resume Path, and No "Payment Received" for an Unreadable Intent (#1072) — 2026-11-01
+
+Owner ruling 2026-11-01, from PR #1064's review series (recorded finding 6, the round-2 residual, and the 30-20 360 px screenshot). Quick task `261101-no1`.
+
+- **`CookieNotice`:** renders nothing on `/pay` and `/pay/<segment>` (never a bare prefix, so `/payments` still shows it). On a 360 px phone the fixed bar covered the card form's Expiry date and Security code fields.
+  - `/pay` is not cookie-free. Stripe.js sets its own strictly necessary fraud-prevention cookies there. `/legal/cookies` discloses them, and `/pay`'s footer links that page.
+  - The notice only informs and gates nothing. The ConsentBanner branch still runs first, so a route never suppresses a future consent choice.
+- **`pay-client.tsx`, resume path:** after a reload resumes from `jtoyePayResume`, a failure to load Stripe.js or the Payment Element now shows "Try again", which reloads the page.
+  - It is not offered when the bundle has no publishable key, because a reload cannot add a build-time key.
+  - The first-visit state is unchanged.
+  - The reload goes through an exported `payNavigation.reload` seam, because jsdom 26's `Location` cannot be mocked.
+- **`pay-client.tsx`, Stripe's redirect return:** `redirect_status` no longer decides anything. An intent that cannot be read (no key, Stripe.js down, a rejected read, or Stripe answering `{ error }` for a garbage client secret) shows the check-failed alert, and its "Try again" reads the intent again. Before this, `?payment_intent_client_secret=<garbage>&redirect_status=succeeded` showed "Payment received".
+- **`30-UI-SPEC.md`:**
+  - the "link opened" row is amended;
+  - a new "return with an unreadable intent" row is added;
+  - the "payment received" row now states the redirect-return body.
+- **Tests:** twelve new Jest blocks. Nine were RED before their fix. Three are guards that pass before and after: the `/` and `/payments` control, banner precedence on `/pay`, and no Try again on a first visit. Break arms were run after each fix, including the review round-1 fixes. The full frontend run is 275/275 suites and 3273/3273 tests.
+
+### List-Unsubscribe on Intermediate Order Emails, Phase 29 Gate Follow-Ups, and a Session-Burst Guard (#981, #979, #963) (#1066) — 2026-10-31
+
+- **#981, `EmailNotificationService` / `OrderStateChangeListener`:** CONFIRMED, PREPARING, READY and COMPLETED emails carry RFC 8058 `List-Unsubscribe` + `List-Unsubscribe-Post` and a footer link. They are sent only if `ConsentGate.allows(tenant, email, ORDERS)`. `order-received` (the statutory CCR 2013 reg 16 confirmation) and `order-cancelled` stay non-suppressible.
+- **#979, `check-connection-math.sh`:** also reads the k8s Keycloak pool size and fails on drift from Compose. **`validate-networkpolicies.py`:** also covers component policies and rendered goldens (18 files, 41 policies) and gains `--selftest`. Stale citations are fixed.
+- **#963, `api-client.ts`:** `getSession({ broadcast: false })` stops a same-tab BroadcastChannel echo from making a second `/api/auth/session` fetch. `dashboard-session-burst.spec.ts` checks no more than 3 session calls and no 429s.
+
+### Per-Location Subscription Quantity, Kept in Step With Shop Create and Delete (Phase 30 30-25, PAY-02, D-04) (#1067) — 2026-10-31
+
+- **D-04 (`all-shops`):** SAAS_HYBRID_STANDARD and SAAS_FLAT_PREDICTABLE bill one unit per shop. WALK_SETUP_STEPDOWN bills one per account. The ruling is in `evidence/30-25-d04-decision.txt`.
+- **`ShopRepository.countByTenantId`:** has an explicit `tenant_id` predicate, because `shops_public_read` (V16) shows every tenant's published shops. A bare count overcounted under RLS, and a break arm proves it.
+- **`StripeBillingService`:** sets the subscription item quantity from the location count. Idempotency keys are added on `Price.create` and `Subscription.create`.
+- **`BillingLocationSync`:** after a shop create or delete commits, it updates the Stripe `SubscriptionItem` quantity with key `billing-qty-<item>-<qty>-<event>`. A Stripe failure is logged and counted on `jtoye.billing.location_sync.failed`, never rolled into the shop write. A failed sync is not retried; the next shop change for that tenant corrects it.
+
+### Billing Endpoints Gate on Group Admin, So Real Keycloak Users Reach Them (#1020) (#1068) — 2026-10-31
+
+`BillingController` gated its four endpoints on `hasAnyRole('ADMIN', 'TENANT_ADMIN', 'VENDOR', 'OPERATOR')`. Those uppercase roles never match the lowercase `ROLE_*` authorities that Keycloak realm roles become, so `/api/v1/billing/subscription` refused every real user with 403.
+
+- **`BillingController`:** each handler now starts with `shopAccessService.requireGroupAdmin()`, the same group-admin boundary that finance, staff and webhooks use.
+- **`BillingControllerAuthorizationIntegrationTest`:** uses real Keycloak-shaped tokens. A granted GROUP_ADMIN and a realm `admin` reach all four endpoints. Ungranted callers, per-shop STAFF, per-shop SHOP_MANAGER and uppercase-`VENDOR` callers get 403 `shop-access-denied` and change nothing. With `origin/main`'s controller it fails 3/3.
+
 ### The `/pay` Payment-Link Page: a Fragment-Token Preview, the Shared Card Form on the Owning Account, and a Staging-Only OTP Seam (Phase 30 PR 5, PAY-04) (#1064) — 2026-10-31
 
 A vendor could already issue a payment link (PAY-04), but the customer had no page to pay it on. D-03 puts that page in Phase 30: a link PAY-04 sends must be payable end to end on staging.

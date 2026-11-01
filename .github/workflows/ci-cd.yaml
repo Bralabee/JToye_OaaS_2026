@@ -1893,6 +1893,15 @@ jobs:
       - name: Assert every declared compose port is loopback-bound or exempt (--static #1009)
         run: bash scripts/check-infra-exposure.sh --static
 
+      - name: Prove the E2E skip-budget gate and S-5 block rule can fail (plan 30-21 --selftest)
+        run: bash scripts/check-e2e-skip-budget.sh --selftest
+
+      - name: Lint scripts/gates/e2e-skip-budget.conf against S-5 (plan 30-21 --lint-conf)
+        run: bash scripts/check-e2e-skip-budget.sh --lint-conf
+
+      - name: Prove the Stripe CI test-key guard can fail (plan 30-22 --selftest)
+        run: bash scripts/check-stripe-ci-keys.sh --selftest
+
       - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
         run: bash scripts/check-gate-enforcement.sh --selftest
 
@@ -2693,10 +2702,11 @@ jobs:
   # Job 4b: Probe the staging edge after a successful staging deploy (C-2, Phase 29 follow-ups).
   #
   # scripts/check-staging-edge.sh asks the LIVE edge whether Traefik honours the annotations the
-  # render gates only prove are written: the six security headers, the CSP admitting the realm
-  # endpoints, the CORS preflight and the Keycloak admin-path restriction. Until this job it ran
-  # nowhere, and its gate-enforcement.conf entry said "plan 29-21 runs it from the deploy job",
-  # which was never true.
+  # render gates only prove are written: the security headers, the CSP admitting the realm
+  # endpoints, the CORS preflight, the Keycloak admin-path restriction and (issue #1071) the
+  # no-referrer policy on /pay that the edge used to overwrite. Until this job it ran nowhere,
+  # and its gate-enforcement.conf entry said "plan 29-21 runs it from the deploy job", which was
+  # never true.
   #
   # A SEPARATE JOB, NOT A STEP OF deploy-staging, and that is the whole design. A failing step in
   # deploy-staging runs "Rollback on failure" (kubectl rollout undo on all three Deployments), so
@@ -2711,13 +2721,13 @@ jobs:
   # federated-credential subject, and no GitHub deployment record that a red probe could turn
   # into a failed "staging" deployment). It runs repo code, so it must not hold the identity
   # deploy-staging uses. The read-only run needs none of that: the script's context guard
-  # applies only to --fail-arms, and the four arms curl the public staging hosts.
+  # applies only to --fail-arms, and the five arms curl the public staging hosts.
   #
   # READ-ONLY ARMS ONLY, with --skip-burst. The 429 burst arm (1500 requests at concurrency 40,
   # passing only above ~150 rps) is timing-sensitive and says as much about the client as about
   # the edge; it stays operator-run, as does --fail-arms (it creates a scratch Ingress and needs
   # the cluster). The script's own PASS line says the burst arm was not run, so this job's green
-  # cannot be read as the full five-arm result.
+  # cannot be read as the full six-arm result.
   #
   # Same `if:` as deploy-staging and the SAME `concurrency:` group, so a probe never overlaps a
   # later run's rollout.
@@ -2743,7 +2753,7 @@ jobs:
 
       # curl, jq and getent are on the runner image. Exit 1 = an arm failed on the live edge,
       # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job.
-      - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
+      - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin, pay-referrer)
         run: bash scripts/check-staging-edge.sh --skip-burst
 
       # Issue #957: read the publishable key out of the RUNNING artifact. A green build, a 200 and

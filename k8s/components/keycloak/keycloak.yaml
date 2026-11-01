@@ -96,9 +96,8 @@ spec:
               key: db-password
         # Issue #94 [P2-3]: the Agroal pool defaults to 100 and could exhaust the
         # shared server by itself. 20 is the Keycloak line item of the connection
-        # budget. NOTE: k8s/scripts/check-connection-math.sh reads that line item
-        # from docker-compose.full-stack.yml, not from here, so the two values must
-        # be changed together.
+        # budget; k8s/scripts/check-connection-math.sh reads both this value and
+        # docker-compose.full-stack.yml's KC_DB_POOL_MAX_SIZE and fails on drift (#979).
         - name: KC_DB_POOL_MAX_SIZE
           value: "20"
         # First-boot admin of the master realm (Keycloak 26 names; the KEYCLOAK_ADMIN
@@ -302,8 +301,10 @@ spec:
 # sits below it. The render gate's exact three-path check is 29-10 Task 1's verify.
 #
 # Annotations: base jtoye-ingress's TLS redirect and per-IP limits, and the staging
-# configuration-snippet (base's six security headers + X-Robots-Tag noindex,
-# INV-15(c)). No CORS annotations: Keycloak answers CORS itself from each client's
+# configuration-snippet (base's five security headers + X-Robots-Tag noindex,
+# INV-15(c), plus a Referrer-Policy line that base dropped in issue #1071 because
+# the apps behind it send their own; this host has no app of ours behind it, so
+# the line is kept here). No CORS annotations: Keycloak answers CORS itself from each client's
 # webOrigins. No proxy buffer annotations: Traefik streams responses (see
 # k8s/platform/traefik/README.md), so NGINX's "upstream sent too big header"
 # failure mode for large Keycloak redirects does not exist here.

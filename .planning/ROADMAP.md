@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | 23/32 | In Progress — 30-21 adopted 2026-11-01 from PR 6 (#1065, Antigravity, head 217003b5; S-5 re-measured MET); 30-22 complete 2026-11-01 on #1065 head 1f69a7f0 (the two gaps found at 217003b5 fixed: exactly-one refund read-back; the CI sk_test_ kept out of every uploaded artifact, T-30-87) — next D3 round 3 on #1065, then 30-23. PR 5 (#1064, PAY-04 /pay page) merged bff82097 and deployed 2026-10-31; 30-20 done (edge Referrer-Policy gap open, issue #1071). Earlier: 30-16 done 2026-10-31 (owner chose fragment tokens + expose-on-staging; non-consuming payment-link preview); 30-17 done 2026-10-31 (stripeAccountId reaches the browser; OTP seam allow-list); 30-18 done 2026-10-31 (the /pay page in every state, previewed before it is spent and resumable after a reload; the checkout pays a direct charge on the vendor's account); 30-19 done 2026-10-31 (/pay not indexed and no Referer, SSR gate line, staging-seed --stage pay-link, the staging /pay spec with a reload-resume arm, both staging payment specs read on the owning account); PR 4 (30-12..30-15, #1046 Connect webhook, PAY-03) merged and proven on staging 2026-10-31; PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
+| 30. The Money Path, Executed | v2.3 | 24/32 | In Progress — 30-21 adopted 2026-11-01 from PR 6 (#1065, Antigravity, head 217003b5; S-5 re-measured MET); 30-22 complete 2026-11-01 on #1065 head 1f69a7f0 (the two gaps found at 217003b5 fixed: exactly-one refund read-back; the CI sk_test_ kept out of every uploaded artifact, T-30-87) — next D3 round 3 on #1065, then 30-23. PR 5 (#1064, PAY-04 /pay page) merged bff82097 and deployed 2026-10-31; 30-20 done (edge Referrer-Policy gap open, issue #1071). Earlier: 30-16 done 2026-10-31 (owner chose fragment tokens + expose-on-staging; non-consuming payment-link preview); 30-17 done 2026-10-31 (stripeAccountId reaches the browser; OTP seam allow-list); 30-18 done 2026-10-31 (the /pay page in every state, previewed before it is spent and resumable after a reload; the checkout pays a direct charge on the vendor's account); 30-19 done 2026-10-31 (/pay not indexed and no Referer, SSR gate line, staging-seed --stage pay-link, the staging /pay spec with a reload-resume arm, both staging payment specs read on the owning account); PR 4 (30-12..30-15, #1046 Connect webhook, PAY-03) merged and proven on staging 2026-10-31; PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -727,7 +727,7 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
-**Plans:** 23/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+**Plans:** 24/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
 
 Plans:
 **Wave 1**
@@ -803,7 +803,7 @@ Plans:
 - [ ] 30-24-PLAN.md — PAY-01 PR 6: merge, main nightly green, #61 evidence
 
 **Wave 25** *(blocked on Wave 24 completion)*
-- [ ] 30-25-PLAN.md — PAY-02 PR 7 (D-04): owner quantity rule; per-location subscription quantity, idempotency keys, location sync
+- [x] 30-25-PLAN.md — PAY-02 PR 7 (D-04): owner quantity rule; per-location subscription quantity, idempotency keys, location sync
 
 **Wave 26** *(blocked on Wave 25 completion)*
 - [ ] 30-26-PLAN.md — PAY-02 PR 7: staging-seed billing and billing-sync-check stages

@@ -355,16 +355,17 @@ UK English, plain words. No issue numbers, no Stripe jargon ("PaymentIntent", "c
 | `/pay` active, meta lines | "Order {orderNumber}" · "This link expires {d MMM yyyy, HH:mm}" (Europe/London) |
 | `/pay` active, single-use note | This link opens once. After you continue, keep this page open until you've paid. |
 | `/pay` heading when the preview call fails (see S3 data contract 3) | Pay for your order |
-| `/pay` payment received | `h1` "Payment received". Body "You've paid £{amount} to {shopName} for order {orderNumber}. You can close this page." |
+| `/pay` payment received | `h1` "Payment received". Body "You've paid £{amount} to {shopName} for order {orderNumber}. You can close this page." *Amended 2026-11-01:* after Stripe's redirect return the page knows only the intent, so the body is "You've paid £{amount}. You can close this page." |
 | `/pay` processing | `h1` "Payment processing". Body "Your payment of £{amount} is being processed. You don't need to do anything else." |
 | `/pay` already paid (preview `PAID`, or the PaymentIntent has already succeeded) | `h1` "This order is already paid". Body "There's nothing more to pay for order {orderNumber}. You can close this page." |
 | `/pay` link no longer works (410: expired **or** revoked; the server returns 410 for both and the page must not parse the prose) | `h1` "This payment link no longer works". Body "It has expired, or the shop has sent you a newer one. Use the newest link you were sent, or ask the shop for a new one." |
 | `/pay` link already opened (409 / preview `USED`) | `h1` "This payment link has already been opened". Body "Each link opens once. If you haven't finished paying, ask the shop to send you a new link." |
 | `/pay` not found (404) | `h1` "We can't find this payment link". Body "Check you opened the whole link from your message. If it still doesn't work, ask the shop to send it again." |
 | `/pay` unavailable, link not used | Alert "Card payment isn't available right now. Your link hasn't been used, so you can try again later." Button "Try again" |
-| `/pay` unavailable, link opened | Alert "We couldn't load the card form, and this link has now been opened. Ask the shop to send you a new link. Nothing has been charged." |
+| `/pay` unavailable, link opened | Alert "We couldn't load the card form, and this link has now been opened. Ask the shop to send you a new link. Nothing has been charged." *Amended 2026-11-01 (owner ruling, PR #1064 review round-2 residual):* on the resume path (a reload that found the `jtoyePayResume` entry, then Stripe.js failed to load, or the card form's Payment Element failed to load) the alert carries Button "Try again" (reloads the page; the entry is kept, so the reload finds the intent again). Not when the bundle has no publishable key: that is a build constant a reload cannot change (PR #1072 review round 1). After a redeem on a first visit there is no button |
 | `/pay` preview failed (429, network) | Alert "We couldn't check this link just now. Please try again." Button "Try again" |
 | `/pay` redirect failed (`/pay?redirect_status=failed`) | `h1` "Your payment didn't go through". Body "Nothing has been charged. Ask the shop to send you a new link to try again." |
+| `/pay` return with an unreadable intent (*added 2026-11-01, owner ruling, PR #1064 review series*) | Stripe's return carries a `payment_intent_client_secret` but the intent cannot be read (no key, Stripe.js down, the read fails, or Stripe answers with an error). `redirect_status` is a query anyone can type and is never read as the outcome. `h1` "Pay for your order". Alert "We couldn't check this link just now. Please try again." Button "Try again" (reads the intent again) |
 | Destructive confirmation | **None new this phase.** Cancelling an abandoned DRAFT (D-02) uses the existing Orders-page Cancel and its existing confirmation, unchanged |
 
 ---

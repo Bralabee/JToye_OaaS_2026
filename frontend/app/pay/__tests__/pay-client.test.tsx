@@ -28,7 +28,7 @@ import { loadStripe } from "@stripe/stripe-js/pure"
 import publicApiClient from "@/lib/public-api-client"
 import { resetStripeLoaderForTests } from "@/lib/stripe-loader"
 import PayPage, { metadata } from "../page"
-import { PayClient } from "../pay-client"
+import { PayClient, payNavigation } from "../pay-client"
 
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
@@ -502,6 +502,20 @@ describe("redeem refused: each status reads as its own state, without the server
     expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
   })
 
+  it("Stripe.js fails to load on the connected account straight after redeem: the 'link has now been opened' alert, and no Try again on a first visit", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockedLoadStripe
+      .mockImplementationOnce(() => Promise.resolve(fakeStripe()))
+      .mockImplementationOnce(() => Promise.reject(new Error("Failed to load Stripe.js")))
+    await pressContinue()
+
+    await findAlert(LINK_OPENED)
+    expect(mockedRedeem).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+    noContinue()
+  })
+
   it("the Payment Element fails to load after redeem: the 'link has now been opened' alert replaces the form", async () => {
     serve(ok(PREVIEW), ok(REDEEMED))
     await pressContinue()
@@ -511,6 +525,8 @@ describe("redeem refused: each status reads as its own state, without the server
     await findAlert(LINK_OPENED)
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
     noContinue()
+    // A first visit, not a resume: no reload is offered (PR #1072 review round 1, finding 3 guard).
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
   })
 })
 
@@ -631,6 +647,65 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
     expect(mockedPost).toHaveBeenCalledTimes(0)
   })
 
+  // Owner ruling 2026-11-01 (PR #1064 review series): redirect_status is a query anyone can type, so it
+  // never decides a success. When the intent itself cannot be read the page says it could not check,
+  // and Try again reads the intent again.
+  it("a redirect return whose intent Stripe answers with an error (a garbage client secret, redirect_status=succeeded): the check-failed state, never 'Payment received'", async () => {
+    openLink("/pay?acct=&payment_intent=pi_x&payment_intent_client_secret=garbage&redirect_status=succeeded", null)
+    mockedLoadStripe.mockImplementation(() =>
+      Promise.resolve({
+        retrievePaymentIntent: jest.fn(() => Promise.resolve({ error: { type: "invalid_request_error" } })),
+      })
+    )
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(theOneH1()).toHaveTextContent("Pay for your order")
+    expect(screen.getByRole("button", { name: "Try again" })).toHaveClass("h-11")
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+  })
+
+  it("a redirect return whose intent read REJECTS: the check-failed state, and Try again reads the intent again and shows what it says", async () => {
+    openLink(
+      `/pay?acct=${ACCOUNT}&payment_intent=pi_3018&payment_intent_client_secret=${CLIENT_SECRET}&redirect_status=succeeded`,
+      null
+    )
+    const retrievePaymentIntent = jest
+      .fn()
+      .mockImplementationOnce(() => Promise.reject(new Error("network")))
+      .mockImplementationOnce(() => Promise.resolve({ paymentIntent: { status: "succeeded", amount: 1250 } }))
+    mockedLoadStripe.mockImplementation(() => Promise.resolve({ retrievePaymentIntent }))
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
+    expect(retrievePaymentIntent).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    const received = await screen.findByRole("heading", { level: 1, name: COPY.received })
+    expect(screen.getByText("You've paid £12.50. You can close this page.")).toBeInTheDocument()
+    expect(retrievePaymentIntent).toHaveBeenCalledTimes(2)
+    expect(retrievePaymentIntent).toHaveBeenLastCalledWith(CLIENT_SECRET)
+    expect(mockedLoadStripe).toHaveBeenCalledWith(PUBLISHABLE_KEY, { stripeAccount: ACCOUNT })
+    // Try again re-ran the retrieve, not the link preview: there is no link on this page.
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+    expect(theOneH1()).toBe(received)
+  })
+
+  it("a redirect return with no publishable key in the bundle (redirect_status=succeeded): the check-failed state, never 'Payment received'", async () => {
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    openLink(
+      `/pay?acct=${ACCOUNT}&payment_intent=pi_3018&payment_intent_client_secret=${CLIENT_SECRET}&redirect_status=succeeded`,
+      null
+    )
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+  })
+
   it("no token, no redirect query and no resume entry: 'Open your payment link', and nothing is asked of anyone", async () => {
     openLink("/pay", null)
     render(<PayClient />)
@@ -646,8 +721,9 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
   it("a bare redirect_status with no client secret is not Stripe's return: 'Open your payment link', never 'Payment received'", async () => {
     // PR #1064 review round 1, finding 3: https://…/pay?redirect_status=succeeded, typed by hand, carried
     // no intent to read, and the fallback `status ?? redirectStatus` rendered a success state on the
-    // public host with no payment behind it. redirect_status is only a fallback for an intent that
-    // cannot be read; with no payment_intent_client_secret there is nothing to fall back from.
+    // public host with no payment behind it. Since the 2026-11-01 ruling redirect_status decides
+    // nothing at all (an unreadable intent is the check-failed state); with no
+    // payment_intent_client_secret there is no intent to read, so this is not Stripe's return.
     openLink("/pay?redirect_status=succeeded", null)
     render(<PayClient />)
 
@@ -717,6 +793,75 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
     await screen.findByRole("heading", { level: 1, name: DEAD.paid.heading })
     expect(window.history.state).toEqual({ __NA: true })
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
+  })
+
+  it("reload after redeem when Stripe.js fails to load: the 'link has now been opened' alert carries Try again, which reloads the page", async () => {
+    // Owner ruling 2026-11-01 (PR #1064 review round-2 residual): this state had no action, although a
+    // plain reload recovers once Stripe.js can load, because the resume entry is kept for exactly that.
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    mockedLoadStripe.mockImplementation(() => Promise.reject(new Error("Failed to load Stripe.js")))
+    render(<PayClient />)
+
+    await findAlert(LINK_OPENED)
+    expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
+    expect(window.history.state).toEqual({ __NA: true, [`jtoyePayResume`]: RESUME })
+    const retry = screen.getByRole("button", { name: "Try again" })
+    expect(retry).toHaveClass("h-11")
+
+    // jsdom 26 Location is unforgeable (reload is read-only, location cannot be redefined), so the
+    // page reloads through payNavigation and the spy sits there; the next test proves the seam is the
+    // browser's own reload.
+    const reload = jest.spyOn(payNavigation, "reload").mockImplementation(() => {})
+    try {
+      fireEvent.click(retry)
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      reload.mockRestore()
+    }
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+  })
+
+  it("reload after redeem on a bundle with NO publishable key: the 'link has now been opened' alert, and no Try again (a reload cannot add a build-time key)", async () => {
+    // PR #1072 review round 1, finding 2: a missing key is a build constant, so a reload lands on the
+    // same entry and the same state; offering it would loop for ever.
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    render(<PayClient />)
+
+    await findAlert(LINK_OPENED)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+  })
+
+  it("reload after redeem when the Payment Element fails to load: the 'link has now been opened' alert carries Try again, which reloads the page", async () => {
+    // PR #1072 review round 1, finding 3: the same resume path, one step later. The entry is still kept,
+    // so a reload recovers here exactly as it does for a Stripe.js load failure.
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    render(<PayClient />)
+    await screen.findByTestId("stripe-elements")
+    fireEvent.click(screen.getByRole("button", { name: /simulate payment element load error/i }))
+
+    await findAlert(LINK_OPENED)
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+    expect(window.history.state).toEqual({ __NA: true, [`jtoyePayResume`]: RESUME })
+    const retry = screen.getByRole("button", { name: "Try again" })
+    const reload = jest.spyOn(payNavigation, "reload").mockImplementation(() => {})
+    try {
+      fireEvent.click(retry)
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      reload.mockRestore()
+    }
+  })
+
+  it("the reload seam is the browser's own window.location.reload (jsdom reports the navigation it cannot perform)", () => {
+    const errors = jest.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      payNavigation.reload()
+      expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([expect.stringContaining("Not implemented: navigation")])
+    } finally {
+      errors.mockRestore()
+    }
   })
 
   it("reload after redeem when the intent cannot be read: the entry is dropped and the page asks for the link", async () => {

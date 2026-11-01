@@ -17,6 +17,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.notification.CustomerEmailContext;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.notification.consent.ConsentGate;
+import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.security.TenantContext;
@@ -426,5 +428,84 @@ class OrderStateChangeListenerTest {
         } finally {
             listenerLogger.setLevel(previous);
         }
+    }
+
+    // =============================================================================================
+    // #981: ConsentGate (ORDERS) suppresses intermediate updates under pinned tenant, never statutory notices
+    // =============================================================================================
+
+    @Test
+    @DisplayName("#981: when recipient opted out of ORDERS, intermediate statuses (CONFIRMED, PREPARING, READY, "
+            + "COMPLETED) are suppressed under the pinned tenant without logging the recipient")
+    void optedOutRecipient_suppressesIntermediateStatusesUnderPinnedTenant() {
+        ConsentGate consentGate = mock(ConsentGate.class);
+        OrderStateChangeListener gatedListener = new OrderStateChangeListener(
+                orderRepository, emailService, entityManager, metrics, simpMessagingTemplate,
+                jdbcTemplate, shopRepository, traderIdentityService, consentGate);
+
+        UUID tenantId = UUID.randomUUID();
+        AtomicReference<Optional<UUID>> tenantAtConsentRead = new AtomicReference<>();
+        when(consentGate.allows(eq(tenantId), eq("opted.out@example.com"), eq(NotificationCategory.ORDERS)))
+                .thenAnswer(inv -> {
+                    tenantAtConsentRead.set(TenantContext.get());
+                    return false;
+                });
+
+        for (OrderStatus status : List.of(
+                OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.COMPLETED)) {
+            UUID orderId = UUID.randomUUID();
+            OrderStateChangeEvent event = new OrderStateChangeEvent(
+                    orderId, tenantId, "ORD-SUPP-" + status.name(),
+                    OrderStatus.PENDING, status, OffsetDateTime.now());
+            Order order = new Order();
+            order.setCustomerEmail("opted.out@example.com");
+            order.setTotalAmountPennies(1500L);
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+            gatedListener.handleOrderStateChange(event);
+
+            assertThat(tenantAtConsentRead.get())
+                    .as("Pitfall 8: ConsentGate must run while TenantContext is pinned to the event's tenant")
+                    .contains(tenantId);
+        }
+
+        verifyNoInteractions(emailService);
+        verify(metrics).recordOrderCompleted(1500L);
+        assertThat(logAppender.list).noneMatch(e -> e.getFormattedMessage().contains("opted.out"));
+    }
+
+    @Test
+    @DisplayName("#981: statutory notices (PENDING order-received and CANCELLED) are still sent even when "
+            + "recipient opted out of ORDERS")
+    void optedOutRecipient_stillReceivesStatutoryPendingAndCancelledNotices() {
+        ConsentGate consentGate = mock(ConsentGate.class);
+        lenient().when(consentGate.allows(any(), anyString(), any())).thenReturn(false);
+        OrderStateChangeListener gatedListener = new OrderStateChangeListener(
+                orderRepository, emailService, entityManager, metrics, simpMessagingTemplate,
+                jdbcTemplate, shopRepository, traderIdentityService, consentGate);
+
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingOrderId = UUID.randomUUID();
+        OrderStateChangeEvent pendingEvent = new OrderStateChangeEvent(
+                pendingOrderId, tenantId, "ORD-STAT-PEN",
+                OrderStatus.DRAFT, OrderStatus.PENDING, OffsetDateTime.now());
+        Order pendingOrder = new Order();
+        pendingOrder.setCustomerEmail("opted.out@example.com");
+        when(orderRepository.findById(pendingOrderId)).thenReturn(Optional.of(pendingOrder));
+
+        UUID cancelledOrderId = UUID.randomUUID();
+        OrderStateChangeEvent cancelledEvent = new OrderStateChangeEvent(
+                cancelledOrderId, tenantId, "ORD-STAT-CAN",
+                OrderStatus.PENDING, OrderStatus.CANCELLED, OffsetDateTime.now());
+        Order cancelledOrder = new Order();
+        cancelledOrder.setCustomerEmail("opted.out@example.com");
+        when(orderRepository.findById(cancelledOrderId)).thenReturn(Optional.of(cancelledOrder));
+
+        gatedListener.handleOrderStateChange(pendingEvent);
+        gatedListener.handleOrderStateChange(cancelledEvent);
+
+        verify(emailService).sendOrderConfirmation(eq(pendingEvent), eq("opted.out@example.com"), any());
+        verify(emailService).sendOrderCancelledNotification(eq(cancelledEvent), eq("opted.out@example.com"), any());
+        verifyNoInteractions(consentGate);
     }
 }
