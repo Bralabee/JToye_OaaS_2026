@@ -3,7 +3,14 @@ import path from "path"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
-import { PRICING_CARD_FEE_LINE, STRIPE_UK_PRICING_URL } from "@/lib/pricing"
+import { PRICING_CARD_FEE_LINE, STRIPE_UK_PRICING_LINK_TEXT, STRIPE_UK_PRICING_URL } from "@/lib/pricing"
+
+/** The link's VISIBLE text: the sr-only new-tab announcement removed, whitespace trimmed. */
+function visibleLinkText(link: HTMLElement): string {
+  const copy = link.cloneNode(true) as HTMLElement
+  copy.querySelectorAll(".sr-only").forEach((n) => n.remove())
+  return (copy.textContent ?? "").trim()
+}
 import ForOperatorsPage from "@/app/for-operators/page"
 
 /**
@@ -357,6 +364,9 @@ describe("OperatorPitch contact and terms routes (persona swarm, SW-CLR-04 and S
     expect(link).toHaveAttribute("href", STRIPE_UK_PRICING_URL)
     expect(link).toHaveAttribute("target", "_blank")
     expect(link.getAttribute("rel") ?? "").toMatch(/\bnoopener\b/)
+    expect(link.getAttribute("rel") ?? "").toMatch(/\bnoreferrer\b/)
+    // Round 1: the text must BE the shared constant, so a page that retypes it fails.
+    expect(visibleLinkText(link)).toBe(STRIPE_UK_PRICING_LINK_TEXT)
     expect(link).toHaveAccessibleName(/opens in a new tab/i)
     // It sits beside the fee sentence, not elsewhere on the page.
     expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)

@@ -28,7 +28,13 @@ import {
   PLATFORM_NOT_SELLER_COPY,
 } from "@/components/storefront/seller-block"
 import { NO_VAT_REGISTRATION_COPY } from "@/components/storefront/no-vat-registration-note"
-import { formatSetupLine, PRICING, PRICING_CARD_FEE_LINE, STRIPE_UK_PRICING_URL } from "@/lib/pricing"
+import {
+  formatSetupLine,
+  PRICING,
+  PRICING_CARD_FEE_LINE,
+  STRIPE_UK_PRICING_LINK_TEXT,
+  STRIPE_UK_PRICING_URL,
+} from "@/lib/pricing"
 import { getCompanyInfo } from "@/lib/company"
 import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -42,6 +48,13 @@ beforeEach(() => {
   ;(getCustomerSession as jest.Mock).mockReset()
   ;(getCustomerSession as jest.Mock).mockResolvedValue(null)
 })
+
+/** The link's VISIBLE text: the sr-only new-tab announcement removed, whitespace trimmed. */
+function visibleLinkText(link: HTMLElement): string {
+  const copy = link.cloneNode(true) as HTMLElement
+  copy.querySelectorAll(".sr-only").forEach((n) => n.remove())
+  return (copy.textContent ?? "").trim()
+}
 
 /** The page's own <main>, so the shared footer is never what an assertion reads. */
 function renderMain(): HTMLElement {
@@ -106,6 +119,9 @@ describe("/legal/terms quotes the checkout's operative wording verbatim", () => 
     expect(link).toHaveAttribute("href", STRIPE_UK_PRICING_URL)
     expect(link).toHaveAttribute("target", "_blank")
     expect(link.getAttribute("rel") ?? "").toMatch(/\bnoopener\b/)
+    expect(link.getAttribute("rel") ?? "").toMatch(/\bnoreferrer\b/)
+    // Round 1: the text must BE the shared constant, so a page that retypes it fails.
+    expect(visibleLinkText(link)).toBe(STRIPE_UK_PRICING_LINK_TEXT)
     expect(link).toHaveAccessibleName(/opens in a new tab/i)
     expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)
   })
