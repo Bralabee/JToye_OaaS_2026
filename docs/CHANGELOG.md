@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Billing Endpoints Gate on Group Admin, So Real Keycloak Users Reach Them (#1020) (#1068) — 2026-10-31
+
+`BillingController` gated its four endpoints on `hasAnyRole('ADMIN', 'TENANT_ADMIN', 'VENDOR', 'OPERATOR')`. Those uppercase roles never match the lowercase `ROLE_*` authorities that Keycloak realm roles become, so `/api/v1/billing/subscription` refused every real user with 403.
+
+- **`BillingController`:** each handler now starts with `shopAccessService.requireGroupAdmin()`, the same group-admin boundary that finance, staff and webhooks use.
+- **`BillingControllerAuthorizationIntegrationTest`:** uses real Keycloak-shaped tokens. A granted GROUP_ADMIN and a realm `admin` reach all four endpoints. Ungranted callers, per-shop STAFF, per-shop SHOP_MANAGER and uppercase-`VENDOR` callers get 403 `shop-access-denied` and change nothing. With `origin/main`'s controller it fails 3/3.
+
 ### The `/pay` Payment-Link Page: a Fragment-Token Preview, the Shared Card Form on the Owning Account, and a Staging-Only OTP Seam (Phase 30 PR 5, PAY-04) (#1064) — 2026-10-31
 
 A vendor could already issue a payment link (PAY-04), but the customer had no page to pay it on. D-03 puts that page in Phase 30: a link PAY-04 sends must be payable end to end on staging.
