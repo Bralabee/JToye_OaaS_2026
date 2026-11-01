@@ -104,3 +104,16 @@ rc=0
 
 PASS: HEAD contains every commit on origin/main (6c1fdc93); it is 6 commit(s) ahead and 0 behind.
 rc=0
+
+## scripts/check-changelog-contract.sh (after the #1072 entry)
+  commits   : 202 in range, 86 feat/fix
+  cited     : 86
+  exempt    : 0 (0 declared)
+  self-test : C-3 matcher fires and declines · C-4 lookup found #61, rejected #1001072
+PASS: all 86 merged feat/fix PR(s) since fbee244d are cited in docs/CHANGELOG.md (0 exempt).
+rc=0
+
+## scripts/check-changelog-cites-pr.sh
+check-changelog-cites-pr  (2026-11-01T08:33:31Z)
+  SKIP: no pull-request context (GITHUB_EVENT_NAME=<unset>) — nothing to check.
+rc=0
