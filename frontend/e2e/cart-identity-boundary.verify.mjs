@@ -261,8 +261,10 @@ async function registerCustomer(page, email, returnTo) {
  *  - Unanchored at the END on purpose: the Popular-rail copy of a featured dish
  *    carries the " (featured)" suffix.
  *  - No collision with the controls beside it: the stepper's `Add one more ...`
- *    / `Decrease quantity of ...` / `Remove ... from basket`, or the dish
- *    modal's `Add one more ... to cart` ("to cart", not "to basket").
+ *    / `Decrease quantity of ...` / `Remove ... from basket`, which the dish
+ *    modal's stepper now shares (SW-MRC-13, swarm epic #964: no suffix on its
+ *    "+", so it still cannot end in "to basket"), or the modal's own
+ *    `Add to basket · £x` (no text between "Add " and " to basket").
  */
 const ADD_TO_BASKET = /^Add .+ to basket/
 

@@ -603,3 +603,41 @@ describe("Shop cart page — which fulfilment the shop takes (UXT-023)", () => {
     )
   })
 })
+
+/**
+ * SW-MRC-13 (swarm epic #964): the basket page went H1 ("Your basket") straight to H3 (each item),
+ * so a screen-reader user moving by heading met a missing level. Each item is now an H2 under the
+ * page's H1; no heading on the page skips a level.
+ */
+describe("Shop cart page — heading outline (SW-MRC-13)", () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it("items are H2 under the H1, and no heading skips a level", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          { productId: "p1", title: "Jollof Rice", pricePennies: 899, quantity: 1, imageUrl: null, category: "Mains" },
+          { productId: "p2", title: "Puff Puff", pricePennies: 300, quantity: 2, imageUrl: null, category: "Sides" },
+        ],
+      })
+    )
+    renderCart()
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Jollof Rice" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 2, name: "Puff Puff" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 1, name: "Your basket" })).toBeInTheDocument()
+
+    const levels = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6")).map((h) =>
+      Number(h.tagName.slice(1))
+    )
+    // Control: the outline was read (one H1 and two items), so the walk below has something to check.
+    expect(levels).toEqual([1, 2, 2])
+    levels.forEach((level, i) => {
+      if (i > 0) expect(level - levels[i - 1]).toBeLessThanOrEqual(1)
+    })
+  })
+})

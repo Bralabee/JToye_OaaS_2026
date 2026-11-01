@@ -577,7 +577,7 @@ test.describe("Shop Menu & Product Cards", () => {
     // Modal should appear with product details
     await expect(page.locator("text=About")).toBeVisible({ timeout: 3000 })
     await expect(page.locator("text=Ingredients")).toBeVisible()
-    await expect(page.locator("text=Add to cart")).toBeVisible()
+    await expect(page.locator("text=Add to basket")).toBeVisible()
   })
 
   test("detail modal shows image carousel when product has images", async ({ page }) => {

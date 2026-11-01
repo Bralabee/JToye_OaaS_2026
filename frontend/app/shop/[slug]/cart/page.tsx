@@ -151,8 +151,10 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             {/* Details */}
             <div className="flex-1 min-w-0">
               {/* 37-52 (UI-SPEC F6, UXT-080): wraps, never an ellipsis: at 360px with 130% text the
-                  customer could not read what was in their basket. */}
-              <h3 className="text-sm font-semibold text-slate-900 break-words">{item.title}</h3>
+                  customer could not read what was in their basket.
+                  SW-MRC-13 (swarm epic #964): H2, not H3 — the page's H1 is "Your basket" and there is
+                  no H2 between them, so an H3 here skipped a level. The size is the class, not the tag. */}
+              <h2 className="text-sm font-semibold text-slate-900 break-words">{item.title}</h2>
               {item.category && (
                 <p className="text-xs text-slate-600">{item.category}</p>
               )}

@@ -231,8 +231,17 @@ export function ProductDetailModal({
             />
           )}
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Content. SW-MRC-13 (swarm epic #964): this is the dialog's scroll container, and
+              browsers make a scrollable box a keyboard stop of its own, so axe reported a focusable
+              region with no name. It is made focusable on purpose (a keyboard user can scroll a long
+              dish with the arrow keys) and named for the dish it holds. It sits after the Close
+              button, so Radix still lands initial focus on Close. */}
+          <div
+            role="region"
+            aria-label={`${product.title} details`}
+            tabIndex={0}
+            className="flex-1 overflow-y-auto p-5 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-600"
+          >
             {/* Title + price row */}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -379,16 +388,24 @@ export function ProductDetailModal({
                 className="w-full flex items-center justify-center gap-2 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink font-semibold py-3 px-4 transition-all active:scale-[0.98]"
               >
                 <ShoppingBag className="h-5 w-5" />
-                Add to cart &middot; {formatPrice(product.pricePennies)}
+                Add to basket &middot; {formatPrice(product.pricePennies)}
               </button>
             ) : (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">In cart</span>
+                {/* SW-MRC-13: "basket", the storefront's word everywhere else (card, bar, drawer,
+                    basket page). The stepper names below are the card's own (37-F F9), and "+" carries
+                    no "to basket" suffix so it cannot collide with the card Add pattern
+                    /^Add .+ to basket/ that e2e/cart-identity-boundary.verify.mjs matches. */}
+                <span className="text-sm text-slate-600">In basket</span>
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={onDecrement}
-                    aria-label={`Remove one ${product.title} from cart`}
+                    aria-label={
+                      quantity === 1
+                        ? `Remove ${product.title} from basket`
+                        : `Decrease quantity of ${product.title}`
+                    }
                     className="h-10 w-10 rounded-full bg-cream hover:bg-cream-100 flex items-center justify-center transition-all active:scale-95"
                   >
                     <Minus className="h-4 w-4" />
@@ -397,7 +414,7 @@ export function ProductDetailModal({
                   <button
                     type="button"
                     onClick={onIncrement}
-                    aria-label={`Add one more ${product.title} to cart`}
+                    aria-label={`Add one more ${product.title}`}
                     aria-describedby={atLineLimit ? lineLimitHintId : undefined}
                     disabled={atLineLimit}
                     className="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink flex items-center justify-center transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
