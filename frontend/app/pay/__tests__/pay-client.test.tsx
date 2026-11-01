@@ -645,6 +645,65 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
     expect(mockedPost).toHaveBeenCalledTimes(0)
   })
 
+  // Owner ruling 2026-11-01 (PR #1064 review series): redirect_status is a query anyone can type, so it
+  // never decides a success. When the intent itself cannot be read the page says it could not check,
+  // and Try again reads the intent again.
+  it("a redirect return whose intent Stripe answers with an error (a garbage client secret, redirect_status=succeeded): the check-failed state, never 'Payment received'", async () => {
+    openLink("/pay?acct=&payment_intent=pi_x&payment_intent_client_secret=garbage&redirect_status=succeeded", null)
+    mockedLoadStripe.mockImplementation(() =>
+      Promise.resolve({
+        retrievePaymentIntent: jest.fn(() => Promise.resolve({ error: { type: "invalid_request_error" } })),
+      })
+    )
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(theOneH1()).toHaveTextContent("Pay for your order")
+    expect(screen.getByRole("button", { name: "Try again" })).toHaveClass("h-11")
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+  })
+
+  it("a redirect return whose intent read REJECTS: the check-failed state, and Try again reads the intent again and shows what it says", async () => {
+    openLink(
+      `/pay?acct=${ACCOUNT}&payment_intent=pi_3018&payment_intent_client_secret=${CLIENT_SECRET}&redirect_status=succeeded`,
+      null
+    )
+    const retrievePaymentIntent = jest
+      .fn()
+      .mockImplementationOnce(() => Promise.reject(new Error("network")))
+      .mockImplementationOnce(() => Promise.resolve({ paymentIntent: { status: "succeeded", amount: 1250 } }))
+    mockedLoadStripe.mockImplementation(() => Promise.resolve({ retrievePaymentIntent }))
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
+    expect(retrievePaymentIntent).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    const received = await screen.findByRole("heading", { level: 1, name: COPY.received })
+    expect(screen.getByText("You've paid £12.50. You can close this page.")).toBeInTheDocument()
+    expect(retrievePaymentIntent).toHaveBeenCalledTimes(2)
+    expect(retrievePaymentIntent).toHaveBeenLastCalledWith(CLIENT_SECRET)
+    expect(mockedLoadStripe).toHaveBeenCalledWith(PUBLISHABLE_KEY, { stripeAccount: ACCOUNT })
+    // Try again re-ran the retrieve, not the link preview: there is no link on this page.
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+    expect(theOneH1()).toBe(received)
+  })
+
+  it("a redirect return with no publishable key in the bundle (redirect_status=succeeded): the check-failed state, never 'Payment received'", async () => {
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    openLink(
+      `/pay?acct=${ACCOUNT}&payment_intent=pi_3018&payment_intent_client_secret=${CLIENT_SECRET}&redirect_status=succeeded`,
+      null
+    )
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+  })
+
   it("no token, no redirect query and no resume entry: 'Open your payment link', and nothing is asked of anyone", async () => {
     openLink("/pay", null)
     render(<PayClient />)
@@ -660,8 +719,9 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
   it("a bare redirect_status with no client secret is not Stripe's return: 'Open your payment link', never 'Payment received'", async () => {
     // PR #1064 review round 1, finding 3: https://…/pay?redirect_status=succeeded, typed by hand, carried
     // no intent to read, and the fallback `status ?? redirectStatus` rendered a success state on the
-    // public host with no payment behind it. redirect_status is only a fallback for an intent that
-    // cannot be read; with no payment_intent_client_secret there is nothing to fall back from.
+    // public host with no payment behind it. Since the 2026-11-01 ruling redirect_status decides
+    // nothing at all (an unreadable intent is the check-failed state); with no
+    // payment_intent_client_secret there is no intent to read, so this is not Stripe's return.
     openLink("/pay?redirect_status=succeeded", null)
     render(<PayClient />)
 

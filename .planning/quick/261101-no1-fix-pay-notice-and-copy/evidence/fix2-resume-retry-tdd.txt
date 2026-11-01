@@ -254,3 +254,60 @@ rc=0
 $ npx jest --ci --runTestsByPath app/pay/__tests__/pay-client.test.tsx
 Tests:       41 passed, 41 total
 rc=0
+
+## BREAK ARM A-never-reloadable (after commit 978e01fd)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 8679094b..b617888d 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -297,7 +297,7 @@ export function PayClient() {
+         // The entry is kept: a reload, once Stripe.js can load, finds the intent again. On the resume
+         // path the page offers that reload (PR #1064 review round-2 residual); straight after a redeem
+         // the first-visit state stays as the copy contract has it.
+-        setPhase({ kind: "linkOpened", display, reloadable: fromResume })
++        setPhase({ kind: "linkOpened", display, reloadable: false })
+         return
+       }
+       let status: string | undefined
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › reload after redeem when Stripe.js fails to load: the 'link has now been opened' alert carries Try again, which reloads the page
+Tests:       1 failed, 40 passed, 41 total
+rc=1
+A-never-reloadable restored (sha256 matches committed)
+
+## BREAK ARM B-always-reloadable (after commit 978e01fd)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 8679094b..151ded1e 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -297,7 +297,7 @@ export function PayClient() {
+         // The entry is kept: a reload, once Stripe.js can load, finds the intent again. On the resume
+         // path the page offers that reload (PR #1064 review round-2 residual); straight after a redeem
+         // the first-visit state stays as the copy contract has it.
+-        setPhase({ kind: "linkOpened", display, reloadable: fromResume })
++        setPhase({ kind: "linkOpened", display, reloadable: true })
+         return
+       }
+       let status: string | undefined
+  ● redeem refused: each status reads as its own state, without the server's prose › Stripe.js fails to load on the connected account straight after redeem: the 'link has now been opened' alert, and no Try again on a first visit
+Tests:       1 failed, 40 passed, 41 total
+rc=1
+B-always-reloadable restored (sha256 matches committed)
+
+## BREAK ARM C-seam-not-reload (after commit 978e01fd)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 8679094b..deeb280d 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -54,7 +54,7 @@ export const PAY_RESUME_KEY = "jtoyePayResume"
+  * window.location.reload cannot be installed. Looked up at call time, never captured.
+  */
+ export const payNavigation = {
+-  reload: () => window.location.reload(),
++  reload: () => {},
+ }
+ 
+ export const PAY_PAGE_COPY = {
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › the reload seam is the browser's own window.location.reload (jsdom reports the navigation it cannot perform)
+Tests:       1 failed, 40 passed, 41 total
+rc=1
+C-seam-not-reload restored (sha256 matches committed)
