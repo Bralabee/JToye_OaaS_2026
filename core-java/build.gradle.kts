@@ -349,7 +349,7 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.14")
-    // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); 3.1.1 supersedes dependabot #739.
+    // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); it first landed as 3.1.1 (Phase 38, superseding dependabot #739) and moves with the Dependabot roll-ups since.
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0")
 
     // Lombok for boilerplate reduction
