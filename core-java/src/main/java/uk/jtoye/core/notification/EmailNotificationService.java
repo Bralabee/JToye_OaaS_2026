@@ -321,13 +321,15 @@ public class EmailNotificationService {
      *
      * @param recipientEmail the normalised invitee address; the link goes here and nowhere else
      * @param role           the grant the invitation carries; named and described in the body
+     * @param shopName       the granted shop's name, or null for a tenant-wide grant (the scope is
+     *                       decided by null, never by the words)
      * @param link           {accept-base-url}#token={tenantId}.{token} (token in the fragment, 37-08); never
      *                       logged, never stored readable
      * @param expiresAt      the same instant written to {@code staff_invite.expires_at}
      */
     @Async
     public void sendStaffInvite(String recipientEmail, String inviterName, String businessName,
-                                ShopRole role, String shopLabel, String link, OffsetDateTime expiresAt) {
+                                ShopRole role, String shopName, String link, OffsetDateTime expiresAt) {
         if (!emailEnabled) {
             log.debug("event=staff_invite_email_skipped reason=email_disabled");
             return;
@@ -340,9 +342,16 @@ public class EmailNotificationService {
         String inviter = Objects.requireNonNullElse(sanitise(inviterName), "A Group admin");
         String business = Objects.requireNonNullElse(sanitise(businessName), "a business");
         String roleName = role.label();
-        String shop = sanitise(shopLabel);
-        // SW-TND-02: "at {shop}" for one shop; "for all shops" when the grant is tenant-wide.
-        String where = shop == null || shop.equals("all shops") ? ", for all shops." : " at " + Sentences.withFullStop(shop);
+        // SW-TND-02, R1 (#1079): the scope is the caller's, never read from the words. A null shopName
+        // is a tenant-wide grant; any non-null one is one shop, even if it is literally "all shops" or
+        // sanitises to nothing (then the shop is not named, but the grant is still not widened).
+        String where;
+        if (shopName == null) {
+            where = ", for all shops.";
+        } else {
+            String shop = sanitise(shopName);
+            where = shop == null ? " at one shop." : " at " + Sentences.withFullStop(shop);
+        }
         String expiry = expiresAt.atZoneSameInstant(ClockConfig.UK_ZONE).format(INVITE_EXPIRY_FORMAT);
         String subject = inviter + " has invited you to help run " + business + " on " + PLATFORM_NAME;
         String body = """

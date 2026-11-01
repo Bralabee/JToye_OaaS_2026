@@ -221,9 +221,10 @@ public class StaffInviteService {
         String link = stripTrailingSlash(acceptBaseUrl) + "#token=" + tenantId + "." + token;
         String inviterName = currentCallerName();
         String businessName = tenantRepository.findById(tenantId).map(Tenant::getName).orElse(null);
-        String shopLabel = shop == null ? "all shops" : shop.getName();
+        // R1 (#1079): null means tenant-wide; the email branches on that, never on a sentinel name.
+        String shopName = shop == null ? null : shop.getName();
         afterCommit(() -> emailNotificationService.sendStaffInvite(email, inviterName, businessName, role,
-                shopLabel, link, expiresAt));
+                shopName, link, expiresAt));
         log.info("event=staff_invite_issued invite={} tenant={} role={} allShops={}",
                 invite.getId(), tenantId, role, shopId == null);
         return invite;

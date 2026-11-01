@@ -107,7 +107,7 @@ class EmailNotificationServiceStaffInviteTest {
     @Test
     @DisplayName("D-07: the expiry is UK wall-clock time in winter too (GMT), and 'all shops' reads as such")
     void inviteEmail_ukTimeInWinter_andAllShops() {
-        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", ShopRole.GROUP_ADMIN, "all shops", LINK, EXPIRES_GMT);
+        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", ShopRole.GROUP_ADMIN, null, LINK, EXPIRES_GMT);
 
         String text = SentMail.text(sent());
         assertThat(text)
@@ -158,6 +158,22 @@ class EmailNotificationServiceStaffInviteTest {
         String source = Files.readString(IntegrationTestSupport.locateRepoFile(
                 "core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java"));
         assertThat(source).doesNotContain("StaffInviteService");
+    }
+
+    @Test
+    @DisplayName("R1 (#1079): a shop literally named 'all shops' is still one shop, never a tenant-wide grant")
+    void inviteEmail_aShopNamedAllShopsIsOneShop() {
+        service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, "all shops", LINK, EXPIRES_BST);
+
+        assertThat(SentMail.text(sent())).contains("Your role: Staff at all shops.").doesNotContain("for all shops");
+    }
+
+    @Test
+    @DisplayName("R1 (#1079): a shop whose name sanitises to nothing is still one shop, never 'for all shops'")
+    void inviteEmail_aBlankShopNameIsOneShop() {
+        service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, " \r\n\t", LINK, EXPIRES_BST);
+
+        assertThat(SentMail.text(sent())).contains("Your role: Staff at one shop.").doesNotContain("for all shops");
     }
 
     @Test
