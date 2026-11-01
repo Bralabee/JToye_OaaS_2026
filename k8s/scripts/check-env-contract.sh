@@ -131,6 +131,9 @@ FE_DEPLOYMENT="$REPO_ROOT/k8s/base/frontend-deployment.yaml"
 FE_SRC_DIR="$REPO_ROOT/frontend"
 FE_DOCKERFILE="$REPO_ROOT/frontend/Dockerfile"
 FE_ENV_VALIDATION="$REPO_ROOT/frontend/lib/env-validation.ts"
+# The two places that actually PASS the frontend build args (issue SW-CLR-04, epic #964).
+FE_CI_WORKFLOW="$REPO_ROOT/.github/workflows/ci-cd.yaml"
+FE_LOCAL_UP="$REPO_ROOT/scripts/k8s-local-up.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
@@ -273,7 +276,7 @@ if ! printf 'probe\n' | grep -qP 'pro\w+' 2> /dev/null; then
     parse_fail "GNU 'grep -P' (PCRE) is required — the placeholder regex needs a non-capturing group and a lookahead. On ubuntu-latest (the CI runner) and any GNU grep this is available; on BSD/macOS grep it is not."
 fi
 
-for f in "$CORE_DEPLOYMENT" "$EDGE_DEPLOYMENT" "$FE_DEPLOYMENT" "$FE_DOCKERFILE" "$FE_ENV_VALIDATION"; do
+for f in "$CORE_DEPLOYMENT" "$EDGE_DEPLOYMENT" "$FE_DEPLOYMENT" "$FE_DOCKERFILE" "$FE_ENV_VALIDATION" "$FE_CI_WORKFLOW" "$FE_LOCAL_UP"; do
     [[ -f "$f" ]] || parse_fail "required input not found: $f"
 done
 for d in "$CORE_APP_DIR" "$EDGE_SRC_DIR" "$FE_SRC_DIR"; do
@@ -556,6 +559,18 @@ done < <(grep -ohP "$GO_DEFAULT_RE" "$EDGE_STRIPPED" || true)
 #     end — the Dockerfile refuses to build on an empty required build-arg,
 #     scripts/k8s-local-up.sh dies on one, and ci-cd.yaml passes them from repo
 #     variables. A NEXT_PUBLIC_* name on this channel is SUPPLIED.
+#
+#   (b2) AN ARG ALONE SUPPLIES NOTHING. Until 2026-11-01 a Dockerfile `ARG`
+#     was scored SUPPLIED on its own, and nothing checked that any build
+#     actually passed it. That is how NEXT_PUBLIC_DATA_PROTECTION_EMAIL, and
+#     later the CONTACT_EMAIL/_PHONE pair (#1080), shipped in every staging
+#     image as "" with this gate green (SW-CLR-04, epic #964; observed on
+#     staging /contact and the privacy notice). So every `ARG NEXT_PUBLIC_*`
+#     must ALSO be passed by BOTH build channels: a line `NAME=` in the
+#     `build-args: |` block of .github/workflows/ci-cd.yaml, and a
+#     `--build-arg "NAME=` in scripts/k8s-local-up.sh. A name missing from
+#     either is a (b2) violation, not allowlistable: the fix is one line in
+#     the channel that forgot it, and an unset repo variable still passes "".
 #   - runtime channel   : `env:` in k8s/base/frontend-deployment.yaml. Correct
 #     for server-side names, and for the NEXT_PUBLIC_* names that deliberately
 #     have NO ARG (frontend/Dockerfile explains, with measured evidence, that
@@ -628,6 +643,69 @@ mapfile -t FE_BUILD_ARGS < <(grep -oP "$ARG_RE" "$FE_DOCKERFILE" | sort -u)
 (( ${#FE_BUILD_ARGS[@]} > 0 )) \
     || parse_fail "extracted 0 'ARG NAME' build args from $FE_DOCKERFILE — with an empty build-arg channel every NEXT_PUBLIC_* name would look unsupplied AND no runtime injection could ever be flagged as dead config. Fix the parser, do not delete the gate."
 for n in "${FE_BUILD_ARGS[@]}"; do FE_IS_BUILD_ARG["$n"]=1; done
+
+# --- (b2) the two build channels -------------------------------------------
+# ci-cd.yaml: the NAME= lines of the `build-args: |` block scalar. The block
+# ends at the first non-blank line indented no deeper than the key itself.
+CI_BUILD_ARG_RE='^\s*\K[A-Z][A-Z0-9_]*(?==)'
+LOCAL_BUILD_ARG_RE='\-\-build-arg\s+"?\K[A-Z][A-Z0-9_]*(?==)'
+selftest_regex 'ci build-args line'     "$CI_BUILD_ARG_RE"    '            JTOYE_GATE_SELFTEST=${{ vars.X }}' 'JTOYE_GATE_SELFTEST'
+selftest_regex 'local-up --build-arg'   "$LOCAL_BUILD_ARG_RE" '    --build-arg "JTOYE_GATE_SELFTEST=${X}" \' 'JTOYE_GATE_SELFTEST'
+
+extract_ci_build_args() {
+    # extract_ci_build_args <workflow-file> — names passed in every build-args: | block
+    awk '
+        inblk {
+            if ($0 ~ /^[[:space:]]*$/) next
+            match($0, /^[[:space:]]*/)
+            if (RLENGTH <= ind) { inblk = 0 } else { if ($0 !~ /^[[:space:]]*#/) print; next }
+        }
+        /^[[:space:]]*build-args:[[:space:]]*\|[-+]?[[:space:]]*$/ { match($0, /^[[:space:]]*/); ind = RLENGTH; inblk = 1 }
+    ' "$1" | grep -oP "$CI_BUILD_ARG_RE" | sort -u || true
+}
+extract_local_build_args() {
+    # extract_local_build_args <script> — names passed as --build-arg (full-line comments stripped)
+    sed -E 's/^[[:space:]]*#.*$//' "$1" | grep -oP -- "$LOCAL_BUILD_ARG_RE" | sort -u || true
+}
+channel_misses() {
+    # channel_misses <dockerfile> <channel-names-file> — every `ARG NEXT_PUBLIC_*`
+    # in the Dockerfile that the channel does not pass, one per line.
+    local name
+    while IFS= read -r name; do
+        [[ "$name" == NEXT_PUBLIC_* ]] || continue
+        grep -qxF -- "$name" "$2" || printf '%s\n' "$name"
+    done < <(grep -oP "$ARG_RE" "$1" | sort -u)
+}
+
+# Behavioural self-test of the (b2) rule itself, on synthetic inputs (PARSING
+# NOTE 7 extended from regexes to the rule): a planted ARG with no channel line
+# MUST be reported, and the same ARG with its line MUST NOT. Either failure means
+# the rule is vacuous or broken, which is a VOID, not a pass.
+ST_DIR="$TMP/b2-selftest"; mkdir -p "$ST_DIR"
+printf 'ARG NEXT_PUBLIC_API_URL\nARG NEXT_PUBLIC_JTOYE_GATE_SELFTEST\n' > "$ST_DIR/Dockerfile"
+printf 'jobs:\n  b:\n    steps:\n      - with:\n          build-args: |\n            NEXT_PUBLIC_API_URL=${{ vars.A }}\n          cache-from: x\n          NEXT_PUBLIC_JTOYE_GATE_SELFTEST=outside-the-block\n' > "$ST_DIR/ci.yaml"
+extract_ci_build_args "$ST_DIR/ci.yaml" > "$ST_DIR/ci.names"
+[[ "$(channel_misses "$ST_DIR/Dockerfile" "$ST_DIR/ci.names")" == 'NEXT_PUBLIC_JTOYE_GATE_SELFTEST' ]] \
+    || parse_fail "(b2) self-test FAILED: a planted 'ARG NEXT_PUBLIC_JTOYE_GATE_SELFTEST' with no build-args line (only a look-alike OUTSIDE the block) was not reported as unsupplied. The channel rule is blind; fix it, do not delete it."
+printf '#    --build-arg "NEXT_PUBLIC_JTOYE_GATE_SELFTEST=commented-out" \\\n  docker build \\\n    --build-arg "NEXT_PUBLIC_API_URL=${A}" \\\n    --build-arg "NEXT_PUBLIC_JTOYE_GATE_SELFTEST=${B}" \\\n' > "$ST_DIR/local.sh"
+extract_local_build_args "$ST_DIR/local.sh" > "$ST_DIR/local.names"
+[[ -z "$(channel_misses "$ST_DIR/Dockerfile" "$ST_DIR/local.names")" ]] \
+    || parse_fail "(b2) self-test FAILED: an ARG that the synthetic k8s-local-up passes was still reported as unsupplied. The channel rule would fail every correct tree; fix it, do not delete it."
+sed -i '/NEXT_PUBLIC_JTOYE_GATE_SELFTEST=\${B}/d' "$ST_DIR/local.sh"
+extract_local_build_args "$ST_DIR/local.sh" > "$ST_DIR/local.names"
+[[ "$(channel_misses "$ST_DIR/Dockerfile" "$ST_DIR/local.names")" == 'NEXT_PUBLIC_JTOYE_GATE_SELFTEST' ]] \
+    || parse_fail "(b2) self-test FAILED: with only a COMMENTED --build-arg line left, the planted ARG was not reported. Full-line comments must not supply a build arg."
+
+FE_CI_NAMES="$TMP/fe-ci-build-args"
+FE_LOCAL_NAMES="$TMP/fe-local-build-args"
+extract_ci_build_args "$FE_CI_WORKFLOW" > "$FE_CI_NAMES"
+extract_local_build_args "$FE_LOCAL_UP" > "$FE_LOCAL_NAMES"
+[[ -s "$FE_CI_NAMES" ]] \
+    || parse_fail "extracted 0 build-args names from $FE_CI_WORKFLOW — with an empty CI channel every ARG would be reported unsupplied, or worse, a broken parser would be 'fixed' by deleting this rule. Fix the parser."
+[[ -s "$FE_LOCAL_NAMES" ]] \
+    || parse_fail "extracted 0 --build-arg names from $FE_LOCAL_UP. Fix the parser."
+mapfile -t FE_B2_CI_MISSING    < <(channel_misses "$FE_DOCKERFILE" "$FE_CI_NAMES")
+mapfile -t FE_B2_LOCAL_MISSING < <(channel_misses "$FE_DOCKERFILE" "$FE_LOCAL_NAMES")
 
 mapfile -t FE_READ_NAMES < <(printf '%s\n' "${!FE_IS_READ[@]}" | sort)
 
@@ -871,6 +949,8 @@ printf '  (a) %-44s %d\n' 'VIOLATIONS (build-time name, dead at runtime)' "${#FE
 printf '  (b) %-44s %d\n' 'distinct env names read'              "${#FE_READ_NAMES[@]}"
 printf '  (b) %-44s %d\n' 'supplied at runtime (env:)'           "$FE_B_SUPPLIED_RUNTIME"
 printf '  (b) %-44s %d\n' 'supplied at build (Dockerfile ARG)'   "$FE_B_SUPPLIED_BUILD"
+printf '  (b2) %-43s %d\n' 'ARG NEXT_PUBLIC_* not passed by ci-cd.yaml' "${#FE_B2_CI_MISSING[@]}"
+printf '  (b2) %-43s %d\n' 'ARG NEXT_PUBLIC_* not passed by k8s-local-up' "${#FE_B2_LOCAL_MISSING[@]}"
 printf '  (b) %-44s %d\n' 'allowlisted (reasoned)'               "$FE_B_ALLOWED"
 printf '  (b) %-44s %d\n' 'VIOLATIONS'                           "${#FE_B_VIOLATIONS[@]}"
 echo
@@ -1019,6 +1099,24 @@ if (( ${#FE_B_VIOLATIONS[@]} > 0 )); then
     echo "      an env: entry in k8s/base/frontend-deployment.yaml." >&2
     echo "  Pick the channel that matches the name, or add an ALLOWLIST entry WITH A" >&2
     echo "  REASON stating what the code does when the value is absent." >&2
+    echo >&2
+    VIOLATION=1
+fi
+
+if (( ${#FE_B2_CI_MISSING[@]} + ${#FE_B2_LOCAL_MISSING[@]} > 0 )); then
+    echo "DIRECTION (b2) VIOLATION [frontend] — a Dockerfile 'ARG NEXT_PUBLIC_*' that a build channel never passes:" >&2
+    for name in ${FE_B2_CI_MISSING[@]+"${FE_B2_CI_MISSING[@]}"}; do
+        echo "  - $name  (no '$name=' line in the build-args block of .github/workflows/ci-cd.yaml)" >&2
+    done
+    for name in ${FE_B2_LOCAL_MISSING[@]+"${FE_B2_LOCAL_MISSING[@]}"}; do
+        echo "  - $name  (no '--build-arg \"$name=' in scripts/k8s-local-up.sh)" >&2
+    done
+    echo >&2
+    echo "  An ARG with no build-arg bakes \"\" into every image that channel builds, and the" >&2
+    echo "  page silently drops what the value would have shown. That is SW-CLR-04 (epic" >&2
+    echo "  #964): the data-protection and contact keys had ARGs and no CI line, and staging" >&2
+    echo "  served them empty with this gate green. Add the missing line; an unset repo" >&2
+    echo "  variable or .env key still passes \"\", so this never forces a value. Not allowlistable." >&2
     echo >&2
     VIOLATION=1
 fi

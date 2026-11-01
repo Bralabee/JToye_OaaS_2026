@@ -19,7 +19,7 @@ public routes only). **Keep both in sync when adding pages.**
 | `/unsubscribe` | Token-based one-click email opt-out (GDPR/PECR, COMMS-03). **`noindex,nofollow` + EXCLUDED from `sitemap.xml`** — a transactional surface, not discovery content; never renders the `email`/`token` query params into meta or body. |
 | `/auth/signin` | Vendor (B2B) sign-in — Keycloak `jtoye-dev` realm |
 | `/legal/terms` | Terms of use, compiled from copy already published (checkout seller and cancellation wording, the privacy notice, the operator pricing). Linked from the `/legal` hub and the footer (PR 1080) |
-| `/contact` | Contact J'Toye: company identity from `lib/company.ts`, plus an email and phone from `NEXT_PUBLIC_CONTACT_EMAIL`/`_PHONE`, each shown only when set. Linked from the footer, the `/legal` hub, the seller block and `/for-operators` (PR 1080) |
+| `/contact` | Contact J'Toye: company identity from `lib/company.ts`, plus an email and phone from `NEXT_PUBLIC_CONTACT_EMAIL`/`_PHONE`, each shown only when set. CI bakes them from the repository variables `FRONTEND_PUBLIC_CONTACT_EMAIL`/`_PHONE` (and the privacy notice's address from `FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL`): set by the owner in repository variables. With both contact keys empty this page prints "not yet published"; an empty data-protection address is silently omitted here and from the privacy notice. Linked from the footer, the `/legal` hub, the seller block and `/for-operators` (PR 1080) |
 
 > **`/unsubscribe` is deliberately absent from `frontend/app/sitemap.ts`.** It is a
 > public route but must stay unindexed (its page metadata sets `robots.index=false`),

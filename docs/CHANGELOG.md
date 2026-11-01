@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Public Contact Keys as Frontend Build Args, Stripe Pricing Link on the Fee Line (swarm epic #964) (#1081) — 2026-11-01
+
+Two owner rulings of 2026-11-01 on swarm findings SW-CLR-04 / SW-CLR-06. No API, migration or core-java change.
+
+- **SW-CLR-04: contact keys reach the image.** `ci-cd.yaml` passes `NEXT_PUBLIC_DATA_PROTECTION_EMAIL`, `NEXT_PUBLIC_CONTACT_EMAIL` and `NEXT_PUBLIC_CONTACT_PHONE` as frontend build args from the repository variables `FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL`, `FRONTEND_PUBLIC_CONTACT_EMAIL` and `FRONTEND_PUBLIC_CONTACT_PHONE`, the same pattern as the Stripe publishable key (#1029). The Dockerfile already declared all three ARGs. The variables are set by the owner in repository variables. Unset bakes "", which is what every image baked before: `/contact` then prints "not yet published" for the general route, while an empty data-protection address is silently omitted from the privacy notice. `docs/FAILURE_MODES.md` F-4.7 (its stale "7 inlined vars" replaced by wording that names the `ARG NEXT_PUBLIC_*` lines instead of counting them) and `docs/SITEMAP.md` name the variables.
+- **SW-CLR-06: Stripe UK pricing link.** The card-fee line on `/for-operators` and `/legal/terms` now links Stripe's UK pricing page in a new tab (`rel="noopener noreferrer"`, sr-only "(opens in a new tab)"); no rate is printed (owner ruling). The URL is `STRIPE_UK_PRICING_URL` in `frontend/lib/pricing.ts`, pinned by `pricing.test.ts`. The sentence is one shared component, `components/marketing/stripe-uk-pricing-sentence.tsx`, rendered by both pages. Six new Jest cases, each RED before its fix and GREEN after; doc counts reconciled (jest 3410 -> 3416).
+- **Env-contract rule (b2) and the local-k8s channel (review round 1).** `k8s/scripts/check-env-contract.sh` scored a Dockerfile `ARG NEXT_PUBLIC_*` as supplied on its own, which is how staging baked `""` for these keys with the gate green. It now fails any such ARG that the `ci-cd.yaml` build-args block or the `--build-arg` list in `scripts/k8s-local-up.sh` omits (self-tested on synthetic inputs; against origin/main's workflow it names the three contact keys). `scripts/k8s-local-up.sh` now passes the three contact keys and the Stripe publishable key from `.env` with compose's defaults.
+
 ### Order Emails Carry Items and Total, Invite and Cancel Wording, DSAR Subject and Export Wording, Allergy Note Echo Skipped, API Root Redirect Scheme (swarm epic #964) (#1079) — 2026-11-01
 
 Seven findings from the 2026-10-19 staging persona swarm, each re-checked on main first. Six fixed, one skipped. No migration.

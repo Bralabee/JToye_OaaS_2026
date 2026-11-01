@@ -863,6 +863,11 @@ jobs:
   #      encodes the build-time/runtime channel split — a NEXT_PUBLIC_* name
   #      that is BOTH Dockerfile-ARG-declared and injected as a runtime `env:`
   #      is dead config and is not allowlistable (D-18).
+  #      (b2) Every `ARG NEXT_PUBLIC_*` in frontend/Dockerfile must also be
+  #      passed by BOTH build channels: the build-args block below and the
+  #      --build-arg list in scripts/k8s-local-up.sh. An ARG alone used to
+  #      count as supplied, which is how staging baked "" for the contact
+  #      keys (SW-CLR-04, epic #964).
   #      Every extractor is self-tested against a synthetic control, so a regex
   #      that matches nothing exits 2 (VOID) rather than reporting a clean
   #      contract over a service it never actually parsed. Needs GNU
@@ -2209,6 +2214,19 @@ jobs:
           #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
           #   FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE   (optional; D-14, #794)
           #   FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY (optional at build; staging pk_test_, #957)
+          #   FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL       (optional; SW-CLR-04, epic #964)
+          #   FRONTEND_PUBLIC_CONTACT_EMAIL               (optional; SW-CLR-04, epic #964)
+          #   FRONTEND_PUBLIC_CONTACT_PHONE               (optional; SW-CLR-04, epic #964)
+          # The three contact values are set by the owner in repository variables. Each
+          # is optional by design: unset passes an EMPTY build-arg, which is exactly what
+          # the image baked before they were wired (frontend/Dockerfile declares the ARGs
+          # with no default). What an empty value does differs per key: with the contact
+          # email AND phone both empty, /contact prints "has not yet published a general
+          # contact email address or phone number"; an empty data-protection email is OMITTED SILENTLY from
+          # the privacy notice and from /contact, with no visible cue (and the notice
+          # drops its whole contact block when the registered office is empty too). So
+          # a notice with no address line means the Art. 13 route is NOT configured. No
+          # deploy guard checks them: an empty value builds and deploys, unlike the Stripe key.
           # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
           # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
           # refuses anything that is not a pk_test_ key and deploy-production refuses a
@@ -2244,6 +2262,9 @@ jobs:
             NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
             NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${{ vars.FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL }}
+            NEXT_PUBLIC_CONTACT_EMAIL=${{ vars.FRONTEND_PUBLIC_CONTACT_EMAIL }}
+            NEXT_PUBLIC_CONTACT_PHONE=${{ vars.FRONTEND_PUBLIC_CONTACT_PHONE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # All four service images target linux/amd64 exclusively to match the AKS
