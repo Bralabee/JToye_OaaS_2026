@@ -21,7 +21,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 25 - Core API (Spring Boot 4.1.1)
-- TypeScript 5 - Frontend (Next.js 16.4.2, React 19)
+- TypeScript 5 - Frontend (Next.js 16.4.3, React 19)
 - Go 1.27 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -45,13 +45,13 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Spring Cache - Distributed caching with Redis
 - Spring AMQP 4.1 - RabbitMQ message queue integration
 - Spring Actuator - Metrics and health endpoints
-- SpringDoc OpenAPI 3.1.1 - Swagger/OpenAPI documentation
+- SpringDoc OpenAPI 3.2.0 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin, via spring-boot-starter-zipkin) - Distributed tracing
 - Jackson 3 (tools.jackson) - Application JSON line: Boot's JsonMapper with Jackson 3 defaults; Jackson 2 is transitive-only, floored via jackson-2-bom.version
-- Next.js 16.4.2 - React framework with file-based routing
+- Next.js 16.4.3 - React framework with file-based routing
 - React 19 - UI component library
-- React Hook Form 7.90.0 - Form state management
+- React Hook Form 7.91.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
 - TailwindCSS 4.3.3 - Utility-first CSS framework
 - Radix UI - Headless component library
@@ -76,9 +76,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Hibernate Envers - Audit history tracking
 - Azure Storage Blob SDK (12.36.0) - Blob API for image storage
 - Azure Identity (1.18.7) - Workload Identity credential for Blob in AKS
-- Stripe React/JS 7.0.0, 10.1.0 - Payment processing UI integration
-- Axios 1.19.0 - HTTP client for API calls
-- Framer Motion 14.3.0 - Animation library
+- Stripe React/JS 7.0.1, 10.2.0 - Payment processing UI integration
+- Axios 1.21.0 - HTTP client for API calls
+- Framer Motion 14.7.1 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 8.10 - Session and cache store
 - RabbitMQ 4.3.6 - Message queue (AMQP)
@@ -140,7 +140,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+
-- Next.js: 16.4.2
+- Next.js: 16.4.3
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)

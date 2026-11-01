@@ -18,7 +18,7 @@ another tenant's row, that would be an RLS failure in Core, not a bug here.
 
 ## 1. What it is
 
-- **Runtime:** Node 20, TypeScript ESM, one `node:20-alpine` container (`Dockerfile`).
+- **Runtime:** Node 24, TypeScript ESM, one `node:24-alpine` container (`Dockerfile`; vitest 5 needs Node 22.12+ or 24+).
 - **Transport:** stateless Streamable HTTP. `POST /mcp` builds a fresh `McpServer` +
   transport **per request** (no session state), so a single container serves every tenant
   concurrently — each request's tenant is decided entirely by its own Bearer.

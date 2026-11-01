@@ -303,8 +303,8 @@ dependencies {
     // WebP derivative/thumbnail by delegating to a `cwebp` binary (bundled on
     // glibc hosts; the musl runtime image overrides to the system cwebp via
     // -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin — see Dockerfile).
-    implementation("com.sksamuel.scrimage:scrimage-core:4.6.9")
-    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.9")
+    implementation("com.sksamuel.scrimage:scrimage-core:4.6.10")
+    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.10")
     // Read-only WebP ImageIO plugin — lets ImageReader header-read + decode-VERIFY
     // a WebP *upload* (stock JDK ImageIO cannot read WebP at all). Cannot encode.
     implementation("com.twelvemonkeys.imageio:imageio-webp:3.15.3")
@@ -349,8 +349,8 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.14")
-    // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); 3.1.1 supersedes dependabot #739.
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
+    // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); it first landed as 3.1.1 (Phase 38, superseding dependabot #739) and moves with the Dependabot roll-ups since.
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.2.0")
 
     // Lombok for boilerplate reduction
     compileOnly("org.projectlombok:lombok")
