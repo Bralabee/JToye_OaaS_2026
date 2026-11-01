@@ -878,8 +878,11 @@ export default function ShopsPage() {
                     currentImageUrl={editingShop.logoUrl}
                     uploadUrl={`/api/v1/shops/${editingShop.id}/logo`}
                     onUploadComplete={(url) => {
-                      setEditingShop({ ...editingShop, logoUrl: url })
-                      setValue("logoUrl", url)
+                      // No URL (review R1-4): keep the image shown and re-read the shops.
+                      if (url) {
+                        setEditingShop({ ...editingShop, logoUrl: url })
+                        setValue("logoUrl", url)
+                      }
                       fetchShops()
                     }}
                     onRemove={async () => {
@@ -899,8 +902,11 @@ export default function ShopsPage() {
                     currentImageUrl={editingShop.bannerUrl}
                     uploadUrl={`/api/v1/shops/${editingShop.id}/banner`}
                     onUploadComplete={(url) => {
-                      setEditingShop({ ...editingShop, bannerUrl: url })
-                      setValue("bannerUrl", url)
+                      // No URL (review R1-4): keep the image shown and re-read the shops.
+                      if (url) {
+                        setEditingShop({ ...editingShop, bannerUrl: url })
+                        setValue("bannerUrl", url)
+                      }
                       fetchShops()
                     }}
                     onRemove={async () => {

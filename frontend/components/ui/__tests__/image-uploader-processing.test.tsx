@@ -130,4 +130,18 @@ describe("ImageUploader leaves Processing once the asset settles (SW-ADE-02)", (
     await tick()
     expect(resolveAcceptedAsset.mock.calls.length).toBe(calls)
   })
+
+  it("review R1-4: ACTIVE with no URL still tells the parent (so it re-reads) and says the photo is ready", async () => {
+    const resolveAcceptedAsset = jest
+      .fn()
+      .mockResolvedValue({ status: "ACTIVE", url: null, failureReason: null })
+    const { onUploadComplete } = await uploadGif({ resolveAcceptedAsset })
+
+    await tick()
+
+    expect(screen.queryByText("Processing…")).toBeNull()
+    expect(onUploadComplete).toHaveBeenCalledTimes(1)
+    expect(onUploadComplete).toHaveBeenCalledWith(null)
+    expect(screen.getByRole("status")).toHaveTextContent(/your photo is ready/i)
+  })
 })

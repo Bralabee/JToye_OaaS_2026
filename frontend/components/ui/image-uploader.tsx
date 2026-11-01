@@ -65,11 +65,18 @@ export const ASSET_POLL_MAX_ATTEMPTS = 30
 export const STILL_PROCESSING_COPY =
   "Your photo is still processing. It will appear on the product when it's ready, and Image review lists it if it fails."
 export const PROCESSING_FAILED_COPY = "We couldn't use that photo. Try another one."
+export const READY_NO_URL_COPY =
+  "Your photo is ready. It will show here once the product reloads."
 
 interface ImageUploaderProps {
   currentImageUrl?: string | null
   uploadUrl: string
-  onUploadComplete: (imageUrl: string) => void
+  /**
+   * The new image's URL, or null when the server settled the upload without one (an ACTIVE asset whose
+   * derivative URL did not resolve, review R1-4 on #1076, or a legacy response with no URL). Null
+   * still means "re-read": keep the image you have and refetch.
+   */
+  onUploadComplete: (imageUrl: string | null) => void
   // Phase 24 (IMG-04): the product image endpoint is now an async accept — it
   // returns 202 { assetId, status:"PENDING" } and the worker validates +
   // normalizes off-thread. Callers that target that endpoint receive the
@@ -313,6 +320,8 @@ export function ImageUploader({
   const [pollingAssetId, setPollingAssetId] = useState<string | null>(null)
   /** SW-ADE-02: the cap was reached with the asset still PENDING. */
   const [stillProcessing, setStillProcessing] = useState(false)
+  /** Review R1-4: the asset is ACTIVE but the read carried no URL to show yet. */
+  const [readyNoUrl, setReadyNoUrl] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // The latest callbacks, read by the poll without restarting it when a parent re-renders.
   const resolveRef = useRef(resolveAcceptedAsset)
@@ -346,7 +355,10 @@ export function ImageUploader({
       if (cancelled) return
       if (outcome?.status === "ACTIVE") {
         settle()
-        if (outcome.url) completeRef.current(outcome.url)
+        // Review R1-4: ACTIVE with no URL is not silence. The parent is still told, so it re-reads
+        // the product, and the vendor is told the photo is ready.
+        if (!outcome.url) setReadyNoUrl(true)
+        completeRef.current(outcome.url)
         return
       }
       if (outcome?.status === "FAILED") {
@@ -385,6 +397,7 @@ export function ImageUploader({
       setProcessing(false)
       setPollingAssetId(null)
       setStillProcessing(false)
+      setReadyNoUrl(false)
 
       // 1. Type gate.
       const typeError = validateFileType(file.type)
@@ -655,6 +668,11 @@ export function ImageUploader({
 
       {/* Error message */}
       {error && <p className="text-sm text-red-500">{error}</p>}
+      {readyNoUrl && !error && (
+        <p role="status" className="text-sm text-slate-600">
+          {READY_NO_URL_COPY}
+        </p>
+      )}
       {stillProcessing && !error && (
         <p role="status" className="text-sm text-slate-600">
           {STILL_PROCESSING_COPY}

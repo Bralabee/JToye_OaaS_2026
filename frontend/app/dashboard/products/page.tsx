@@ -1283,7 +1283,8 @@ export default function ProductsPage() {
                     fetchAcceptedAssetOutcome(editingProduct.id, assetId)
                   }
                   onUploadComplete={(url) => {
-                    setEditingProduct({ ...editingProduct, imageUrl: url })
+                    // No URL (review R1-4): keep the image shown and re-read the list.
+                    if (url) setEditingProduct({ ...editingProduct, imageUrl: url })
                     fetchProducts()
                   }}
                   onAiSuggestions={(suggestions) => {
