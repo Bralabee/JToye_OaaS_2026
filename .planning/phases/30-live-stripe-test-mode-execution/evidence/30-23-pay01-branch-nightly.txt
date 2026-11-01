@@ -1,0 +1,61 @@
+# 30-23 — PAY-01 part 3: the owner's CI sandbox keys and a real nightly on the PR branch
+
+## Task 1 (owner, side by side in Chrome, 2026-11-01 ~08:10-08:17Z)
+
+Sandboxes on the J'Toye Digital Ltd Stripe account before: "J'Toye Digital Ltd sandbox" acct_1U0tklDpS9ICNeRt
+(staging: the staging PaymentIntent ids carry that suffix) and the legacy "Test mode". Created a new sandbox
+"jtoye-ci" = acct_1UWtvjD29H13ktT5 (settings and capabilities copied from live with test data, no products).
+
+Keys read from the sandbox's API keys page, written to mode-600 files, verified without printing a value:
+
+    sk: mode=600 len=107 prefix=sk_test_
+    pk: mode=600 len=107 prefix=pk_test_
+    account read rc=0
+    sandbox account id=acct_1UWtvjD29H13ktT5 name=jtoye-ci
+    balance livemode=false
+    local CLI login account id=acct_1U0tklDpS9ICNeRt
+    PASS: both keys are TEST, the sandbox is a separate account
+    verify_rc=0
+    secret_set_rc=0
+    variable_set_rc=0
+    CI_STRIPE_PUBLISHABLE_KEY 2026-11-01T08:17:06Z
+    secret STRIPE_TEST_SECRET_KEY updated_at=2026-11-01T08:17:06Z
+    stored_len=107 prefix=pk_test_ suffix=26QtYu
+    variable == sandbox pk (trailing newline was the only difference)
+    key files shredded, dir removed
+
+Acceptance: `gh variable list` lists CI_STRIPE_PUBLISHABLE_KEY (above). The secret's presence is proven by the
+nightly's key-guard step (Task 2).
+
+## Task 2 — first dispatched run on the PR branch
+
+Branch note: the plan names feat/30-pay01-refund-e2e; PR 6 (#1065) lives on agy/30-21-22-refund-e2e, so the
+dispatch is on that branch (owner, 2026-11-01). The stale refund ALLOW was already retired on the branch by the
+round-1 fix 0ebfaf66 (MAX_SKIPS 6 -> 4), so the plan's expected S-3 red does NOT apply to this run: the skip
+budget is expected GREEN at 4/4.
+
+    head=0ebfaf66 pr_head=0ebfaf66
+    dispatch_rc=0 at 2026-11-01T08:17:37Z
+    RUN: 41288249740 (workflow_dispatch, headSha 0ebfaf66)
+    https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/41288249740
+
+(step conclusions, STRIPE-REFUND line, processed_stripe_events, skip set: appended when the run ends)
+
+### Run 41288249740 — FAILURE at "Start the Stripe forwarder" (08:44Z), recorded verbatim from the job log
+
+    ##[error]stripe listen exited prematurely
+    must specify events to forward using --events, --all-snapshot, or --all-thin
+    ##[error]Process completed with exit code 1.
+    ... Enforce the declared skip budget:
+    VOID: no Playwright JSON report at frontend/e2e-artifacts/report-stripe.json — run the suite with --reporter=json first
+    ##[error]Process completed with exit code 2.
+
+Step conclusions: Start the Stripe forwarder = failure; Enforce the declared skip budget = failure (VOID rc 2,
+round-1 recorded finding 9 now OBSERVED); every earlier step success (key guard passed: the secret is present).
+
+Reproduced locally (Stripe CLI 1.54.0, the CI sandbox key via env, forward target a closed port):
+    flags=[]              -> "must specify events to forward using --events, --all-snapshot, or --all-thin"
+    flags=[--all-snapshot] -> "Getting ready..."
+Cause: Stripe CLI 1.5x `listen` no longer forwards every event by default. Fix: `--all-snapshot` (the v1 snapshot
+payloads core-java parses), plus the skip-budget gate skipped rather than VOID when the Stripe run did not run.
+Fix pushed to the PR branch as a fast-forward from a detached scratch checkout (commit and second run: below).
