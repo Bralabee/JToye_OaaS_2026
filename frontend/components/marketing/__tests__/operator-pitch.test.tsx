@@ -318,13 +318,13 @@ describe("OperatorPitch", () => {
 })
 
 /**
- * SW-CLR-04 and SW-CLR-06 (swarm epic #964). The persona swarm found that the
+ * SW-CLR-04 and SW-CLR-06 (the 2026-10-19 persona swarm epic). The persona swarm found that the
  * only next step on this page was "Start your application", which ends at a
  * sign-in — no way to ask a question first — and that the pricing section
  * linked no terms. Each CTA now has a contact link beside it, and the pricing
  * footnote links the terms page.
  */
-describe("OperatorPitch contact and terms routes (swarm epic #964)", () => {
+describe("OperatorPitch contact and terms routes (persona swarm, SW-CLR-04 and SW-CLR-06)", () => {
   it("offers a contact link beside each application CTA", () => {
     const { container } = render(<OperatorPitch />)
     const ctas = screen.getAllByRole("link", { name: /start your application/i })
