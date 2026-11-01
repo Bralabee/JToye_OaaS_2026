@@ -277,17 +277,33 @@ describe("Sidebar navigation", () => {
     })
   })
 
-  it("shows a 'Go live' link to /dashboard/onboarding", () => {
+  it("shows a 'Go live' link to /dashboard/onboarding", async () => {
     const { Sidebar } = jest.requireActual("@/components/dashboard/sidebar") as {
       Sidebar: () => ReactElement
     }
+    // Go live needs SHOP_MANAGER (SW-TND-05, swarm epic #964), so it is listed only once staff/me
+    // has answered: resolve it as a shop manager for this case.
+    const { fetchMyShops } = jest.requireMock("@/lib/shops-api") as { fetchMyShops: jest.Mock }
+    fetchMyShops.mockResolvedValueOnce({
+      shops: [],
+      isGroupAdmin: false,
+      userId: "u-1",
+      access: {
+        userId: "u-1",
+        groupAdmin: false,
+        grantedShopIds: ["s-1"],
+        tenantWideRole: null,
+        businessName: null,
+        shopRoles: { "s-1": "SHOP_MANAGER" },
+      },
+    })
     // The sidebar mounts a ShopSwitcher, which now reads the shared provider.
     render(
       <ShopSwitcherProvider>
         <Sidebar />
       </ShopSwitcherProvider>
     )
-    const link = screen.getByRole("link", { name: /go live/i })
+    const link = await screen.findByRole("link", { name: /go live/i })
     expect(link).toHaveAttribute("href", "/dashboard/onboarding")
   })
 })

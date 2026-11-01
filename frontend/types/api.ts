@@ -193,6 +193,18 @@ export interface MediaUploadAccepted {
   status: MediaAssetStatus
 }
 
+/**
+ * An accepted upload's state as the dashboard read it back from the server (SW-ADE-02, swarm epic
+ * #964): the uploader polls this to leave its "Processing…" state.
+ */
+export interface AcceptedAssetOutcome {
+  status: MediaAssetStatus
+  /** The ACTIVE derivative URL; null otherwise. */
+  url: string | null
+  /** The vendor-visible reason on FAILED; null otherwise. */
+  failureReason: string | null
+}
+
 // Product Types
 export interface Product {
   id: string

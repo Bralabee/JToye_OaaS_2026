@@ -1,6 +1,6 @@
 import apiClient from "@/lib/api-client"
 import { makeIdempotencyKey } from "@/lib/webhooks-api"
-import type { MediaAsset, MediaUploadAccepted } from "@/types/api"
+import type { AcceptedAssetOutcome, MediaAsset, MediaUploadAccepted, Product } from "@/types/api"
 
 /**
  * Typed client for the vendor media review/rejection queue (Phase 24 IMG-04,
@@ -75,6 +75,38 @@ export function productImageUploadUrl(productId: string): string {
   return `/api/v1/products/${productId}/image`
 }
 
-export const mediaApi = { fetchReviewQueue, keepAsset, reprocessAsset, productImageUploadUrl }
+/**
+ * SW-ADE-02 (swarm epic #964): where an accepted product-image upload has got to. There is no
+ * GET-by-asset endpoint, so this reads the two places the server reports one:
+ *   1. GET /api/v1/products/{id} — its `media` list carries the asset once it is placed on the
+ *      product (on worker success, or at accept time for a dedup share), with its status and,
+ *      when ACTIVE, the derivative URL;
+ *   2. GET /api/v1/media/review-queue — a FAILED upload is never placed (D-04a: a failed
+ *      replacement never clobbers the live image), so it is found here, with its failureReason.
+ * Neither listing the asset means it is still PENDING.
+ */
+export async function fetchAcceptedAssetOutcome(
+  productId: string,
+  assetId: string
+): Promise<AcceptedAssetOutcome> {
+  const productRes = await apiClient.get<Product>(`/api/v1/products/${productId}`)
+  const placed = productRes.data?.media?.find((m) => m.assetId === assetId)
+  if (placed && placed.status !== "PENDING") {
+    return { status: placed.status, url: placed.url, failureReason: placed.failureReason }
+  }
+  const queued = (await fetchReviewQueue()).find((m) => m.assetId === assetId)
+  if (queued?.status === "FAILED") {
+    return { status: "FAILED", url: null, failureReason: queued.failureReason }
+  }
+  return { status: "PENDING", url: null, failureReason: null }
+}
+
+export const mediaApi = {
+  fetchReviewQueue,
+  keepAsset,
+  reprocessAsset,
+  productImageUploadUrl,
+  fetchAcceptedAssetOutcome,
+}
 
 export default mediaApi
