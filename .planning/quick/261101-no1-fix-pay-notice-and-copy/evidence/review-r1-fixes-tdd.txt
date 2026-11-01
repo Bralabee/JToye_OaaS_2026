@@ -251,3 +251,60 @@ Snapshots:   0 total
 Time:        1.59 s, estimated 2 s
 Ran all test suites within paths "app/pay/__tests__/pay-client.test.tsx".
 rc=0
+
+## BREAK ARM A-no-key-reloadable (after commit 4d189f50)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 6942bf15..9ed22a4d 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -309,7 +309,7 @@ export function PayClient() {
+         // the first-visit state stays as the copy contract has it. A null promise means the bundle has no
+         // publishable key, a build constant: a reload would land here again, so it is not offered
+         // (PR #1072 review round 1, finding 2).
+-        setPhase({ kind: "linkOpened", display, reloadable: fromResume && promise !== null })
++        setPhase({ kind: "linkOpened", display, reloadable: fromResume })
+         return
+       }
+       let status: string | undefined
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › reload after redeem on a bundle with NO publishable key: the 'link has now been opened' alert, and no Try again (a reload cannot add a build-time key)
+Tests:       1 failed, 45 passed, 46 total
+rc=1
+A-no-key-reloadable restored (sha256 matches committed)
+
+## BREAK ARM B-element-failure-not-reloadable (after commit 4d189f50)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 6942bf15..ead37557 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -563,7 +563,7 @@ export function PayClient() {
+                   // On the resume path the entry is still kept, so a reload recovers here as it does
+                   // for a Stripe.js load failure (PR #1072 review round 1, finding 3).
+                   onLoadError={() =>
+-                    setPhase({ kind: "linkOpened", display: phase.display, reloadable: phase.fromResume })
++                    setPhase({ kind: "linkOpened", display: phase.display, reloadable: false })
+                   }
+                 />
+               </Elements>
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › reload after redeem when the Payment Element fails to load: the 'link has now been opened' alert carries Try again, which reloads the page
+Tests:       1 failed, 45 passed, 46 total
+rc=1
+B-element-failure-not-reloadable restored (sha256 matches committed)
+
+## BREAK ARM C-element-failure-always-reloadable (after commit 4d189f50)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 6942bf15..5569948e 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -563,7 +563,7 @@ export function PayClient() {
+                   // On the resume path the entry is still kept, so a reload recovers here as it does
+                   // for a Stripe.js load failure (PR #1072 review round 1, finding 3).
+                   onLoadError={() =>
+-                    setPhase({ kind: "linkOpened", display: phase.display, reloadable: phase.fromResume })
++                    setPhase({ kind: "linkOpened", display: phase.display, reloadable: true })
+                   }
+                 />
+               </Elements>
+  ● redeem refused: each status reads as its own state, without the server's prose › the Payment Element fails to load after redeem: the 'link has now been opened' alert replaces the form
+Tests:       1 failed, 45 passed, 46 total
+rc=1
+C-element-failure-always-reloadable restored (sha256 matches committed)
