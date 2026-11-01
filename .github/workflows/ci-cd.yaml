@@ -1111,6 +1111,10 @@ jobs:
           # DELETEd after a failing step and after a successful run, with no Key
           # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
           run_st bash scripts/staging-seed.sh --selftest
+          # media-bulk-upload.sh: the operator's bulk photo client (manifest parsing, SKU and key
+          # derivation, ledger lookup, the 429 wait rule); its live arms need a running stack and
+          # are recorded on PR #1084.
+          run_st bash scripts/media-bulk-upload.sh --selftest
 
           # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
           # context whose server is not the staging API server, a non-40-hex

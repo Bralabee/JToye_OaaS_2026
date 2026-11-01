@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bulk Upload Client Through the Vendor Image Pipeline (#1084) — 2026-11-01
+
+`scripts/media-bulk-upload.sh` pushes a folder of photographs through the same async product-image accept a vendor uses from the dashboard, from a CSV manifest: `replace` fills a product's primary slot, `add` a gallery slot by `sort_order`, a blank title creates an unpublished draft, and `--analyze` records the vision model's reading of each file and names a draft the run created from a bare file name (price, publication and the allergen mask stay the vendor's). Repeatable by the server's own rules: the (tenant, sha256) dedup and a no-op placement make a re-run create nothing, the Idempotency-Key is scoped to one run (a cross-run key was measured replaying a 202 for an asset a later placement had released), draft SKUs are keyed by the file, `add` needs an explicit slot because the server replaces an occupied one, and the ledger finds a renamed draft again by its file. Measured on the dev stack with 29 photographs: a re-run created only the one row the first pass had failed and reused the other 28 with identical asset ids; a replace plus two adds on a demo product landed in slots 0, 1 and 2 and the storefront served the new primary. No core-java, frontend or migration change. Recorded on the PR: pipeline-added gallery slots are not read by the public storefront DTO; the product delete 409 names an order that does not exist; the analysis call's 30 s timeout is a literal.
+
 ### The Customer's Allergy Note on Signed-in My Orders Only, Under T-31.1-46 (swarm epic #964) (#1082) — 2026-11-01
 
 SW-PRY-06, owner ruling 2026-11-01 after a tenancy-security assessment (SAFE WITH CONDITIONS). A customer can now read back the allergy note they sent, on the signed-in My orders page and nowhere else. No migration, no RLS policy change.
