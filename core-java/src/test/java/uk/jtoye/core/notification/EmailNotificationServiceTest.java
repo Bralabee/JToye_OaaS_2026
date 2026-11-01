@@ -21,6 +21,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
+import uk.jtoye.core.notification.consent.NotificationCategory;
+import uk.jtoye.core.notification.consent.UnsubscribeTokenService;
 import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
@@ -267,7 +269,50 @@ class EmailNotificationServiceTest {
 
         assertEquals("Order ORD-500 \u2014 Cancelled", msg.getSubject());
         assertTrue(msg.getText().contains("has been cancelled"));
-        assertTrue(msg.getText().contains("PREPARING"));
+        // SW-ADE-12 (swarm epic #964): the customer's word for the status, never the enum.
+        assertThat(msg.getText())
+                .contains("It was cancelled while it was: Preparing.")
+                .doesNotContain("PREPARING")
+                .doesNotContain("Previous status");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12: an unpaid card order cancelled from DRAFT says 'Awaiting payment', not DRAFT")
+    void cancelledFromDraftUsesTheCustomerWord() {
+        service.sendOrderCancelledNotification(createTestEvent("ORD-501", OrderStatus.DRAFT, OrderStatus.CANCELLED),
+                RECIPIENT, ctx(null));
+
+        assertThat(sent().getText()).contains("It was cancelled while it was: Awaiting payment.").doesNotContain("DRAFT");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12: a cancel event with no previous status omits the line rather than printing null")
+    void cancelledWithNoPreviousStatusOmitsTheLine() {
+        service.sendOrderCancelledNotification(createTestEvent("ORD-502", null, OrderStatus.CANCELLED),
+                RECIPIENT, ctx(null));
+
+        assertThat(sent().getText()).doesNotContain("It was cancelled while it was").doesNotContain("null");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12 parity: every status label equals the storefront's ORDER_STATUS_COPY label")
+    void statusLabelsMatchTheStorefront() throws Exception {
+        String copy = Files.readString(IntegrationTestSupport.locateRepoFile("frontend/lib/order-status-announcement.ts"));
+        SoftAssertions softly = new SoftAssertions();
+        for (OrderStatus status : OrderStatus.values()) {
+            Matcher m = Pattern.compile("\\b" + status.name() + ":\\s*\\{\\s*label:\\s*\"([^\"]*)\"").matcher(copy);
+            assertTrue(m.find(), "ORDER_STATUS_COPY has no entry for " + status);
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            service.sendOrderCancelledNotification(createTestEvent("ORD-503", status, OrderStatus.CANCELLED),
+                    RECIPIENT, ctx(null));
+
+            verify(mailSender).send(messageCaptor.capture());
+            softly.assertThat(new Sent(SentMail.reparse(messageCaptor.getValue())).getText()).as(status.name())
+                    .contains("It was cancelled while it was: " + m.group(1) + ".");
+        }
+        softly.assertAll();
     }
 
     // --- Conditional sending ---
@@ -590,6 +635,122 @@ class EmailNotificationServiceTest {
         softly.assertAll();
     }
 
+    // --- SW-JRD-15 (swarm epic #964, issue #826): every order email says what was ordered ---------
+
+    private static final OrderEmailSummary DELIVERY_SUMMARY = new OrderEmailSummary(
+            List.of(new OrderEmailSummary.Line("Jollof Rice", 2), new OrderEmailSummary.Line("Puff Puff", 1)),
+            1250L, List.of("1 High Street", "Flat 2", "Birmingham", "B1 1AA"), null);
+
+    private static CustomerEmailContext withSummary(FulfilmentType type, OrderEmailSummary summary) {
+        return new CustomerEmailContext(SHOP_NAME, SHOP_EMAIL, SELLER, OrderChannel.STOREFRONT,
+                List.of("Gluten", "Milk"), List.of("Gluten", "Milk"), List.of(), type, summary);
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: every order email names the shop, the item lines, the total and the delivery address")
+    void everyStatusCarriesTheOrderSummary() {
+        SoftAssertions softly = new SoftAssertions();
+        for (Status status : STATUSES) {
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            status.send().accept(service, withSummary(FulfilmentType.DELIVERY, DELIVERY_SUMMARY));
+
+            verify(mailSender, times(1)).send(messageCaptor.capture());
+            String body = new Sent(SentMail.reparse(messageCaptor.getValue())).getText();
+            softly.assertThat(body).as(status.name())
+                    .contains("Your order from " + SHOP_NAME)
+                    .containsPattern("Jollof Rice \\u00d7 2\\r?\\n")
+                    .containsPattern("Puff Puff \\u00d7 1\\r?\\n")
+                    .contains("Total: \u00a312.50")
+                    .contains("Delivery to: 1 High Street, Flat 2, Birmingham, B1 1AA");
+        }
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order says where to collect it, and never a delivery address")
+    void collectionOrderSaysWhereToCollect() {
+        OrderEmailSummary collection = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 6)), 900L,
+                List.of(), "12 Market Street, Birmingham");
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, collection));
+
+        assertThat(sent().getText())
+                .contains("Zobo \u00d7 6")
+                .contains("Total: \u00a39.00")
+                .contains("Collect from: " + SHOP_NAME + ", 12 Market Street, Birmingham")
+                .doesNotContain("Delivery to:");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order whose shop has no address still says it is for collection")
+    void collectionWithoutAShopAddressNamesTheShop() {
+        OrderEmailSummary collection = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 1)), 150L,
+                List.of(), null);
+
+        service.sendOrderConfirmed(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, collection));
+
+        assertThat(sent().getText()).containsPattern("Collect from: " + Pattern.quote(SHOP_NAME) + "\\r?\\n");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a vendor-controlled product name cannot forge a line of the summary")
+    void productNamesAreSingleLines() {
+        OrderEmailSummary forged = new OrderEmailSummary(
+                List.of(new OrderEmailSummary.Line("Jollof\r\nTotal: \u00a30.00", 1)), 500L, List.of(), null);
+
+        service.sendOrderPreparing(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, forged));
+
+        String body = sent().getText();
+        assertThat(body).contains("Jollof Total: \u00a30.00 \u00d7 1").contains("Total: \u00a35.00");
+        assertThat(body.lines().filter(l -> l.startsWith("Total:")).toList()).containsExactly("Total: \u00a35.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a delivery order names its fee, so the lines reconcile with the total")
+    void deliveryFeeIsNamed() {
+        OrderEmailSummary withFee = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Jollof Rice", 2)),
+                1250L, List.of("1 High Street"), null, 250L, null, null);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, withFee));
+
+        String body = sent().getText();
+        assertThat(body).containsPattern("Delivery fee: \u00a32\\.50\\r?\\nTotal: \u00a312\\.50");
+        assertThat(body).doesNotContain("Paid now").doesNotContain("Balance due");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a zero delivery fee prints no fee line")
+    void zeroDeliveryFeeIsNotPrinted() {
+        OrderEmailSummary noFee = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 1)),
+                500L, List.of("1 High Street"), null, 0L, null, null);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, noFee));
+
+        assertThat(sent().getText()).doesNotContain("Delivery fee").contains("Total: \u00a35.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a split-deposit order says what was paid now and what is still due")
+    void splitDepositSaysPaidNowAndBalanceDue() {
+        OrderEmailSummary deposit = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Party tray", 1)),
+                10000L, List.of(), "12 Market Street", 0L, 2000L, 8000L);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, deposit));
+
+        assertThat(sent().getText())
+                .containsPattern("Total: \u00a3100\\.00\\r?\\nPaid now: \u00a320\\.00\\r?\\nBalance due: \u00a380\\.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: no summary read means no summary section, never an empty one or a \u00a30.00 total")
+    void noSummaryMeansNoSection() {
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
+
+        assertThat(sent().getText()).doesNotContain("Your order from").doesNotContain("Total:");
+    }
+
     // --- T-31.1-88 / ASVS V7: the recipient never reaches a log line ---------------------------------
 
     private ListAppender<ILoggingEvent> appender;
@@ -614,12 +775,18 @@ class EmailNotificationServiceTest {
         appender.start();
         serviceLogger.addAppender(appender);
 
+        String secret = "test-981-log-secret";
+        EmailNotificationService configured = configuredForUnsubscribe(
+                "https://app.jtoye.test", "https://api.jtoye.test", secret);
+        String token = new UnsubscribeTokenService(secret)
+                .tokenFor(STATUS_EVENT.tenantId(), RECIPIENT, NotificationCategory.ORDERS);
         for (Status status : STATUSES) {
-            status.send().accept(service, full(SHOP_NAME, SHOP_EMAIL));
+            status.send().accept(configured, full(SHOP_NAME, SHOP_EMAIL));
         }
         service.sendOrderConfirmation(STATUS_EVENT, RECIPIENT, full(SHOP_NAME, "not an address"));
-        doThrow(new MailSendException("Invalid Addresses: " + RECIPIENT)).when(mailSender).send(any(MimeMessage.class));
-        service.sendOrderConfirmation(STATUS_EVENT, RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
+        doThrow(new MailSendException("Invalid Addresses: " + RECIPIENT + " " + token))
+                .when(mailSender).send(any(MimeMessage.class));
+        configured.sendOrderConfirmed(STATUS_EVENT, RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
         ReflectionTestUtils.setField(service, "emailEnabled", false);
         service.sendOrderConfirmation(STATUS_EVENT, RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
 
@@ -631,6 +798,7 @@ class EmailNotificationServiceTest {
                 .anyMatch(l -> l.startsWith("Email notification skipped for order ORD-ALL"));
         assertThat(lines).noneMatch(l -> l.contains(RECIPIENT));
         assertThat(lines).noneMatch(l -> l.contains("customer@"));
+        assertThat(lines).noneMatch(l -> l.contains(token));
     }
 
     // --- One source of words: the Java copy equals the storefront's --------------------------------
@@ -684,5 +852,119 @@ class EmailNotificationServiceTest {
         service.sendOrderConfirmation(createTestEvent(), RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
         InternetAddress from = SentMail.from(sent().parsed());
         assertThat(from.getAddress()).isEqualTo(FROM_ADDRESS).isNotEqualTo(SHOP_EMAIL);
+    }
+
+    // --- #981: List-Unsubscribe on non-statutory order progress emails; omitted on statutory notices ---
+
+    private EmailNotificationService configuredForUnsubscribe(String appOrigin, String oneClickOrigin, String secret) {
+        NotificationProperties props = new NotificationProperties();
+        props.getUnsubscribe().setSigningSecret(secret);
+        props.getUnsubscribe().setBaseUrl(appOrigin);
+        props.getUnsubscribe().setOneClickBaseUrl(oneClickOrigin);
+        EmailNotificationService configured = new EmailNotificationService(
+                mailSender, props, new UnsubscribeTokenService(secret));
+        ReflectionTestUtils.setField(configured, "fromAddress", FROM_ADDRESS);
+        ReflectionTestUtils.setField(configured, "emailEnabled", true);
+        ReflectionTestUtils.setField(configured, "trackingBaseUrl", TRACKING_BASE_URL);
+        ReflectionTestUtils.setField(configured, "platformLegalName", "J'Toye Digital Ltd");
+        ReflectionTestUtils.setField(configured, "platformCompanyNumber", "16471464");
+        ReflectionTestUtils.setField(configured, "platformRegistration", "England & Wales");
+        ReflectionTestUtils.setField(configured, "platformRegisteredOffice", "");
+        return configured;
+    }
+
+    @Test
+    @DisplayName("#981: intermediate status emails (confirmed, preparing, ready collection/delivery, completed) "
+            + "carry RFC 8058 List-Unsubscribe + List-Unsubscribe-Post headers and footer link with a verifiable token")
+    void intermediateStatusEmails_carryRfc8058UnsubscribeHeadersAndFooterLink() {
+        String secret = "test-981-signing-secret";
+        UnsubscribeTokenService verifier = new UnsubscribeTokenService(secret);
+        EmailNotificationService configured = configuredForUnsubscribe(
+                "https://app.jtoye.test", "https://api.jtoye.test", secret);
+        String expectedToken = verifier.tokenFor(STATUS_EVENT.tenantId(), RECIPIENT, NotificationCategory.ORDERS);
+
+        record Case(String label, CustomerEmailContext ctx, BiConsumer<EmailNotificationService, CustomerEmailContext> send) { }
+        List<Case> cases = List.of(
+                new Case("confirmed", full(SHOP_NAME, SHOP_EMAIL),
+                        (s, c) -> s.sendOrderConfirmed(STATUS_EVENT, RECIPIENT, c)),
+                new Case("preparing", full(SHOP_NAME, SHOP_EMAIL),
+                        (s, c) -> s.sendOrderPreparing(STATUS_EVENT, RECIPIENT, c)),
+                new Case("ready-collection", new CustomerEmailContext(SHOP_NAME, SHOP_EMAIL, SELLER,
+                        OrderChannel.STOREFRONT, List.of("Gluten"), List.of("Gluten"), List.of(),
+                        FulfilmentType.COLLECTION),
+                        (s, c) -> s.sendOrderReady(STATUS_EVENT, RECIPIENT, c)),
+                new Case("ready-delivery", new CustomerEmailContext(SHOP_NAME, SHOP_EMAIL, SELLER,
+                        OrderChannel.STOREFRONT, List.of("Gluten"), List.of("Gluten"), List.of(),
+                        FulfilmentType.DELIVERY),
+                        (s, c) -> s.sendOrderReady(STATUS_EVENT, RECIPIENT, c)),
+                new Case("completed", full(SHOP_NAME, SHOP_EMAIL),
+                        (s, c) -> s.sendOrderCompletedNotification(STATUS_EVENT, RECIPIENT, c)));
+
+        for (Case c : cases) {
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            c.send().accept(configured, c.ctx());
+
+            verify(mailSender, times(1)).send(messageCaptor.capture());
+            MimeMessage parsed = SentMail.reparse(messageCaptor.getValue());
+            String[] listUnsub = SentMail.header(parsed, "List-Unsubscribe");
+            String[] listUnsubPost = SentMail.header(parsed, "List-Unsubscribe-Post");
+            String text = SentMail.text(parsed);
+
+            assertThat(listUnsub).as(c.label() + " List-Unsubscribe").isNotNull().hasSize(1);
+            assertThat(listUnsub[0]).as(c.label() + " List-Unsubscribe")
+                    .startsWith("<https://api.jtoye.test/api/v1/public/unsubscribe?")
+                    .contains("tenant=" + STATUS_EVENT.tenantId())
+                    .contains("category=ORDERS")
+                    .contains("token=" + expectedToken)
+                    .endsWith(">");
+            assertThat(listUnsubPost).as(c.label() + " List-Unsubscribe-Post")
+                    .containsExactly("List-Unsubscribe=One-Click");
+            assertThat(text).as(c.label() + " footer unsubscribe link")
+                    .contains("Unsubscribe from order status updates: https://app.jtoye.test/unsubscribe?")
+                    .contains("token=" + expectedToken);
+        }
+    }
+
+    @Test
+    @DisplayName("#981/#516: when oneClickBaseUrl is blank, intermediate status emails degrade to RFC 2369 page URL "
+            + "with no List-Unsubscribe-Post claim")
+    void intermediateStatusEmails_degradeToPageUrlWhenOneClickOriginBlank() {
+        EmailNotificationService configured = configuredForUnsubscribe(
+                "https://app.jtoye.test", "", "test-981-signing-secret");
+
+        configured.sendOrderConfirmed(STATUS_EVENT, RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
+
+        MimeMessage parsed = sent().parsed();
+        String[] listUnsub = SentMail.header(parsed, "List-Unsubscribe");
+        assertThat(listUnsub).isNotNull().hasSize(1);
+        assertThat(listUnsub[0])
+                .startsWith("<https://app.jtoye.test/unsubscribe?")
+                .endsWith(">");
+        assertThat(SentMail.header(parsed, "List-Unsubscribe-Post")).isNull();
+    }
+
+    @Test
+    @DisplayName("#981: statutory notices (order-received CCR 2013 reg 16 confirmation and order-cancelled) "
+            + "never carry List-Unsubscribe headers or an unsubscribe footer link")
+    void statutoryOrderNotices_neverCarryUnsubscribeHeadersOrFooterLink() {
+        EmailNotificationService configured = configuredForUnsubscribe(
+                "https://app.jtoye.test", "https://api.jtoye.test", "test-981-signing-secret");
+
+        for (BiConsumer<EmailNotificationService, CustomerEmailContext> send : List.<BiConsumer<EmailNotificationService, CustomerEmailContext>>of(
+                (s, c) -> s.sendOrderConfirmation(STATUS_EVENT, RECIPIENT, c),
+                (s, c) -> s.sendOrderCancelledNotification(STATUS_EVENT, RECIPIENT, c))) {
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            send.accept(configured, full(SHOP_NAME, SHOP_EMAIL));
+
+            verify(mailSender, times(1)).send(messageCaptor.capture());
+            MimeMessage parsed = SentMail.reparse(messageCaptor.getValue());
+            assertThat(SentMail.header(parsed, "List-Unsubscribe")).isNull();
+            assertThat(SentMail.header(parsed, "List-Unsubscribe-Post")).isNull();
+            assertThat(SentMail.text(parsed)).doesNotContain("Unsubscribe from order status updates:");
+        }
     }
 }

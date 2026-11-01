@@ -22,7 +22,10 @@ import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 
 import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
@@ -37,7 +40,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -57,6 +62,7 @@ class PhoneVerificationAndPaymentLinkTest {
     @Mock private WhatsAppSmsChannel whatsAppSmsChannel;
     @Mock private EntityManager entityManager;
     @Mock private Session hibernateSession;
+    @Mock private ShopRepository shopRepository;
 
     private PhoneVerificationService phoneVerificationService;
     private OrderPaymentLinkService paymentLinkService;
@@ -79,7 +85,9 @@ class PhoneVerificationAndPaymentLinkTest {
                 whatsAppSmsChannel,
                 10,
                 5,
-                true
+                true,
+                // 30-17: the seam is on here, so the runtime must declare an allow-listed environment.
+                "test"
         );
 
         paymentLinkService = new OrderPaymentLinkService(
@@ -90,6 +98,8 @@ class PhoneVerificationAndPaymentLinkTest {
                 shopAccessService,
                 whatsAppSmsChannel,
                 entityManager,
+                shopRepository,
+                new StripeProperties(),
                 "https://shop.jtoye.co.uk",
                 60
         );
@@ -232,7 +242,7 @@ class PhoneVerificationAndPaymentLinkTest {
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentService.isConfigured()).thenReturn(true);
         when(paymentService.createPaymentIntent(order))
-                .thenReturn(new PaymentIntentResult("pi_live_link_01", "pi_live_link_01_secret_xyz"));
+                .thenReturn(new PaymentIntentResult("pi_live_link_01", "pi_live_link_01_secret_xyz", null));
 
         List<OrderPaymentLink> storedLinks = new ArrayList<>();
         when(linkRepository.findByTenantIdAndOrderIdOrderByCreatedAtDesc(tenantId, orderId))
@@ -254,7 +264,10 @@ class PhoneVerificationAndPaymentLinkTest {
         assertThat(issued.purpose()).isEqualTo("UPFRONT");
         assertThat(issued.amountPennies()).isEqualTo(4200L);
         assertThat(issued.stripePaymentIntentId()).isEqualTo("pi_live_link_01");
-        assertThat(issued.paymentUrl()).startsWith("https://shop.jtoye.co.uk/pay/");
+        // 30-16 owner decision (Task 1 = fragment): the token rides in the URL fragment, never a path segment,
+        // so it is never in a request line or an access log (the V75 / V77 bearer-token rule).
+        assertThat(issued.paymentUrl()).isEqualTo("https://shop.jtoye.co.uk/pay#token=" + issued.token());
+        assertThat(issued.paymentUrl()).doesNotContain("/pay/");
         assertThat(order.isPhoneVerified()).isTrue();
         assertThat(order.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
 
@@ -295,6 +308,116 @@ class PhoneVerificationAndPaymentLinkTest {
                     assertThat(rse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
                     assertThat(rse.getReason()).contains("already been used");
                 });
+    }
+
+    @Test
+    @DisplayName("30-16: preview reads the link under its own tenant, never stamps used_at, never calls Stripe, and restores the caller's tenant")
+    void previewPaymentLink_neverConsumes_neverCallsStripe_restoresCallerTenant() {
+        lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
+        OrderPaymentLink link = link("UPFRONT", OffsetDateTime.now().plusMinutes(30), null, null);
+        Order order = buildOrder(OrderStatus.PENDING, 4200L, true);
+        order.setPaymentStatus(PaymentStatus.PENDING);
+        Shop shop = new Shop();
+        shop.setName("Mama Tolu's Kitchen");
+
+        UUID callerTenant = UUID.randomUUID();
+        TenantContext.set(callerTenant);
+        when(linkRepository.findByTokenSha256(link.getTokenSha256())).thenAnswer(inv -> {
+            assertThat(TenantContext.get()).as("the bearer lookup runs tenant-less (A-3)").isEmpty();
+            return Optional.of(link);
+        });
+        when(orderRepository.findById(orderId)).thenAnswer(inv -> {
+            assertThat(TenantContext.get()).as("the order is read under the LINK's tenant").contains(tenantId);
+            return Optional.of(order);
+        });
+        when(shopRepository.findById(shopId)).thenAnswer(inv -> {
+            assertThat(TenantContext.get()).as("the shop is read under the LINK's tenant").contains(tenantId);
+            return Optional.of(shop);
+        });
+
+        for (int i = 0; i < 2; i++) {
+            OrderPaymentLinkService.PaymentLinkPreviewDto preview = paymentLinkService.previewPaymentLink("preview-token");
+            assertThat(preview.shopName()).isEqualTo("Mama Tolu's Kitchen");
+            assertThat(preview.orderNumber()).isEqualTo("ORD-P30-001");
+            assertThat(preview.amountPennies()).isEqualTo(4200L);
+            assertThat(preview.currency()).isEqualTo("gbp");
+            assertThat(preview.purpose()).isEqualTo("UPFRONT");
+            assertThat(preview.expiresAt()).isEqualTo(link.getExpiresAt());
+            assertThat(preview.state()).isEqualTo("ACTIVE");
+            assertThat(TenantContext.get()).as("the caller's tenant is restored").contains(callerTenant);
+        }
+
+        verify(linkRepository, never()).markUsedIfUnused(any(), any());
+        verify(linkRepository, never()).save(any());
+        verify(linkRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(paymentService);
+        assertThat(link.getUsedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("30-16: an unknown token previews as 404 'Payment link not found.' and the caller's tenant is restored")
+    void previewPaymentLink_unknownToken_notFound_restoresTenant() {
+        lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
+        UUID callerTenant = UUID.randomUUID();
+        TenantContext.set(callerTenant);
+        when(linkRepository.findByTokenSha256(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> paymentLinkService.previewPaymentLink("nope"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Payment link not found.");
+        assertThat(TenantContext.get()).contains(callerTenant);
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    @DisplayName("30-16: preview state precedence PAID > USED > REVOKED > EXPIRED > ACTIVE; BALANCE is PAID only at 0 due")
+    void previewState_precedence() {
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime future = now.plusMinutes(30);
+        OffsetDateTime past = now.minusMinutes(1);
+
+        Order pending = buildOrder(OrderStatus.PENDING, 4200L, true);
+        pending.setPaymentStatus(PaymentStatus.PENDING);
+        Order captured = buildOrder(OrderStatus.CONFIRMED, 4200L, true);
+        captured.setPaymentStatus(PaymentStatus.CAPTURED);
+        Order capturedOwing = buildOrder(OrderStatus.CONFIRMED, 4200L, true);
+        capturedOwing.setPaymentStatus(PaymentStatus.CAPTURED);
+        capturedOwing.setBalanceDuePennies(1500L);
+        Order settled = buildOrder(OrderStatus.CONFIRMED, 4200L, true);
+        settled.setPaymentStatus(PaymentStatus.CAPTURED);
+        settled.setBalanceDuePennies(0L);
+
+        // every flag at once on an unpaid order: USED wins
+        assertThat(OrderPaymentLinkService.previewState(link("UPFRONT", past, now, now), pending, now)).isEqualTo("USED");
+        // PAID beats every link flag
+        assertThat(OrderPaymentLinkService.previewState(link("UPFRONT", past, now, now), captured, now)).isEqualTo("PAID");
+        assertThat(OrderPaymentLinkService.previewState(link("DEPOSIT", future, now, null), captured, now)).isEqualTo("PAID");
+        // REVOKED beats EXPIRED
+        assertThat(OrderPaymentLinkService.previewState(link("UPFRONT", past, null, now), pending, now)).isEqualTo("REVOKED");
+        assertThat(OrderPaymentLinkService.previewState(link("UPFRONT", past, null, null), pending, now)).isEqualTo("EXPIRED");
+        assertThat(OrderPaymentLinkService.previewState(link("UPFRONT", future, null, null), pending, now)).isEqualTo("ACTIVE");
+        // an expiry exactly now is not yet expired, the same comparison redeem uses
+        assertThat(OrderPaymentLinkService.previewState(link("UPFRONT", now, null, null), pending, now)).isEqualTo("ACTIVE");
+        // BALANCE: a captured deposit is not a paid balance; 0 due is; NULL due is not recorded, not paid
+        assertThat(OrderPaymentLinkService.previewState(link("BALANCE", future, null, null), capturedOwing, now)).isEqualTo("ACTIVE");
+        assertThat(OrderPaymentLinkService.previewState(link("BALANCE", future, null, null), settled, now)).isEqualTo("PAID");
+        assertThat(OrderPaymentLinkService.previewState(link("BALANCE", future, null, null), captured, now)).isEqualTo("ACTIVE");
+    }
+
+    private OrderPaymentLink link(String purpose, OffsetDateTime expiresAt, OffsetDateTime usedAt, OffsetDateTime revokedAt) {
+        OrderPaymentLink link = new OrderPaymentLink();
+        link.setId(UUID.randomUUID());
+        link.setTenantId(tenantId);
+        link.setShopId(shopId);
+        link.setOrderId(orderId);
+        link.setTokenSha256(PhoneVerificationService.sha256Hex("preview-token"));
+        link.setPurpose(purpose);
+        link.setAmountPennies(4200L);
+        link.setPhoneVerified(true);
+        link.setExpiresAt(expiresAt);
+        link.setUsedAt(usedAt);
+        link.setRevokedAt(revokedAt);
+        return link;
     }
 
     private Order buildOrder(OrderStatus status, long totalAmountPennies, boolean phoneVerified) {

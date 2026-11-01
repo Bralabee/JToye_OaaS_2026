@@ -81,6 +81,7 @@ data:
   gdpr.dsar.export-download-base-url: https://app.olajay.co.uk/data-request/download
   gdpr.dsar.verify-base-url: https://app.olajay.co.uk/data-request/confirm
   ingress.controller-namespace: traefik
+  jtoye.phone-verification.expose-otp-for-test: "false"
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.customer-realm: jtoye-customers
@@ -669,6 +670,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: stripe.environment-tag
+              name: app-config
+        - name: JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST
+          valueFrom:
+            configMapKeyRef:
+              key: jtoye.phone-verification.expose-otp-for-test
               name: app-config
         - name: STRIPE_API_KEY
           valueFrom:
@@ -1415,7 +1421,6 @@ metadata:
       more_set_headers "X-Frame-Options: DENY";
       more_set_headers "X-Content-Type-Options: nosniff";
       more_set_headers "X-XSS-Protection: 1; mode=block";
-      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
       more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
       more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"

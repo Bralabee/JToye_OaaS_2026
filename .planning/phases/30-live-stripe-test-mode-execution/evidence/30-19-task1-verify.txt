@@ -1,0 +1,18 @@
+## V1 header + csp (plan verify)
+Test Suites: 2 passed, 2 total
+Tests:       24 passed, 24 total
+Snapshots:   2 passed, 2 total
+rc=0
+## V2 SSR contract (plan verify)
+  config    : /home/sanmi/IdeaProjects/JToye_OaaS_2026-p30-15/scripts/gates/ssr-routes.conf
+  discovered: 44 page.tsx
+  declared  : 5 SSR, 17 STATIC, 22 CLIENT (44 total)
+  R-3 self  : classifier says SERVER for frontend/app/shop/page.tsx and CLIENT for frontend/app/track/page.tsx
+PASS: all 44 app route(s) are declared, and every declaration is true.
+      NOTE: a declared CLIENT route is a DECISION to have no server-render
+      coverage, not coverage. This gate reads text; only the raw-HTML specs
+      running against a live frontend prove a route server-rendered anything.
+rc=0
+## V3 sitemap/robots consistency + robots consumers
+Tests:       3 passed, 3 total
+rc=0

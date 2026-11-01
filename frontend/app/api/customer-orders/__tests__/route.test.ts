@@ -13,6 +13,8 @@
  *  - upstream network failure → 502, not an unhandled rejection
  */
 
+import { readFileSync } from "fs"
+import { join } from "path"
 import { GET, POST } from "../route"
 import { NextRequest } from "next/server"
 
@@ -65,6 +67,70 @@ describe("/api/customer-orders", () => {
 
     const body = await res.json()
     expect(body.content[0].orderNumber).toBe("ORD-1")
+  })
+
+  // SW-PRY-06 (T-31.1-102), review R1: the proxy is shared. The signed-in /track page calls it too
+  // and holds every entry in React state, so the note text must reach ONLY the My Orders caller,
+  // which opts in with include=allergyNote. Everyone else gets the note-free shape.
+  describe("the allergy note reaches My Orders only (SW-PRY-06)", () => {
+    const note = "No sesame, my son is allergic"
+    const upstreamWithNote = () =>
+      (global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: async () => ({
+          content: [
+            { orderNumber: "ORD-1", allergyNoteProvided: true, allergyNote: note },
+            { orderNumber: "ORD-2", allergyNoteProvided: false, allergyNote: null },
+          ],
+          totalElements: 2,
+        }),
+      }) as unknown as typeof fetch)
+
+    /** The exact URL app/track/page.tsx requests, read from its source (the page is not edited here). */
+    function trackingPageUrl(): string {
+      const source = readFileSync(join(__dirname, "../../../track/page.tsx"), "utf8")
+      const match = source.match(/fetch\("(\/api\/customer-orders[^"]*)"/)
+      if (!match) throw new Error("app/track/page.tsx no longer fetches /api/customer-orders by a literal URL")
+      return match[1]
+    }
+
+    it("strips allergyNote for the tracking page's own call, keeping every other field", async () => {
+      upstreamWithNote()
+      const url = trackingPageUrl()
+      expect(url).not.toContain("include=")
+
+      const res = await GET(makeRequest(`http://localhost${url}`, "tok-abc"))
+
+      expect(res.status).toBe(200)
+      const text = await res.text()
+      expect(text).not.toContain(note)
+      const body = JSON.parse(text)
+      for (const entry of body.content) expect(entry).not.toHaveProperty("allergyNote")
+      expect(body.content[0]).toEqual({ orderNumber: "ORD-1", allergyNoteProvided: true })
+      expect(body.totalElements).toBe(2)
+    })
+
+    it("passes allergyNote to the My Orders caller (include=allergyNote) and never forwards the flag upstream", async () => {
+      upstreamWithNote()
+
+      const res = await GET(
+        makeRequest("http://localhost/api/customer-orders?size=100&include=allergyNote", "tok-abc")
+      )
+
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.content[0].allergyNote).toBe(note)
+      const [url] = (global.fetch as jest.Mock).mock.calls[0]
+      expect(String(url)).not.toContain("include")
+    })
+
+    it("marks both shapes no-store (C5)", async () => {
+      for (const qs of ["size=50", "size=100&include=allergyNote"]) {
+        upstreamWithNote()
+        const res = await GET(makeRequest(`http://localhost/api/customer-orders?${qs}`, "tok-abc"))
+        expect(res.headers.get("Cache-Control")).toBe("no-store")
+      }
+    })
   })
 
   it("never forwards a client-supplied email param (identity comes from the token only)", async () => {

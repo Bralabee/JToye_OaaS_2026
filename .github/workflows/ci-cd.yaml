@@ -863,6 +863,11 @@ jobs:
   #      encodes the build-time/runtime channel split — a NEXT_PUBLIC_* name
   #      that is BOTH Dockerfile-ARG-declared and injected as a runtime `env:`
   #      is dead config and is not allowlistable (D-18).
+  #      (b2) Every `ARG NEXT_PUBLIC_*` in frontend/Dockerfile must also be
+  #      passed by BOTH build channels: the build-args block below and the
+  #      --build-arg list in scripts/k8s-local-up.sh. An ARG alone used to
+  #      count as supplied, which is how staging baked "" for the contact
+  #      keys (SW-CLR-04, epic #964).
   #      Every extractor is self-tested against a synthetic control, so a regex
   #      that matches nothing exits 2 (VOID) rather than reporting a clean
   #      contract over a service it never actually parsed. Needs GNU
@@ -1106,6 +1111,10 @@ jobs:
           # DELETEd after a failing step and after a successful run, with no Key
           # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
           run_st bash scripts/staging-seed.sh --selftest
+          # media-bulk-upload.sh: the operator's bulk photo client (manifest parsing, SKU and key
+          # derivation, ledger lookup, the 429 wait rule); its live arms need a running stack and
+          # are recorded on PR #1084.
+          run_st bash scripts/media-bulk-upload.sh --selftest
 
           # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
           # context whose server is not the staging API server, a non-40-hex
@@ -1893,6 +1902,15 @@ jobs:
       - name: Assert every declared compose port is loopback-bound or exempt (--static #1009)
         run: bash scripts/check-infra-exposure.sh --static
 
+      - name: Prove the E2E skip-budget gate and S-5 block rule can fail (plan 30-21 --selftest)
+        run: bash scripts/check-e2e-skip-budget.sh --selftest
+
+      - name: Lint scripts/gates/e2e-skip-budget.conf against S-5 (plan 30-21 --lint-conf)
+        run: bash scripts/check-e2e-skip-budget.sh --lint-conf
+
+      - name: Prove the Stripe CI test-key guard can fail (plan 30-22 --selftest)
+        run: bash scripts/check-stripe-ci-keys.sh --selftest
+
       - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
         run: bash scripts/check-gate-enforcement.sh --selftest
 
@@ -2200,6 +2218,19 @@ jobs:
           #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
           #   FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE   (optional; D-14, #794)
           #   FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY (optional at build; staging pk_test_, #957)
+          #   FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL       (optional; SW-CLR-04, epic #964)
+          #   FRONTEND_PUBLIC_CONTACT_EMAIL               (optional; SW-CLR-04, epic #964)
+          #   FRONTEND_PUBLIC_CONTACT_PHONE               (optional; SW-CLR-04, epic #964)
+          # The three contact values are set by the owner in repository variables. Each
+          # is optional by design: unset passes an EMPTY build-arg, which is exactly what
+          # the image baked before they were wired (frontend/Dockerfile declares the ARGs
+          # with no default). What an empty value does differs per key: with the contact
+          # email AND phone both empty, /contact prints "has not yet published a general
+          # contact email address or phone number"; an empty data-protection email is OMITTED SILENTLY from
+          # the privacy notice and from /contact, with no visible cue (and the notice
+          # drops its whole contact block when the registered office is empty too). So
+          # a notice with no address line means the Art. 13 route is NOT configured. No
+          # deploy guard checks them: an empty value builds and deploys, unlike the Stripe key.
           # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
           # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
           # refuses anything that is not a pk_test_ key and deploy-production refuses a
@@ -2235,6 +2266,9 @@ jobs:
             NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
             NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${{ vars.FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL }}
+            NEXT_PUBLIC_CONTACT_EMAIL=${{ vars.FRONTEND_PUBLIC_CONTACT_EMAIL }}
+            NEXT_PUBLIC_CONTACT_PHONE=${{ vars.FRONTEND_PUBLIC_CONTACT_PHONE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # All four service images target linux/amd64 exclusively to match the AKS
@@ -2693,10 +2727,11 @@ jobs:
   # Job 4b: Probe the staging edge after a successful staging deploy (C-2, Phase 29 follow-ups).
   #
   # scripts/check-staging-edge.sh asks the LIVE edge whether Traefik honours the annotations the
-  # render gates only prove are written: the six security headers, the CSP admitting the realm
-  # endpoints, the CORS preflight and the Keycloak admin-path restriction. Until this job it ran
-  # nowhere, and its gate-enforcement.conf entry said "plan 29-21 runs it from the deploy job",
-  # which was never true.
+  # render gates only prove are written: the security headers, the CSP admitting the realm
+  # endpoints, the CORS preflight, the Keycloak admin-path restriction and (issue #1071) the
+  # no-referrer policy on /pay that the edge used to overwrite. Until this job it ran nowhere,
+  # and its gate-enforcement.conf entry said "plan 29-21 runs it from the deploy job", which was
+  # never true.
   #
   # A SEPARATE JOB, NOT A STEP OF deploy-staging, and that is the whole design. A failing step in
   # deploy-staging runs "Rollback on failure" (kubectl rollout undo on all three Deployments), so
@@ -2711,13 +2746,13 @@ jobs:
   # federated-credential subject, and no GitHub deployment record that a red probe could turn
   # into a failed "staging" deployment). It runs repo code, so it must not hold the identity
   # deploy-staging uses. The read-only run needs none of that: the script's context guard
-  # applies only to --fail-arms, and the four arms curl the public staging hosts.
+  # applies only to --fail-arms, and the five arms curl the public staging hosts.
   #
   # READ-ONLY ARMS ONLY, with --skip-burst. The 429 burst arm (1500 requests at concurrency 40,
   # passing only above ~150 rps) is timing-sensitive and says as much about the client as about
   # the edge; it stays operator-run, as does --fail-arms (it creates a scratch Ingress and needs
   # the cluster). The script's own PASS line says the burst arm was not run, so this job's green
-  # cannot be read as the full five-arm result.
+  # cannot be read as the full six-arm result.
   #
   # Same `if:` as deploy-staging and the SAME `concurrency:` group, so a probe never overlaps a
   # later run's rollout.
@@ -2743,7 +2778,7 @@ jobs:
 
       # curl, jq and getent are on the runner image. Exit 1 = an arm failed on the live edge,
       # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job.
-      - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
+      - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin, pay-referrer)
         run: bash scripts/check-staging-edge.sh --skip-burst
 
       # Issue #957: read the publishable key out of the RUNNING artifact. A green build, a 200 and

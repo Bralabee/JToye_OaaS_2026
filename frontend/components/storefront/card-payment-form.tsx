@@ -54,12 +54,12 @@ export function CardPaymentForm({
     setPaying(true)
 
     try {
+      // The payment-link page (/pay) knows no customer email and passes "": Stripe is then sent no
+      // receipt_email at all, rather than an empty one. The checkout always passes one, unchanged.
+      const email = customerEmail.trim()
       const { error: stripeError } = await stripe.confirmPayment({
         elements,
-        confirmParams: {
-          return_url: returnUrl,
-          receipt_email: customerEmail,
-        },
+        confirmParams: email ? { return_url: returnUrl, receipt_email: customerEmail } : { return_url: returnUrl },
         redirect: "if_required",
       })
 

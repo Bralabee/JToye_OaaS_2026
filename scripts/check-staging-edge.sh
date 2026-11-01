@@ -17,7 +17,16 @@
 #
 #   headers  app-staging / and api-staging carry Strict-Transport-Security, X-Frame-Options,
 #            X-Content-Type-Options, Referrer-Policy, Permissions-Policy and an X-Robots-Tag
-#            containing noindex (D-08 applied to crawlers, T-29-29).
+#            containing noindex (D-08 applied to crawlers, T-29-29). Since issue #1071 the
+#            ingress snippet no longer sets Referrer-Policy: the frontend and core-java send it,
+#            and these two URLs are app responses, so the arm still requires it. The probe
+#            route's agnhost backend sends none, so the fail arm still fails on it.
+#   pay-referrer
+#            app-staging /pay answers with exactly one Referrer-Policy header whose value is
+#            exactly no-referrer (issue #1071). The page's link carries a single-use bearer
+#            token in the fragment; the frontend sends no-referrer there (next.config.mjs),
+#            and an ingress more_set_headers line REPLACED it with
+#            strict-origin-when-cross-origin, so this reads the header through the live edge.
 #   csp      app-staging's Content-Security-Policy admits the realm endpoints the browser
 #            talks to (https://auth-staging.../realms/jtoye-staging/protocol/openid-connect/
 #            auth and .../token) in BOTH connect-src and form-action (#293). The match follows
@@ -56,7 +65,7 @@
 #   annotation at all (no snippet, no CORS, no limits). It reuses the three existing TLS
 #   Secrets and carries no cert-manager annotation, so no Certificate is requested. Routes:
 #
-#       app-staging  /fidelity-probe  -> headers, csp arms
+#       app-staging  /fidelity-probe  -> headers, csp, pay-referrer arms
 #       api-staging  /fidelity-probe  -> headers, cors, burst arms
 #       auth-staging /admin           -> admin arm (an /admin route that answers 200)
 #
@@ -69,6 +78,7 @@
 # USAGE
 #
 #   scripts/check-staging-edge.sh [--skip-burst]                       read-only, no cluster access
+#   scripts/check-staging-edge.sh --only <arm>                         read-only, that one arm
 #   scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms  writes to the cluster
 #   EDGE_FORMAT=tap scripts/check-staging-edge.sh ...   (TAP 13 output, one test per arm)
 #
@@ -79,13 +89,21 @@
 #   (the employer's sipbihs2aks is refused by name; the context must point at the staging
 #   API server recorded in k8s/staging/azure-identity.yaml).
 #
-#   --skip-burst  run the four read-only arms (headers, csp, cors, admin) and NOT the burst arm.
+#   --skip-burst  run the five read-only arms (headers, csp, cors, admin, pay-referrer) and NOT
+#                 the burst arm.
 #                 The burst arm fires 1500 requests at concurrency 40 and passes only above
 #                 ~150 rps, so its verdict is a statement about the client's bandwidth and the
 #                 backend's CPU as much as about the edge: timing-sensitive, and wrong for a
 #                 shared hosted runner. A run with the flag says so on its PASS line, so it can
-#                 never be read as the full five-arm result. Refused together with --fail-arms
+#                 never be read as the full six-arm result. Refused together with --fail-arms
 #                 (that mode exists to show EVERY arm can fail, the burst arm included).
+#
+#   --only ARM    run exactly one arm (headers, csp, cors, admin, burst or pay-referrer) in the
+#                 normal, read-only mode. Every other arm is NOT RUN, and the PASS line says so,
+#                 so it can never be read as the full result. Refused together with --fail-arms
+#                 and with --skip-burst. The value must EQUAL one arm name: an unknown, empty
+#                 (--only= or --only "") or space-joined name is a usage error (exit 2). A run
+#                 that evaluates no arm at all, however it got there, is VOID (exit 2).
 #
 # EXIT
 #
@@ -96,7 +114,7 @@
 #
 # WHERE IT RUNS
 #
-#   The `staging-edge-probe` job in .github/workflows/ci-cd.yaml runs the four read-only arms
+#   The `staging-edge-probe` job in .github/workflows/ci-cd.yaml runs the five read-only arms
 #   with --skip-burst after every successful staging deploy. It is a SEPARATE job (needs:
 #   deploy-staging), not a step of the deploy job, so a red here never triggers the deploy's
 #   rollback of a correct deploy. The script needs only curl, jq and getent, all on a hosted
@@ -139,6 +157,9 @@ usage() {
 CONTEXT=""
 FAIL_ARMS=0
 SKIP_BURST=0
+ONLY=""
+ONLY_SET=0
+ARMS=(headers csp cors admin burst pay-referrer)
 while [ $# -gt 0 ]; do
   case "$1" in
     --context)
@@ -147,6 +168,10 @@ while [ $# -gt 0 ]; do
     --context=*) CONTEXT="${1#--context=}"; shift ;;
     --fail-arms) FAIL_ARMS=1; shift ;;
     --skip-burst) SKIP_BURST=1; shift ;;
+    --only)
+      if [ $# -lt 2 ]; then echo "USAGE ERROR: --only needs an arm name" >&2; exit 2; fi
+      ONLY="$2"; ONLY_SET=1; shift 2 ;;
+    --only=*) ONLY="${1#--only=}"; ONLY_SET=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "USAGE ERROR: unknown argument \"$1\"" >&2; exit 2 ;;
   esac
@@ -156,6 +181,30 @@ if [ "$FAIL_ARMS" -eq 1 ] && [ "$SKIP_BURST" -eq 1 ]; then
   echo "USAGE ERROR: --skip-burst cannot be combined with --fail-arms (that mode must show every arm, burst included, can fail)" >&2
   exit 2
 fi
+
+if [ "$ONLY_SET" -eq 1 ]; then
+  # EXACT equality against one arm name. A substring test over the joined list accepted
+  # "headers csp", which then matched no arm, ran nothing and printed PASS: 0 of 0 (review of
+  # #1073). An empty value (--only= or --only "") is refused too: it must never read as "flag
+  # absent" and silently run every arm under the --only label.
+  only_ok=0
+  for a in "${ARMS[@]}"; do [ "$a" = "$ONLY" ] && only_ok=1; done
+  if [ "$only_ok" -ne 1 ]; then
+    echo "USAGE ERROR: --only needs exactly one of: ${ARMS[*]} (got \"${ONLY}\")" >&2
+    exit 2
+  fi
+  if [ "$FAIL_ARMS" -eq 1 ]; then
+    echo "USAGE ERROR: --only cannot be combined with --fail-arms (that mode must show every arm can fail)" >&2
+    exit 2
+  fi
+  if [ "$SKIP_BURST" -eq 1 ]; then
+    echo "USAGE ERROR: --only cannot be combined with --skip-burst (--only already names the one arm to run)" >&2
+    exit 2
+  fi
+fi
+
+# want ARM -> 0 when this run evaluates ARM (every arm unless --only names another)
+want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
 case "$FORMAT" in text|tap) ;; *) echo "USAGE ERROR: EDGE_FORMAT must be text or tap, got '$FORMAT'" >&2; exit 2 ;; esac
 
@@ -290,6 +339,40 @@ arm_headers() {
     fi
   done
   return "$verdict"
+}
+
+# arm_pay_referrer URL — exactly one Referrer-Policy header, and its value is exactly no-referrer
+# (issue #1071). One header, not "the first": a proxy that ADDS rather than replaces would leave
+# two, and a browser applies the last valid token, so a first-value read could pass on a page
+# whose effective policy is the edge's.
+arm_pay_referrer() {
+  local url="$1" line n=0 v=""
+  ARM_DETAIL=""
+  if ! fetch_headers "$url"; then
+    ARM_DETAIL="curl rc=${FETCH_RC} on ${url}: the request did not complete"
+    return 2
+  fi
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    if [[ "${line,,}" == "referrer-policy:"* ]]; then
+      n=$((n + 1))
+      v="${line#*:}"
+      v="${v#"${v%%[![:space:]]*}"}"
+      v="${v%"${v##*[![:space:]]}"}"
+    fi
+  done <<< "$HDRS"
+  if [ "$n" -eq 1 ] && [ "$v" = "no-referrer" ]; then
+    ARM_DETAIL="${url} (HTTP ${CODE}): Referrer-Policy: ${v}"
+    return 0
+  fi
+  if [ "$n" -eq 0 ]; then
+    ARM_DETAIL="${url} (HTTP ${CODE}): NO Referrer-Policy header (expected exactly no-referrer)"
+  elif [ "$n" -gt 1 ]; then
+    ARM_DETAIL="${url} (HTTP ${CODE}): ${n} Referrer-Policy headers (expected exactly one, no-referrer); the last is '${v}'"
+  else
+    ARM_DETAIL="${url} (HTTP ${CODE}): Referrer-Policy: ${v} (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend's header with strict-origin-when-cross-origin)"
+  fi
+  return 1
 }
 
 # csp_directive NAME CSP -> the directive's source list (space separated); 1 if absent
@@ -665,9 +748,10 @@ STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MODE="normal"; [ "$FAIL_ARMS" -eq 1 ] && MODE="fail-arms"
 CTX_LABEL="$CONTEXT"; [ "$FAIL_ARMS" -eq 0 ] && CTX_LABEL="none (read-only: public hosts only, no cluster call)"
 [ "$SKIP_BURST" -eq 1 ] && MODE="normal,skip-burst"
+[ -n "$ONLY" ] && MODE="normal,only=${ONLY}"
 if [ "$FORMAT" = "tap" ]; then
   echo "TAP version 13"
-  if [ "$FAIL_ARMS" -eq 1 ]; then echo "1..6"; elif [ "$SKIP_BURST" -eq 1 ]; then echo "1..4"; else echo "1..5"; fi
+  if [ "$FAIL_ARMS" -eq 1 ]; then echo "1..7"; elif [ -n "$ONLY" ]; then echo "1..1"; elif [ "$SKIP_BURST" -eq 1 ]; then echo "1..5"; else echo "1..6"; fi
   echo "# check-staging-edge ${STAMP} mode=${MODE} context=${CTX_LABEL}"
 else
   echo "check-staging-edge  (${STAMP})  mode=${MODE}  context=${CTX_LABEL}"
@@ -698,11 +782,12 @@ run_fail_arm() {
 }
 
 if [ "$FAIL_ARMS" -eq 0 ]; then
-  run_arm headers arm_headers "https://${APP_HOST}/" "https://${API_HOST}/api/v1/public/shops"
-  run_arm csp arm_csp "https://${APP_HOST}/"
-  run_arm cors arm_cors "https://${API_HOST}/api/v1/products"
-  run_arm admin arm_admin "https://${AUTH_HOST}/admin/"
-  if [ "$SKIP_BURST" -eq 0 ]; then
+  want headers && run_arm headers arm_headers "https://${APP_HOST}/" "https://${API_HOST}/api/v1/public/shops"
+  want csp && run_arm csp arm_csp "https://${APP_HOST}/"
+  want cors && run_arm cors arm_cors "https://${API_HOST}/api/v1/products"
+  want admin && run_arm admin arm_admin "https://${AUTH_HOST}/admin/"
+  want pay-referrer && run_arm pay-referrer arm_pay_referrer "https://${APP_HOST}/pay"
+  if [ "$SKIP_BURST" -eq 0 ] && want burst; then
     run_arm burst arm_burst "https://${API_HOST}/api/v1/edge-burst-probe"
   fi
 else
@@ -728,6 +813,7 @@ else
   run_fail_arm csp arm_csp "https://${APP_HOST}${PROBE_PATH}"
   run_fail_arm cors arm_cors "https://${API_HOST}${PROBE_PATH}"
   run_fail_arm admin arm_admin "https://${AUTH_HOST}/admin/"
+  run_fail_arm pay-referrer arm_pay_referrer "https://${APP_HOST}${PROBE_PATH}"
   run_fail_arm burst arm_burst "https://${API_HOST}${PROBE_PATH}"
   probe_delete
   left=$(probe_gone); grc=$?
@@ -741,6 +827,12 @@ fi
 
 for l in "${REPORT_LINES[@]}"; do printf '%s\n' "$l"; done
 
+# Zero arms evaluated is VOID, however it happened: "found nothing" is never "clean".
+if [ "$REPORT_N" -eq 0 ]; then
+  [ "$FORMAT" = "tap" ] && echo "# VOID: no arm was evaluated" || echo "VOID: no arm was evaluated (mode=${MODE}); nothing is proven"
+  exit 2
+fi
+
 if [ "$N_VOID" -gt 0 ]; then
   [ "$FORMAT" = "tap" ] && echo "# VOID: ${N_VOID} of ${REPORT_N} could not be evaluated" || echo "VOID: ${N_VOID} of ${REPORT_N} arm(s) could not be evaluated; nothing is proven"
   exit 2
@@ -750,5 +842,6 @@ if [ "$N_FAIL" -gt 0 ]; then
   exit 1
 fi
 SKIP_NOTE=""; [ "$SKIP_BURST" -eq 1 ] && SKIP_NOTE="; the burst arm was NOT RUN (--skip-burst), so the rate limit is unproven by this run"
+[ -n "$ONLY" ] && SKIP_NOTE="; only the ${ONLY} arm was run (--only), every other arm is unproven by this run"
 [ "$FORMAT" = "tap" ] && echo "# PASS: ${REPORT_N} of ${REPORT_N}${SKIP_NOTE}" || echo "PASS: ${REPORT_N} of ${REPORT_N} check(s) hold on the live edge (mode=${MODE})${SKIP_NOTE}"
 exit 0

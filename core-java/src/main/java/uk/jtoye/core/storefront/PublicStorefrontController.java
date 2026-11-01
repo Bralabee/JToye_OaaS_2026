@@ -14,6 +14,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +28,7 @@ import uk.jtoye.core.review.dto.ReviewDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
+import uk.jtoye.core.storefront.dto.CustomerOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicProductDto;
@@ -340,19 +342,28 @@ public class PublicStorefrontController {
      * The custom header (not {@code Authorization}) keeps customer tokens out of
      * the staff-realm resource-server filter, which would otherwise reject them
      * with a confusing 401 before reaching this handler.
+     *
+     * <p>SW-PRY-06 (swarm epic #964), T-31.1-46: this is the ONE response that carries the customer's own
+     * allergy-note text ({@link CustomerOrderStatus#getAllergyNote}), and only for an order whose contact
+     * was verified at checkout. The tracking response and the {@code ?verify=} history above keep
+     * {@link PublicOrderStatus}, which has no such field. The response is {@code Cache-Control: no-store}
+     * so no shared or browser cache keeps a copy of the note beyond the request.
      */
     @GetMapping("/orders/mine")
     @Operation(summary = "Customer order history (session-authenticated)",
             description = "Paginated orders for the logged-in customer, most recent first. Requires a valid "
                     + "jtoye-customers realm access token in the X-Customer-Token header; the customer email is "
-                    + "taken from the verified token, never from a parameter.")
-    public ResponseEntity<Page<PublicOrderStatus>> getMyOrders(
+                    + "taken from the verified token, never from a parameter. Each entry carries the customer's own "
+                    + "allergyNote, only for an order whose contact was verified when it was placed.")
+    public ResponseEntity<Page<CustomerOrderStatus>> getMyOrders(
             @RequestHeader(name = "X-Customer-Token", required = false) String customerToken,
             @PageableDefault(size = 20) Pageable pageable) {
         // Throws ResponseStatusException → 401 on any verification failure;
         // the order query below is only ever reached with a proven email.
         String email = customerJwtVerifier.verifiedEmail(customerToken);
-        return ResponseEntity.ok(storefrontService.getCustomerOrders(email, pageable));
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(storefrontService.getVerifiedCustomerOrders(email, pageable));
     }
 
     @GetMapping("/orders/{orderNumber}")

@@ -710,12 +710,14 @@ export default function ShopsPage() {
                           <IconButton
                             onClick={() => setSlotsShop(shop)}
                             label={`Scheduled slots and WhatsApp link for ${shop.name}`}
+                            touchTarget
                             icon={<Calendar className="h-4 w-4" />}
                           />
                           {shopCaps.canEditShop(shop.id) && (
                             <IconButton
                               onClick={() => openEditDialog(shop)}
                               label={`Edit shop ${shop.name}`}
+                              touchTarget
                               icon={<Pencil className="h-4 w-4" />}
                             />
                           )}
@@ -724,6 +726,7 @@ export default function ShopsPage() {
                               onClick={() => openDeleteDialog(shop)}
                               className="text-red-600 hover:bg-red-50 hover:text-red-700"
                               label={`Delete shop ${shop.name}`}
+                              touchTarget
                               icon={<Trash2 className="h-4 w-4" />}
                             />
                           )}
@@ -875,8 +878,11 @@ export default function ShopsPage() {
                     currentImageUrl={editingShop.logoUrl}
                     uploadUrl={`/api/v1/shops/${editingShop.id}/logo`}
                     onUploadComplete={(url) => {
-                      setEditingShop({ ...editingShop, logoUrl: url })
-                      setValue("logoUrl", url)
+                      // No URL (review R1-4): keep the image shown and re-read the shops.
+                      if (url) {
+                        setEditingShop({ ...editingShop, logoUrl: url })
+                        setValue("logoUrl", url)
+                      }
                       fetchShops()
                     }}
                     onRemove={async () => {
@@ -896,8 +902,11 @@ export default function ShopsPage() {
                     currentImageUrl={editingShop.bannerUrl}
                     uploadUrl={`/api/v1/shops/${editingShop.id}/banner`}
                     onUploadComplete={(url) => {
-                      setEditingShop({ ...editingShop, bannerUrl: url })
-                      setValue("bannerUrl", url)
+                      // No URL (review R1-4): keep the image shown and re-read the shops.
+                      if (url) {
+                        setEditingShop({ ...editingShop, bannerUrl: url })
+                        setValue("bannerUrl", url)
+                      }
                       fetchShops()
                     }}
                     onRemove={async () => {

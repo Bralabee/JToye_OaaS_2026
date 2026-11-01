@@ -83,6 +83,14 @@ ENV NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${NEXT_PUBLIC_COMPANY_REGISTERED_OFFIC
 ARG NEXT_PUBLIC_DATA_PROTECTION_EMAIL
 ENV NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${NEXT_PUBLIC_DATA_PROTECTION_EMAIL}
 
+# SW-CLR-04 (swarm epic #964): the general contact route on /contact. Same
+# three-place declaration and same reasoning as the pair above; deliberately not
+# in the CR-02 gate, because resolvePublicContact() renders only what is set.
+ARG NEXT_PUBLIC_CONTACT_EMAIL
+ENV NEXT_PUBLIC_CONTACT_EMAIL=${NEXT_PUBLIC_CONTACT_EMAIL}
+ARG NEXT_PUBLIC_CONTACT_PHONE
+ENV NEXT_PUBLIC_CONTACT_PHONE=${NEXT_PUBLIC_CONTACT_PHONE}
+
 # Issue #957 (phase 30, plan 30-01): the Stripe PUBLISHABLE key. Without this pair the
 # key never reached `next build`, so every image shipped the un-inlined lookup
 # `process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (measured on the staging bundle: 0

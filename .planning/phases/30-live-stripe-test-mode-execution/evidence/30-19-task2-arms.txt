@@ -1,0 +1,23 @@
+# 30-19 Task 2 break arm: print the link-issue response (cat of pl-issue-out.json to stdout)
+HEAD=e161db1d staging-seed.sh sha256=5204d76a3c283472
+## clean
+rc=0 pass=51 fail=0
+PASS pay-link-ok rc=0 order=send<order<verify<issue file_mode=600 printed_otp_token_url_cs=0
+## arm
+rc=1 pass=50 fail=1
+FAIL pay-link-ok the OTP, token, URL or client secret was printed or put in argv (3 hit(s))
+restored sha256=5204d76a3c283472 (expect 5204d76a3c283472)
+## clean again
+rc=0 pass=51 fail=0
+PASS pay-link-ok rc=0 order=send<order<verify<issue file_mode=600 printed_otp_token_url_cs=0
+
+# arm B: drop the chmod 600 (a pre-existing 644 --link-out file keeps its mode)
+rc=1 pass=50 fail=1
+FAIL pay-link-ok the --link-out file is mode 644 (want 600)
+restored sha256=5204d76a3c283472 (expect 5204d76a3c283472)
+# arm C: skip the OTP refusal (an absent OTP carries on to the order)
+rc=1 pass=50 fail=1
+FAIL pay-link-otp-hidden stderr lacks 'REFUSED [otp-hidden]': DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-ad
+restored sha256=5204d76a3c283472 (expect 5204d76a3c283472)
+## clean again
+rc=0 pass=51 fail=0

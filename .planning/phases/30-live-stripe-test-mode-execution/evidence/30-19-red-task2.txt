@@ -1,0 +1,68 @@
+# 30-19 Task 2 RED: staging-seed.sh --selftest (TAP) on the tree with the four pay-link arms and no stage
+# HEAD=10ea52e9 + uncommitted arms
+TAP version 13
+1..51
+ok 1 - prod-api
+ok 2 - local-api
+ok 3 - no-context
+ok 4 - stale-server
+ok 5 - dev-profile
+ok 6 - rollout-mixed
+ok 7 - no-ready-pod
+ok 8 - dry-run-plan
+ok 9 - list-kv-objects
+ok 10 - operator-deleted-on-failure
+ok 11 - operator-deleted-on-success
+ok 12 - order-live-key
+ok 13 - order-first-run
+ok 14 - order-replay
+ok 15 - order-cash-refused
+ok 16 - order-two-intents
+ok 17 - order-livemode-true
+ok 18 - order-unpaid-deadline
+ok 19 - dry-run-order
+ok 20 - stage-all
+ok 21 - list-drafts-ok
+ok 22 - list-drafts-readonly
+ok 23 - list-drafts-no-pii
+ok 24 - transition-refused
+ok 25 - transition-event-refused
+ok 26 - vendor-order-ok
+ok 27 - vendor-order-not-none
+not ok 28 - pay-link-ok
+  ---
+  message: 'rc=2 (want 0): USAGE ERROR: unknown flag "--link-out" '
+  ...
+not ok 29 - pay-link-otp-hidden
+  ---
+  message: 'rc=2 (want 1): USAGE ERROR: unknown flag "--link-out" '
+  ...
+not ok 30 - pay-link-no-out
+  ---
+  message: 'stderr lacks "USAGE ERROR: --stage pay-link needs --link-out": USAGE ERROR: --stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents or stripe-get '
+  ...
+not ok 31 - pay-link-unverified
+  ---
+  message: 'rc=2 (want 1): USAGE ERROR: unknown flag "--link-out" '
+  ...
+ok 32 - cancel-one
+ok 33 - cancel-not-draft
+ok 34 - cancel-paid
+ok 35 - cancel-live
+ok 36 - cancel-stripe-fails
+ok 37 - cancel-already-canceled
+ok 38 - cancel-only-listed
+ok 39 - cancel-empty-list
+ok 40 - orphan-list
+ok 41 - orphan-list-blind
+ok 42 - orphan-cancel-one
+ok 43 - orphan-cancel-refusals
+ok 44 - orphan-cancel-already-canceled
+ok 45 - orphan-cancel-args
+ok 46 - stripe-get-sanitized
+ok 47 - stripe-get-path-refused
+ok 48 - stripe-get-live
+ok 49 - stripe-get-account-header
+ok 50 - stripe-get-livemode-absent
+ok 51 - dry-run-tools
+rc=1

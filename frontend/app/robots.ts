@@ -47,6 +47,11 @@ const DISALLOW = [
   // 37-09: the staff-invitation accept page. Reached only from an emailed link whose
   // token is in the fragment; it is a transaction, never a destination.
   "/invite",
+  // 30-19 (PAY-04 / D-03): the payment-link page. Its link carries a single-use bearer
+  // token in the fragment (/pay#token=…); it is a transaction, never a destination.
+  // robots.txt matches by prefix, so this also covers /pay/… and any top-level /pay…
+  // path; the only other "pay" route is /dashboard/payments, already under /dashboard.
+  "/pay",
 ]
 
 export default function robots(): MetadataRoute.Robots {

@@ -681,9 +681,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // Only the LATEST load may set the state: a slow first load settling after a "Try again" (or after
   // "Back to details") must not overwrite the newer answer.
   const cardLoadAttemptRef = useRef(0)
-  const startCardLoad = useCallback(() => {
+  // A direct-charge order's PaymentIntent lives on the vendor's connected account (UI-SPEC § S1,
+  // plan 30-18), so the confirmation's stripeAccountId is passed through: loadStripe(pk,
+  // { stripeAccount }). With none it stays loadStripe(pk), one argument (#793 property 3); the loader
+  // memoises per account, so "Back to details" and a resubmission still reuse the one load.
+  const startCardLoad = useCallback((stripeAccount?: string) => {
     const attempt = ++cardLoadAttemptRef.current
-    const promise = loadStripeOnce()
+    const promise = loadStripeOnce(stripeAccount)
     setStripePromise(promise)
     if (promise === null) {
       // No publishable key in this build: nothing is loaded, and a retry cannot succeed.
@@ -819,6 +823,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
     clientSecret: string
+    /** The connected account that owns the intent (direct charge); null for destination/platform. */
+    stripeAccountId: string | null
     orderNumber: string
     subtotalPennies: number
     deliveryFeePennies: number
@@ -1002,9 +1008,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // Move to payment step. This is the ONLY place Stripe is loaded (#793): the order exists
       // and carries a clientSecret, so this customer is paying by card. Step 2 renders whatever
       // the load does (#957): loading, the form, or a stated failure.
-      startCardLoad()
+      const stripeAccountId = confirmation.stripeAccountId || null
+      startCardLoad(stripeAccountId ?? undefined)
       setPaymentState({
         clientSecret: confirmation.clientSecret,
+        stripeAccountId,
         orderNumber: confirmation.orderNumber,
         subtotalPennies: confirmation.subtotalPennies,
         deliveryFeePennies: confirmation.deliveryFeePennies || 0,
@@ -1327,7 +1335,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               {publishableKey() !== null && (
                 <button
                   type="button"
-                  onClick={startCardLoad}
+                  onClick={() => startCardLoad(paymentState.stripeAccountId ?? undefined)}
                   className="mt-3 inline-flex h-11 items-center justify-center rounded-xl border border-amber-600 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700"
                 >
                   Try again

@@ -41,6 +41,13 @@ interface EnvVars {
   NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE: string;
   NEXT_PUBLIC_DATA_PROTECTION_EMAIL: string;
 
+  // SW-CLR-04 (swarm epic #964): the general contact route rendered by /contact.
+  // Optional for the same reason as the pair above: `resolvePublicContact()` in
+  // lib/company.ts renders only what is set, and says plainly when nothing is.
+  // Never defaulted in code. NEXT_PUBLIC_* and therefore BUILD args.
+  NEXT_PUBLIC_CONTACT_EMAIL: string;
+  NEXT_PUBLIC_CONTACT_PHONE: string;
+
   // Shop-list paging (#282). How many shops `fetchMyShops()` asks for per request
   // while it pages the caller's full list. A tuning knob that varies with the
   // deployment's shop-per-tenant profile, so it is config, not a literal
@@ -85,6 +92,8 @@ const optionalEnvVars: (keyof EnvVars)[] = [
   'NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS',
   'NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE',
   'NEXT_PUBLIC_DATA_PROTECTION_EMAIL',
+  'NEXT_PUBLIC_CONTACT_EMAIL',
+  'NEXT_PUBLIC_CONTACT_PHONE',
 ];
 
 /**

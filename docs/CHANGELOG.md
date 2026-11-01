@@ -7,6 +7,155 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bulk Upload Client Through the Vendor Image Pipeline (#1084) — 2026-11-01
+
+`scripts/media-bulk-upload.sh` pushes a folder of photographs through the same async product-image accept a vendor uses from the dashboard, from a CSV manifest: `replace` fills a product's primary slot, `add` a gallery slot by `sort_order`, a blank title creates an unpublished draft, and `--analyze` records the vision model's reading of each file and names a draft the run created from a bare file name (price, publication and the allergen mask stay the vendor's). Repeatable by the server's own rules: the (tenant, sha256) dedup and a no-op placement make a re-run create nothing, the Idempotency-Key is scoped to one run (a cross-run key was measured replaying a 202 for an asset a later placement had released), draft SKUs are keyed by the file, `add` needs an explicit slot because the server replaces an occupied one, and the ledger finds a renamed draft again by its file. Measured on the dev stack with 29 photographs: a re-run created only the one row the first pass had failed and reused the other 28 with identical asset ids; a replace plus two adds on a demo product landed in slots 0, 1 and 2 and the storefront served the new primary. No core-java, frontend or migration change. Recorded on the PR: pipeline-added gallery slots are not read by the public storefront DTO; the product delete 409 names an order that does not exist; the analysis call's 30 s timeout is a literal.
+
+### The Customer's Allergy Note on Signed-in My Orders Only, Under T-31.1-46 (swarm epic #964) (#1082) — 2026-11-01
+
+SW-PRY-06, owner ruling 2026-11-01 after a tenancy-security assessment (SAFE WITH CONDITIONS). A customer can now read back the allergy note they sent, on the signed-in My orders page and nowhere else. No migration, no RLS policy change.
+
+- **C1:** `GET /public/orders/mine` returns `CustomerOrderStatus` (`PublicOrderStatus` plus `allergyNote`), built by `PublicStorefrontService.getVerifiedCustomerOrders`, which only `getMyOrders` calls, behind `CustomerJwtVerifier`. `PublicOrderStatus` is unchanged, so the tracking response and the `?email=&verify=` history still never carry the note (T-31.1-46).
+- **C2:** the OpenAPI snapshot change is additive and limited to `/mine`: oasdiff reports no breaking change, only two `response-optional-property-added` entries.
+- **C3:** the note is returned only where `orders.contact_verified` is TRUE. A guest order (false) or a vendor/legacy one (NULL) returns none.
+- **C4:** after an Article 17 erasure `/mine` carries no note (T-31.1-47).
+- **C5:** `Cache-Control: no-store` on `/mine`, on the `/api/customer-orders` proxy, and on the server-rendered `/shop/orders` document (its own `next.config.mjs` rule). The proxy drops `allergyNote` unless the caller sends `include=allergyNote`, which only My orders sends, so the signed-in `/track` page never receives the text. The DTO's `toString` leaves the note out. The note is rendered on My orders only.
+- Tests: five `AllergyNoteAckIntegrationTest` arms against a real RS256 customers-realm verifier (C1, customer B, staff-realm and `email_verified=false` 401, C3, C4), and ten Jest blocks. Threat row T-31.1-102 added to `31.1-SECURITY.md`.
+
+### Public Contact Keys as Frontend Build Args, Stripe Pricing Link on the Fee Line (swarm epic #964) (#1081) — 2026-11-01
+
+Two owner rulings of 2026-11-01 on swarm findings SW-CLR-04 / SW-CLR-06. No API, migration or core-java change.
+
+- **SW-CLR-04: contact keys reach the image.** `ci-cd.yaml` passes `NEXT_PUBLIC_DATA_PROTECTION_EMAIL`, `NEXT_PUBLIC_CONTACT_EMAIL` and `NEXT_PUBLIC_CONTACT_PHONE` as frontend build args from the repository variables `FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL`, `FRONTEND_PUBLIC_CONTACT_EMAIL` and `FRONTEND_PUBLIC_CONTACT_PHONE`, the same pattern as the Stripe publishable key (#1029). The Dockerfile already declared all three ARGs. The variables are set by the owner in repository variables. Unset bakes "", which is what every image baked before: `/contact` then prints "not yet published" for the general route, while an empty data-protection address is silently omitted from the privacy notice. `docs/FAILURE_MODES.md` F-4.7 (its stale "7 inlined vars" replaced by wording that names the `ARG NEXT_PUBLIC_*` lines instead of counting them) and `docs/SITEMAP.md` name the variables.
+- **SW-CLR-06: Stripe UK pricing link.** The card-fee line on `/for-operators` and `/legal/terms` now links Stripe's UK pricing page in a new tab (`rel="noopener noreferrer"`, sr-only "(opens in a new tab)"); no rate is printed (owner ruling). The URL is `STRIPE_UK_PRICING_URL` in `frontend/lib/pricing.ts`, pinned by `pricing.test.ts`. The sentence is one shared component, `components/marketing/stripe-uk-pricing-sentence.tsx`, rendered by both pages. Six new Jest cases, each RED before its fix and GREEN after; doc counts reconciled (jest 3410 -> 3416).
+- **Env-contract rule (b2) and the local-k8s channel (review round 1).** `k8s/scripts/check-env-contract.sh` scored a Dockerfile `ARG NEXT_PUBLIC_*` as supplied on its own, which is how staging baked `""` for these keys with the gate green. It now fails any such ARG that the `ci-cd.yaml` build-args block or the `--build-arg` list in `scripts/k8s-local-up.sh` omits (self-tested on synthetic inputs; against origin/main's workflow it names the three contact keys). `scripts/k8s-local-up.sh` now passes the three contact keys and the Stripe publishable key from `.env` with compose's defaults.
+
+### Order Emails Carry Items and Total, Invite and Cancel Wording, DSAR Subject and Export Wording, Allergy Note Echo Skipped, API Root Redirect Scheme (swarm epic #964) (#1079) — 2026-11-01
+
+Seven findings from the 2026-10-19 staging persona swarm, each re-checked on main first. Six fixed, one skipped. No migration.
+
+- **SW-JRD-15 (issue #826):** every order email names the shop and lists the items (name × qty), a non-zero delivery fee, the total, and for a split-deposit order "Paid now" and "Balance due", then the delivery address or where to collect. Still plain text. The listener reads it under the event's tenant (`OrderEmailSummary`). The allergy note stays out. The Keycloak account mails are a realm template and are out of scope.
+- **SW-TND-02:** the staff invite's subject is now "{inviter} has invited you to help run {business} on J'Toye". The body names the role and the shop, then says in a sentence or two what the role can do, taken from the `ShopRole` model.
+- **SW-ADE-12:** the cancel email says "It was cancelled while it was: Awaiting payment." instead of `Previous status: DRAFT`. The words are the storefront's `ORDER_STATUS_COPY`, and a test checks they still match. The /track chip uses the same words.
+- **SW-SAM-08:** the DSAR confirmation subject now says which request it is ("for a copy of your data" or "to erase your data"). The link carries the type after the token, in the fragment. The confirm page names the request, but the type is display only: the press still posts just the token.
+- **SW-SAM-09:** the access export said erasure was requested "through the same request page", which does not exist. It now names the real routes: My account ("Delete my account") or the privacy notice's contact routes.
+- **SW-PRY-06: SKIPPED.** Showing the allergy note's text on the public order status would reverse the closed mitigation T-31.1-46 (data minimisation of special-category data). `AllergyNoteAckIntegrationTest` asserts that mitigation. This is an owner and tenancy-security decision.
+- **SW-CLR-10:** `GET /` now returns a 302 with a relative `Location: /swagger-ui.html`. The old `RedirectView` let Tomcat build an absolute URL from its own http scheme, so behind TLS the redirect pointed at http. A test on a real Tomcat proves the fix. The OpenAPI snapshot documents the 302, and the 15 Spring-internal schemas `RedirectView` pulled in are gone. Whether to publish the docs on staging is still the owner's call.
+
+### Terms and Contact Routes, Landing Copy Aligned to the Pilot, Strategy Pages Unlinked and Noindexed, Absolute Metadata (swarm epic #964) (#1080) — 2026-11-01
+
+Frontend only: six findings from the 2026-10-19 staging persona swarm, each re-checked on main first. No API, migration or core-java change.
+
+- **SW-SAM-12: `/legal/terms`, new.** Rendered through the existing `PolicyPage` shell and linked from the `/legal` hub and the footer. Every section restates copy the site already publishes. The seller, cancellation and no-VAT statements are imported from the checkout's own modules, and the operator figures come from `lib/pricing.ts`. No governing-law, liability, indemnity or arbitration wording, and a test asserts its absence. The page body needs the owner's wording sign-off.
+- **SW-CLR-04: `/contact`, new.** Uses the `/legal` hub layout: company facts from `lib/company.ts`, plus `NEXT_PUBLIC_CONTACT_EMAIL` / `NEXT_PUBLIC_CONTACT_PHONE` through `resolvePublicContact()`, each rendered only when set and never defaulted. Linked from the footer and beside both application CTAs on `/for-operators`. Wired like `NEXT_PUBLIC_DATA_PROTECTION_EMAIL` (Dockerfile ARG/ENV, compose build arg with an empty default, optional in `env-validation.ts`, both example files).
+- **SW-CLR-06 (remainder):** the `/for-operators` pricing footnote links the terms. The VAT basis and the card-fee figure are recorded for the owner, not invented.
+- **SW-CLR-03 (partial):** "go live in a day" is removed from the landing hero, the operator door and both descriptions, replaced with the `/for-operators` wording. The "Independent UK kitchens" positioning is kept per `design/brief.md`; UK-wide versus the London pilot is an open owner decision.
+- **SW-CLR-05:** `/business-model-guide` and `/competitive` are unlinked from the footer and declare `robots: { index: false, follow: false }`. The pages are unchanged. Their sitemap entry belongs to Phase 30 and is a follow-up.
+- **SW-CLR-08 (partial):** the root layout sets `metadataBase` from `resolvePublicOrigin()`, so canonical and og:url resolve absolute. No og:image: `frontend/public` holds no J'Toye brand image.
+- Gates: `/legal/terms` and `/contact` are declared STATIC in `scripts/gates/ssr-routes.conf`, and one residue-allowlist line number moved with its `.env.example` line.
+
+### Design-Run Project Layer and design-run Agent Targets (#1078) — 2026-11-01
+
+Docs and agent text only. No code, API, migration or runtime change.
+
+- **`design/`, new.** The project layer of the `design-run` process. `brief.md` (the public landing page, confirmed by Sanmi), `decisions.md` (nine rulings carried from `.planning/sketches/MANIFEST.md` with source, status and a review trigger, including the 2026-11-01 lifts and step-2 rulings), `rulings.tsv` (eight design-skill conflict rulings), `rubric.md` (six past verdicts as checkable lines) and `references/README.md` (waiting for the owner's references).
+- **Agent targets.** The VS Code, Cursor and `AGENTS.md` targets for `oaas-frontend` and `oaas-release-qa` are regenerated from jtoye-orgos#47, so they name `design-run` instead of the superseded `frontend-craft-sequence`. The generator would also have written the `oaas-core-java` block back to PostgreSQL 15 (its jtoye-orgos charter predates #939); that line is kept at 18 by hand until the charter is fixed.
+
+### Storefront Allergen Copy, May-Contain on Dish Cards, Basket-Bar Overlap and Basket A11y (swarm epic #964) (#1075) — 2026-11-01
+
+Frontend only: seven findings from the 2026-10-19 staging persona swarm, each still true on main.
+
+- **SW-ADE-06 (card half):** the dish card shows the vendor's "May contain: …" line, as the dish modal does. It sits before Add and is part of Add's description. The order-snapshot half needs a core-java migration and is not in this change.
+- **SW-PRY-02:** wherever a customer sees "No allergens declared" (card, modal, basket lines), it now reads "No allergens declared – not the same as allergen-free", in checkout's own words. The vendor dashboard keeps the bare phrase.
+- **SW-PRY-03:** an empty may-contain list reads "May contain: none listed" instead of disappearing. The public payload cannot tell "none" from "not recorded": `MayContainAllergens.undeclaredNames` returns `[]` for both.
+- **SW-JRD-10 / SW-MRC-06:** the menu's bottom padding and the card controls' `scroll-margin-bottom` are bound to `--jt-bottom-chrome`, the height the basket bar already publishes. The last dish and a focused stepper can no longer end up under the bar.
+- **SW-MRC-9:** the hero Back pill is `bg-black/70` (8.4:1 over any hero; it was about 3.6:1).
+- **SW-MRC-13:** basket-page item headings are h2, the dish dialog's scroll body is a named region, and the dialog says "basket", using the card's stepper names.
+- **SW-CLR-13:** the card's Add button is disabled in the server HTML until hydration, so an early tap is no longer silently dropped.
+
+### Role-Gated Dashboard Nav, Staff Invite Shop, Orders Search, Finance Tile States and Product Dialog Fixes (swarm epic #964) (#1076) — 2026-11-01
+
+Eight findings from the 2026-10-19 staging persona swarm, frontend only. No API, migration or core-java change.
+
+- **SW-TND-05, nav gated by role (`components/dashboard/sidebar.tsx`, `mobile-tab-bar.tsx`).** Each nav item names the role its page needs. The role is read from the staff/me answer the shell already loads (`shopRoles`, #961). Staff, Webhooks, Approvals and Developers are Group admin only. Finance, Go live, Marketing and Image review need SHOP_MANAGER on some shop. Customers stays for STAFF (owner ruling 2026-10-09, option B). This applies in the sidebar and in the mobile More sheet. A gated item is listed only after staff/me has answered.
+- **SW-ADE-11, a Staff invite or grant needs a shop (`app/dashboard/staff/page.tsx`, `components/dashboard/staff/invite-staff-form.tsx`).** Both forms start on the shop selected in the switcher. A Staff request with no shop is refused inline before anything is sent. An All-shops shop manager and a Group admin are unchanged.
+- **SW-ADE-10, orders search (`app/dashboard/orders/page.tsx`).** You can search the loaded page by order number, customer name or email. The status filter stays, and a search that matches nothing says so.
+- **SW-ADE-08 / SW-TND-07, VAT tile states (`app/dashboard/page.tsx`).** The tile now has separate states for loading, refused (403, or tenant-wide STAFF), failed and genuinely empty. Before, all four read "No financial data yet".
+- **SW-TND-12, tap targets (`components/ui/icon-button.tsx`, `app/dashboard/shops/page.tsx`).** IconButton has a new opt-in `touchTarget` prop: 44px below `md` and 32px from `md` up. The Shops row actions use it.
+- **SW-ADE-02, image Processing state (`components/ui/image-uploader.tsx`, `lib/media-api.ts`, `app/dashboard/products/page.tsx`).** After an upload is accepted, the uploader checks its outcome every 2 s, up to 30 times. It reads the product's `media` list, then the review queue. It leaves "Processing…" when the image is ACTIVE or FAILED, or when the checks run out.
+- **SW-ADE-09, deleting an ordered dish (`app/dashboard/products/page.tsx`).** The 409 `errors/in-use` refusal now explains why the dish can't be deleted and says to untick Available instead. Other failures show the server's problem detail rather than the axios string.
+- **SW-ADE-13, plain finance copy (`components/dashboard/merchant-roi-card.tsx`).** The labels are rewritten in plain language. The figures, the 28% delivery-app comparison and the test ids are unchanged.
+- **Skipped: SW-TND-08** (customer email shown to STAFF). The owner's option B ruling lets counter staff look customers up. A client-side hide would also leave the email in the order API response, so this needs a server-side ruling.
+
+### Unskipped Stripe Test-Mode Refund E2E and an S-5 Skip-Budget Gate (Phase 30 30-21/30-22, PAY-01) (#1065) — 2026-10-31
+
+- **`scripts/check-e2e-skip-budget.sh`:** rule S-5 says every `ALLOW` line needs a justification comment and a `# REMOVE WHEN:` line. New `--lint-conf` mode. `--report` can be repeated to evaluate the union of all skipped specs across reports (with matching spec digests). New `--selftest` (14 fixtures).
+- **`frontend/e2e/stripe-refund-flow.spec.ts`:** a storefront card order confirmed with `pm_card_visa`, captured by the webhook and refunded for £1.00 from the vendor dashboard. The refund is read back from Stripe for up to 30 s: exactly one refund for the PaymentIntent (`succeeded`, 100), settled on two consecutive reads, and its charge `livemode=false`. The page must show `Refunds (1)` and the `Refunded` status. Stripe calls go through `frontend/e2e/stripe-test-api.ts` (Node `fetch`), never Playwright's `request` fixture, and the spec turns traces and video off: a Playwright trace, and on a transport error its call log, kept the `sk_test_` header in plaintext (T-30-87). `__tests__/stripe-refund-readback.test.ts` proves the read-back rule on every PR. It runs only when `STRIPE_E2E=1`. The environment-dependent paid-refund test leaves `vendor-refund-flow.spec.ts`, and its skip-budget `ALLOW` goes with it: `MAX_SKIPS` 6 → 4, the stomp-relay skips measured in nightly 41158370941.
+- **`scripts/check-stripe-ci-keys.sh`:** refuses missing, swapped or live Stripe keys before any Stripe step. `--scan-artifacts` deletes any artifact file holding the secret or the `stripe listen` signing secret (zip members read) and fails. `--lint` checks the spec, the helper and the nightly keep their layers. The selftest has 18 arms.
+- **`e2e-nightly.yml`:** a Stripe Phase 2 after the cash suite. It validates the keys, installs stripe-cli v1.55.6 (sha256 pinned), forwards webhooks, runs the refund spec with zero skips and checks the skip budget across both reports. The Stripe run writes its Playwright output under `$RUNNER_TEMP`, which is not uploaded, and the artifacts are scanned for the secret before the upload.
+- **`ci-cd.yaml` ops-contracts:** runs both selftests and `--lint-conf`.
+
+### The Apps Own Referrer-Policy, So /pay's no-referrer Reaches the Browser (#1071) (#1073) — 2026-11-01
+
+On staging, `/pay` answered with `Referrer-Policy: strict-origin-when-cross-origin`, and so did `/invite`. The frontend sends `no-referrer` on both pages, but the ingress `configuration-snippet` replaced it, because `more_set_headers` overwrites an upstream header that has the same name.
+
+- **k8s:** the `Referrer-Policy` line is removed from the base `jtoye-ingress` snippet and from both staging copies. INV-15 requires those copies to carry every base line, so all three change together. The frontend (`next.config.mjs`) and core-java (`SecurityConfig`) already send the header, so no app response loses it. The grafana, keycloak and mailpit Ingresses keep their own line. The goldens lose exactly three lines.
+- **`frontend/app/pay/page.tsx`:** `metadata.referrer` is `"no-referrer"`. The document now carries `<meta name="referrer" content="no-referrer">`, which no edge can overwrite. The Jest test failed before the change and passes after it.
+- **`scripts/check-staging-edge.sh`:**
+  - New `pay-referrer` arm: it requires exactly one `Referrer-Policy: no-referrer` on app-staging `/pay`. It fails on the pre-deploy edge and on the `--fail-arms` probe.
+  - New `--only <arm>` flag runs a single arm.
+  - The `staging-edge-probe` job now runs the new arm after each staging deploy.
+
+### The `/pay` Page: No Cookie Notice Over the Card Form, a Retry on the Resume Path, and No "Payment Received" for an Unreadable Intent (#1072) — 2026-11-01
+
+Owner ruling 2026-11-01, from PR #1064's review series (recorded finding 6, the round-2 residual, and the 30-20 360 px screenshot). Quick task `261101-no1`.
+
+- **`CookieNotice`:** renders nothing on `/pay` and `/pay/<segment>` (never a bare prefix, so `/payments` still shows it). On a 360 px phone the fixed bar covered the card form's Expiry date and Security code fields.
+  - `/pay` is not cookie-free. Stripe.js sets its own strictly necessary fraud-prevention cookies there. `/legal/cookies` discloses them, and `/pay`'s footer links that page.
+  - The notice only informs and gates nothing. The ConsentBanner branch still runs first, so a route never suppresses a future consent choice.
+- **`pay-client.tsx`, resume path:** after a reload resumes from `jtoyePayResume`, a failure to load Stripe.js or the Payment Element now shows "Try again", which reloads the page.
+  - It is not offered when the bundle has no publishable key, because a reload cannot add a build-time key.
+  - The first-visit state is unchanged.
+  - The reload goes through an exported `payNavigation.reload` seam, because jsdom 26's `Location` cannot be mocked.
+- **`pay-client.tsx`, Stripe's redirect return:** `redirect_status` no longer decides anything. An intent that cannot be read (no key, Stripe.js down, a rejected read, or Stripe answering `{ error }` for a garbage client secret) shows the check-failed alert, and its "Try again" reads the intent again. Before this, `?payment_intent_client_secret=<garbage>&redirect_status=succeeded` showed "Payment received".
+- **`30-UI-SPEC.md`:**
+  - the "link opened" row is amended;
+  - a new "return with an unreadable intent" row is added;
+  - the "payment received" row now states the redirect-return body.
+- **Tests:** twelve new Jest blocks. Nine were RED before their fix. Three are guards that pass before and after: the `/` and `/payments` control, banner precedence on `/pay`, and no Try again on a first visit. Break arms were run after each fix, including the review round-1 fixes. The full frontend run is 275/275 suites and 3273/3273 tests.
+
+### List-Unsubscribe on Intermediate Order Emails, Phase 29 Gate Follow-Ups, and a Session-Burst Guard (#981, #979, #963) (#1066) — 2026-10-31
+
+- **#981, `EmailNotificationService` / `OrderStateChangeListener`:** CONFIRMED, PREPARING, READY and COMPLETED emails carry RFC 8058 `List-Unsubscribe` + `List-Unsubscribe-Post` and a footer link. They are sent only if `ConsentGate.allows(tenant, email, ORDERS)`. `order-received` (the statutory CCR 2013 reg 16 confirmation) and `order-cancelled` stay non-suppressible.
+- **#979, `check-connection-math.sh`:** also reads the k8s Keycloak pool size and fails on drift from Compose. **`validate-networkpolicies.py`:** also covers component policies and rendered goldens (18 files, 41 policies) and gains `--selftest`. Stale citations are fixed.
+- **#963, `api-client.ts`:** `getSession({ broadcast: false })` stops a same-tab BroadcastChannel echo from making a second `/api/auth/session` fetch. `dashboard-session-burst.spec.ts` checks no more than 3 session calls and no 429s.
+
+### Per-Location Subscription Quantity, Kept in Step With Shop Create and Delete (Phase 30 30-25, PAY-02, D-04) (#1067) — 2026-10-31
+
+- **D-04 (`all-shops`):** SAAS_HYBRID_STANDARD and SAAS_FLAT_PREDICTABLE bill one unit per shop. WALK_SETUP_STEPDOWN bills one per account. The ruling is in `evidence/30-25-d04-decision.txt`.
+- **`ShopRepository.countByTenantId`:** has an explicit `tenant_id` predicate, because `shops_public_read` (V16) shows every tenant's published shops. A bare count overcounted under RLS, and a break arm proves it.
+- **`StripeBillingService`:** sets the subscription item quantity from the location count. Idempotency keys are added on `Price.create` and `Subscription.create`.
+- **`BillingLocationSync`:** after a shop create or delete commits, it updates the Stripe `SubscriptionItem` quantity with key `billing-qty-<item>-<qty>-<event>`. A Stripe failure is logged and counted on `jtoye.billing.location_sync.failed`, never rolled into the shop write. A failed sync is not retried; the next shop change for that tenant corrects it.
+
+### Billing Endpoints Gate on Group Admin, So Real Keycloak Users Reach Them (#1020) (#1068) — 2026-10-31
+
+`BillingController` gated its four endpoints on `hasAnyRole('ADMIN', 'TENANT_ADMIN', 'VENDOR', 'OPERATOR')`. Those uppercase roles never match the lowercase `ROLE_*` authorities that Keycloak realm roles become, so `/api/v1/billing/subscription` refused every real user with 403.
+
+- **`BillingController`:** each handler now starts with `shopAccessService.requireGroupAdmin()`, the same group-admin boundary that finance, staff and webhooks use.
+- **`BillingControllerAuthorizationIntegrationTest`:** uses real Keycloak-shaped tokens. A granted GROUP_ADMIN and a realm `admin` reach all four endpoints. Ungranted callers, per-shop STAFF, per-shop SHOP_MANAGER and uppercase-`VENDOR` callers get 403 `shop-access-denied` and change nothing. With `origin/main`'s controller it fails 3/3.
+
+### The `/pay` Payment-Link Page: a Fragment-Token Preview, the Shared Card Form on the Owning Account, and a Staging-Only OTP Seam (Phase 30 PR 5, PAY-04) (#1064) — 2026-10-31
+
+A vendor could already issue a payment link (PAY-04), but the customer had no page to pay it on. D-03 puts that page in Phase 30: a link PAY-04 sends must be payable end to end on staging.
+
+- **Preview without spending (30-16).** `POST /api/v1/public/payment-links/preview` takes the token in a JSON body. It returns the shop, the order number, the amount, the purpose, the expiry and a state: `PAID`, `USED`, `REVOKED`, `EXPIRED` or `ACTIVE`, in that precedence. It never stamps `used_at` and never calls Stripe. A body-token `POST /payment-links/redeem` sits beside the path redeem. By owner decision, links are issued as `/pay#token=…`, so the token never reaches a request line or an access log.
+- **The owning account reaches the browser (30-17).** `stripeAccountId` is set for direct-charge and split-deposit intents and is null for platform and destination intents. It is on the checkout confirmation, the balance session and the redeemed link. Stripe.js loads with `{ stripeAccount }` when it is set.
+- **`frontend/app/pay/page.tsx` (30-18).** The page previews the link. It spends the link only once Stripe.js has loaded. It pays through the checkout's own CardPaymentForm, which is now shared. A reload brings the card form back from a `history.state` entry that never holds the token. Every dead, failed and returning state has its own copy. `receipt_email` is now omitted only when the email is blank.
+- **Hygiene and the staging proof (30-19).** `robots.txt` disallows `/pay`. `/pay/:path*` sends `Referrer-Policy: no-referrer`. The SSR gate declares `STATIC pay/page.tsx`. `staging-seed.sh --stage pay-link` makes a real payable link and writes its URL only to a mode-600 file. `staging-pay-link.spec.ts` pays it and reads the intent on the owning account.
+- **OTP seam overlays (30-20, owner decision expose-on-staging).** `jtoye.phone-verification.expose-otp-for-test` is `"false"` in base, `"true"` in `k8s/staging` and `"false"` stated explicitly in `k8s/production`. core-java reads it as `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`. With the seam on, `PhoneVerificationService` refuses to start unless `stripe.environment-tag` is `local`, `test` or `staging`.
+- **OpenAPI snapshot regenerated.** `OpenApiSnapshotTest` failed before the regeneration and passed after it. The diff is additive only: 4 paths, 2 schemas and 3 `stripeAccountId` properties.
+- **`.gitleaks.toml`.** One exact-value entry for the 30-18 Jest fixture's mocked client secret.
+
 ### Toolchain Audit Gaps R2a-c, R5b, and R10a: Gradle Dependency Submission, `/mcp-server` Dependabot Coverage, Go Linting Baselines, and Loopback Port Bindings (#1058) — 2026-10-31
 
 Closes the OaaS-scoped findings (`R2a–c`, `R5b`, `R10a`) from the 2026-10-31 rev-2 toolchain audit (`~/machine-reset/toolchain-audit-2026-10-31/HANDOFF.md`):

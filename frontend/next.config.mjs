@@ -76,6 +76,29 @@ const nextConfig = {
         source: '/invite/:path*',
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
       },
+      // The payment-link page (PAY-04 / D-03, plan 30-19, T-30-77). Its link carries a
+      // single-use bearer token in the URL fragment; the page strips it to /pay, and
+      // no-referrer means not even /pay is handed to Stripe.js or anything else it loads.
+      //
+      // ORDER IS LOAD-BEARING, as for /invite: Next applies the LAST entry that sets a key
+      // for a path, so this must stay after the '/:path*' default.
+      // __tests__/header-snapshot.test.ts asserts the order and the match.
+      {
+        source: '/pay/:path*',
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      },
+      // My Orders (SW-PRY-06, T-31.1-102). The page server-renders the customer's own allergy note
+      // into the HTML and RSC payload, so the document says no-store ITSELF. Before this it was
+      // uncacheable only because the root layout sets force-dynamic for the CSP nonce, which is a
+      // different concern that could be narrowed with nothing failing. The value matches the WR-04
+      // precedent (app/api/vendor-auth/logout-url/route.ts). No Vary here: measured on `next start`,
+      // Next replaces a page's Vary with its own RSC list, while this Cache-Control is what it sends.
+      // Exact path: a shop's own pages and /track keep the default. __tests__/header-snapshot.test.ts
+      // asserts it.
+      {
+        source: '/shop/orders',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }],
+      },
     ]
   },
 };

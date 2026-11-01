@@ -148,10 +148,12 @@ describe("api-client interceptors", () => {
     expect(tenantHeader).toBe("tenant-42")
 
     // #963: a dashboard reload fires ~20 API requests within 1.5s; they must share
-    // the in-flight / burst-cached session rather than firing 20 GET /api/auth/session calls.
+    // the in-flight / burst-cached session rather than firing 20 GET /api/auth/session calls,
+    // and pass { broadcast: false } so next-auth does not echo a self-broadcast back to SessionProvider.
     await Promise.all(Array.from({ length: 20 }, (_, i) => apiClient.get(`/burst-${i}`)))
     expect(adapter).toHaveBeenCalledTimes(21)
     expect(getSession).toHaveBeenCalledTimes(1)
+    expect(getSession).toHaveBeenCalledWith({ broadcast: false })
   })
 
   it("retries a 500 response exactly twice then rejects", async () => {

@@ -263,7 +263,7 @@ describe("MerchantRoiCard component (GAP-GTM-07)", () => {
 
     // Repeat buyer rate: 1 of 2 identified buyers (a@test.uk has 2, b@test.uk has 1; c@test.uk was cancelled) -> 50%
     expect(screen.getByTestId("roi-repeat-buyers")).toHaveTextContent("50%")
-    expect(screen.getByTestId("roi-repeat-buyers")).toHaveTextContent("1 of 2 repeat buyers")
+    expect(screen.getByTestId("roi-repeat-buyers")).toHaveTextContent("1 of 2 customers ordered again")
 
     // V81 abuse protection: 1 cancelled unverified order, 2 total unverified-contact orders
     expect(screen.getByTestId("roi-v81-protection")).toHaveTextContent("1")
@@ -294,12 +294,59 @@ describe("MerchantRoiCard component (GAP-GTM-07)", () => {
 
     expect(screen.getByTestId("roi-repeat-buyers")).toHaveTextContent("—")
     expect(screen.getByTestId("roi-repeat-buyers")).toHaveTextContent(
-      "No identified buyers in sample"
+      "No named customers in your recent orders yet"
     )
     // £5,000 GTV across 2 shops under £39/location/mo + 0.5%:
     // 28% aggregator = £1,400.00; J'Toye = 2 * £39.00 (£78.00) + £25.00 = £103.00 -> net £1,297.00
     expect(screen.getByTestId("roi-net-savings")).toHaveTextContent("£1,297.00")
     expect(screen.getByTestId("roi-net-savings")).toHaveTextContent("2 locations")
+  })
+})
+
+describe("MerchantRoiCard speaks plain vendor language (SW-ADE-13, swarm epic #964)", () => {
+  // The swarm's vendor read "Merchant Value & ROI Telemetry", "Direct GTV" and "V81" as internal
+  // jargon. The figures stay; the words are the vendor's.
+  const JARGON = [/telemetry/i, /\bGTV\b/, /\bV81\b/, /aggregator/i, /\bsample\b/i, /optimi[sz]ation/i, /\bROI\b/]
+
+  function renderCard(planMode?: "BATCH_PAYG_STARTER") {
+    return render(
+      <MerchantRoiCard
+        summary={makeSummary({ totalRevenuePennies: 1_500_000, transactionCount: 300 })}
+        transactions={[makeSaleTx("1", 1_500_000)]}
+        orders={[
+          makeOrder({ id: "o1", customerEmail: "a@test.uk", status: "COMPLETED" }),
+          makeOrder({ id: "o2", customerEmail: "a@test.uk", status: "COMPLETED" }),
+        ]}
+        scope={{ shopId: "shop-a", shopName: "Brixton Kitchen", from: null, to: null }}
+        defaultPlanMode={planMode}
+      />
+    )
+  }
+
+  it("names the card and its tiles without internal jargon", () => {
+    renderCard()
+    const text = screen.getByTestId("merchant-roi-card").textContent ?? ""
+    for (const word of JARGON) expect(text).not.toMatch(word)
+    expect(screen.getByText("What selling direct saves you")).toBeInTheDocument()
+    expect(screen.getByTestId("roi-direct-gtv")).toHaveTextContent("Sales through J'Toye")
+    expect(screen.getByTestId("roi-v81-protection")).toHaveTextContent(
+      "0 recent orders had unconfirmed contact details · Limit per customer: 3/email · 3/phone · 5/IP"
+    )
+  })
+
+  it("keeps the numbers: sales, commission not paid, and what you keep after the plan", () => {
+    renderCard()
+    expect(screen.getByTestId("roi-direct-gtv")).toHaveTextContent("£15,000.00")
+    expect(screen.getByTestId("roi-commission-saved")).toHaveTextContent("£4,125.00")
+    expect(screen.getByTestId("roi-net-savings")).toHaveTextContent("£4,200.00")
+    expect(screen.getByTestId("roi-net-savings")).toHaveTextContent("£4,086.00")
+  })
+
+  it("words the plan tip plainly, with no jargon", () => {
+    renderCard("BATCH_PAYG_STARTER")
+    const tip = screen.getByTestId("roi-hybrid-upgrade-tip").textContent ?? ""
+    for (const word of JARGON) expect(tip).not.toMatch(word)
+    expect(tip).toMatch(/you could save/i)
   })
 })
 

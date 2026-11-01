@@ -1,0 +1,27 @@
+# 30-18 closing verify, tree eb04b758 on feat/30-pay-link-page, 2026-10-31T20:59:50Z
+## V1 (Task 1): npm --prefix frontend test -- --ci --runTestsByPath app/pay/__tests__/pay-client.test.tsx 'app/shop/[slug]/checkout/__tests__/stripe-lazy-load.test.tsx'
+rc=0
+Test Suites: 2 passed, 2 total
+Tests:       41 passed, 41 total
+## V2 (Task 2): npm --prefix frontend test -- --ci --runTestsByPath app/pay/__tests__/pay-client.test.tsx
+rc=0
+Tests:       37 passed, 37 total
+## V2b (Task 2): npm --prefix frontend run lint
+rc=0
+✖ 27 problems (0 errors, 27 warnings)
+app/pay findings: 0
+## V3 (Task 3): npm --prefix frontend test -- --ci --runTestsByPath card-unavailable + stripe-lazy-load
+rc=0
+Tests:       18 passed, 18 total
+## Wide: full Jest (rc and counts from <scratchpad>/jest-full2.log at eb04b758): Tests:       3259 passed, 3259 total
+## Wide: npm run build rc=0 (Running TypeScript ... Finished TypeScript; /pay listed as a route); npx tsc --noEmit rc=0
+## Storage search (acceptance, Task 1)
+route source (non-test) rc=1 []
+whole app/pay rc=0 -> frontend/app/pay/__tests__/pay-client.test.tsx:3 (the test's own Storage spies and clears)
+control app/shop source rc=0 -> frontend/app/shop/orders/orders-client.tsx:2 frontend/app/shop/[slug]/checkout/page.tsx:2 frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx:6 
+  instrument note: a first run with -g '!__tests__/**' excluded nothing (it printed the test-file lines); the glob must be '!**/__tests__/**'.
+## Gates
+docs-freshness.sh rc=0 (rc=1 before --write)
+check-doc-metrics.sh rc=0 (rc=1, 10 FAIL lines, before the prose edit)
+check-ssr-coverage-contract.sh rc=1 : FAIL: R-1 undeclared page: pay/page.tsx — a route nobody declared is the moment #542 says the failure must fire. Add an SSR, STATIC or CLIENT line to scripts/gates/ssr-routes.conf.
+FAILED: 1 SSR-coverage contract violation(s) (see above).  -- plan 30-19 owns scripts/gates/ssr-routes.conf

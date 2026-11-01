@@ -221,10 +221,10 @@ public class StaffInviteService {
         String link = stripTrailingSlash(acceptBaseUrl) + "#token=" + tenantId + "." + token;
         String inviterName = currentCallerName();
         String businessName = tenantRepository.findById(tenantId).map(Tenant::getName).orElse(null);
-        String roleLabel = roleLabel(role);
-        String shopLabel = shop == null ? "all shops" : shop.getName();
-        afterCommit(() -> emailNotificationService.sendStaffInvite(email, inviterName, businessName, roleLabel,
-                shopLabel, link, expiresAt));
+        // R1 (#1079): null means tenant-wide; the email branches on that, never on a sentinel name.
+        String shopName = shop == null ? null : shop.getName();
+        afterCommit(() -> emailNotificationService.sendStaffInvite(email, inviterName, businessName, role,
+                shopName, link, expiresAt));
         log.info("event=staff_invite_issued invite={} tenant={} role={} allShops={}",
                 invite.getId(), tenantId, role, shopId == null);
         return invite;
@@ -259,14 +259,6 @@ public class StaffInviteService {
             throw new IllegalArgumentException("email must be one valid email address");
         }
         return email;
-    }
-
-    static String roleLabel(ShopRole role) {
-        return switch (role) {
-            case STAFF -> "Staff";
-            case SHOP_MANAGER -> "Shop manager";
-            case GROUP_ADMIN -> "Group admin";
-        };
     }
 
     static String sha256Hex(String token) {

@@ -1,0 +1,69 @@
+# 30-17 Task 2 break arms (clean -> P..T -> clean). Script: arms2.sh (scratchpad); each arm edits the committed
+# PhoneVerificationService, runs the refusal test with PhoneVerificationAndPaymentLinkTest, restores from HEAD by blob hash.
+== 30-17 Task 2 break arms, HEAD 55687939, 2026-10-31T20:27:06Z
+-- CLEAN (before)
+  rc=0
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+-- ARM P (the plan's arm): the earlier PRODUCTION-ONLY design, refusing only the literal 'production'
+  arm applied (sentinel present: ARM-P)
+  rc=1
+  RED: PhoneVerificationProductionRefusalTest > seam on + tag not declared (null): startup refuses — an undeclared runtime is not a test runtime FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + whitespace-only tag: startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + 'prod' (the Spring profile name, not a declared environment): startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + blank tag (the @Value fallback when nothing is declared): startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + misspelt tag 'stagng': startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + wrongly-cased tag 'Staging': startup refuses (case-sensitive) FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="6" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+  restored blob=94bbe1828209bd7aded8828f6f359b488447f1c6 (= HEAD)
+-- ARM Q: case-insensitive membership
+  arm applied (sentinel present: ARM-Q)
+  rc=1
+  RED: PhoneVerificationProductionRefusalTest > seam on + wrongly-cased tag 'Staging': startup refuses (case-sensitive) FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="1" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+  restored blob=94bbe1828209bd7aded8828f6f359b488447f1c6 (= HEAD)
+-- ARM R: the message stops naming the allowed values
+  arm applied (sentinel present: ARM-R)
+  rc=1
+  RED: PhoneVerificationProductionRefusalTest > seam on + tag not declared (null): startup refuses — an undeclared runtime is not a test runtime FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + whitespace-only tag: startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + 'prod' (the Spring profile name, not a declared environment): startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + blank tag (the @Value fallback when nothing is declared): startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + misspelt tag 'stagng': startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + production: startup refuses FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam on + wrongly-cased tag 'Staging': startup refuses (case-sensitive) FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="7" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+  restored blob=94bbe1828209bd7aded8828f6f359b488447f1c6 (= HEAD)
+-- ARM S: the check runs even with the seam OFF
+  arm applied (sentinel present: ARM-S)
+  rc=1
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + 'null': constructs FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + '""': constructs FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + '"   "': constructs FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + '"production"': constructs FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + '"prod"': constructs FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + '"stagng"': constructs FAILED
+  RED: PhoneVerificationProductionRefusalTest > seam off: every tag, blank and production included, constructs > seam off + '"Staging"': constructs FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="7" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+  restored blob=94bbe1828209bd7aded8828f6f359b488447f1c6 (= HEAD)
+-- ARM T: no startup WARN
+  arm applied (sentinel present: ARM-T)
+  rc=1
+  RED: PhoneVerificationProductionRefusalTest > seam on: a WARN at startup says OTPs are returned in API responses, naming the environment FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="1" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+  restored blob=94bbe1828209bd7aded8828f6f359b488447f1c6 (= HEAD)
+-- CLEAN (after)
+  rc=0
+name="uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest" tests="21" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest" tests="7" skipped="0" failures="0" errors="0"
+== done 2026-10-31T20:28:31Z

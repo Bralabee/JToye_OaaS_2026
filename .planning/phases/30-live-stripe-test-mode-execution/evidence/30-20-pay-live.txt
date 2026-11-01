@@ -1,0 +1,232 @@
+# 30-20 — PR 5 (/pay, PAY-04 / D-03): Task 1 evidence (pre-merge). Task 3 appends the GREEN side after the merge deploys.
+# All times UTC. Worktree JToye_OaaS_2026-p30-15, branch feat/30-pay-link-page.
+# Owner decisions (evidence/30-16-owner-decisions.txt): token = FRAGMENT, OTP = expose-on-staging.
+# So PROBE_PATH=/pay (one route, frontend/app/pay/page.tsx; there is no /pay/[token]), and the unknown-token
+# preview is POST /api/v1/public/payment-links/preview {"token":"probe-<UTC>"}.
+
+## 1. Merge from the base (proof rule 3)
+2026-10-31T21:25:15Z (merge commit time)  git fetch origin: rc 0. HEAD..origin/main = 1 commit (eff54aa0, #1058).
+  git merge --no-ff origin/main: one conflict, HANDOFF.md, resolved by hand, keeping BOTH sides (no whole-file --ours/--theirs).
+  Content check against the merge base (C-locale sort/comm):
+    main added_since_base=1 missing_in_merged=0
+    head added_since_base=60 missing_in_merged=0
+    fail-direction control: main's added lines vs HEAD's PRE-merge copy -> 1 missing (the check can fail)
+  merge commit e310356bf83c73a43b031e967e41eaab4bb1f4bf
+  HEAD..origin/main after merge: 0 lines. check-branch-behind-base.sh rc 0 ("0 behind").
+
+## 2. OTP seam overlays (owner decision expose-on-staging) — commit 27ffb459
+  app-config jtoye.phone-verification.expose-otp-for-test: base "false", k8s/staging "true", k8s/production "false" (explicit).
+  core-java env JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST from that key (configMapKeyRef, not optional).
+  application.yml: jtoye.phone-verification.expose-otp-for-test: ${JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST:false}
+    (deviation Rule 3: check-env-contract.sh counts only ${} placeholders as "read"; without it direction (a) fails, arm B below).
+  render-golden.sh --write: goldens changed by the key + env entry only (production 6+, staging 6+, 0-).
+  2026-10-31T21:26:44Z plan verify 1 (render-invariants && render-golden && env-contract && no-plaintext-secrets && connection-math):
+    rc=0 fail_or_parse_lines=0 output_lines=80
+  plan verify 2: production_true=0 production_false=1 production_tag=1
+    positive control (staging render): staging_true=1 ; local render: local_false=1 local_true=0
+  Break arms (committed state first; restore by cp from scratch, then by-content check against HEAD blobs):
+    ARM A production patch set "true": production_true=1 (verify 2 reds); render-golden.sh check rc=1 (golden drift)
+    ARM B placeholder removed from application.yml: check-env-contract.sh rc=1, "(a) VIOLATIONS 1 - JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST"
+    ARM C base key deleted: the WHOLE verify-1 chain rc=0, fail_lines=0, and the local render carries NO key (count 0).
+      FINDING (recorded, not filed): the plan's fails_when "an env read with no key in some overlay" cannot fail in this chain.
+      No gate checks that a non-optional configMapKeyRef names a key present in every render; that is a runtime
+      CreateContainerConfigError only. The measured substitute: the key is in base, so every overlay renders it
+      (local_false=1, staging_true=1, production_false=1).
+    closing clean: git diff --quiet rc=0; all three files restored-by-content (hash-object == HEAD blob).
+
+## 3. OpenAPI snapshot — commit fd6250de
+  2026-10-31T21:28:10Z RED: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests uk.jtoye.core.integration.OpenApiSnapshotTest
+    rc=1; :core-java:integrationTest FAILED (executed, not UP-TO-DATE); xml tests="1" failures="1" errors="0" timestamp 2026-10-31T21:28:17.664Z
+    message: "The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot ..."
+  2026-10-31T21:28:55Z ./gradlew :core-java:updateOpenApiSnapshot --no-daemon rc=0. Diff: 379 insertions, 0 deletions.
+    paths added  : /api/v1/public/payment-links/preview (post), /api/v1/public/payment-links/redeem (post),
+                   /public/payment-links/preview (post), /public/payment-links/redeem (post)
+    paths changed: (none)
+    schemas added: PaymentLinkPreviewDto, PaymentLinkTokenRequest
+    schemas changed: BalancePaymentSessionDto, GuestOrderConfirmation, RedeemedPaymentLinkDto — each ONLY + "stripeAccountId"
+                   (type string, not required; "Null for platform and destination charges.")
+    other top-level / components keys changed: (none)
+    The four paths include the body-token REDEEM as well as the preview: the owner's fragment decision names both
+    ("a body-token preview and redeem are added beside the path redeem"), and 30-16/30-17 SUMMARY predicted exactly
+    4 paths + 2 schemas + 3 stripeAccountId properties. Nothing outside that set moved, so no stop.
+  2026-10-31T21:30:04Z GREEN: same command rc=0; :core-java:integrationTest executed; xml tests="1" skipped="0" failures="0" errors="0"
+    timestamp 2026-10-31T21:30:11.994Z
+
+## 4. RED reads on today's staging (pre-merge, read-only)
+  2026-10-31T21:30:51Z PROBE_PATH=/pay  GET https://app-staging.olajay.co.uk/pay
+    curl_rc=0 code=404 no_referrer=0 -> plan verify rc 0 (RED as expected)
+    headers: HTTP/2 404 ; referrer-policy: strict-origin-when-cross-origin ; x-robots-tag: noindex, nofollow ;
+             cache-control: private, no-cache, no-store, max-age=0, must-revalidate
+    controls: app root GET / = 200 (the probe can see a non-404); header grep over a scratch "referrer-policy: no-referrer" line = 1
+  2026-10-31T21:31:05Z POST https://api-staging.olajay.co.uk/api/v1/public/payment-links/preview, JSON body carrying the probe value probe-20261031T213105Z as its one field
+    curl_rc=0 404 application/problem+json
+    {"detail":"Resource not found","instance":"/api/v1/public/payment-links/preview","status":404,"title":"Not Found","type":"https://jtoye.uk/errors/not-found"}
+    GET on the same path today = 404.
+    controls: GET /api/v1/public/shops/staging-test-kitchen = 200 ; existing path redeem with an unknown token = 404
+  NOTE FOR TASK 3 (falsifiability): status 404 + type not-found is IDENTICAL for "route absent" (today) and "unknown token"
+    (after the merge). Task 3's GREEN preview arm must also assert the detail "Payment link not found."
+    (OrderPaymentLinkService.LINK_NOT_FOUND), and/or GET on the preview route 405 (today 404). Without that, the GREEN arm passes on today's staging.
+
+## 5. Per-PR suite (plan 30-08 Task 1 list + check-ssr-coverage-contract.sh), on HEAD fd6250de
+  name                     rc  start                 end
+  staging-seed --selftest  0   2026-10-31T21:31:34Z  2026-10-31T21:31:50Z
+  check-env-contract       0   2026-10-31T21:31:50Z  2026-10-31T21:31:51Z  (core-java 92 injected / 199 read)
+  check-gate-enforcement   0   2026-10-31T21:31:51Z  2026-10-31T21:31:53Z
+  docs-freshness           0   2026-10-31T21:31:53Z  2026-10-31T21:31:53Z  (6753)
+  check-doc-metrics        0   2026-10-31T21:31:53Z  2026-10-31T21:31:54Z  (37 claims)
+  check-ssr-coverage       0   2026-10-31T21:31:54Z  2026-10-31T21:31:54Z
+  check-branch-behind-base 0   2026-10-31T21:31:54Z  2026-10-31T21:31:54Z
+  frontend lint            0   2026-10-31T21:32:01Z  2026-10-31T21:32:26Z  (0 errors, 27 warnings)
+  frontend jest --ci       0   2026-10-31T21:32:26Z  2026-10-31T21:32:55Z  (275 suites, 3260/3260)
+  core-java cleanTest cleanIntegrationTest test integrationTest  0   2026-10-31T21:31:29Z  2026-10-31T21:47:30Z
+                           (BUILD SUCCESSFUL 15m 59s; both tasks executed; fresh xml after the clean tasks:
+                            test 225 files tests=2045 failures=0 errors=0 skipped=1;
+                            integrationTest 229 files tests=1402 failures=0 errors=0 skipped=1)
+
+## 6. Push and PR
+  2026-10-31T21:48 first push REFUSED by pre-push P-3 (gitleaks 8.30.1, range bd4a0159..HEAD, 37 commits): 2 generic-api-key hits
+    a) this file, line 61: the probe JSON body written in key/value form. My own unpushed commit: reworded and amended
+       (control: the old shape in a scratch dir -> gitleaks dir rc=1; reworded file -> rc=0).
+    b) frontend/app/pay/__tests__/pay-client.test.tsx:85 CLIENT_SECRET = "pi_3018_secret_abc" (30-18 commit 25126b7f, already
+       in history). Deviation Rule 3: ONE exact-value content allowlist in .gitleaks.toml, ^pi_3018_secret_abc$, regexTarget secret
+       (commit 6536d143). Controls on 8.30.1: pi_3018_secret_abc rc=0 ; pi_3018_secret_abd rc=1 ; a real-shaped
+       pi_<24>_secret_<25> rc=1. CI pins 8.27.2 (gitleaks.yml), so the CI job is the 8.27.2 read.
+    range rescan after both fixes: rc=0.
+  2026-10-31T21:50:05Z check-branch-behind-base.sh rc=0 (0 behind origin/main eff54aa0), immediately before the push.
+  2026-10-31T21:50:09Z push rc=0: bd4a0159..6536d143 (remote head bd4a0159 = the earlier 30-16 push, an ancestor: fast-forward).
+    pre-push: P-2 ok, P-3 ok (no secrets), P-4 ok.
+  2026-10-31T21:50:30Z gh pr create rc=0: PR #1064 https://github.com/Bralabee/JToye_OaaS_2026/pull/1064
+    body scan before create: attribution=0 closing=0 (positive control: "Co-Authored-By: x" + "Closes #957" -> 1 and 1).
+  Runtime under the RED reads: staging was running eff54aa0 (main run 41238312724: Deploy to Staging success 20:59:37Z,
+    Staging Edge Probe success 21:00:10Z; that run's only red job was Frontend E2E (public surfaces), the Turbopack
+    next/font/google class below, which does not gate the deploy).
+
+## 7. Task 2 (review series and merge) — PR #1064
+  Round 1  /code-review on head a3734d88: 8 findings -> 2 admissible, fixed in 05fd74a2 (RED first in 68532b1c); 6 recorded
+           in the resolution comment.
+  Tenancy pass (oaas-tenancy-security on the preview's tenant pinning): 0 admissible.
+           Live arm: TenantContext.clear() removed -> PaymentLinkPreviewIntegrationTest 1/9 red; restored -> 9/9 green.
+  Round 2  /review-verify on e6df7cd3: 0 admissible. Review-Record on e6df7cd342568a822e917e89ac2a495f158a631d. Series ended.
+           Recorded residual (display-only): /pay?payment_intent_client_secret=<garbage>&redirect_status=succeeded, with the
+           retrieve rejecting, still shows "Payment received".
+  CI gate fixes on the branch:
+    31ec8b03  check-doc-citations 3 -> 0
+    c4bc1492  object-store residue 15 -> 0 ("UI-SPEC § S3" -> "UI-SPEC S3")
+    e6df7cd3  counts 6754
+  Frontend E2E (public surfaces): attempt 1 FAILED (Turbopack next/font/google: "Can't resolve
+    '@vercel/turbopack-next/internal/font/google/font'", a Google Fonts fetch failure on the runner; the local build was rc 0);
+    rerun attempt 2 passed. The same failure class reds main's run 41238312724 (eff54aa0) at 20:19:54Z: a recurring
+    runner-network flake, recorded, not filed (it has not blocked a deploy: Deploy to Staging does not need that job).
+  GitGuardian (not a required check) reported "12 secrets" over 46 commits: the fixture/stub class gitleaks allowlists.
+    Recorded, not acted on.
+  Pre-merge sitting, 2026-10-31T23:01:29Z (verbatim):
+    local_head=e6df7cd342568a822e917e89ac2a495f158a631d pr_head=e6df7cd342568a822e917e89ac2a495f158a631d equal=yes
+    branch_behind_base_rc=0
+    stripe_pk_var_staging_rc=0
+    required checks on e6df7cd342568a822e917e89ac2a495f158a631d: Branch Not Behind Base, Frontend E2E (public surfaces),
+      Integration Tests (Testcontainers RLS), K8s Kustomize Secret Guard, Lint, MCP Server Tests, OpenAPI Breaking-Change
+      Gate, Operational Contracts, Run Tests, Security Scan, docs-freshness, gitleaks, pii-guard, review-record — all pass
+    non_pass_required=0 (14/14)
+    merge: bff8209764135d4b864ffcc222c1f5ada983cbf1
+  Read back: gh pr view 1064 -> MERGED bff8209764135d4b864ffcc222c1f5ada983cbf1 2026-10-31T23:01:48Z head=e6df7cd3 (rc 0);
+    git merge-base --is-ancestor bff82097 origin/main rc 0.
+
+## 8. Task 3 (deploy, parity, GREEN reads, the paid link) — branch feat/30-pay01-refund-e2e cut from origin/main bff82097
+  Decision file evidence/30-16-owner-decisions.txt -> PAY_DECISION=expose-on-staging (the link arms RUN); PROBE_PATH=/pay.
+  kubectl: a scratchpad PATH shim adds --token minted by
+    az account get-access-token --subscription c483d353-5f61-4587-a790-addb9ab5fb94 --resource 6dae42f8-… (neither
+    staging-seed.sh nor check-deploy-digest-parity.sh adds one); --context jtoye-stg-aks named on every call.
+
+### 8.1 The merge run
+  Resolved first: gh run list --branch main --workflow 'CI/CD Pipeline' -> 41250761893 headSha bff82097 (created 23:01:51Z).
+  Watched by id with a 150 min deadline, polling every 120 s, every end state emitted: "END completed conclusion=success"
+  at 2026-10-31T23:46:14Z.
+    Integration Tests (Testcontainers RLS) success 23:37:03Z ; Frontend E2E (public surfaces) success 23:07:05Z (attempt 1)
+    Build and Push core-java 23:40:50Z, edge-go 23:39:06Z, frontend 23:41:02Z, pg-backup 23:39:46Z: success
+    Deploy to Staging success 23:45:34Z ; Staging Edge Probe success 23:46:02Z ; Deploy to Production skipped
+
+### 8.2 Digest parity
+  2026-10-31T23:46:31Z bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag bff8209764135d4b864ffcc222c1f5ada983cbf1
+    core-java  sha256:2c38082565e56061da186b600eb153e4629e5112dce69e78e28501ec2ede019c  MATCH
+    edge-go    sha256:ff4e55e4288e9f07f4bde16f5e9f7c0d53fb19c5b53a00c8aab32b8181b4a3b7  MATCH
+    frontend   sha256:e07e518485689c4a6b7d9654a8923bfec8daea89e33619b4a96a2f7edc08067e  MATCH
+    PASS (SET form) rc=0
+  FAIL arm 2026-10-31T23:46:37Z: same command, --tag eff54aa01dcea79edc86d37df54515ef845fc7ad (the previous runtime)
+    -> "FAIL: 3 running container image digest(s) across 3 service(s) are NOT the images built for eff54aa0…" rc=1
+  core-java pod core-java-697cb74477-wdx7w started 23:42:17Z, ready, image …/jtoye-core-java:bff82097….
+
+### 8.3 RED (Task 1, runtime eff54aa0) and GREEN (runtime bff82097) side by side
+  read                                RED 2026-10-31T21:30Z                       GREEN 2026-10-31T23:46-23:47Z
+  GET app-staging /pay status         404                                         200
+  /pay Referrer-Policy at the EDGE    strict-origin-when-cross-origin             strict-origin-when-cross-origin   <- FAIL
+  robots.txt "Disallow: /pay"         (not read in Task 1)                        1 line (exact ^Disallow: /pay$)
+  POST …/payment-links/preview,       404 not-found                               404 not-found
+    unknown probe token                 detail "Resource not found"                 detail "Payment link not found."
+                                        title "Not Found"                           title "Resource Not Found"
+  GET  …/payment-links/preview        404 (route absent)                          405 (route present, POST only)
+  OTP seam                            n/a                                         configMap "true"; env from configMapKeyRef;
+                                                                                  WARN at 23:43:48.448 "phone verification OTPs
+                                                                                  are returned in API responses — test seam
+                                                                                  enabled in staging"; challenge carried
+                                                                                  testPreviewOtp (pay-link would refuse
+                                                                                  [otp-hidden] otherwise; both runs rc 0)
+  Plan verify 1 at 23:46:51Z: curl_rc=0 code=200 no_referrer=0 robots_rc=0 disallow_pay=1 -> verify rc=1 (FAIL).
+  Preview detail discriminator control: the same grep over Task 1's RED body -> 0; over the GREEN body -> 1.
+
+  FAIL ANALYSIS (Referrer-Policy). Read from the frontend Service directly (kubectl port-forward svc/frontend 18731:3000,
+  Host app-staging.olajay.co.uk), 2026-10-31T23:47:12Z — the app is right:
+    /pay      200 Referrer-Policy: no-referrer
+    /pay/x    404 Referrer-Policy: no-referrer
+    /payments 404 Referrer-Policy: strict-origin-when-cross-origin   (control: prefix match does not leak)
+    /         200 Referrer-Policy: strict-origin-when-cross-origin
+  The edge replaces it: k8s/staging/ingress-hosts-patch.yaml:56 and k8s/base/ingress.yaml:38 both carry
+    more_set_headers "Referrer-Policy: strict-origin-when-cross-origin"; (headers-more REPLACES an upstream header).
+  30-19's header-snapshot test proves the Next config only; nothing read the header through the edge until now.
+  Not fixable inside this evidence-only task (every overlay's ingress, the staging edge gate, a reviewed PR + deploy):
+  Rule 4, surfaced to the owner. Filed as issue #1071 [observed]: this live read (an observed failure on the deployed edge).
+  Consequence for the a11y must-have: the staging payment below ran under strict-origin-when-cross-origin at the edge,
+  so "Stripe.js completes under no-referrer" is proven by the app-level (Jest) arms only, not on staging.
+
+### 8.4 The paid link (owner decision expose-on-staging)
+  conda jtoye-ops; JTOYE_AZURE_SUBSCRIPTION_ID pinned; umask 077; link files in the session scratchpad, never under the repo.
+  2026-10-31T23:48:05Z staging-seed.sh --stage pay-link --link-out <scratchpad>/link1  rc=0
+    PAY-LINK order=ORD-1AAC0CDE-20261031-A22F26BE link=2d0d8957-517e-4589-9481-b9507c0713ed expires=2026-11-01T00:48:12.540466513Z
+    file mode 600, 87 bytes, ^https://app-staging.olajay.co.uk/pay#token=. : 1
+  2026-10-31T23:48:13Z staging-seed.sh --stage pay-link --link-out <scratchpad>/link2  rc=0
+    PAY-LINK order=ORD-1AAC0CDE-20261031-F9B8BA14 link=b843e70d-9554-4ec3-8d72-904eafcd7980 expires=2026-11-01T00:48:17.21209339Z
+    file mode 600, 87 bytes, prefix 1
+  Leak check: each 43-char token -> 0 hits in its stage log; "#token=" -> 0 in both logs.
+  2026-10-31T23:48:34Z the spec, both projects (plan verify 2, PAY_DECISION=expose-on-staging, key from the repo variable):
+    rc=0 passed=[2 passed] (10.7s) verify rc=0
+    STAGING-PAY-LINK-OPENED order=ORD-1AAC0CDE-20261031-F9B8BA14 state=ACTIVE
+    STAGING-PAY-MOBILE order=ORD-1AAC0CDE-20261031-F9B8BA14 scroll_width=360 inner_width=360 pointer=coarse
+    STAGING-PAY-LINK-OPENED order=ORD-1AAC0CDE-20261031-A22F26BE state=ACTIVE
+    STAGING-PAY-RELOAD order=ORD-1AAC0CDE-20261031-A22F26BE card_form=remounted redeems=1
+    STAGING-PAY order=ORD-1AAC0CDE-20261031-A22F26BE intent=pi_3UWm0PDpS9ICNeRt2UOAYD7l status=succeeded livemode=false at=2026-10-31T23:48:45.738Z account=none
+    spec log leak scan: both tokens 0, client-secret / pk_test_ / sk_test_ shapes 0.
+  2026-10-31T23:48:56Z independent read: staging-seed.sh --stage stripe-get --path /v1/payment_intents/pi_3UWm0PDpS9ICNeRt2UOAYD7l rc=0
+    (platform account; account=none, so no --account) id=pi_3UWm0PDpS9ICNeRt2UOAYD7l object=payment_intent status=succeeded
+    livemode=False amount=950 amount_received=950 currency=gbp on_behalf_of=None transfer_data=None
+    metadata keys environment, order_id, order_number, tenant_id ; order_number=ORD-1AAC0CDE-20261031-A22F26BE ; environment=staging
+  2026-10-31T23:49:07Z staging-seed.sh --stage cancel-drafts --orders ORD-1AAC0CDE-20261031-F9B8BA14 rc=0
+    SEED-CANCEL order=ORD-1AAC0CDE-20261031-F9B8BA14 intent=pi_3UWm0TDpS9ICNeRt4c1pDf2z intent_status=canceled order_status=CANCELLED livemode=false at=2026-10-31T23:49:12Z
+    CANCEL-DRAFTS requested=1 cancelled=1 refused=0
+  2026-10-31T23:49:19Z rm -f "$LINK1" "$LINK2" rc=0 ; test ! -e "$LINK1" && test ! -e "$LINK2" -> rc=0
+    control: test ! -e on a file that exists (paylink1.log) -> rc=1
+  Screenshot: the spec writes 30-20-pay-mobile-360.png; renamed to the plan's evidence/30-20-pay-360.png (360 x 2294 PNG,
+    full page, before any card data). Checked for personal data before commit: shop name, £9.50, order number, empty
+    fields only. Human-check (fits the width, tabs visible, no clipped controls): AWAITING THE OWNER'S EYE, not claimed.
+    Seen while checking for personal data, for the owner: the cookie banner is drawn over the Expiry date and
+    Security code fields (a fixed element at its viewport offset in a full-page capture; at 360 x 780 it covers part
+    of the card form until "Got it").
+
+## 9. Issue #1071 closed — the must-have "/pay answers 200 with Referrer-Policy no-referrer" MET on the live edge (2026-11-01)
+
+PR #1073 (fd01dc0c): the Referrer-Policy line left the base and staging ingress snippets (the apps own the header),
+/pay declares metadata.referrer = "no-referrer", and check-staging-edge.sh gained a pay-referrer arm (rc 1 on the
+pre-deploy edge, its fail direction). Deploy run 41295872214: Deploy to Staging success, Staging Edge Probe success.
+
+    GET https://app-staging.olajay.co.uk/pay
+    HTTP/2 200
+    referrer-policy: no-referrer
+    <meta name="referrer" content="no-referrer"/>

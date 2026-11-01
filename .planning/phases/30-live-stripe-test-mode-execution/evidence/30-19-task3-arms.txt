@@ -1,0 +1,25 @@
+# 30-19 Task 3 break arm: delete the Stripe-Account line from staging-card-checkout.spec.ts
+HEAD=d9c84bed frontend/e2e/staging-card-checkout.spec.ts sha256=81b886d38ab973a1
+## clean
+  plan-form frontend/e2e/staging-pay-link.spec.ts header=3 field=5 verdict=3
+  plan-form frontend/e2e/staging-card-checkout.spec.ts header=3 field=5 verdict=3
+  plan-form miss=0
+  strict-form frontend/e2e/staging-pay-link.spec.ts header_assignments=1
+  strict-form frontend/e2e/staging-card-checkout.spec.ts header_assignments=1
+  strict-form miss=0
+## arm
+  plan-form frontend/e2e/staging-pay-link.spec.ts header=3 field=5 verdict=3
+  plan-form frontend/e2e/staging-card-checkout.spec.ts header=2 field=5 verdict=3
+  plan-form miss=0
+  strict-form frontend/e2e/staging-pay-link.spec.ts header_assignments=1
+  strict-form frontend/e2e/staging-card-checkout.spec.ts header_assignments=0
+  strict-form MISSING header assignment in frontend/e2e/staging-card-checkout.spec.ts
+  strict-form miss=1
+restored sha256=81b886d38ab973a1 (expect 81b886d38ab973a1)
+## clean again
+  plan-form frontend/e2e/staging-pay-link.spec.ts header=3 field=5 verdict=3
+  plan-form frontend/e2e/staging-card-checkout.spec.ts header=3 field=5 verdict=3
+  plan-form miss=0
+  strict-form frontend/e2e/staging-pay-link.spec.ts header_assignments=1
+  strict-form frontend/e2e/staging-card-checkout.spec.ts header_assignments=1
+  strict-form miss=0

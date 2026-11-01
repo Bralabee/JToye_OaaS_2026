@@ -156,6 +156,13 @@ data:
   # metadata.environment, and events carrying another environment's name are acknowledged
   # without being processed.
   stripe.environment-tag: "staging"
+  # PAY-04 OTP test seam ON for staging only (owner decision 30-16, expose-on-staging):
+  # staging's test tenant holds test data only, and the staging /pay proof needs a
+  # verified phone without a real SMS. Accepted cost: anyone on the public staging host
+  # can mark any phone verified for that test tenant. Plan 30-17's startup guard admits
+  # the seam only where stripe.environment-tag is local, test or staging, and logs a WARN
+  # at every start while it is on. Base is "false"; k8s/production states "false".
+  jtoye.phone-verification.expose-otp-for-test: "true"
 
   # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY here, never
   # inherited — the vendor sign-out return leg stays on today's /auth/signin

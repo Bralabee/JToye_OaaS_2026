@@ -58,6 +58,7 @@ import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
+import uk.jtoye.core.storefront.dto.CustomerOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicProductDto;
 import uk.jtoye.core.storefront.dto.PublicShopDto;
@@ -739,7 +740,33 @@ public class PublicStorefrontService {
      */
     public Page<PublicOrderStatus> getCustomerOrders(String email, Pageable pageable) {
         log.debug("Fetching order history for {}", email);
+        return findCustomerOrderPage(email, pageable)
+                .map(order -> toCustomerHistoryStatus(new PublicOrderStatus(), order));
+    }
 
+    /**
+     * SW-PRY-06 (swarm epic #964), T-31.1-46: the SIGNED-IN customer's own history, which alone carries
+     * the allergy-note TEXT. Call it ONLY with an email proven by {@code CustomerJwtVerifier} (the
+     * {@code /public/orders/mine} handler); the tracking response and the {@code ?verify=} history use
+     * {@link #getCustomerOrders}, whose {@link PublicOrderStatus} has no field for the note.
+     *
+     * <p>The note is returned only where {@code orders.contact_verified} is TRUE (V81): the order was
+     * placed with a verified token for this same address. A guest order (false) or a vendor/legacy one
+     * (NULL) may carry a mistyped address, and a health note must not be shown to whoever later verifies
+     * that address. After an Article 17 erasure the column is NULL (T-31.1-47), and so is the field.
+     * The note is never logged.
+     */
+    public Page<CustomerOrderStatus> getVerifiedCustomerOrders(String email, Pageable pageable) {
+        log.debug("Fetching signed-in order history for {}", email);
+        return findCustomerOrderPage(email, pageable).map(order -> {
+            CustomerOrderStatus status = toCustomerHistoryStatus(new CustomerOrderStatus(), order);
+            status.setAllergyNote(Boolean.TRUE.equals(order.getContactVerified()) ? order.getAllergyNote() : null);
+            return status;
+        });
+    }
+
+    /** The history page for one address, under the transaction-local customer-email GUC (Issue #95). */
+    private Page<Order> findCustomerOrderPage(String email, Pageable pageable) {
         Session session = entityManager.unwrap(Session.class);
         session.doWork(connection -> {
             try (var stmt = connection.prepareStatement("SELECT set_config('app.customer_email', ?, true)")) {
@@ -748,48 +775,51 @@ public class PublicStorefrontService {
             }
         });
 
-        Page<Order> orders = orderRepository.findByCustomerEmailOrderByCreatedAtDesc(email, pageable);
+        return orderRepository.findByCustomerEmailOrderByCreatedAtDesc(email, pageable);
+    }
 
-        return orders.map(order -> {
-            String shopName = shopRepository.findById(order.getShopId())
-                    .map(Shop::getName)
-                    .orElse("Unknown shop");
+    /**
+     * The shared history row, from order COLUMNS only. It never sets the allergy-note text: only
+     * {@link #getVerifiedCustomerOrders} adds that, on its own subtype.
+     */
+    private <T extends PublicOrderStatus> T toCustomerHistoryStatus(T status, Order order) {
+        String shopName = shopRepository.findById(order.getShopId())
+                .map(Shop::getName)
+                .orElse("Unknown shop");
 
-            PublicOrderStatus status = new PublicOrderStatus();
-            status.setOrderNumber(order.getOrderNumber());
-            status.setStatus(order.getStatus().name());
-            status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
-            status.setShopName(shopName);
-            status.setSubtotalPennies(order.getSubtotalPennies());
-            // 37-37 (C3): fulfilment and fee, from columns, as the tracking reader below sets them.
-            status.setFulfilmentType(order.getFulfilmentType() != null ? order.getFulfilmentType().name() : null);
-            status.setDeliveryFeePennies(order.getDeliveryFeePennies());
-            status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
-            status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
-            status.setTotalAmountPennies(order.getTotalAmountPennies());
-            status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
-            // COR-4: units, passed through AS-IS. No null coalescing — null means the row
-            // predates V66 and was never recorded, which is a different statement from 0 and from
-            // the line count. The customer surface renders the count only when it is present.
-            status.setUnitCount(order.getUnitCount());
-            status.setCreatedAt(order.getCreatedAt());
-            status.setUpdatedAt(order.getUpdatedAt());
-            // Phase 31.1 D-07/D-08: the acknowledgement and channel from the order's own COLUMNS
-            // ONLY. The recorded set (recordedAllergens / recordedAllergenFlags) is deliberately
-            // left null here and documented as tracking-only: deriving it reads order.getItems(),
-            // which initialises one collection per row on this list path (the V63 measurement:
-            // 7 orders, 7 extra SELECTs). CustomerRecordedAllergenSetIntegrationTest guards this.
-            status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
-            status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
-            status.setPlacedVia(placedVia(order));
-            // D-15: that a note was sent and when the shop read it, from columns. Never the text.
-            setAllergyNoteStatus(status, order);
-            status.setScheduledForDate(order.getScheduledForDate());
-            status.setScheduledWindowLabel(order.getScheduledWindowLabel());
-            status.setDepositAmountPennies(order.getDepositAmountPennies());
-            status.setBalanceDuePennies(order.getBalanceDuePennies());
-            return status;
-        });
+        status.setOrderNumber(order.getOrderNumber());
+        status.setStatus(order.getStatus().name());
+        status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
+        status.setShopName(shopName);
+        status.setSubtotalPennies(order.getSubtotalPennies());
+        // 37-37 (C3): fulfilment and fee, from columns, as the tracking reader below sets them.
+        status.setFulfilmentType(order.getFulfilmentType() != null ? order.getFulfilmentType().name() : null);
+        status.setDeliveryFeePennies(order.getDeliveryFeePennies());
+        status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
+        status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
+        status.setTotalAmountPennies(order.getTotalAmountPennies());
+        status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
+        // COR-4: units, passed through AS-IS. No null coalescing — null means the row
+        // predates V66 and was never recorded, which is a different statement from 0 and from
+        // the line count. The customer surface renders the count only when it is present.
+        status.setUnitCount(order.getUnitCount());
+        status.setCreatedAt(order.getCreatedAt());
+        status.setUpdatedAt(order.getUpdatedAt());
+        // Phase 31.1 D-07/D-08: the acknowledgement and channel from the order's own COLUMNS
+        // ONLY. The recorded set (recordedAllergens / recordedAllergenFlags) is deliberately
+        // left null here and documented as tracking-only: deriving it reads order.getItems(),
+        // which initialises one collection per row on this list path (the V63 measurement:
+        // 7 orders, 7 extra SELECTs). CustomerRecordedAllergenSetIntegrationTest guards this.
+        status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
+        status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
+        status.setPlacedVia(placedVia(order));
+        // D-15: that a note was sent and when the shop read it, from columns. Never the text.
+        setAllergyNoteStatus(status, order);
+        status.setScheduledForDate(order.getScheduledForDate());
+        status.setScheduledWindowLabel(order.getScheduledWindowLabel());
+        status.setDepositAmountPennies(order.getDepositAmountPennies());
+        status.setBalanceDuePennies(order.getBalanceDuePennies());
+        return status;
     }
 
     /**
@@ -920,7 +950,8 @@ public class PublicStorefrontService {
                     order.getDepositAmountPennies(),
                     order.getBalanceDuePennies(),
                     result.paymentIntentId(),
-                    result.clientSecret()
+                    result.clientSecret(),
+                    result.stripeAccountId()
             );
         } catch (com.stripe.exception.StripeException e) {
             log.error("Failed to create balance PaymentIntent for order {}: {}", order.getOrderNumber(), e.getMessage());
@@ -1189,12 +1220,21 @@ public class PublicStorefrontService {
                     "Idempotency-Key reused with a different request payload");
         }
         String existingClientSecret = null;
+        // 30-17 (UI-SPEC § S1): an order with a PaymentIntent names the account that intent lives on,
+        // resolved the way retrieveClientSecret(order, ...) resolves it (direct-charge header only), so
+        // the replay says what the first response said. No intent (COD): null, as the first response was.
+        String replayedStripeAccountId = existingOrder.getPaymentReference() != null
+                ? paymentService.directChargeAccountFor(existingOrder).orElse(null)
+                : null;
         if (existingOrder.getStatus() == OrderStatus.DRAFT
                 && existingOrder.getPaymentReference() != null
                 && paymentService.isConfigured()) {
             try {
+                // 30-17 / A-1 (PR #949): order-aware, so a direct-charge or split-deposit intent is
+                // retrieved ON the connected account. The platform-account retrieve answered 404
+                // resource_missing for those, and the retry got a null secret it could never pay with.
                 existingClientSecret = paymentService.retrieveClientSecret(
-                        existingOrder.getPaymentReference());
+                        existingOrder, existingOrder.getPaymentReference());
             } catch (com.stripe.exception.StripeException e) {
                 log.warn("Could not re-fetch client secret for idempotent retry of order {}",
                         existingOrder.getOrderNumber(), e);
@@ -1224,7 +1264,8 @@ public class PublicStorefrontService {
                 existingOrder.getAllergenAckMask(),
                 acknowledgedAllergenNames(existingOrder),
                 replayedSnapshot.declaredNames(),
-                replayedSnapshot.flags()
+                replayedSnapshot.flags(),
+                replayedStripeAccountId
         );
         confirmation.setFulfilmentSlotId(existingOrder.getFulfilmentSlotId());
         confirmation.setScheduledForDate(existingOrder.getScheduledForDate());
@@ -1547,6 +1588,9 @@ public class PublicStorefrontService {
         // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
         // If not configured, fall back to COD — order goes straight to PENDING.
         String clientSecret = null;
+        // 30-17 (UI-SPEC § S1): the account the intent was created on, from the same routing decision
+        // that chose the Stripe-Account header. Null for a platform or destination intent and for COD.
+        String stripeAccountId = null;
         if (paymentService.isConfigured()) {
             // ORDERING (issue #538) — PERSIST BEFORE PAYING.
             //
@@ -1568,6 +1612,7 @@ public class PublicStorefrontService {
             try {
                 PaymentIntentResult intent = paymentService.createPaymentIntent(order);
                 clientSecret = intent.clientSecret();
+                stripeAccountId = intent.stripeAccountId();
                 // Persist the Stripe object id (dirty-checked into this same
                 // transaction). Two things depend on it: the WR-02 idempotent
                 // retry above, which can only re-fetch a client secret when
@@ -1689,7 +1734,8 @@ public class PublicStorefrontService {
                 order.getAllergenAckMask(),
                 acknowledgedAllergenNames(order),
                 recordedSnapshot.declaredNames(),
-                recordedSnapshot.flags()
+                recordedSnapshot.flags(),
+                stripeAccountId
         );
         confirmation.setFulfilmentSlotId(order.getFulfilmentSlotId());
         confirmation.setScheduledForDate(order.getScheduledForDate());

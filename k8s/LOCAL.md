@@ -297,9 +297,9 @@ termination, certificate issuance or renewal, or HSTS. (ASVS V9 is deliberately 
 **The nginx security-header snippet — not proven.** minikube v1.36.0 bundles ingress-nginx controller
 **v1.12.2**, where `allow-snippet-annotations` defaults to `false` and `annotations-risk-level`
 defaults to `High` (hardened defaults since ingress-nginx v1.9.0). The base ingress carries
-`nginx.ingress.kubernetes.io/configuration-snippet` with 6 `more_set_headers` directives — including
-HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`. That
-annotation is in the Critical-risk class, so the validating admission webhook **rejects both Ingress
+`nginx.ingress.kubernetes.io/configuration-snippet` with 5 `more_set_headers` directives — including
+HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Permissions-Policy` (`Referrer-Policy` the apps
+send themselves since issue #1071). That annotation is in the Critical-risk class, so the validating admission webhook **rejects both Ingress
 objects**. The local overlay therefore nulls the annotation. It is **UNCHANGED in staging and
 production**, and CI asserts both halves (the local render has no snippet; the production render
 keeps it).
@@ -311,7 +311,7 @@ keeps it).
 > convenience. `scripts/k8s-local-up.sh` never touches the controller's configuration.
 >
 > Flag for staging/production too: whichever ingress-nginx version runs there must have snippets
-> enabled, or those six headers are silently absent (or the apply has been failing).
+> enabled, or those five headers are silently absent (or the apply has been failing).
 
 **NetworkPolicy enforcement — not proven (D-11).** All 6 policies render unchanged locally and are
 validated as *manifests*. minikube's default CNI **does not enforce NetworkPolicies at all**, so
@@ -618,7 +618,7 @@ there and invalid the moment it is relayed.
 `k8s/base/configmap.yaml:213` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
 nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
 broken path**. Meanwhile `docker-compose.full-stack.yml:310` passes
-`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:648` reads
+`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:655` reads
 `mode: ${STOMP_BROKER_MODE:in-memory}` — so a normal compose run never enters the relay branch at all
 (`core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
 production undetected, and it is exactly what D-06 predicted when it insisted the relay be proven on the
@@ -1643,7 +1643,7 @@ jtoye
 ```
 
 `STOMP_BROKER_MODE=relay` matters on its own: dev compose defaults to
-`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:648`), so this code path is exercised **only** on this cluster (D-06).
+`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:655`), so this code path is exercised **only** on this cluster (D-06).
 Re-asserted on the CURRENT pod after Task 1's frontend re-apply:
 `grep -c "Access refused for user"` = **0**, `grep -c 'In-memory simple broker'` = **0**,
 `grep -c 'STOMP broker relay configured'` = **1**, restart count **4** and stable (§7 A2 explains why

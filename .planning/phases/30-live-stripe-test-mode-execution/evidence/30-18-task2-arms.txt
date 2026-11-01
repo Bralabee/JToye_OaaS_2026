@@ -1,0 +1,32 @@
+# 30-18 Task 2 break arms. Bracket: clean -> A -> B -> clean. Island committed at 8f679a57 before any arm; each restore is git show HEAD:<file> > <file>, verified by sha256.
+# (Second run of the bracket: the first run's grep for the failing-test marker matched nothing; counts were identical, 4 and 3 failed.)
+## clean (before)
+rc=0
+  Tests:       37 passed, 37 total
+## arm A: redeem moved before the publishableKey check and the loadStripeOnce await
+arm sha: 4484451a4463b460
+387:      // 2c: spend the link.
+404:      // 2a-2b: no key, or Stripe.js does not load -> the link is NOT spent.
+rc=1
+  red: ● a customer opens a payment link, sees who and how much, presses Continue, and pays › a direct-charge link: Stripe loads BEFORE redeem, the token leaves the address bar, Stripe mounts on the vendor's account, and paying shows 'Payment received' focused
+  red: ● before redeem: a card form that cannot load never spends the link › with NO publishable key: the 'link hasn't been used' alert with Try again, and redeem is never called
+  red: ● before redeem: a card form that cannot load never spends the link › when Stripe.js resolves null: the same alert, zero redeems, and Try again loads again and then pays
+  red: ● before redeem: a card form that cannot load never spends the link › when Stripe.js REJECTS (network, CSP): the same alert and zero redeems
+  Tests:       4 failed, 33 passed, 37 total
+restore sha: 38842cd23f23a14c head: 38842cd23f23a14c
+## arm B: replaceState(null, "", "/pay") (the pre-revision design: no resume entry, Next's keys dropped)
+arm sha: 6a207616d33c40ba
+428:      window.history.replaceState(null, "", "/pay")
+rc=1
+  red: ● a customer opens a payment link, sees who and how much, presses Continue, and pays › a direct-charge link: Stripe loads BEFORE redeem, the token leaves the address bar, Stripe mounts on the vendor's account, and paying shows 'Payment received' focused
+  red: ● after redeem: the intent's own status decides › an intent that already succeeded reads 'This order is already paid', no form, and the resume entry is dropped
+  red: ● /pay with no link: Stripe's return, the reload resume, and the empty state › a reload round trip: Continue, then the page is reloaded on the same history entry, and the card form comes back without a second redeem
+  Tests:       3 failed, 34 passed, 37 total
+  round-trip arm detail:
+        Unable to find an element by: [data-testid="stripe-elements"]
+                    Open your payment link
+restore sha: 38842cd23f23a14c head: 38842cd23f23a14c
+## clean (after)
+rc=0
+  Tests:       37 passed, 37 total
+git status of island: []

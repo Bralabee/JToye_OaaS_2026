@@ -5,7 +5,9 @@ import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +15,9 @@ import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.notification.CustomerEmailContext;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.notification.OrderEmailSummary;
+import uk.jtoye.core.notification.consent.ConsentGate;
+import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.security.TenantContext;
@@ -66,6 +71,7 @@ public class OrderStateChangeListener {
     private final JdbcTemplate jdbcTemplate;
     private final ShopRepository shopRepository;
     private final TraderIdentityService traderIdentityService;
+    private final ConsentGate consentGate;
 
     public OrderStateChangeListener(OrderRepository orderRepository,
                                      EmailNotificationService emailService,
@@ -75,6 +81,20 @@ public class OrderStateChangeListener {
                                      JdbcTemplate jdbcTemplate,
                                      ShopRepository shopRepository,
                                      TraderIdentityService traderIdentityService) {
+        this(orderRepository, emailService, entityManager, metrics, simpMessagingTemplate,
+                jdbcTemplate, shopRepository, traderIdentityService, null);
+    }
+
+    @Autowired
+    public OrderStateChangeListener(OrderRepository orderRepository,
+                                     EmailNotificationService emailService,
+                                     EntityManager entityManager,
+                                     BusinessMetricsService metrics,
+                                     SimpMessagingTemplate simpMessagingTemplate,
+                                     JdbcTemplate jdbcTemplate,
+                                     ShopRepository shopRepository,
+                                     TraderIdentityService traderIdentityService,
+                                     @Nullable ConsentGate consentGate) {
         this.orderRepository = orderRepository;
         this.emailService = emailService;
         this.entityManager = entityManager;
@@ -83,6 +103,7 @@ public class OrderStateChangeListener {
         this.jdbcTemplate = jdbcTemplate;
         this.shopRepository = shopRepository;
         this.traderIdentityService = traderIdentityService;
+        this.consentGate = consentGate;
     }
 
     // Not readOnly: the dedup INSERT below must be able to write (FIX-2).
@@ -153,9 +174,6 @@ public class OrderStateChangeListener {
                 return;
             }
 
-            // ASVS V7 / T-31.1-88: the order number and status only, never the recipient.
-            log.info("Sending {} notification for order {}", event.newStatus(), event.orderNumber());
-
             switch (event.newStatus()) {
                 case PENDING, CONFIRMED, PREPARING, READY, COMPLETED, CANCELLED -> { }
                 default -> {
@@ -163,6 +181,25 @@ public class OrderStateChangeListener {
                     return;
                 }
             }
+
+            // #981: non-statutory progress updates (CONFIRMED, PREPARING, READY, COMPLETED)
+            // honour the customer's ORDERS opt-out in notification_suppression. Checked HERE
+            // while TenantContext and the transaction-local Postgres app.current_tenant_id GUC
+            // are pinned (Pitfall 8: @Async EmailNotificationService runs with neither, so a
+            // query against FORCE RLS notification_suppression there would read zero rows).
+            // Statutory notices — PENDING (the CCR 2013 reg 16 durable-medium contract
+            // confirmation with seller identity & allergen record) and CANCELLED — are never
+            // suppressed by an ORDERS status-update opt-out.
+            if (isSuppressibleOrderStatus(event.newStatus())
+                    && consentGate != null
+                    && !consentGate.allows(event.tenantId(), email, NotificationCategory.ORDERS)) {
+                log.info("Order {} notification suppressed for order {} (recipient opted out of ORDERS)",
+                        event.newStatus(), event.orderNumber());
+                return;
+            }
+
+            // ASVS V7 / T-31.1-88: the order number and status only, never the recipient.
+            log.info("Sending {} notification for order {}", event.newStatus(), event.orderNumber());
 
             // #789/#785 (Pitfall 8): everything the email says about the seller and the order's
             // allergens is read HERE, while TenantContext and the GUC are pinned to the event's
@@ -188,6 +225,13 @@ public class OrderStateChangeListener {
                 default -> { }
             }
         }, () -> log.warn("Order {} not found for email notification", event.orderNumber()));
+    }
+
+    static boolean isSuppressibleOrderStatus(OrderStatus status) {
+        return switch (status) {
+            case CONFIRMED, PREPARING, READY, COMPLETED -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -231,6 +275,34 @@ public class OrderStateChangeListener {
                 acknowledged,
                 view.declaredNames(),
                 view.flags(),
-                order.getFulfilmentType());
+                order.getFulfilmentType(),
+                summaryOf(order, shop));
+    }
+
+    /**
+     * SW-JRD-15 (swarm epic #964, issue #826): the lines, total and destination the order emails
+     * quote, from the order already loaded under the event's tenant. The line name is the V30
+     * snapshot, never a live product read. A collection order names the shop's address and no
+     * delivery address (whatever an older row may still hold); anything else names the delivery
+     * address, blank parts dropped. The delivery fee and, for a split-deposit order (ADR-0007 / V87), the
+     * deposit and balance due travel too, so the email's lines reconcile with its total. The allergy
+     * note is never read here (31.1-13, T-31.1-46).
+     */
+    static OrderEmailSummary summaryOf(Order order, Shop shop) {
+        List<OrderEmailSummary.Line> lines = order.getItems() == null ? List.of() : order.getItems().stream()
+                .map(i -> new OrderEmailSummary.Line(i.getProductName(), i.getQuantity()))
+                .toList();
+        if (order.getFulfilmentType() == FulfilmentType.COLLECTION) {
+            return new OrderEmailSummary(lines, order.getTotalAmountPennies(), List.of(),
+                    shop == null ? null : shop.getAddress(), order.getDeliveryFeePennies(),
+                    order.getDepositAmountPennies(), order.getBalanceDuePennies());
+        }
+        List<String> address = java.util.stream.Stream.of(order.getAddressLine1(), order.getAddressLine2(),
+                        order.getAddressCity(), order.getAddressPostcode())
+                .filter(v -> v != null && !v.isBlank())
+                .map(String::strip)
+                .toList();
+        return new OrderEmailSummary(lines, order.getTotalAmountPennies(), address, null,
+                order.getDeliveryFeePennies(), order.getDepositAmountPennies(), order.getBalanceDuePennies());
     }
 }

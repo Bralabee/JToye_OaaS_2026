@@ -1,0 +1,9 @@
+check-ssr-coverage-contract  (2026-10-31T21:04:38Z)
+  app dir   : /home/sanmi/IdeaProjects/JToye_OaaS_2026-p30-15/frontend/app/
+  config    : /home/sanmi/IdeaProjects/JToye_OaaS_2026-p30-15/scripts/gates/ssr-routes.conf
+  discovered: 44 page.tsx
+  declared  : 5 SSR, 16 STATIC, 22 CLIENT (43 total)
+  R-3 self  : classifier says SERVER for frontend/app/shop/page.tsx and CLIENT for frontend/app/track/page.tsx
+FAIL: R-1 undeclared page: pay/page.tsx — a route nobody declared is the moment #542 says the failure must fire. Add an SSR, STATIC or CLIENT line to /home/sanmi/IdeaProjects/JToye_OaaS_2026-p30-15/scripts/gates/ssr-routes.conf.
+FAILED: 1 SSR-coverage contract violation(s) (see above).
+rc=1

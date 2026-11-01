@@ -252,6 +252,52 @@ export interface GuestOrderConfirmation {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  /**
+   * The connected Stripe account that owns this order's PaymentIntent (plan 30-17): set for a
+   * direct-charge or split-deposit shop, null for destination and platform charges; absent from an
+   * older server. Passed to Stripe.js as `stripeAccount` (UI-SPEC § S1).
+   */
+  stripeAccountId?: string | null
+}
+
+/** What a payment link asks for (`order_payment_links.link_kind`, V88). */
+export type PaymentLinkPurpose = "UPFRONT" | "DEPOSIT" | "BALANCE"
+
+/** The preview's state, in the server's precedence PAID > USED > REVOKED > EXPIRED > ACTIVE (30-16). */
+export type PaymentLinkState = "ACTIVE" | "USED" | "EXPIRED" | "REVOKED" | "PAID"
+
+/**
+ * `POST /api/v1/public/payment-links/preview {token}` (`PaymentLinkPreviewDto`, plan 30-16). Read-only:
+ * it never spends the link and never calls Stripe, so `/pay` shows who is asking and for how much
+ * before anything is used (UI-SPEC S3 data contract 1).
+ */
+export interface PaymentLinkPreview {
+  shopName: string
+  orderNumber: string
+  amountPennies: number
+  /** ISO 4217, lower case, as the intent was created (default gbp). */
+  currency: string
+  purpose: PaymentLinkPurpose
+  /** ISO-8601 instant. */
+  expiresAt: string
+  state: PaymentLinkState
+}
+
+/**
+ * `POST /api/v1/public/payment-links/redeem {token}` (`RedeemedPaymentLinkDto`). SPENDS the single-use
+ * link before it answers, so `/pay` calls it only after Stripe.js has loaded (UI-SPEC S3 step 2).
+ * `stripeAccountId` (plan 30-17) is the connected account that owns a direct-charge or split-deposit
+ * intent; null for platform and destination charges.
+ */
+export interface RedeemedPaymentLink {
+  linkId: string
+  orderId: string
+  purpose: PaymentLinkPurpose
+  amountPennies: number
+  stripePaymentIntentId: string | null
+  clientSecret: string | null
+  usedAt: string
+  stripeAccountId?: string | null
 }
 
 /** The RFC 7807 `type` URI the stale-acknowledgement 409 carries (31.1-03). */
@@ -354,7 +400,11 @@ export type OrderPlacedVia = "STOREFRONT" | "VENDOR"
  *     null means "not loaded with the list", not "not recorded". Never render it as either.
  *   placedVia — STOREFRONT | VENDOR; null when the order predates the channel being recorded.
  *   allergyNoteProvided / allergyNoteAcknowledgedAt — the customer sent an allergy note, and when
- *     the shop marked it read. The note's TEXT is never on this response (T-31.1-46).
+ *     the shop marked it read. The note's TEXT is not part of this record: it travels ONLY on the
+ *     signed-in `/public/orders/mine`, as `OrderSummary.allergyNote` (lib/customer-orders.ts), for a
+ *     contact-verified order, and the `/api/customer-orders` proxy passes it on only to My Orders
+ *     (`include=allergyNote`). The tracking response and the `?verify=` history never carry it
+ *     (T-31.1-46, SW-PRY-06 / T-31.1-102).
  */
 export interface PublicOrderAllergenRecord {
   acknowledgedAllergenMask?: number | null

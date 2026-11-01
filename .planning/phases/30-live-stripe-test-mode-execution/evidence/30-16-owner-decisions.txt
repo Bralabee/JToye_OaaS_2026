@@ -1,0 +1,14 @@
+# 30-16 — owner decisions (Tasks 1 and 2), recorded 2026-10-31T19:16:23Z by the owner's selection in the session
+# Both were put to the owner with the plan's options verbatim and a recommendation; the owner chose the recommended option each time.
+
+## Task 1 — where the payment-link token travels
+2026-10-31T19:16:23Z  DECISION: fragment  (/pay#token=…)
+  The token never appears in a request line or an access log. The page reads location.hash and posts the token in a JSON body,
+  the rule /invite (V77) and the DSAR download link (V75) already follow. Accepted cost: PAY-04's issued URL changes, so staging
+  links already sent stop resolving, and a body-token preview and redeem are added beside the path redeem. No production links exist.
+
+## Task 2 — how the staging /pay proof obtains a verified phone
+2026-10-31T19:16:23Z  DECISION: expose-on-staging
+  jtoye.phone-verification.expose-otp-for-test is enabled on the staging overlay ONLY, and production refuses it (the startup
+  refusal closes the 30-RESEARCH PAY-04 gap 4, SEC-03 family). Accepted cost: on the public staging host anyone can mark any phone
+  verified for staging's test tenant (test data only). Applied to the overlays by plan 30-20 Task 1.

@@ -13,7 +13,7 @@ import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
-import { ORDER_STATUS_COPY, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
+import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
 /**
@@ -535,7 +535,9 @@ function TrackOrderContent() {
                       to framer-motion's MotionConfig, which only governs `m.*`
                       props, so it has to be gated in CSS. */}
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse motion-reduce:animate-none" />
-                  {STEPS[currentStep]?.label || order.status}
+                  {/* SW-ADE-12: a status that is not a tracker step (DRAFT, an unpaid card order)
+                      reads in the shared customer words, never as the raw enum. */}
+                  {STEPS[currentStep]?.label || statusCopy(order.status)?.label || order.status}
                 </span>
               )}
             </div>

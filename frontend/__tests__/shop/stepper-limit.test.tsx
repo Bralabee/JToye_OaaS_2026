@@ -156,7 +156,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
 
     fireEvent.click(screen.getByRole("button", { name: "View details for Peri Peri Chicken" }))
     const dialog = await screen.findByRole("dialog")
-    const more = within(dialog).getByRole("button", { name: "Add one more Peri Peri Chicken to cart" })
+    const more = within(dialog).getByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(more).toBeDisabled()
     const hint = within(dialog).getByText("Max 3 per order")
     expect(more).toHaveAttribute("aria-describedby", hint.id)
