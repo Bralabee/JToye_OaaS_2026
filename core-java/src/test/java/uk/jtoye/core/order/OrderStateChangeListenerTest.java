@@ -276,15 +276,12 @@ class OrderStateChangeListenerTest {
         order.setPlacedVia(placedVia);
         order.setAllergenAckMask(ackMask);
         order.setFulfilmentType(FulfilmentType.COLLECTION);
-        OrderItem jollof = new OrderItem();
+        OrderItem jollof = new OrderItem(UUID.randomUUID(), 2, 500L);
         jollof.setProductName("Jollof Rice");
-        // The field, not the setter: OrderItem's setters recompute the line total and need both values.
-        org.springframework.test.util.ReflectionTestUtils.setField(jollof, "quantity", 2);
         jollof.setAllergenMask(65);
         jollof.setAllergenFlagMask(0);
-        OrderItem puff = new OrderItem();
+        OrderItem puff = new OrderItem(UUID.randomUUID(), 1, 250L);
         puff.setProductName("Puff Puff");
-        org.springframework.test.util.ReflectionTestUtils.setField(puff, "quantity", 1);
         puff.setAllergenMask(0);
         puff.setAllergenFlagMask(1 << 2);
         order.setItems(new java.util.ArrayList<>(List.of(jollof, puff)));
