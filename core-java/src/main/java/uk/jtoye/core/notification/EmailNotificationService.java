@@ -22,6 +22,7 @@ import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderStateChangeEvent;
+import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
@@ -119,6 +120,25 @@ public class EmailNotificationService {
     public static String allergenFlagCopy(OrderAllergenFlagDto flag) {
         return "Check — " + flag.productName() + ": the ingredients list mentions " + flag.allergenName()
                 + ", which the kitchen has not declared for this item. Ask the kitchen before you order.";
+    }
+
+    /**
+     * frontend/lib/order-status-announcement.ts ORDER_STATUS_COPY labels: the words the tracking
+     * pages show for each status (parity-tested), so an email and the page name a status alike.
+     */
+    static final Map<OrderStatus, String> CUSTOMER_STATUS_LABELS = Map.of(
+            OrderStatus.DRAFT, "Awaiting payment",
+            OrderStatus.PENDING, "Received",
+            OrderStatus.CONFIRMED, "Confirmed",
+            OrderStatus.PREPARING, "Preparing",
+            OrderStatus.READY, "Ready",
+            OrderStatus.COMPLETED, "Completed",
+            OrderStatus.CANCELLED, "Cancelled",
+            OrderStatus.REFUNDED, "Refunded");
+
+    /** The customer's word for a status; a status with no mapping reads as its name, never blank. */
+    static String customerStatusLabel(OrderStatus status) {
+        return CUSTOMER_STATUS_LABELS.getOrDefault(status, status.name());
     }
 
     /** The From display-name suffix (D-13). */
@@ -261,12 +281,16 @@ public class EmailNotificationService {
     public void sendOrderCancelledNotification(OrderStateChangeEvent event, String recipientEmail,
                                                CustomerEmailContext context) {
         CustomerEmailContext ctx = orUnknown(context);
+        // SW-ADE-12 (swarm epic #964): the customer's word for where the order had got to, never
+        // the enum name (an unpaid card order read "Previous status: DRAFT"). No line at all when
+        // the event carries no previous status, rather than "null".
+        String previous = event.previousStatus() == null ? ""
+                : "It was cancelled while it was: " + customerStatusLabel(event.previousStatus()) + ".\n";
         String lead = """
                 Your order %s from %s has been cancelled.
 
-                Previous status: %s
-                If this was unexpected, please contact %s directly.""".formatted(
-                event.orderNumber(), shopLabel(ctx), event.previousStatus(), shopLabel(ctx));
+                %sIf this was unexpected, please contact %s directly.""".formatted(
+                event.orderNumber(), shopLabel(ctx), previous, shopLabel(ctx));
         // #981: order-cancelled is a non-suppressible transactional notice — never carries List-Unsubscribe.
         send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false, false);
     }

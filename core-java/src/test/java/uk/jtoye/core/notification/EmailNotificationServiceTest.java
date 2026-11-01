@@ -269,7 +269,50 @@ class EmailNotificationServiceTest {
 
         assertEquals("Order ORD-500 \u2014 Cancelled", msg.getSubject());
         assertTrue(msg.getText().contains("has been cancelled"));
-        assertTrue(msg.getText().contains("PREPARING"));
+        // SW-ADE-12 (swarm epic #964): the customer's word for the status, never the enum.
+        assertThat(msg.getText())
+                .contains("It was cancelled while it was: Preparing.")
+                .doesNotContain("PREPARING")
+                .doesNotContain("Previous status");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12: an unpaid card order cancelled from DRAFT says 'Awaiting payment', not DRAFT")
+    void cancelledFromDraftUsesTheCustomerWord() {
+        service.sendOrderCancelledNotification(createTestEvent("ORD-501", OrderStatus.DRAFT, OrderStatus.CANCELLED),
+                RECIPIENT, ctx(null));
+
+        assertThat(sent().getText()).contains("It was cancelled while it was: Awaiting payment.").doesNotContain("DRAFT");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12: a cancel event with no previous status omits the line rather than printing null")
+    void cancelledWithNoPreviousStatusOmitsTheLine() {
+        service.sendOrderCancelledNotification(createTestEvent("ORD-502", null, OrderStatus.CANCELLED),
+                RECIPIENT, ctx(null));
+
+        assertThat(sent().getText()).doesNotContain("It was cancelled while it was").doesNotContain("null");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12 parity: every status label equals the storefront's ORDER_STATUS_COPY label")
+    void statusLabelsMatchTheStorefront() throws Exception {
+        String copy = Files.readString(IntegrationTestSupport.locateRepoFile("frontend/lib/order-status-announcement.ts"));
+        SoftAssertions softly = new SoftAssertions();
+        for (OrderStatus status : OrderStatus.values()) {
+            Matcher m = Pattern.compile("\\b" + status.name() + ":\\s*\\{\\s*label:\\s*\"([^\"]*)\"").matcher(copy);
+            assertTrue(m.find(), "ORDER_STATUS_COPY has no entry for " + status);
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            service.sendOrderCancelledNotification(createTestEvent("ORD-503", status, OrderStatus.CANCELLED),
+                    RECIPIENT, ctx(null));
+
+            verify(mailSender).send(messageCaptor.capture());
+            softly.assertThat(new Sent(SentMail.reparse(messageCaptor.getValue())).getText()).as(status.name())
+                    .contains("It was cancelled while it was: " + m.group(1) + ".");
+        }
+        softly.assertAll();
     }
 
     // --- Conditional sending ---
