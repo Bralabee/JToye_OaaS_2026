@@ -125,6 +125,14 @@ describe("/legal/terms quotes the checkout's operative wording verbatim", () => 
     expect(link).toHaveAccessibleName(/opens in a new tab/i)
     expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)
   })
+
+  // Round 1: one shared component renders the sentence on both pages.
+  it("renders the Stripe pricing sentence through the shared component, not a local copy", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/legal/terms/page.tsx"), "utf8")
+    expect(src).toMatch(/from "@\/components\/marketing\/stripe-uk-pricing-sentence"/)
+    expect(src).toMatch(/<StripeUkPricingSentence\b/)
+    expect(src).not.toMatch(/STRIPE_UK_PRICING_URL|STRIPE_UK_PRICING_LINK_TEXT|opens in a new tab/)
+  })
 })
 
 describe("/legal/terms invents no legal term the site has never published", () => {

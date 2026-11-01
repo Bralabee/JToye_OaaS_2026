@@ -10,9 +10,8 @@ import {
   formatSetupLine,
   PRICING,
   PRICING_CARD_FEE_LINE,
-  STRIPE_UK_PRICING_LINK_TEXT,
-  STRIPE_UK_PRICING_URL,
 } from "@/lib/pricing"
+import { StripeUkPricingSentence } from "@/components/marketing/stripe-uk-pricing-sentence"
 
 /**
  * Every price figure comes from the shared module (lib/pricing.ts), the same
@@ -242,7 +241,7 @@ export function OperatorPitch() {
               ))}
             </tbody>
           </table>
-          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE} Current rates are on{" "}<a href={STRIPE_UK_PRICING_URL} target="_blank" rel="noopener noreferrer" className={INLINE_LINK_CLASS}>{STRIPE_UK_PRICING_LINK_TEXT}<span className="sr-only"> (opens in a new tab)</span></a>. See the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
+          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE} <StripeUkPricingSentence linkClassName={INLINE_LINK_CLASS} /> See the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
         </div>
       </section>
 

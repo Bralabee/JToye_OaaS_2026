@@ -18,9 +18,8 @@ import {
   formatSetupLine,
   PRICING,
   PRICING_CARD_FEE_LINE,
-  STRIPE_UK_PRICING_LINK_TEXT,
-  STRIPE_UK_PRICING_URL,
 } from "@/lib/pricing"
+import { StripeUkPricingSentence } from "@/components/marketing/stripe-uk-pricing-sentence"
 
 export const metadata: Metadata = {
   title: "Terms of use — J'Toye",
@@ -147,18 +146,8 @@ export default function TermsPage() {
           </li>
         </ul>
         <p>
-          {formatSetupLine(PRICING)} {PRICING_CARD_FEE_LINE} Current rates
-          are on{" "}
-          <a
-            href={STRIPE_UK_PRICING_URL}
-            className={LEGAL_PROSE_LINK_CLASS}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {STRIPE_UK_PRICING_LINK_TEXT}
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
-          .
+          {formatSetupLine(PRICING)} {PRICING_CARD_FEE_LINE}{" "}
+          <StripeUkPricingSentence linkClassName={LEGAL_PROSE_LINK_CLASS} />
         </p>
         <p>{OPERATOR_FBO_LINE}</p>
         <p>

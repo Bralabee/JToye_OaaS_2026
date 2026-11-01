@@ -371,4 +371,13 @@ describe("OperatorPitch contact and terms routes (persona swarm, SW-CLR-04 and S
     // It sits beside the fee sentence, not elsewhere on the page.
     expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)
   })
+
+  // Round 1: the sentence, its new-tab attributes and its announcement live in ONE
+  // shared component, so a wording or a11y change cannot reach only one page.
+  it("renders the Stripe pricing sentence through the shared component, not a local copy", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    expect(src).toMatch(/from "@\/components\/marketing\/stripe-uk-pricing-sentence"/)
+    expect(src).toMatch(/<StripeUkPricingSentence\b/)
+    expect(src).not.toMatch(/STRIPE_UK_PRICING_URL|STRIPE_UK_PRICING_LINK_TEXT|opens in a new tab/)
+  })
 })

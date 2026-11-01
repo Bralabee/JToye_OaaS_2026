@@ -59,7 +59,8 @@ export const PRICING_CARD_FEE_LINE =
  * epic #964). Owner ruling 2026-11-01: do NOT print a card-fee figure — Stripe
  * sets it on the vendor's own account and changes it on its own schedule, so a
  * typed rate would go stale silently. The page links Stripe's UK price list
- * instead. Both render sites (/for-operators and /legal/terms) read these two
+ * instead. Both render sites (/for-operators and /legal/terms) render it through
+ * components/marketing/stripe-uk-pricing-sentence.tsx, which reads these two
  * constants, and lib/__tests__/pricing.test.ts pins the URL.
  */
 export const STRIPE_UK_PRICING_URL = "https://stripe.com/gb/pricing"
