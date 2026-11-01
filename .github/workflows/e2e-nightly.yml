@@ -29,8 +29,10 @@
 #   * the CI Stripe sandbox credentials fail `check-stripe-ci-keys.sh`
 #   * the stack does not become healthy within the deadline
 #   * the Playwright JSON report (main or Stripe phase) is absent, empty, or reports ZERO tests
-#   * `stripe listen` does not reach Ready, or the payment_intent.succeeded / refund.* events do not land in processed_stripe_events
-#   * `check-e2e-skip-budget.sh` exits non-zero across the union of both reports (1 = violation, 2 = VOID)
+#   * `stripe listen --all-snapshot` does not reach Ready, or the payment_intent.succeeded / refund.* events do not land in processed_stripe_events
+#     (the background forwarder must name its events: without --all-snapshot stripe-cli exits at once)
+#   * `check-e2e-skip-budget.sh` exits non-zero across the union of both reports (1 = violation, 2 = VOID);
+#     on a night the Stripe phase never started (an earlier step failed) it gates the Phase 1 report alone
 #   * `check-backup-restore-drill.sh` exits non-zero (1 = an arm failed, 2 = VOID)
 #   * a file about to be uploaded holds the Stripe secret or the CLI's signing secret
 #     (`check-stripe-ci-keys.sh --scan-artifacts`, T-30-87; the file is deleted first)
@@ -469,7 +471,16 @@ jobs:
             echo "STRIPE_ENVIRONMENT_TAG=ci-nightly"
           } >> .env
 
+          # --all-snapshot is REQUIRED, not a filter preference: without --events,
+          # --all-snapshot or --all-thin, stripe-cli exits at once with "must specify
+          # events to forward" (observed: branch nightly 41288249740, CLI 1.55.6; the
+          # --print-secret call above succeeds either way, so only this listener dies).
+          # Snapshot events are the classic v1 webhook payloads core-java parses
+          # (PaymentService: Webhook.constructEvent, then getDataObjectDeserializer() for
+          # payment_intent.*, refund.*, account.updated); --all-thin would forward thin
+          # events, which carry no data.object for those handlers to read.
           STRIPE_API_KEY="$STRIPE_TEST_SECRET_KEY" nohup stripe listen \
+            --all-snapshot \
             --forward-to http://localhost:9090/api/v1/public/payments/webhook \
             --forward-connect-to http://localhost:9090/api/v1/public/payments/webhook/connect \
             > "$RUNNER_TEMP/stripe-listen.log" 2>&1 &
@@ -612,12 +623,36 @@ jobs:
       # S-1..S-5 across the union of Phase 1 (cash/full) and Phase 2 (Stripe): total
       # within budget, every skip declared with a justification + REMOVE WHEN block,
       # no stale ALLOW, and both reports stamped with the current e2e-spec-digest.
+      #
+      # WHICH REPORTS, AND WHY IT IS NOT SIMPLY SKIPPED WITHOUT PHASE 2. `stripe-run` has
+      # no `if:`, so it inherits success() and is SKIPPED whenever any earlier step failed:
+      # the Phase 1 verdict (a red test), the Stripe CLI install, the forwarder, or the
+      # core-java recreate. Its `|| true` makes it `success` whenever it did run. So:
+      #   stripe-run skipped -> no report-stripe.json can exist. Gating on it anyway VOIDed
+      #     (exit 2) on top of the real failure (observed: run 41288249740, the forwarder
+      #     failed and this step added "no Playwright JSON report at
+      #     frontend/e2e-artifacts/report-stripe.json"). Skipping the step instead would drop
+      #     the PHASE 1 budget on exactly those nights, and Phase 1 had run (432 results).
+      #     So it gates report.json ALONE: the union is the same 4 skips either way, because
+      #     the Stripe phase may carry 0 (its own assert step fails on any skip there).
+      #   anything else (success, failure, cancelled) -> the Stripe run started, so its
+      #     report must exist: both reports are gated and a missing one stays VOID.
+      # A night with NO Stripe keys never gets here: the key gate (step 2) exits 1 before
+      # the stack starts, `stack-up` is skipped, and this step's `if:` is false — the job
+      # is red at the key gate by design ("do not skip the Stripe E2E phase").
       - name: Enforce the declared skip budget
         if: always() && steps.stack-up.outcome == 'success'
-        run: >-
-          bash scripts/check-e2e-skip-budget.sh
-          --report frontend/e2e-artifacts/report.json
-          --report frontend/e2e-artifacts/report-stripe.json
+        env:
+          STRIPE_RUN_OUTCOME: ${{ steps.stripe-run.outcome }}
+        run: |
+          set -uo pipefail
+          reports=(--report frontend/e2e-artifacts/report.json)
+          if [ "$STRIPE_RUN_OUTCOME" = skipped ]; then
+            echo "::warning::the Stripe phase did not run (an earlier step failed); gating the Phase 1 report alone"
+          else
+            reports+=(--report frontend/e2e-artifacts/report-stripe.json)
+          fi
+          bash scripts/check-e2e-skip-budget.sh "${reports[@]}"
 
       - name: Stop the Stripe forwarder
         if: always()
