@@ -168,3 +168,53 @@ Not done here, by design: the D3 round on the fix commits (round 3, /review-veri
   the CI sandbox keys and the live nightly (30-23), marking #1065 ready (30-23). The PR body still describes
   the 6-arm selftest and the >= 1 read-back; the review round should read this file, not the body.
 Antigravity: the -agy-p30-w21 worktree is now behind the pushed branch; `git pull --ff-only` there.
+
+=========================================================================
+ROUND 1 FIXES (review of 1f69a7f0) — F1 and F4, the two ADMISSIBLE findings
+=========================================================================
+Owner-authorised 2026-11-01. Same method as above: a detached run-only scratch checkout at
+1f69a7f09df5ec53138b8675aee731e07bfb202f (origin head read back 1f69a7f0 before any edit; supplied-root pin
+rc=0 before every write and commit). The other eight round-1 findings are RECORDED by the orchestrator and are
+not touched here. Fixtures and the step harness live under the session scratchpad f1065/.
+
+-------------------------------------------------------------------------
+F1 RED (on 1f69a7f0, real conf: ALLOW stomp-relay l.37, ALLOW vendor-refund-flow l.44, MAX_SKIPS 6 l.83)
+-------------------------------------------------------------------------
+Fixture reports stamped with the tree digest 39967ac75af87b28 (scripts/e2e-spec-digest.sh at 1f69a7f0):
+  phase1-4skips.json = stomp-relay's 2 titles x 2 projects skipped (4) + the DRAFT-visibility test passed x2
+  phase2-0skips.json = stripe-refund-flow.spec.ts passed x1 (0 skipped)
+  phase1-5skips.json = the 4 above + a FIFTH stomp-relay-titled skip
+[01:23:44Z] RED-1, the reviewer's two-report run (--report phase1-4skips --report phase2-0skips):
+  "tests : 7 total, 4 skipped (budget 6)"
+  "FAIL: S-3 stale ALLOW 'vendor-refund-flow.spec.ts › vendor logs in, opens an order, issues a partial refund'
+   matches no skipped test — the exemption outlived its cause; delete it and lower MAX_SKIPS"   rc=1
+[01:23:45Z] RED-2, S-1 cannot fail at ceiling 6: a copy of the conf with ONLY the refund ALLOW block deleted
+  (1 ALLOW, MAX_SKIPS 6) + the 5-skip report: "PASS: all 5 skip(s) are declared and within the budget of 6." rc=0
+  (on the unmodified conf the same report is rc=1, but on S-3 again, not S-1)
+Why the ALLOW goes NOW: `rg -uu -c 'issues a partial refund' frontend/e2e` rc=1 at 1f69a7f0 — the test it
+  allowed is deleted by this PR; a deleted test cannot skip.
+The measured count (not arithmetic): nightly 41158370941 (main ec73ddee, report startTime 2026-10-31T02:14:29Z,
+  432 results), jq over its own per-test results: 6 skipped =
+    stomp-relay.spec.ts › kitchen display page loads and connects to WebSocket          [desktop] [mobile]
+    stomp-relay.spec.ts › kitchen display receives order event within 2 seconds         [desktop] [mobile]
+    vendor-refund-flow.spec.ts › vendor logs in, opens an order, issues a partial refund, sees REFUNDED state
+                                                                                        [desktop] [mobile]
+  minus the 2 of the deleted test = 4 for the Phase-1 report; the Phase-2 report is 0 by construction (the
+  nightly's "Assert the Stripe report" step fails the job on any skip there).
+
+-------------------------------------------------------------------------
+F4 RED (on 1f69a7f0, .github/workflows/e2e-nightly.yml l.579-582)
+-------------------------------------------------------------------------
+Structural: `grep -cE '^[^#]*jq .*\| head -n 1' .github/workflows/e2e-nightly.yml` = 2 (l.580 pi_ev, l.582 re_ev).
+[01:23:57Z] The OLD pipeline, curl replaced by cat of a fixture, under `set -euo pipefail` (3 runs each):
+  events3.json (refund.created + refund.updated + charge.refunded for the PI, + one non-match):
+    rc=0 x3, re_ev=evt_3_charge_refunded — NOT forced: jq writes three short lines in one buffer before head
+    reads, so with three events the 141 is a race that does not fire deterministically here. Said, not hidden.
+  events-bulk.json (20000 matching events, so jq is still writing when head exits):
+    rc=141 x3, output EMPTY — no "re_ev=", no ::error; PIPESTATUS of the bare pipe = "0 141 0" (jq SIGPIPE).
+[01:25:57Z] The OLD STEP TEXT itself (extracted from the head YAML by yaml.safe_load, run as GitHub runs it,
+  `bash --noprofile --norc -eo pipefail`, with curl/docker stubs serving the fixtures):
+    bulk:  rc=141, step output EMPTY (the step dies with no ::error — the finding, reproduced on the real text)
+    3 matching: rc=0
+  URLs the old step requested: events?type=payment_intent.succeeded&limit=25 and the refund types &limit=25 —
+    no created[gte]: a shared sandbox with > 25 newer events pushes this run's off page one.
