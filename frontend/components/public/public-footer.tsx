@@ -252,6 +252,23 @@ export function PublicFooter() {
                   Accessibility statement
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="/legal/terms"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Terms of use
+                </Link>
+              </li>
+              {/* SW-CLR-04 (swarm epic #964): the contact route lives in this
+                  column because it is the one every public route renders for
+                  everyone — "For operators" unmounts for a signed-in customer.
+                  A link only: the company identity stays on /contact itself. */}
+              <li>
+                <Link href="/contact" className="text-cream/85 transition-colors hover:text-white">
+                  Contact J&apos;Toye
+                </Link>
+              </li>
             </ul>
           </div>
 

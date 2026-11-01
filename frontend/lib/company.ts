@@ -35,6 +35,15 @@ export interface CompanyInfo {
    * about who reads a rights request.
    */
   dataProtectionEmail: string
+  /**
+   * General contact address for the platform (SW-CLR-04, swarm epic #964);
+   * empty string when not configured. Separate from the data-protection
+   * contact for the same reason that one is separate from support: publishing
+   * an address is a promise about who reads it.
+   */
+  contactEmail: string
+  /** General contact phone number; empty string when not configured. */
+  contactPhone: string
 }
 
 const DEFAULT_LEGAL_NAME = "J'Toye Digital Ltd"
@@ -49,6 +58,10 @@ export function getCompanyInfo(): CompanyInfo {
       process.env.NEXT_PUBLIC_COMPANY_REGISTRATION || DEFAULT_REGISTRATION,
     registeredOffice: process.env.NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE || "",
     dataProtectionEmail: process.env.NEXT_PUBLIC_DATA_PROTECTION_EMAIL || "",
+    // Never defaulted in code: a contact route is only published when someone
+    // has configured one (build args, like the data-protection contact).
+    contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL || "",
+    contactPhone: process.env.NEXT_PUBLIC_CONTACT_PHONE || "",
   }
 }
 
@@ -98,5 +111,38 @@ export function resolveControllerContact(
     email,
     emailHref: email ? `mailto:${email}` : null,
     anyRoute: Boolean(postal || email),
+  }
+}
+
+/**
+ * The platform's general contact routes for /contact (SW-CLR-04, swarm epic
+ * #964), resolved by the same rule as `resolveControllerContact`: a configured
+ * value becomes a route, an unconfigured one becomes `null`, and `anyRoute`
+ * lets the caller say "none published" instead of rendering an empty term.
+ *
+ * Nothing here is defaulted. The persona swarm found no contact route on any
+ * public page; the fix is a route the owner configures, not an address this
+ * file guesses.
+ */
+export interface PublicContact {
+  email: string | null
+  emailHref: string | null
+  phone: string | null
+  /** `tel:` href keeping digits and a leading +; the visible text is as configured. */
+  phoneHref: string | null
+  anyRoute: boolean
+}
+
+export function resolvePublicContact(
+  info: CompanyInfo = getCompanyInfo()
+): PublicContact {
+  const email = info.contactEmail.trim() || null
+  const phone = info.contactPhone.trim() || null
+  return {
+    email,
+    emailHref: email ? `mailto:${email}` : null,
+    phone,
+    phoneHref: phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : null,
+    anyRoute: Boolean(email || phone),
   }
 }

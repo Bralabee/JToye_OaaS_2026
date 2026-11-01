@@ -86,6 +86,12 @@ const LEGAL_ROUTES: Array<{ href: string; label: RegExp }> = [
   { href: "/legal/cookies", label: /^cookie and browser-storage policy$/i },
   { href: "/legal/retention", label: /^data retention schedule$/i },
   { href: "/legal/accessibility", label: /^accessibility statement$/i },
+  // SW-SAM-12 (swarm epic #964): the terms page, absent until this lane.
+  { href: "/legal/terms", label: /^terms of use$/i },
+  // SW-CLR-04 (swarm epic #964): the contact route. It sits in this column
+  // because this is the one column every public route renders for everyone;
+  // "For operators" unmounts for a signed-in customer.
+  { href: "/contact", label: /^contact j.toye$/i },
 ]
 
 /** The company number is a fixed business fact (lib/company.ts:41), not env. */
