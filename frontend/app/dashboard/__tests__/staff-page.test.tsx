@@ -334,6 +334,37 @@ describe("Staff management screen (VSA-04)", () => {
     }
   })
 
+  it("review R1-1: a Group-admin grant sends shopId null and shows All shops, even with a shop selected in the switcher", async () => {
+    window.localStorage.setItem("shopContext", SHOP_B)
+    try {
+      render(<StaffPage />)
+      await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+      const shop = within(grantCard()).getByLabelText(/^shop$/i) as HTMLSelectElement
+      await waitFor(() => expect(shop.value).toBe(SHOP_B))
+
+      fireEvent.change(screen.getByLabelText(/team member/i), {
+        target: { value: USER_SAM },
+      })
+      fireEvent.change(within(grantCard()).getByLabelText(/^role$/i), {
+        target: { value: "GROUP_ADMIN" },
+      })
+      mockedApiClient.post.mockResolvedValueOnce({ data: {} } as never)
+      fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
+      await waitFor(() => {
+        expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/grant", {
+          userId: USER_SAM,
+          shopId: null,
+          role: "GROUP_ADMIN",
+        })
+      })
+      // Locked to All shops, as the invite form is: Group admin is tenant-wide by definition (23-04).
+      expect(shop).toBeDisabled()
+      expect(shop.value).toBe("")
+    } finally {
+      window.localStorage.removeItem("shopContext")
+    }
+  })
+
   it("renders the access-required state on a 403 and leaks no directory data", async () => {
     mockedApiClient.get.mockRejectedValueOnce(
       httpError(403, "/shop-access-denied")

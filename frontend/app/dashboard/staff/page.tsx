@@ -418,8 +418,12 @@ export default function StaffPage() {
    *  shop switcher (SW-ADE-11), so a Staff grant starts on the shop being worked on. */
   const [pickedShopId, setPickedShopId] = useState<string | null>(null)
   const { contextShopId } = useShopContext()
-  const targetShopId = pickedShopId ?? defaultShopChoice(shops, contextShopId)
+  const chosenShopId = pickedShopId ?? defaultShopChoice(shops, contextShopId)
   const [targetRole, setTargetRole] = useState<ShopRole>("STAFF")
+  // Group admin is tenant-wide by definition (23-04 refuses a shop-scoped one with a 400), so the
+  // shop locks to All shops for it, exactly as the invite form does: the select shows what is sent.
+  const grantIsGroupAdmin = targetRole === "GROUP_ADMIN"
+  const targetShopId = grantIsGroupAdmin ? ALL_SHOPS_VALUE : chosenShopId
 
   /** "Grant access" on a No access row moves the operator to the form. */
   const grantCardRef = useRef<HTMLDivElement>(null)
@@ -847,6 +851,7 @@ export default function StaffPage() {
                 ref={shopSelectRef}
                 value={targetShopId}
                 onChange={(e) => setPickedShopId(e.target.value)}
+                disabled={grantIsGroupAdmin}
                 className={`h-10 ${STAFF_SELECT_CLASS}`}
               >
                 <option value={ALL_SHOPS_VALUE}>All shops / tenant-wide</option>
