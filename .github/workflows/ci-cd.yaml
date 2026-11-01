@@ -863,6 +863,11 @@ jobs:
   #      encodes the build-time/runtime channel split — a NEXT_PUBLIC_* name
   #      that is BOTH Dockerfile-ARG-declared and injected as a runtime `env:`
   #      is dead config and is not allowlistable (D-18).
+  #      (b2) Every `ARG NEXT_PUBLIC_*` in frontend/Dockerfile must also be
+  #      passed by BOTH build channels: the build-args block below and the
+  #      --build-arg list in scripts/k8s-local-up.sh. An ARG alone used to
+  #      count as supplied, which is how staging baked "" for the contact
+  #      keys (SW-CLR-04, epic #964).
   #      Every extractor is self-tested against a synthetic control, so a regex
   #      that matches nothing exits 2 (VOID) rather than reporting a clean
   #      contract over a service it never actually parsed. Needs GNU
