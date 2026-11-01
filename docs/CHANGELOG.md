@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Landing Elevated: Credited Dish Photos, the Oxblood + Gold Palette, Tells Removed (design-run) (#1085) — 2026-11-01
+
+The first `design-run` elevate run on the landing, and the first build to beat the current page in the owner's blind A/B after two redesigns lost (`design/runs/2026-11-01-landing-elevate/verdict.md`). Elevate, not redesign (D14): structure, copy, both doors, the crawlable chip links, the "Dishes cooking near you" scroller and the GSAP scene all stay. Frontend and design record only: no API, migration or core-java change.
+
+- **Photographs replace emoji:** eight credited dish photos (`frontend/public/marketing/landing/credits.json`, visible credit line) through `next/image` on the desktop hero tiles, the cuisine chips, the Order-food door (so the phone's first screen has food) and kitchen cards without a banner ("<Cuisine> — example photo", D12/D13). `components/marketing/landing-photos.ts` holds sizes, alt text and the cuisine assignment.
+- **Palette adopted** (`design/identity.md`): oxblood ramp, gold accent, warm-neutral ramp, Work Sans on five sizes; new Tailwind tokens `brand`, `gold` ramp, `warm`. No token retired: `cream`, `amber-ink`, `oxblood-deep` are still used by `/shop`, checkout, track and the Keycloak theme.
+- **Tells removed:** the radial cream wash and its parallax, the gradient door and tiles, the eyebrow, every resting shadow, the 1px rules and outlined chips/cards, the yellow cream ground, the "→" suffix, the scroller's gradient edge fade (phone cards peek instead).
+- **Copy:** Track live now describes status polling, not courier tracking the platform does not have.
+- **CLS:** `min-height` on the h1 where the size-adjusted fallback sets fewer lines than Work Sans; throttled CLS 0.1795 → 0.1608 (375px), 0.0403 → 0.0093 (1440px).
+- **Gate:** taste-skill lint 29 FAIL → 0 on the touched files; inspect 13 FAIL → 6, of which 3 are the owner's D14 rulings (headline on 3 lines, focal point) and 3 are shared chrome (header rule, footer caps labels, cookie notice), untouched here for its own PR. Jest 3450 green, 12 new or changed assertions shown failing on the before source; Playwright 149 passed, the 11 failures are `/shop/{slug}` SEO specs the fixture cannot serve, identical before.
+- **Recorded, not changed:** a desktop LCP outlier from the GSAP headline split after the font swap (a `deviceSizes` cap made it reproducible and was reverted), 3x phones served the 800px original, and the verdict's polish list for the next run.
+
 ### The Customer's Allergy Note on Signed-in My Orders Only, Under T-31.1-46 (swarm epic #964) (#1082) — 2026-11-01
 
 SW-PRY-06, owner ruling 2026-11-01 after a tenancy-security assessment (SAFE WITH CONDITIONS). A customer can now read back the allergy note they sent, on the signed-in My orders page and nowhere else. No migration, no RLS policy change.
