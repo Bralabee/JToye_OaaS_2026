@@ -267,6 +267,9 @@ const SIMPLE_ROUTES = [
   "/legal/cookies",
   "/legal/retention",
   "/legal/accessibility",
+  // PR 1080: the terms and contact pages, static and backend-free like the rest.
+  "/legal/terms",
+  "/contact",
 ] as const
 
 test.describe(`public surfaces — ${CLAIM}`, () => {
