@@ -18,6 +18,7 @@
  */
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { usePathname } from "next/navigation"
 import { axe, toHaveNoViolations } from "jest-axe"
 
 import { CookieNotice } from "@/components/public/cookie-notice"
@@ -481,5 +482,56 @@ describe("the notice never hides the focused element (UXT-085)", () => {
 
     expect(Object.keys(window.localStorage)).toEqual([COOKIE_NOTICE_ACK_KEY])
     expect(Object.keys(window.sessionStorage)).toEqual([])
+  })
+})
+
+/**
+ * Owner ruling 2026-11-01 (PR #1064 review series, recorded finding 6, and the 30-20 360 px
+ * screenshot): on /pay the fixed notice covered the card form's Expiry date and Security code
+ * fields on a first visit. /pay writes nothing to local or session storage (UI-SPEC S3 Storage),
+ * and the notice informs, it gates nothing, so it is not rendered there. The control at "/" is
+ * what keeps "renders nothing on /pay" from being satisfied by a notice that renders nowhere.
+ */
+describe("the payment-link page /pay carries no cookie notice", () => {
+  const mockedPathname = usePathname as jest.Mock
+
+  afterEach(() => {
+    mockedPathname.mockImplementation(() => "/")
+  })
+
+  it("renders nothing at /pay, where it would cover the card form", () => {
+    mockedPathname.mockImplementation(() => "/pay")
+    render(<CookieNotice />)
+    expect(screen.queryByRole("region", { name: "Cookie notice" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Got it" })).not.toBeInTheDocument()
+    expect(document.documentElement.style.scrollPaddingBottom).toBe("")
+  })
+
+  it("renders nothing under /pay/ either", () => {
+    mockedPathname.mockImplementation(() => "/pay/anything")
+    render(<CookieNotice />)
+    expect(screen.queryByRole("region", { name: "Cookie notice" })).not.toBeInTheDocument()
+  })
+
+  it("CONTROL: still renders at / and at a route that only starts with the letters (/payments)", () => {
+    mockedPathname.mockImplementation(() => "/")
+    const home = render(<CookieNotice />)
+    expect(screen.getByRole("region", { name: "Cookie notice" })).toBeInTheDocument()
+    home.unmount()
+
+    mockedPathname.mockImplementation(() => "/payments")
+    render(<CookieNotice />)
+    expect(screen.getByRole("region", { name: "Cookie notice" })).toBeInTheDocument()
+  })
+
+  it("a real consent choice still outranks the carve-out: the banner renders at /pay", () => {
+    mockedPathname.mockImplementation(() => "/pay")
+    const unregister = register(FIXTURE)
+    try {
+      render(<CookieNotice />)
+      expect(screen.getByRole("region", { name: "Cookie choices" })).toBeInTheDocument()
+    } finally {
+      unregister()
+    }
   })
 })
