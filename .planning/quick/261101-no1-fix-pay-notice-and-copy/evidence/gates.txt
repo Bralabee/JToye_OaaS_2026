@@ -1,0 +1,106 @@
+# Gates (frontend + docs), HEAD 82b93d32
+
+## tsc FAIL direction: runReturn called with one argument (arm, after commit 82b93d32)
+app/pay/pay-client.tsx(486,27): error TS2554: Expected 2 arguments, but got 1.
+rc=2
+restored (sha256 matches committed)
+
+## tsc clean (npx tsc --noEmit)
+rc=0
+
+## npm run lint
+✖ 27 problems (0 errors, 27 warnings)
+rc=0
+
+## pay + public-component suites: npx jest --ci app/pay components/public
+Test Suites: 9 passed, 9 total
+Tests:       136 passed, 136 total
+rc=0
+
+## scripts/docs-freshness.sh BEFORE --write (fail direction)
+  "go_test_funcs": 112,
+  "go_test_files": 14,
+  "jest_blocks": 3271,
+  "jest_files": 275,
+  "playwright_blocks": 197,
+  "playwright_specs": 50,
+  "mcp_test_blocks": 70,
+  "mcp_test_files": 8,
+  "total_logical_invocations": 6783
+}
+
+Fix by running: scripts/docs-freshness.sh --write   (then update README/PROJECT.md and commit)
+rc=1
+
+## scripts/docs-freshness.sh AFTER --write
+metrics.json diff:
+diff --git a/docs/metrics.json b/docs/metrics.json
+index 494409e7..73cf5d10 100644
+--- a/docs/metrics.json
++++ b/docs/metrics.json
+@@ -5,11 +5,11 @@
+   "schema_version": 88,
+   "go_test_funcs": 112,
+   "go_test_files": 14,
+-  "jest_blocks": 3261,
++  "jest_blocks": 3271,
+   "jest_files": 275,
+   "playwright_blocks": 197,
+   "playwright_specs": 50,
+   "mcp_test_blocks": 70,
+   "mcp_test_files": 8,
+-  "total_logical_invocations": 6773
++  "total_logical_invocations": 6783
+ }
+rc=0
+
+## scripts/check-doc-metrics.sh BEFORE prose edits (fail direction)
+FAIL: README.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6783
+FAIL: README.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6783
+FAIL: README.md [jest_blocks]: doc says 3261, docs/metrics.json says 3271
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6783
+FAIL: CLAUDE.md [jest_blocks]: doc says 3261, docs/metrics.json says 3271
+FAIL: AGENTS.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6783
+FAIL: AGENTS.md [jest_blocks]: doc says 3261, docs/metrics.json says 3271
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+rc=1
+
+## scripts/check-doc-metrics.sh AFTER prose edits
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+rc=0
+
+## full frontend jest: npx jest --ci (HEAD 82b93d32 + metrics/prose edits, no source change since)
+Test Suites: 275 passed, 275 total
+Tests:       3271 passed, 3271 total
+Snapshots:   2 passed, 2 total
+rc=0
+
+## scripts/check-doc-citations.sh
+  docs/ops/terminal-states.yaml              citations=17
+  citations   total=53  verified=46  uncheckable=7
+  violations  0
+PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+rc=0
+
+## scripts/check-no-object-store-residue.sh
+        1  frontend/e2e/customer-signout-idp-session.verify.mjs:240
+        1  frontend/e2e/customer-signout-idp-session.verify.mjs:256
+SUMMARY files_scanned=4497 raw_hits=2212 unique_lines=2036 allowlisted=2036 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+PASS: no retired object-store residue in 4497 tracked file(s); 2036 hit line(s) covered by 51 reasoned, live allowlist entr(ies).
+rc=0
+
+## scripts/check-handoff-contract.sh
+  H-4 self  : both extractors fire and decline
+  H-5 cites : 5 path(s) checked, 5 resolve, 1 skipped (unrecognised extension)
+PASS: HANDOFF.md — 1 gate-count claim(s) and 36 state claim(s) hold; 2 commit(s) behind (budget 3).
+      NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+rc=0
+
+## scripts/check-branch-behind-base.sh
+  fetch        : refreshed refs/remotes/origin/main
+  base head    : 6c1fdc93
+
+PASS: HEAD contains every commit on origin/main (6c1fdc93); it is 6 commit(s) ahead and 0 behind.
+rc=0

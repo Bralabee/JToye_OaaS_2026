@@ -356,3 +356,63 @@ Snapshots:   0 total
 Time:        1.55 s, estimated 5 s
 Ran all test suites within paths "app/pay/__tests__/pay-client.test.tsx".
 rc=0
+
+## BREAK ARM A-unreadable-reads-as-redirectFailed (after commit 82b93d32)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 188c40b6..f043ca88 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -352,7 +352,7 @@ export function PayClient() {
+     if (status === "succeeded") setPhase({ kind: "received", display: null, amountPennies: amount })
+     else if (status === "processing") setPhase({ kind: "processing", amountPennies: amount })
+     else if (status) setPhase({ kind: "redirectFailed" })
+-    else setPhase({ kind: "checkFailed", returnRead: { clientSecret, acct } })
++    else setPhase({ kind: "redirectFailed" })
+   }, [])
+ 
+   /** Mount: which of the four ways in this is (see the header). */
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › a redirect return whose intent Stripe answers with an error (a garbage client secret, redirect_status=succeeded): the check-failed state, never 'Payment received'
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › a redirect return whose intent read REJECTS: the check-failed state, and Try again reads the intent again and shows what it says
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › a redirect return with no publishable key in the bundle (redirect_status=succeeded): the check-failed state, never 'Payment received'
+Tests:       3 failed, 41 passed, 44 total
+rc=1
+A-unreadable-reads-as-redirectFailed restored (sha256 matches committed)
+
+## BREAK ARM B-retry-reruns-preview (after commit 82b93d32)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 188c40b6..4565544c 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -483,8 +483,8 @@ export function PayClient() {
+               type="button"
+               onClick={() => {
+                 const read = phase.returnRead
+-                if (read) runReturn(read.clientSecret, read.acct)
+-                else runPreview()
++                void read
++                runPreview()
+               }}
+               className={RETRY}
+             >
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › a redirect return whose intent read REJECTS: the check-failed state, and Try again reads the intent again and shows what it says
+Tests:       1 failed, 43 passed, 44 total
+rc=1
+B-retry-reruns-preview restored (sha256 matches committed)
+
+## BREAK ARM C-readable-failed-reads-as-checkFailed (after commit 82b93d32)
+diff --git a/frontend/app/pay/pay-client.tsx b/frontend/app/pay/pay-client.tsx
+index 188c40b6..ad1bff44 100644
+--- a/frontend/app/pay/pay-client.tsx
++++ b/frontend/app/pay/pay-client.tsx
+@@ -351,7 +351,6 @@ export function PayClient() {
+     }
+     if (status === "succeeded") setPhase({ kind: "received", display: null, amountPennies: amount })
+     else if (status === "processing") setPhase({ kind: "processing", amountPennies: amount })
+-    else if (status) setPhase({ kind: "redirectFailed" })
+     else setPhase({ kind: "checkFailed", returnRead: { clientSecret, acct } })
+   }, [])
+ 
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › a redirect return with redirect_status=failed reads the intent on its account and shows the outcome
+Tests:       1 failed, 43 passed, 44 total
+rc=1
+C-readable-failed-reads-as-checkFailed restored (sha256 matches committed)
