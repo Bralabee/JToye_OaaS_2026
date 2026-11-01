@@ -32,6 +32,8 @@
 #   * `stripe listen` does not reach Ready, or the payment_intent.succeeded / refund.* events do not land in processed_stripe_events
 #   * `check-e2e-skip-budget.sh` exits non-zero across the union of both reports (1 = violation, 2 = VOID)
 #   * `check-backup-restore-drill.sh` exits non-zero (1 = an arm failed, 2 = VOID)
+#   * a file about to be uploaded holds the Stripe secret or the CLI's signing secret
+#     (`check-stripe-ci-keys.sh --scan-artifacts`, T-30-87; the file is deleted first)
 #   Step-level error swallowing appears NOWHERE in this file on purpose. A job that cannot go red
 #   is the exact failure mode #420 exists to remove.
 #
@@ -519,6 +521,13 @@ jobs:
             exit 1
           }
 
+      # T-30-87: this run holds the CI sandbox sk_test_, and the artifact below is PUBLIC for 14
+      # days. Three layers keep the secret out of it: the spec sends every Stripe call through
+      # frontend/e2e/stripe-test-api.ts (Node fetch — no Playwright trace, call log or report
+      # ever sees the header) with traces and video off; this run's Playwright output goes to
+      # $RUNNER_TEMP, which is not uploaded (and so no longer wipes frontend/test-results/, the
+      # main run's failure traces — Playwright empties its output dir at the start of a run);
+      # and the scan step before the upload deletes any file that still holds a secret.
       - name: Run the Stripe-keyed specs
         id: stripe-run
         working-directory: frontend
@@ -531,7 +540,7 @@ jobs:
           mkdir -p e2e-artifacts
           set -a; . ../.env; set +a
           export E2E_VENDOR_PASSWORD="${KC_SEED_USER_PASSWORD}"
-          npx playwright test e2e/stripe-refund-flow.spec.ts --project=desktop --reporter=json > e2e-artifacts/report-stripe.json || true
+          npx playwright test e2e/stripe-refund-flow.spec.ts --project=desktop --output "$RUNNER_TEMP/stripe-test-results" --reporter=json > e2e-artifacts/report-stripe.json || true
 
       - name: Assert the Stripe report is real, zero skips, zero failures
         working-directory: frontend
@@ -691,6 +700,20 @@ jobs:
               ;;
           esac
           bash scripts/check-backup-restore-drill.sh
+
+      # T-30-87, the execution point: whatever wrote it, a file that holds the CI sandbox secret
+      # or the `stripe listen` signing secret is deleted here, before the upload below can
+      # publish it, and the job goes red (exit 1). Zip members (trace.zip) are read, not
+      # skipped. Runs on every outcome, like the upload it guards; with no secret to look for
+      # (the key gate already failed) it is VOID (exit 2), never a quiet pass.
+      - name: Gate — no Stripe secret in the uploaded artifacts (T-30-87)
+        if: always()
+        run: |
+          set -uo pipefail
+          whsec=""
+          if [ -f .env ]; then whsec=$(command grep -E '^STRIPE_WEBHOOK_SECRET=' .env | tail -n 1 | cut -d= -f2-); fi
+          STRIPE_WEBHOOK_SECRET="$whsec" bash scripts/check-stripe-ci-keys.sh --scan-artifacts \
+            frontend/e2e-artifacts frontend/playwright-report frontend/test-results
 
       - name: Upload Playwright report and traces
         if: always()

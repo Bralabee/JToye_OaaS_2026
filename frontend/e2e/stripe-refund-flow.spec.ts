@@ -21,12 +21,25 @@
  *   - Reason select:     #reason
  *   - Note textarea:     #note
  *   - Refund-in-flight:  button text "Refunding…"
- *   - Refund history:    heading text /Refunds \(\d+\)/
+ *   - Refund history:    heading "Refunds (1)" (exactly one refund) and its "£1.00" row
+ *   - Order status:      badge text "Refunded" (OrderDetailPanel STATUS_CONFIG.REFUNDED; any
+ *                        refund moves the order to REFUNDED, RefundService step 8)
  *   - Detail route URL:  /dashboard/orders/<uuid>
+ *
+ * THE STRIPE SECRET NEVER ENTERS PLAYWRIGHT (T-30-87): every api.stripe.com call goes through
+ * ./stripe-test-api (Node fetch), and this file turns traces and video off at the top level.
+ * Why both, and what each one closes, is in that module's header.
  */
 
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test"
 import { writeFileSync } from "node:fs"
+import {
+  STRIPE_SPEC_ARTIFACTS,
+  pollRefundReadback,
+  requireStripeTestSecretKey,
+  stripeTestClient,
+  type StripeRefundList,
+} from "./stripe-test-api"
 import {
   VENDOR_USERNAME,
   VENDOR_PASSWORD,
@@ -39,21 +52,12 @@ import {
   vendorToken,
 } from "./order-cleanup"
 
-const API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
-const STRIPE_API = "https://api.stripe.com"
-const SHOP_SLUG = "mama-ades-kitchen"
+// Top level, not inside the describe: trace and video are worker options (T-30-87).
+test.use(STRIPE_SPEC_ARTIFACTS)
 
-function requireStripeTestSecretKey(): string {
-  const key = process.env.STRIPE_TEST_SECRET_KEY ?? ""
-  if (!key.startsWith("sk_test_")) {
-    const shown = key === "" ? "<unset>" : `${key.slice(0, 8)}...`
-    throw new Error(
-      `STRIPE_TEST_SECRET_KEY must be a Stripe test secret key (sk_test_...); got ${shown}. ` +
-        "This spec runs only when STRIPE_E2E=1 and never skips.",
-    )
-  }
-  return key
-}
+const API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
+const SHOP_SLUG = "mama-ades-kitchen"
+const REFUND_PENNIES = 100
 
 function intentIdFromClientSecret(clientSecret: string): string {
   const idx = clientSecret.indexOf("_secret_")
@@ -145,8 +149,7 @@ test.describe("Phase 30 PAY-01 — Stripe test-mode vendor refund flow", () => {
     page,
     request,
   }) => {
-    const stripeKey = requireStripeTestSecretKey()
-    const stripeAuth = { Authorization: `Bearer ${stripeKey}` }
+    const stripe = stripeTestClient({ secretKey: requireStripeTestSecretKey() })
 
     const token = await vendorToken(request)
     if (!token) {
@@ -193,22 +196,15 @@ test.describe("Phase 30 PAY-01 — Stripe test-mode vendor refund flow", () => {
 
     try {
       // 2. Confirm the PaymentIntent against api.stripe.com using pm_card_visa.
-      const confirmPiRes = await request.post(
-        `${STRIPE_API}/v1/payment_intents/${encodeURIComponent(intentId)}/confirm`,
+      const confirmPiRes = await stripe.post<{ id?: string; status?: string; livemode?: boolean }>(
+        `/v1/payment_intents/${encodeURIComponent(intentId)}/confirm`,
         {
-          headers: stripeAuth,
-          form: {
-            payment_method: "pm_card_visa",
-            return_url: "http://localhost:3000/track",
-          },
+          payment_method: "pm_card_visa",
+          return_url: "http://localhost:3000/track",
         },
       )
-      expect(confirmPiRes.status(), "Stripe PaymentIntent confirm HTTP status").toBe(200)
-      const confirmedPi = (await confirmPiRes.json()) as {
-        id?: string
-        status?: string
-        livemode?: boolean
-      }
+      expect(confirmPiRes.status, "Stripe PaymentIntent confirm HTTP status").toBe(200)
+      const confirmedPi = confirmPiRes.body
       expect(confirmedPi.id).toBe(intentId)
       expect(confirmedPi.status, "PaymentIntent status after pm_card_visa confirm").toBe("succeeded")
       expect(confirmedPi.livemode, "PaymentIntent livemode must be false").toBe(false)
@@ -257,6 +253,8 @@ test.describe("Phase 30 PAY-01 — Stripe test-mode vendor refund flow", () => {
         headers: vendorAuth,
       })
       expect(confirmOrderRes.status(), `POST /api/v1/orders/${orderId}/confirm`).toBe(200)
+      const confirmedOrder = (await confirmOrderRes.json()) as { status?: string }
+      expect(confirmedOrder.status, "order status after the vendor confirm").toBe("CONFIRMED")
 
       // 5. Log in as the vendor, open the order detail route, and issue a £1.00 partial refund.
       await vendorLoginStrict(page)
@@ -279,49 +277,41 @@ test.describe("Phase 30 PAY-01 — Stripe test-mode vendor refund flow", () => {
       await dialogSubmit.click()
 
       await expect(page.getByText(/Refunding/)).toHaveCount(0, { timeout: 20_000 })
-      await expect(page.getByRole("heading", { name: /Refunds \(\d+\)/ })).toBeVisible({
+      // Exactly one refund on the page: the heading counts the order's refunds, and a second
+      // refund (a double submit, a retried POST) would read "Refunds (2)".
+      await expect(page.getByRole("heading", { name: "Refunds (1)", exact: true })).toBeVisible({
         timeout: 10_000,
       })
-      await expect(page.locator("text=£1.00").first()).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByText("£1.00", { exact: true })).toBeVisible({ timeout: 10_000 })
+      // The order's status badge. Strict locator, no .first(): a second "Refunded" on the page
+      // fails loudly instead of letting the wrong element satisfy the check.
+      await expect(page.getByText("Refunded", { exact: true })).toBeVisible({ timeout: 15_000 })
 
-      // 6. Verify the refund object directly against Stripe's API.
-      const refundsRes = await request.get(
-        `${STRIPE_API}/v1/refunds?payment_intent=${encodeURIComponent(intentId)}&limit=5`,
-        { headers: stripeAuth },
+      // 6. Read the refund back from Stripe: EXACTLY one refund for this intent, 100 pence,
+      //    succeeded, settled on two consecutive reads within 30 s (./stripe-test-api).
+      const verdict = await pollRefundReadback(
+        async () => {
+          const res = await stripe.get<StripeRefundList>(
+            `/v1/refunds?payment_intent=${encodeURIComponent(intentId)}&limit=10`,
+          )
+          expect(res.status, "GET /v1/refunds?payment_intent=...").toBe(200)
+          return res.body
+        },
+        { intentId, amountPennies: REFUND_PENNIES },
+        { deadlineMs: 30_000, intervalMs: 1_000 },
       )
-      expect(refundsRes.status(), "GET /v1/refunds?payment_intent=...").toBe(200)
-      const refundsBody = (await refundsRes.json()) as {
-        data?: Array<{
-          id?: string
-          status?: string
-          amount?: number
-          payment_intent?: string
-          charge?: string
-          livemode?: boolean
-        }>
+      if (verdict.kind !== "settled") {
+        throw new Error(`Stripe refund read-back for ${orderNumber}: ${verdict.reason}`)
       }
-      const refunds = refundsBody.data ?? []
-      expect(refunds.length, `Stripe refunds for ${intentId}`).toBeGreaterThanOrEqual(1)
-      const refund = refunds[0]
-      expect(refund.id ?? "", "Stripe refund id prefix").toMatch(/^re_/)
-      expect(refund.status, "Stripe refund status").toBe("succeeded")
-      expect(refund.amount, "Stripe refund amount in pence").toBe(100)
-      expect(refund.payment_intent, "Stripe refund payment_intent").toBe(intentId)
+      const refund = verdict.refund
 
-      let livemode: boolean | undefined = refund.livemode
-      if (typeof livemode !== "boolean" && typeof refund.charge === "string" && refund.charge !== "") {
-        const chargeRes = await request.get(
-          `${STRIPE_API}/v1/charges/${encodeURIComponent(refund.charge)}`,
-          { headers: stripeAuth },
-        )
-        expect(chargeRes.status(), `GET /v1/charges/${refund.charge}`).toBe(200)
-        const charge = (await chargeRes.json()) as { livemode?: boolean }
-        livemode = charge.livemode
-      }
-      if (typeof livemode !== "boolean") {
-        livemode = confirmedPi.livemode
-      }
-      expect(livemode, "Stripe refund/charge livemode must be false").toBe(false)
+      // 7. The Refund object carries no livemode; its CHARGE does. Always read it — no fallback.
+      const chargeRes = await stripe.get<{ id?: string; livemode?: boolean; payment_intent?: string }>(
+        `/v1/charges/${encodeURIComponent(refund.charge)}`,
+      )
+      expect(chargeRes.status, `GET /v1/charges/${refund.charge}`).toBe(200)
+      expect(chargeRes.body.payment_intent, "the refunded charge belongs to this intent").toBe(intentId)
+      expect(chargeRes.body.livemode, "Stripe charge livemode must be false").toBe(false)
 
       console.log(
         `STRIPE-REFUND order=${orderNumber} intent=${intentId} refund=${refund.id} amount=100 livemode=false`,
