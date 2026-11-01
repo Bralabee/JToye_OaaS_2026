@@ -24,6 +24,8 @@ import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
+import uk.jtoye.core.security.access.ShopRole;
+import uk.jtoye.core.security.access.StaffInviteService;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
 import java.io.UnsupportedEncodingException;
@@ -313,38 +315,48 @@ public class EmailNotificationService {
      * bearer token until it is used or expires. Only the event name is logged, and on failure only the
      * exception class (a mail exception's message can quote the address).
      *
+     * <p><b>SW-TND-02 (swarm epic #964).</b> The subject reads as an invitation ("{inviter} has
+     * invited you to help run {business} on J'Toye"), and the body names the role, the shop (or all
+     * shops) and, from {@link #inviteRoleCapabilities}, what the role can do.
+     *
      * @param recipientEmail the normalised invitee address; the link goes here and nowhere else
+     * @param role           the grant the invitation carries; named and described in the body
      * @param link           {accept-base-url}#token={tenantId}.{token} (token in the fragment, 37-08); never
      *                       logged, never stored readable
      * @param expiresAt      the same instant written to {@code staff_invite.expires_at}
      */
     @Async
     public void sendStaffInvite(String recipientEmail, String inviterName, String businessName,
-                                String roleLabel, String shopLabel, String link, OffsetDateTime expiresAt) {
+                                ShopRole role, String shopLabel, String link, OffsetDateTime expiresAt) {
         if (!emailEnabled) {
             log.debug("event=staff_invite_email_skipped reason=email_disabled");
             return;
         }
         if (recipientEmail == null || recipientEmail.isBlank() || link == null || link.isBlank()
-                || expiresAt == null) {
+                || expiresAt == null || role == null) {
             log.warn("event=staff_invite_email_skipped reason=incomplete");
             return;
         }
         String inviter = Objects.requireNonNullElse(sanitise(inviterName), "A Group admin");
         String business = Objects.requireNonNullElse(sanitise(businessName), "a business");
-        String role = Objects.requireNonNullElse(sanitise(roleLabel), "Staff");
-        String shop = Objects.requireNonNullElse(sanitise(shopLabel), "all shops");
+        String roleName = StaffInviteService.roleLabel(role);
+        String shop = sanitise(shopLabel);
+        // SW-TND-02: "at {shop}" for one shop; "for all shops" when the grant is tenant-wide.
+        String where = shop == null || shop.equals("all shops") ? ", for all shops." : " at " + Sentences.withFullStop(shop);
         String expiry = expiresAt.atZoneSameInstant(ClockConfig.UK_ZONE).format(INVITE_EXPIRY_FORMAT);
-        String subject = inviter + " invited you to " + business + " on " + PLATFORM_NAME;
+        String subject = inviter + " has invited you to help run " + business + " on " + PLATFORM_NAME;
         String body = """
-                %s has invited you to help run %s on J'Toye as %s for %s
+                %s has invited you to help run %s on J'Toye.
+
+                Your role: %s%s
+                %s
 
                 Accept the invitation: %s
 
                 This link works once and expires on %s (UK time).
 
                 If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.
-                """.formatted(inviter, business, role, Sentences.withFullStop(shop), link, expiry);
+                """.formatted(inviter, business, roleName, where, inviteRoleCapabilities(role), link, expiry);
         try {
             MimeMessage mime = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
@@ -358,6 +370,24 @@ public class EmailNotificationService {
             // The exception class only: a mail exception's message can quote the recipient (V7).
             log.error("event=staff_invite_email_failed error={}", e.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * SW-TND-02 (swarm epic #964): what the invited role can do, in one or two plain sentences. Each
+     * is the {@link ShopRole} model as it is enforced, not marketing: STAFF reads the shop and moves
+     * orders through their states but writes no catalogue; SHOP_MANAGER has full control of a granted
+     * shop but no staff management and no shop create or delete; GROUP_ADMIN has every shop, shop
+     * create and delete, and staff management.
+     */
+    public static String inviteRoleCapabilities(ShopRole role) {
+        return switch (role) {
+            case STAFF -> "As Staff you can see the shop's orders and move them along as they are prepared. "
+                    + "You can't change products or prices.";
+            case SHOP_MANAGER -> "As a Shop manager you can run the shop: its products and prices, its orders "
+                    + "and its settings. You can't invite people or add or remove shops.";
+            case GROUP_ADMIN -> "As a Group admin you can run every shop in the business, add and remove shops, "
+                    + "and invite people and choose what they can do.";
+        };
     }
 
     // ---- Webhook auto-pause (UXT-038, 37-43) ------------------------------------------------------

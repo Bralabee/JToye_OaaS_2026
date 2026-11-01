@@ -221,9 +221,8 @@ public class StaffInviteService {
         String link = stripTrailingSlash(acceptBaseUrl) + "#token=" + tenantId + "." + token;
         String inviterName = currentCallerName();
         String businessName = tenantRepository.findById(tenantId).map(Tenant::getName).orElse(null);
-        String roleLabel = roleLabel(role);
         String shopLabel = shop == null ? "all shops" : shop.getName();
-        afterCommit(() -> emailNotificationService.sendStaffInvite(email, inviterName, businessName, roleLabel,
+        afterCommit(() -> emailNotificationService.sendStaffInvite(email, inviterName, businessName, role,
                 shopLabel, link, expiresAt));
         log.info("event=staff_invite_issued invite={} tenant={} role={} allShops={}",
                 invite.getId(), tenantId, role, shopId == null);
@@ -261,7 +260,8 @@ public class StaffInviteService {
         return email;
     }
 
-    static String roleLabel(ShopRole role) {
+    /** The role's name as people read it, in the invite email and anywhere else it is named. */
+    public static String roleLabel(ShopRole role) {
         return switch (role) {
             case STAFF -> "Staff";
             case SHOP_MANAGER -> "Shop manager";

@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.testsupport.SentMail;
 
 import java.time.OffsetDateTime;
@@ -81,17 +82,21 @@ class EmailNotificationServiceStaffInviteTest {
     @Test
     @DisplayName("D-07: subject and plain-text body carry the UI-SPEC copy, the link and the expiry in UK time")
     void inviteEmail_hasTheCopy_theLink_andTheUkExpiry() {
-        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", "Shop manager", "Mama Ade's Kitchen Digbeth",
+        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", ShopRole.SHOP_MANAGER, "Mama Ade's Kitchen Digbeth",
                 LINK, EXPIRES_BST);
 
         MimeMessage mail = sent();
         assertThat(SentMail.recipients(mail, Message.RecipientType.TO)).containsExactly(TO);
         assertThat(SentMail.from(mail).getAddress()).isEqualTo("noreply@jtoye.uk");
-        assertThat(SentMail.subject(mail)).isEqualTo("Ada Admin invited you to Mama Ade's Kitchen on J'Toye");
+        // SW-TND-02 (swarm epic #964): a subject a person reads as an invitation, and a body that
+        // names the role and says what it can do, from the ShopRole model.
+        assertThat(SentMail.subject(mail)).isEqualTo("Ada Admin has invited you to help run Mama Ade's Kitchen on J'Toye");
         String text = SentMail.text(mail);
         assertThat(text)
-                .contains("Ada Admin has invited you to help run Mama Ade's Kitchen on J'Toye as Shop manager "
-                        + "for Mama Ade's Kitchen Digbeth.")
+                .contains("Ada Admin has invited you to help run Mama Ade's Kitchen on J'Toye.")
+                .contains("Your role: Shop manager at Mama Ade's Kitchen Digbeth.")
+                .contains(EmailNotificationService.inviteRoleCapabilities(ShopRole.SHOP_MANAGER))
+                .doesNotContain(" as Shop manager for ")
                 .contains("Accept the invitation: " + LINK)
                 .contains("This link works once and expires on 10 October 2026, 14:32 (UK time).")
                 .contains("If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.");
@@ -100,29 +105,47 @@ class EmailNotificationServiceStaffInviteTest {
     @Test
     @DisplayName("D-07: the expiry is UK wall-clock time in winter too (GMT), and 'all shops' reads as such")
     void inviteEmail_ukTimeInWinter_andAllShops() {
-        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", "Group admin", "all shops", LINK, EXPIRES_GMT);
+        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", ShopRole.GROUP_ADMIN, "all shops", LINK, EXPIRES_GMT);
 
         String text = SentMail.text(sent());
         assertThat(text)
-                .contains("as Group admin for all shops.")
+                .contains("Your role: Group admin, for all shops.")
+                .contains(EmailNotificationService.inviteRoleCapabilities(ShopRole.GROUP_ADMIN))
                 .contains("expires on 10 December 2026, 14:32 (UK time).");
     }
 
     @Test
     @DisplayName("G-37-6: a shop whose name ends in a full stop is named once, with one full stop")
     void inviteEmail_shopNameEndingInAFullStop_hasOneFullStop() {
-        service.sendStaffInvite(TO, "Ada Admin", "Peckham Jollof", "Staff", "Peckham Jollof Co.", LINK, EXPIRES_BST);
+        service.sendStaffInvite(TO, "Ada Admin", "Peckham Jollof", ShopRole.STAFF, "Peckham Jollof Co.", LINK, EXPIRES_BST);
 
         String text = SentMail.text(sent());
         assertThat(text)
-                .containsPattern("as Staff for Peckham Jollof Co\\.(\\r?\\n)")
+                .containsPattern("Your role: Staff at Peckham Jollof Co\\.(\\r?\\n)")
                 .doesNotContain("..");
+    }
+
+    @Test
+    @DisplayName("SW-TND-02: each role's email says what that role can do, in plain words from the role model")
+    void inviteEmail_saysWhatEachRoleCanDo() {
+        assertThat(EmailNotificationService.inviteRoleCapabilities(ShopRole.STAFF))
+                .isEqualTo("As Staff you can see the shop's orders and move them along as they are prepared. "
+                        + "You can't change products or prices.");
+        assertThat(EmailNotificationService.inviteRoleCapabilities(ShopRole.SHOP_MANAGER))
+                .isEqualTo("As a Shop manager you can run the shop: its products and prices, its orders and its "
+                        + "settings. You can't invite people or add or remove shops.");
+        assertThat(EmailNotificationService.inviteRoleCapabilities(ShopRole.GROUP_ADMIN))
+                .isEqualTo("As a Group admin you can run every shop in the business, add and remove shops, and "
+                        + "invite people and choose what they can do.");
+
+        service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, "Shop A", LINK, EXPIRES_BST);
+        assertThat(SentMail.text(sent())).contains(EmailNotificationService.inviteRoleCapabilities(ShopRole.STAFF));
     }
 
     @Test
     @DisplayName("D-07: the message is plain text: a single text/plain part with no HTML tag")
     void inviteEmail_isPlainText() throws Exception {
-        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", "Staff", "Shop A", LINK, EXPIRES_BST);
+        service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", ShopRole.STAFF, "Shop A", LINK, EXPIRES_BST);
 
         MimeMessage mail = sent();
         assertThat(mail.getContentType()).startsWith("text/plain");
@@ -132,21 +155,21 @@ class EmailNotificationServiceStaffInviteTest {
     @Test
     @DisplayName("T-31.1-85: a line break in a tenant-controlled name cannot forge a header or a body line")
     void inviteEmail_tenantControlledNamesAreSanitised() {
-        service.sendStaffInvite(TO, "Ada\r\nBcc: victim@example.com", "Mama\nAde", "Staff", "Shop\r\nA", LINK,
+        service.sendStaffInvite(TO, "Ada\r\nBcc: victim@example.com", "Mama\nAde", ShopRole.STAFF, "Shop\r\nA", LINK,
                 EXPIRES_BST);
 
         MimeMessage mail = sent();
         assertThat(SentMail.header(mail, "Bcc")).as("no injected header").isNull();
-        assertThat(SentMail.subject(mail)).isEqualTo("Ada Bcc: victim@example.com invited you to Mama Ade on J'Toye");
-        assertThat(SentMail.text(mail)).contains("as Staff for Shop A.");
+        assertThat(SentMail.subject(mail)).isEqualTo("Ada Bcc: victim@example.com has invited you to help run Mama Ade on J'Toye");
+        assertThat(SentMail.text(mail)).contains("Your role: Staff at Shop A.");
     }
 
     @Test
     @DisplayName("T-37-17: the address and the link never reach a log line, sent or failed")
     void inviteEmail_neverLogsTheAddressOrTheLink() {
-        service.sendStaffInvite(TO, "Ada Admin", "Biz", "Staff", "Shop A", LINK, EXPIRES_BST);
+        service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, "Shop A", LINK, EXPIRES_BST);
         doThrow(new MailSendException("550 rejected <" + TO + "> " + LINK)).when(mailSender).send(any(MimeMessage.class));
-        service.sendStaffInvite(TO, "Ada Admin", "Biz", "Staff", "Shop A", LINK, EXPIRES_BST);
+        service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, "Shop A", LINK, EXPIRES_BST);
 
         assertThat(logs.list).as("the send and the failure are both logged").hasSizeGreaterThanOrEqualTo(2);
         for (ILoggingEvent event : logs.list) {
@@ -162,7 +185,7 @@ class EmailNotificationServiceStaffInviteTest {
     @DisplayName("D-07: with email switched off nothing is sent")
     void inviteEmail_disabled_sendsNothing() {
         ReflectionTestUtils.setField(service, "emailEnabled", false);
-        service.sendStaffInvite(TO, "Ada Admin", "Biz", "Staff", "Shop A", LINK, EXPIRES_BST);
+        service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, "Shop A", LINK, EXPIRES_BST);
         verify(mailSender, never()).send(any(MimeMessage.class));
     }
 }
