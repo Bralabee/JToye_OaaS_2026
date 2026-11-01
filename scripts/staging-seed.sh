@@ -23,6 +23,7 @@
 #   scripts/staging-seed.sh --context NAME --stage stripe-get --path /v1/<object>/<id>
 #                           [--account acct_…] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage pay-link --link-out FILE [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage billing [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -103,6 +104,16 @@
 #                        the public verify, then the vendor's payment link. Prints
 #                        PAY-LINK order=… link=… expires=…; the URL goes ONLY to
 #                        FILE, mode 600, never to stdout, stderr or evidence.
+#     --stage billing    PAY-02 / D-04 (plan 30-26): subscribes the staging tenant
+#                        to SAAS_HYBRID_STANDARD through POST /api/v1/billing/
+#                        subscription with a TEST payment method made from
+#                        tok_visa (an ACTIVE subscription is read back, never
+#                        re-created), then reads the subscription and its latest
+#                        invoice from Stripe BY ID. Ends on BILLING sub=… quantity=…
+#                        locations=… invoice=… amount_paid=… status=paid
+#                        livemode=false at=<ISO>; FAIL unless quantity equals the
+#                        locations (D-04 all-shops) and amount_paid equals
+#                        3900 x quantity.
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -278,7 +289,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -309,6 +320,15 @@ print_tool_plan() {
       echo "  07 POST       /api/v1/orders/{id}/payment-links   {purpose: UPFRONT}"
       echo "  08 write      the paymentUrl to ${LINK_OUT} (mode 600; never printed)"
       echo "  09 print      PAY-LINK order=… link=… expires=…" ;;
+    billing)
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+      echo "  04 GET        /api/v1/billing/subscription   ACTIVE with a subscription id: steps 05-06 are skipped (read back, never re-created)"
+      echo "  05 POST       ${STRIPE_API}/v1/payment_methods   type=card card[token]=tok_visa; livemode false; only the pm_ id is kept"
+      echo "  06 POST       /api/v1/billing/subscription   {planMode: ${BILLING_PLAN_MODE}, paymentMethodId}"
+      echo "  07 GET        ${STRIPE_API}/v1/subscriptions/{id}   livemode false; status active; one item; unit_amount ${BILLING_UNIT_PENNIES}"
+      echo "  08 GET        ${STRIPE_API}/v1/invoices/{latest_invoice}   livemode false; amount_paid, status"
+      echo "  09 GET        /api/v1/shops?size=100   locations under the D-04 ${BILLING_LOCATION_RULE} rule"
+      echo "  10 print      BILLING sub=… quantity=… locations=… invoice=… amount_paid=… status=paid livemode=false at=… (FAIL unless quantity == locations and amount_paid == ${BILLING_UNIT_PENNIES} x quantity)" ;;
     order-transition)
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
@@ -1679,6 +1699,167 @@ pay_link_stage() {
   echo "PAY-LINK order=$order_no link=$link_id expires=$expires"
 }
 
+# ===========================================================================
+# --stage billing — plan 30-26 (PAY-02 / D-04, T-30-101, T-30-103).
+# PAY-02's falsifier is "a test-mode subscription invoice retrieved from Stripe by
+# id"; D-04 adds "whose quantity matches" the tenant's locations. So the staging
+# tenant is subscribed the way a vendor subscribes, through the product's own
+# billing API, with a TEST card payment method made from tok_visa, and the
+# evidence is then read from Stripe BY ID with the staging key, never from an
+# application log:
+#   1. GET /api/v1/billing/subscription. ACTIVE with a subscription id: read back
+#      only, no payment method and no subscribe (a re-run never adds a second
+#      price or subscription, T-30-101). Otherwise:
+#   2. POST /v1/payment_methods type=card card[token]=tok_visa (only its id is
+#      kept), then POST /api/v1/billing/subscription {planMode, paymentMethodId};
+#   3. GET /v1/subscriptions/{id} and GET /v1/invoices/{latest_invoice}, each
+#      livemode false;
+#   4. the locations: GET /api/v1/shops under the owner's D-04 rule
+#      (evidence/30-25-d04-decision.txt: all-shops, every shop row of the tenant);
+#   5. quantity == locations, the price's unit amount == BILLING_UNIT_PENNIES,
+#      amount_paid == BILLING_UNIT_PENNIES x quantity, status paid, or FAIL.
+# BILLING_UNIT_PENNIES is StripeProperties.Billing's hybridMonthlyPennies default
+# (STRIPE_BILLING_HYBRID_MONTHLY_PENNIES:3900). A running config that bills
+# another amount is a FAIL, never a recomputation.
+# Who calls: the staging test vendor. BillingController calls
+# ShopAccessService.requireGroupAdmin(), and the vendor holds the tenant-wide
+# GROUP_ADMIN grant the vendor stage made (no realm-admin operator is created).
+# Printed: ids, counts, amounts and statuses only. The Stripe key stays in the
+# mode-600 curl config; the payment method, subscription, invoice and billing
+# responses are projected with jq to named fields and removed, so no customer id,
+# email, name, card detail or client secret reaches stdout or stderr.
+BILLING_UNIT_PENNIES=3900
+BILLING_PLAN_MODE="SAAS_HYBRID_STANDARD"
+BILLING_LOCATION_RULE="all-shops"
+
+# read_billing_state — GET /api/v1/billing/subscription as the vendor. Sets
+# BL_TENANT BL_MODE BL_STATUS BL_SUB BL_INVOICE BL_UNIT from named fields only.
+BL_TENANT=""; BL_MODE=""; BL_STATUS=""; BL_SUB=""; BL_INVOICE=""; BL_UNIT=""
+read_billing_state() {
+  local code
+  code=$(api vendor GET /api/v1/billing/subscription "$WORKDIR/bl-state.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/billing/subscription" "$code" "$WORKDIR/bl-state.json"
+  billing_dto_fields "$WORKDIR/bl-state.json" "GET /api/v1/billing/subscription"
+}
+# billing_dto_fields FILE WHAT — the named fields of a BillingSubscriptionDto,
+# then the file is removed (it carries stripeCustomerId, which is never printed).
+billing_dto_fields() {
+  local row
+  row=$(jq -r '[.tenantId // "", .billingPlanMode // "", .subscriptionStatus // "", .stripeSubscriptionId // "",
+                .latestStripeInvoiceId // "", (.monthlyAmountPennies // "" | tostring)] | join("\u001f")' "$1" 2>/dev/null) \
+    || { rm -f "$1"; echo "FAIL: $2 did not return a billing subscription object" >&2; exit 1; }
+  rm -f "$1"
+  IFS=$'\x1f' read -r BL_TENANT BL_MODE BL_STATUS BL_SUB BL_INVOICE BL_UNIT <<<"$row" || true
+  [[ "$BL_TENANT" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: $2 carried no tenantId" >&2; exit 1; }
+}
+
+# read_stripe_subscription SUB — GET /v1/subscriptions/SUB, livemode false. Sets
+# SUB_STATUS SUB_ITEMS SUB_QTY SUB_UNIT SUB_INVOICE. Called directly, never in $(…).
+SUB_STATUS=""; SUB_ITEMS=""; SUB_QTY=""; SUB_UNIT=""; SUB_INVOICE=""
+read_stripe_subscription() {
+  local code row
+  code=$(stripe_api GET "/v1/subscriptions/$1" "$WORKDIR/bl-sub-read.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/subscriptions/$1" "$code" "$WORKDIR/bl-sub-read.json"
+  assert_test_mode "$WORKDIR/bl-sub-read.json" "GET /v1/subscriptions/$1"
+  row=$(jq -r '[.status // "", ((.items.data // []) | length | tostring), (.items.data[0].quantity // "" | tostring),
+                (.items.data[0].price.unit_amount // "" | tostring),
+                (if (.latest_invoice | type) == "object" then .latest_invoice.id else .latest_invoice end // "")] | join("\u001f")' \
+          "$WORKDIR/bl-sub-read.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/bl-sub-read.json"
+  [ -n "$row" ] || { echo "FAIL: GET /v1/subscriptions/$1 could not be read" >&2; exit 1; }
+  IFS=$'\x1f' read -r SUB_STATUS SUB_ITEMS SUB_QTY SUB_UNIT SUB_INVOICE <<<"$row" || true
+  [ "$SUB_ITEMS" = 1 ] || { echo "FAIL: subscription $1 has $SUB_ITEMS item(s); one per-location price is expected" >&2; exit 1; }
+  [[ "$SUB_QTY" =~ ^[0-9]+$ ]] || { echo "FAIL: subscription $1 carries no integer quantity ('$SUB_QTY')" >&2; exit 1; }
+}
+
+# count_locations TENANT — LOC_COUNT under BILLING_LOCATION_RULE, from the
+# vendor's GET /api/v1/shops. A shop of another tenant, or more shops than one
+# page holds, is a FAIL rather than a guess.
+LOC_COUNT=""
+count_locations() {
+  local code verdict
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/bl-shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/bl-shops.json"
+  verdict=$(jq -r --arg t "$1" --arg r "$BILLING_LOCATION_RULE" '
+    if (.content | type) != "array" then "no-content"
+    elif (.totalElements // (.content | length)) != (.content | length) then "paged \(.totalElements)"
+    elif any(.content[]; .tenantId != $t) then "foreign"
+    elif $r == "published-shops" then ([.content[] | select(.published == true)] | length | tostring)
+    else (.content | length | tostring) end' "$WORKDIR/bl-shops.json" 2>/dev/null || echo unparseable)
+  rm -f "$WORKDIR/bl-shops.json"
+  case "$verdict" in
+    no-content|unparseable) echo "FAIL: GET /api/v1/shops did not return a page with a content array" >&2; exit 1 ;;
+    paged*) echo "FAIL: the tenant has ${verdict#paged } shops, more than one page of 100; refusing to guess the location count" >&2; exit 1 ;;
+    foreign) echo "FAIL: GET /api/v1/shops returned a shop whose tenantId is not the billing tenant's; refusing to count it" >&2; exit 1 ;;
+  esac
+  LOC_COUNT="$verdict"
+}
+
+billing_stage() {
+  local code pm sub api_inv="" inv row paid ist inv_sub want
+  case "$BILLING_LOCATION_RULE" in all-shops|published-shops) ;; *) void "BILLING_LOCATION_RULE '$BILLING_LOCATION_RULE' is not a D-04 rule" ;; esac
+  vendor_login
+  read_stripe_key
+  read_billing_state
+  if [ "$BL_STATUS" = ACTIVE ] && [ -n "$BL_SUB" ]; then
+    [ "$BL_MODE" = "$BILLING_PLAN_MODE" ] \
+      || { echo "FAIL: the ACTIVE subscription $BL_SUB is on plan $BL_MODE, not $BILLING_PLAN_MODE; this stage never switches a plan" >&2; exit 1; }
+    echo "OK: an ACTIVE $BL_MODE subscription $BL_SUB is in place; reading it back (no payment method, no subscribe)"
+  else
+    echo "OK: subscription status ${BL_STATUS:-none}; subscribing the tenant to $BILLING_PLAN_MODE"
+    code=$(stripe_api POST /v1/payment_methods "$WORKDIR/bl-pm.json" type=card "card[token]=tok_visa")
+    [ "$code" = 200 ] || stripe_fail "POST /v1/payment_methods" "$code" "$WORKDIR/bl-pm.json"
+    assert_test_mode "$WORKDIR/bl-pm.json" "POST /v1/payment_methods"
+    pm=$(jq -r '.id // empty' "$WORKDIR/bl-pm.json" 2>/dev/null || true)
+    rm -f "$WORKDIR/bl-pm.json"
+    [[ "$pm" =~ ^pm_[A-Za-z0-9]+$ ]] || { echo "FAIL: POST /v1/payment_methods returned no pm_ id" >&2; exit 1; }
+    echo "OK: TEST payment method $pm created from tok_visa (only its id is kept)"
+    jq -n --arg m "$BILLING_PLAN_MODE" --arg p "$pm" '{planMode: $m, paymentMethodId: $p}' | body "$WORKDIR/bl-subscribe.json"
+    code=$(api vendor POST /api/v1/billing/subscription "$WORKDIR/bl-subscribe-out.json" "$WORKDIR/bl-subscribe.json")
+    rm -f "$WORKDIR/bl-subscribe.json"
+    [ "$code" = 200 ] || fail_http "POST /api/v1/billing/subscription" "$code" "$WORKDIR/bl-subscribe-out.json"
+    billing_dto_fields "$WORKDIR/bl-subscribe-out.json" "POST /api/v1/billing/subscription"
+    [ "$BL_STATUS" = ACTIVE ] && [ "$BL_MODE" = "$BILLING_PLAN_MODE" ] \
+      || { echo "FAIL: the subscribe answered status '$BL_STATUS' plan '$BL_MODE' (want ACTIVE $BILLING_PLAN_MODE)" >&2; exit 1; }
+    api_inv="$BL_INVOICE"
+    echo "OK: subscribed through POST /api/v1/billing/subscription: subscription ${BL_SUB:-none}"
+  fi
+  sub="$BL_SUB"
+  [[ "$sub" =~ ^sub_[A-Za-z0-9]+$ ]] || { echo "FAIL: the billing API names no sub_ subscription ('$sub')" >&2; exit 1; }
+  [ "$BL_UNIT" = "$BILLING_UNIT_PENNIES" ] \
+    || { echo "FAIL: the running config bills ${BL_UNIT:-?} per location on $BILLING_PLAN_MODE, not the stage's BILLING_UNIT_PENNIES=$BILLING_UNIT_PENNIES (not recomputed)" >&2; exit 1; }
+
+  read_stripe_subscription "$sub"
+  [ "$SUB_STATUS" = active ] || { echo "FAIL: Stripe reads subscription $sub status '$SUB_STATUS' (want active)" >&2; exit 1; }
+  [ "$SUB_UNIT" = "$BILLING_UNIT_PENNIES" ] \
+    || { echo "FAIL: subscription $sub's price is ${SUB_UNIT:-?} per location, not BILLING_UNIT_PENNIES=$BILLING_UNIT_PENNIES (not recomputed)" >&2; exit 1; }
+  inv="$SUB_INVOICE"
+  [[ "$inv" =~ ^in_[A-Za-z0-9]+$ ]] || { echo "FAIL: subscription $sub names no in_ latest_invoice ('$inv')" >&2; exit 1; }
+  [ -z "$api_inv" ] || [ "$api_inv" = "$inv" ] \
+    || { echo "FAIL: the billing API recorded invoice $api_inv but Stripe's latest_invoice is $inv" >&2; exit 1; }
+
+  code=$(stripe_api GET "/v1/invoices/$inv" "$WORKDIR/bl-inv.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/invoices/$inv" "$code" "$WORKDIR/bl-inv.json"
+  assert_test_mode "$WORKDIR/bl-inv.json" "GET /v1/invoices/$inv"
+  row=$(jq -r '[(.amount_paid // "" | tostring), .status // "",
+                (.subscription // .parent.subscription_details.subscription // "")] | join("\u001f")' "$WORKDIR/bl-inv.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/bl-inv.json"
+  IFS=$'\x1f' read -r paid ist inv_sub <<<"$row" || true
+  [ -z "$inv_sub" ] || [ "$inv_sub" = "$sub" ] || { echo "FAIL: invoice $inv belongs to subscription $inv_sub, not $sub" >&2; exit 1; }
+  [[ "$paid" =~ ^[0-9]+$ ]] || { echo "FAIL: invoice $inv carries no integer amount_paid ('$paid')" >&2; exit 1; }
+
+  count_locations "$BL_TENANT"
+  if [ "$SUB_QTY" != "$LOC_COUNT" ]; then
+    echo "FAIL: the subscription quantity is $SUB_QTY but the tenant has $LOC_COUNT location(s) under the $BILLING_LOCATION_RULE rule (D-04)" >&2; exit 1
+  fi
+  want=$((BILLING_UNIT_PENNIES * SUB_QTY))
+  if [ "$paid" != "$want" ]; then
+    echo "FAIL: invoice $inv amount_paid $paid is not $want ($BILLING_UNIT_PENNIES x quantity $SUB_QTY)" >&2; exit 1
+  fi
+  [ "$ist" = paid ] || { echo "FAIL: invoice $inv status is '$ist' (want paid)" >&2; exit 1; }
+  echo "BILLING sub=$sub quantity=$SUB_QTY locations=$LOC_COUNT invoice=$inv amount_paid=$paid status=$ist livemode=false at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
 # --selftest
 # ===========================================================================
 _ST_RESULTS=()
@@ -2862,7 +3043,6 @@ IDF
            slug: (if $i == 0 then "staging-test-kitchen" else "staging-second-\($i)" end), published: ($i == 0)}],
         totalElements: $n, totalPages: 1}' > "$ast/resp/shops.json"
   }
-  _st_bl_leaks() { command grep -cE "$bl_leak_re" <<<"$ST_OUT$ST_ERR" || true; }
 
   # --- billing-ok: no subscription yet -> a TEST pm from tok_visa, the product's own
   #     subscribe, then the subscription and its invoice read from Stripe by id
@@ -2963,7 +3143,7 @@ IDF
 
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
-  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link; do
+  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing; do
     case "$sub" in
       order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
       cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
@@ -2981,7 +3161,7 @@ IDF
     [ -z "$why" ] || break
   done
   set --
-  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=8 az_calls=0 curl_calls=0"
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=9 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
@@ -3034,9 +3214,9 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get or pay-link" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link or billing" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
@@ -3126,6 +3306,7 @@ case "$STAGE" in
   cancel-orphan-intents) cancel_orphan_intents_stage ;;
   stripe-get)       stripe_get_stage ;;
   pay-link)         pay_link_stage ;;
+  billing)          billing_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
