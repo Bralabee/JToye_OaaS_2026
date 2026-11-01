@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### List-Unsubscribe on Intermediate Order Emails, Phase 29 Gate Follow-Ups, and a Session-Burst Guard (#981, #979, #963) (#1066) — 2026-10-31
+
+- **#981, `EmailNotificationService` / `OrderStateChangeListener`:** CONFIRMED, PREPARING, READY and COMPLETED emails carry RFC 8058 `List-Unsubscribe` + `List-Unsubscribe-Post` and a footer link. They are sent only if `ConsentGate.allows(tenant, email, ORDERS)`. `order-received` (the statutory CCR 2013 reg 16 confirmation) and `order-cancelled` stay non-suppressible.
+- **#979, `check-connection-math.sh`:** also reads the k8s Keycloak pool size and fails on drift from Compose. **`validate-networkpolicies.py`:** also covers component policies and rendered goldens (18 files, 41 policies) and gains `--selftest`. Stale citations are fixed.
+- **#963, `api-client.ts`:** `getSession({ broadcast: false })` stops a same-tab BroadcastChannel echo from making a second `/api/auth/session` fetch. `dashboard-session-burst.spec.ts` checks no more than 3 session calls and no 429s.
+
 ### Per-Location Subscription Quantity, Kept in Step With Shop Create and Delete (Phase 30 30-25, PAY-02, D-04) (#1067) — 2026-10-31
 
 - **D-04 (`all-shops`):** SAAS_HYBRID_STANDARD and SAAS_FLAT_PREDICTABLE bill one unit per shop. WALK_SETUP_STEPDOWN bills one per account. The ruling is in `evidence/30-25-d04-decision.txt`.
