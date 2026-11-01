@@ -183,8 +183,9 @@ describe("buildCsp() — Content-Security-Policy directives", () => {
 })
 
 // The /_next/image optimizer fetches server-side from any remotePatterns host,
-// so a broad entry is an SSRF surface (T-36-10). No shipped code imports
-// next/image, so this list is inert for rendering; it must still hold exactly
+// so a broad entry is an SSRF surface (T-36-10). The only next/image use is the
+// landing's LOCAL files (/public/marketing/landing, D14), which never consult
+// this list, so it is inert for rendering; it must still hold exactly
 // the one dev origin/path, and never a wildcard hostname.
 describe("next.config.mjs images.remotePatterns (Phase 36, T-36-10)", () => {
   async function loadRemotePatterns() {

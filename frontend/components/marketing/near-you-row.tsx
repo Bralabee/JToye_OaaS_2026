@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import Link from "next/link"
 import { Loader2, LocateFixed } from "lucide-react"
 import { DishScroller } from "@/components/marketing/dish-scroller"
 import { ShopCard } from "@/components/marketing/shop-card"
+import { assignExamplePhotos } from "@/components/marketing/landing-photos"
 import { formatMiles } from "@/lib/distance"
 import type { PageResponse } from "@/types/api"
 import type { PublicShop } from "@/types/storefront"
@@ -202,6 +203,14 @@ export function NearYouRow({
   // must never be left with a worse page than one who was never asked.
   const shops = located ? nearby : serverShops
 
+  // D13/D14: a kitchen with no banner shows a credited example photo of its
+  // cuisine. Assigned over every shop this row has seen, in slug order, so the
+  // located re-ordering never moves a picture from one kitchen to another.
+  const examples = useMemo(
+    () => assignExamplePhotos([...serverShops, ...(nearby ?? [])]),
+    [serverShops, nearby]
+  )
+
   const heading = located
     ? "Kitchens near you"
     : phase === "empty"
@@ -321,13 +330,13 @@ export function NearYouRow({
           live region added at the same moment as its content is not announced.
         */}
         <div aria-live="polite" className="min-w-0">
-          <h2 className="text-2xl font-bold text-oxblood">{heading}</h2>
+          <h2 className="text-2xl font-bold tracking-[-0.015em] text-brand-900 md:text-[28px]">{heading}</h2>
           {/*
             Reserved height, always present. The status line appears after a
             click, and although input-adjacent shifts are excluded from CLS, a
             row that jumps under the visitor's finger still reads as broken.
           */}
-          <p className="mt-1 min-h-[1.25rem] text-sm text-slate-600">
+          <p className="mt-1 min-h-[1.25rem] text-sm text-warm-700">
             {located && unranked.length > 0 && (
               <>
                 {unranked.length === 1
@@ -336,7 +345,7 @@ export function NearYouRow({
                 {beyondRadius > 0 &&
                   `, and ${beyondRadius} more ${beyondRadius === 1 ? "is" : "are"} further than ${NEAR_YOU_RADIUS_TEXT} away`}
                 .{" "}
-                <Link href="/shop" className="font-semibold text-amber-700 underline hover:text-amber-800">
+                <Link href="/shop" className="font-semibold text-brand-700 underline underline-offset-[3px]">
                   See every kitchen
                 </Link>
                 .
@@ -346,7 +355,7 @@ export function NearYouRow({
               <>
                 {beyondRadius} more {beyondRadius === 1 ? "kitchen is" : "kitchens are"} further than{" "}
                 {NEAR_YOU_RADIUS_TEXT} away.{" "}
-                <Link href="/shop" className="font-semibold text-amber-700 underline hover:text-amber-800">
+                <Link href="/shop" className="font-semibold text-brand-700 underline underline-offset-[3px]">
                   See every kitchen
                 </Link>
                 .
@@ -356,12 +365,14 @@ export function NearYouRow({
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-5">
           <button
             type="button"
             onClick={requestLocation}
             disabled={phase === "locating"}
-            className="inline-flex items-center gap-1.5 rounded-full border border-cream-100 bg-white px-3.5 py-1.5 text-sm font-bold text-oxblood shadow-sm transition-colors hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 disabled:opacity-60"
+            // D14: a warm-100 pill on the white section, separated by tone (no
+            // outline, no resting shadow); hover one tone step down.
+            className="inline-flex h-10 items-center gap-1.5 rounded-full bg-warm-100 px-4 text-sm font-semibold text-brand-900 transition-colors duration-150 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-60"
           >
             {phase === "locating" ? (
               <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
@@ -370,8 +381,11 @@ export function NearYouRow({
             )}
             Use my location
           </button>
-          <Link href="/shop" className="text-sm font-bold text-amber-700 hover:text-amber-800">
-            See all kitchens →
+          <Link
+            href="/shop"
+            className="text-sm font-bold text-brand-700 underline decoration-1 underline-offset-[3px]"
+          >
+            See all kitchens
           </Link>
         </div>
       </div>
@@ -390,7 +404,7 @@ export function NearYouRow({
         <div aria-busy={phase === "locating"}>
           <DishScroller label="Dishes cooking near you">
             {shops.map((shop) => (
-              <ShopCard key={shop.slug} shop={shop} />
+              <ShopCard key={shop.slug} shop={shop} examplePhoto={examples.get(shop.slug) ?? null} />
             ))}
           </DishScroller>
         </div>

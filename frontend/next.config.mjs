@@ -17,7 +17,7 @@ const nextConfig = {
     tsconfigPath: 'tsconfig.build.json',
   },
   images: {
-    // Staging/production images render through a plain <img> (no next/image import exists), so no production hostname is needed here; any future entry must be an exact hostname, never a wildcard (enforced by __tests__/csp-headers.test.ts).
+    // Remote images (shop uploads) render through a plain <img>, and the only next/image use is the landing's own local files under /public/marketing/landing (D14), which need no remotePatterns entry, so no production hostname is needed here; any future entry must be an exact hostname, never a wildcard (enforced by __tests__/csp-headers.test.ts).
     remotePatterns: [
       {
         protocol: 'http',

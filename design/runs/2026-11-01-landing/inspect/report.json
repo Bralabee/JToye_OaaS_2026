@@ -1,0 +1,2261 @@
+{
+ "url": "http://localhost:3201/",
+ "at": "2026-11-01T16:31:45.647Z",
+ "allow": [
+  "still-page"
+ ],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 8,
+   "filled": [
+    0.92,
+    0.84,
+    0.95,
+    0.95,
+    0.95,
+    0.78,
+    0.96,
+    0.98
+   ],
+   "motion": {
+    "elements": 2,
+    "css": 1,
+    "transitions": 0,
+    "scripted": 1,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 6686,
+     "screens": 7.4,
+     "words": 613,
+     "img": 11,
+     "video": 0,
+     "canvas": 0,
+     "svg": 5,
+     "sections": 8,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 1,
+     "uiAbuse": false,
+     "realPictures": 11,
+     "videoCount": 0,
+     "uiPictures": 1,
+     "pictureSamples": [
+      "image?url=%2Fmarketing%2Flanding%2Fjollof-rice-w",
+      "image?url=%2Fmarketing%2Flanding%2Fsuya-seller.w",
+      "image?url=%2Fmarketing%2Flanding%2Fjerk-chicken-",
+      "image?url=%2Fmarketing%2Flanding%2Frye-lane-mark",
+      "image?url=%2Fmarketing%2Flanding%2Fbrixton-marke",
+      "image?url=%2Fmarketing%2Flanding%2Fwoodville-roa",
+      "image?url=%2Fmarketing%2Flanding%2Fscorpios-chic",
+      "image?url=%2Fmarketing%2Foperators%2Fstorefront-"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from kitchens near you",
+     "words": 5,
+     "chars": 28,
+     "lines": 2,
+     "size": 96,
+     "vw": 6.7,
+     "font": "Work Sans",
+     "weight": 800,
+     "tracking": -0.045,
+     "leading": 0.93,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "left",
+     "widthRatio": 0.63,
+     "top": 129,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from kitchens near you",
+     "words": 5,
+     "lines": 2,
+     "size": 96,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from kitchens near you",
+      "words": 5,
+      "chars": 28,
+      "lines": 2,
+      "size": 96,
+      "vw": 6.7,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.045,
+      "leading": 0.93,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.63,
+      "top": 129,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 2,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.35,
+      "top": 1050,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Three steps, no app",
+      "words": 4,
+      "chars": 19,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.84,
+      "top": 1562,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "What you can trust",
+      "words": 4,
+      "chars": 18,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.49,
+      "top": 2272,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Built around the service you already run",
+      "words": 7,
+      "chars": 40,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.84,
+      "top": 3041,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Run your food business",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.49,
+      "top": 4711,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Find kitchens",
+      "words": 2,
+      "chars": 13,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.25,
+      "top": 5274,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "→",
+      "words": 1,
+      "chars": 1,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": 0,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.04,
+      "top": 5274,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "For kitchens",
+      "words": 2,
+      "chars": 12,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.23,
+      "top": 5441,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "→",
+      "words": 1,
+      "chars": 1,
+      "lines": 1,
+      "size": 57.6,
+      "vw": 4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": 0,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.04,
+      "top": 5441,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "J’Toye",
+      "words": 1,
+      "chars": 6,
+      "lines": 1,
+      "size": 208,
+      "vw": 14.4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.05,
+      "leading": 0.85,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.84,
+      "top": 5684,
+      "tag": "p",
+      "kind": "statement"
+     }
+    ],
+    "headingSummary": {
+     "count": 11,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 1,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      12,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      22,
+      26,
+      58,
+      96,
+      208
+     ],
+     "sizeCount": 12,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 16,
+      "leading": 1.5,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 17.6
+     },
+     "measureChars": 203,
+     "max": {
+      "size": 208,
+      "vw": 14.4,
+      "font": "Work Sans",
+      "text": "J’Toye"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 3,
+     "microLabelShare": 0.009,
+     "microSamples": [
+      "For customers",
+      "Legal",
+      "For operators"
+     ],
+     "upperShare": 0.03,
+     "centerShare": 0.01,
+     "smallText": 3
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#fbf6f0",
+       "top": 0,
+       "hsl": {
+        "h": 33,
+        "s": 0.58,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#f2f1ee",
+       "top": 57,
+       "hsl": {
+        "h": 45,
+        "s": 0.13,
+        "l": 0.94
+       }
+      },
+      {
+       "color": "#e3ded6",
+       "top": 1452,
+       "hsl": {
+        "h": 37,
+        "s": 0.19,
+        "l": 0.86
+       }
+      },
+      {
+       "color": "#3a0b0d",
+       "top": 2039,
+       "hsl": {
+        "h": 357,
+        "s": 0.68,
+        "l": 0.14
+       }
+      },
+      {
+       "color": "#1c0405",
+       "top": 4492,
+       "hsl": {
+        "h": 358,
+        "s": 0.75,
+        "l": 0.06
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#1f1715",
+       "share": 0.35
+      },
+      {
+       "color": "#f7f7f5",
+       "share": 0.21
+      },
+      {
+       "color": "#fbf6f0",
+       "share": 0.19
+      },
+      {
+       "color": "#d9cfc4",
+       "share": 0.09
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.08
+      }
+     ],
+     "button": {
+      "bg": "#f0a322",
+      "hsl": {
+       "h": 38,
+       "s": 0.87,
+       "l": 0.54
+      },
+      "fg": "#3a0b0d"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 5,
+     "inHero": 3,
+     "radius": 0,
+     "height": 44,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Got it",
+      "Sign in",
+      "Find kitchens"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "header.sticky.top-0 1440px",
+      "div.mt-10.flex 1216px",
+      "div.mt-6.border-t 1216px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 2,
+     "boxRadius": 12,
+     "squareMedia": 7,
+     "roundedMedia": 1,
+     "mediaRadius": 33554400,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 1050
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "img",
+      "ratio": 0.23
+     }
+    ],
+    "nav": {
+     "links": 5,
+     "fixed": true,
+     "height": 57,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 6686,
+    "margins": {
+     "left": 112,
+     "right": 112
+    },
+    "sections": [
+     {
+      "sel": "main#main.flex-1",
+      "tag": "main",
+      "top": 57,
+      "height": 6188,
+      "words": 468,
+      "media": 11,
+      "middle": 0,
+      "heading": {
+       "text": "Order from",
+       "size": 96,
+       "tag": "h1"
+      },
+      "left": 112,
+      "right": 87,
+      "textLeft": 112,
+      "textRight": 129,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "footer.bg-oxblood.text-cream",
+      "tag": "footer",
+      "top": 6245,
+      "height": 441,
+      "words": 108,
+      "media": 0,
+      "middle": 74,
+      "heading": {
+       "text": "For customers",
+       "size": 12,
+       "tag": "h2"
+      },
+      "left": 112,
+      "right": 112,
+      "textLeft": 112,
+      "textRight": 112,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from kitchens near you",
+      "size": 96,
+      "top": 129,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 112,
+      "n": 10
+     },
+     {
+      "x": 645,
+      "n": 1
+     },
+     {
+      "x": 885,
+      "n": 1
+     },
+     {
+      "x": 1124,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 13,
+    "bodySize": 16,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0.04,
+    "voidBox": {
+     "x": 0,
+     "y": 120,
+     "w": 60,
+     "h": 780
+    }
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 9,
+   "filled": [
+    0.94,
+    0.83,
+    0.79,
+    0.99,
+    0.97,
+    0.97,
+    0.89,
+    0.95,
+    0.99
+   ],
+   "motion": {
+    "elements": 2,
+    "css": 1,
+    "transitions": 0,
+    "scripted": 1,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 8662,
+     "screens": 8.5,
+     "words": 613,
+     "img": 11,
+     "video": 0,
+     "canvas": 0,
+     "svg": 5,
+     "sections": 8,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 1,
+     "uiAbuse": false,
+     "realPictures": 11,
+     "videoCount": 0,
+     "uiPictures": 1,
+     "pictureSamples": [
+      "image?url=%2Fmarketing%2Flanding%2Fjollof-rice-w",
+      "image?url=%2Fmarketing%2Flanding%2Fsuya-seller.w",
+      "image?url=%2Fmarketing%2Flanding%2Fjerk-chicken-",
+      "image?url=%2Fmarketing%2Flanding%2Frye-lane-mark",
+      "image?url=%2Fmarketing%2Flanding%2Fbrixton-marke",
+      "image?url=%2Fmarketing%2Flanding%2Fwoodville-roa",
+      "image?url=%2Fmarketing%2Flanding%2Fscorpios-chic",
+      "image?url=%2Fmarketing%2Foperators%2Fstorefront-"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from kitchens near you",
+     "words": 5,
+     "chars": 28,
+     "lines": 2,
+     "size": 53.8,
+     "vw": 7,
+     "font": "Work Sans",
+     "weight": 800,
+     "tracking": -0.045,
+     "leading": 0.93,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.84,
+     "top": 93,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from kitchens near you",
+     "words": 5,
+     "lines": 2,
+     "size": 53.8,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from kitchens near you",
+      "words": 5,
+      "chars": 28,
+      "lines": 2,
+      "size": 53.8,
+      "vw": 7,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.045,
+      "leading": 0.93,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.84,
+      "top": 93,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 1508,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Three steps, no app",
+      "words": 4,
+      "chars": 19,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 2116,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "What you can trust",
+      "words": 4,
+      "chars": 18,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 2871,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Built around the service you already run",
+      "words": 7,
+      "chars": 40,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 4023,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Run your food business",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 6575,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Find kitchens",
+      "words": 2,
+      "chars": 13,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.29,
+      "top": 7320,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "→",
+      "words": 1,
+      "chars": 1,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": 0,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.05,
+      "top": 7320,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "For kitchens",
+      "words": 2,
+      "chars": 12,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.27,
+      "top": 7434,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "→",
+      "words": 1,
+      "chars": 1,
+      "lines": 1,
+      "size": 35.3,
+      "vw": 4.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": 0,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.05,
+      "top": 7434,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "J’Toye",
+      "words": 1,
+      "chars": 6,
+      "lines": 1,
+      "size": 115.2,
+      "vw": 15,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.05,
+      "leading": 0.85,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 7601,
+      "tag": "p",
+      "kind": "statement"
+     }
+    ],
+    "headingSummary": {
+     "count": 11,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 1,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      12,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      22,
+      35,
+      54,
+      115
+     ],
+     "sizeCount": 11,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 16,
+      "leading": 1.5,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 17.6
+     },
+     "measureChars": 120,
+     "max": {
+      "size": 115.2,
+      "vw": 15,
+      "font": "Work Sans",
+      "text": "J’Toye"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 3,
+     "microLabelShare": 0.009,
+     "microSamples": [
+      "For customers",
+      "Legal",
+      "For operators"
+     ],
+     "upperShare": 0.03,
+     "centerShare": 0.01,
+     "smallText": 3
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#fbf6f0",
+       "top": 0,
+       "hsl": {
+        "h": 33,
+        "s": 0.58,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#f2f1ee",
+       "top": 57,
+       "hsl": {
+        "h": 45,
+        "s": 0.13,
+        "l": 0.94
+       }
+      },
+      {
+       "color": "#e3ded6",
+       "top": 2052,
+       "hsl": {
+        "h": 37,
+        "s": 0.19,
+        "l": 0.86
+       }
+      },
+      {
+       "color": "#3a0b0d",
+       "top": 2775,
+       "hsl": {
+        "h": 357,
+        "s": 0.68,
+        "l": 0.14
+       }
+      },
+      {
+       "color": "#571417",
+       "top": 3206,
+       "hsl": {
+        "h": 357,
+        "s": 0.63,
+        "l": 0.21
+       }
+      },
+      {
+       "color": "#1c0405",
+       "top": 6495,
+       "hsl": {
+        "h": 358,
+        "s": 0.75,
+        "l": 0.06
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#1f1715",
+       "share": 0.31
+      },
+      {
+       "color": "#f7f7f5",
+       "share": 0.25
+      },
+      {
+       "color": "#fbf6f0",
+       "share": 0.19
+      },
+      {
+       "color": "#d9cfc4",
+       "share": 0.09
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.08
+      }
+     ],
+     "button": {
+      "bg": "#f0a322",
+      "hsl": {
+       "h": 38,
+       "s": 0.87,
+       "l": 0.54
+      },
+      "fg": "#3a0b0d"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 5,
+     "inHero": 3,
+     "radius": 0,
+     "height": 44,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Got it",
+      "Sign in",
+      "Find kitchens"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "header.sticky.top-0 768px",
+      "div.mt-10.flex 720px",
+      "div.mt-6.border-t 720px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 2,
+     "boxRadius": 12,
+     "squareMedia": 7,
+     "roundedMedia": 1,
+     "mediaRadius": 33554400,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 1756
+      },
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 2188
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "img",
+      "ratio": 0.25
+     }
+    ],
+    "nav": {
+     "links": 5,
+     "fixed": true,
+     "height": 57,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 8662,
+    "margins": {
+     "left": 24,
+     "right": 24
+    },
+    "sections": [
+     {
+      "sel": "main#main.flex-1",
+      "tag": "main",
+      "top": 57,
+      "height": 8008,
+      "words": 468,
+      "media": 11,
+      "middle": 0,
+      "heading": {
+       "text": "Order from",
+       "size": 54,
+       "tag": "h1"
+      },
+      "left": 24,
+      "right": 4,
+      "textLeft": 24,
+      "textRight": 32,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "footer.bg-oxblood.text-cream",
+      "tag": "footer",
+      "top": 8065,
+      "height": 597,
+      "words": 108,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "For customers",
+       "size": 12,
+       "tag": "h2"
+      },
+      "left": 24,
+      "right": 57,
+      "textLeft": 24,
+      "textRight": 57,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from kitchens near you",
+      "size": 54,
+      "top": 93,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 24,
+      "n": 10
+     },
+     {
+      "x": 44,
+      "n": 1
+     },
+     {
+      "x": 289,
+      "n": 1
+     },
+     {
+      "x": 535,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 13,
+    "bodySize": 16,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 10,
+   "filled": [
+    0.95,
+    0.83,
+    0.77,
+    0.89,
+    0.95,
+    0.95,
+    0.89,
+    0.78,
+    0.99,
+    0.95
+   ],
+   "motion": {
+    "elements": 3,
+    "css": 2,
+    "transitions": 0,
+    "scripted": 1,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 8071,
+     "screens": 9.6,
+     "words": 586,
+     "img": 11,
+     "video": 0,
+     "canvas": 0,
+     "svg": 5,
+     "sections": 8,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 1,
+     "uiAbuse": false,
+     "realPictures": 7,
+     "videoCount": 0,
+     "uiPictures": 1,
+     "pictureSamples": [
+      "image?url=%2Fmarketing%2Flanding%2Fjollof-rice-w",
+      "image?url=%2Fmarketing%2Flanding%2Fwoodville-roa",
+      "image?url=%2Fmarketing%2Flanding%2Fscorpios-chic",
+      "image?url=%2Fmarketing%2Foperators%2Fstorefront-",
+      "image?url=%2Fmarketing%2Foperators%2Fslot-picker",
+      "image?url=%2Fmarketing%2Foperators%2Fppds-label.",
+      "image?url=%2Fmarketing%2Foperators%2Fkitchen-coo"
+     ],
+     "blendText": 0,
+     "sideScrollers": 1,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from kitchens near you",
+     "words": 5,
+     "chars": 28,
+     "lines": 2,
+     "size": 40,
+     "vw": 10.3,
+     "font": "Work Sans",
+     "weight": 800,
+     "tracking": -0.045,
+     "leading": 0.93,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.92,
+     "top": 93,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from kitchens near you",
+     "words": 5,
+     "lines": 2,
+     "size": 40,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from kitchens near you",
+      "words": 5,
+      "chars": 28,
+      "lines": 2,
+      "size": 40,
+      "vw": 10.3,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.045,
+      "leading": 0.93,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 93,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 1,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 1528,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Mama Ade's Kitchen",
+      "words": 3,
+      "chars": 18,
+      "lines": 2,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.46,
+      "top": 1833,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Peckham Jollof Co.",
+      "words": 3,
+      "chars": 18,
+      "lines": 2,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.46,
+      "top": 1833,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Brixton Village Grill",
+      "words": 3,
+      "chars": 21,
+      "lines": 2,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.46,
+      "top": 1833,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Three steps, no app",
+      "words": 4,
+      "chars": 19,
+      "lines": 1,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 2129,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Find a kitchen",
+      "words": 3,
+      "chars": 14,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.78,
+      "top": 2228,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Order and pay",
+      "words": 3,
+      "chars": 13,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.78,
+      "top": 2420,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Follow it",
+      "words": 2,
+      "chars": 9,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.78,
+      "top": 2613,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "What you can trust",
+      "words": 4,
+      "chars": 18,
+      "lines": 1,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 2913,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Built around the service you already run",
+      "words": 7,
+      "chars": 40,
+      "lines": 2,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 3777,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Your own storefront",
+      "words": 3,
+      "chars": 19,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 4123,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Slots with a cap",
+      "words": 4,
+      "chars": 16,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 4477,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Natasha’s Law labels",
+      "words": 3,
+      "chars": 20,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 4854,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "One cook sheet per service",
+      "words": 5,
+      "chars": 26,
+      "lines": 1,
+      "size": 22,
+      "vw": 5.6,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 5217,
+      "tag": "h3",
+      "kind": "heading"
+     },
+     {
+      "text": "Run your food business",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 0.95,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 5443,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Find kitchens →",
+      "words": 3,
+      "chars": 15,
+      "lines": 1,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 1,
+      "top": 6206,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "For kitchens →",
+      "words": 3,
+      "chars": 14,
+      "lines": 1,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 1,
+      "top": 6282,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "J’Toye",
+      "words": 1,
+      "chars": 6,
+      "lines": 1,
+      "size": 64,
+      "vw": 16.4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.05,
+      "leading": 0.85,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 6414,
+      "tag": "p",
+      "kind": "statement"
+     }
+    ],
+    "headingSummary": {
+     "count": 19,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 1,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      12,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      22,
+      28,
+      40,
+      64
+     ],
+     "sizeCount": 11,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 16,
+      "leading": 1.5,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 17.6
+     },
+     "measureChars": 60,
+     "max": {
+      "size": 64,
+      "vw": 16.4,
+      "font": "Work Sans",
+      "text": "J’Toye"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 3,
+     "microLabelShare": 0.009,
+     "microSamples": [
+      "For customers",
+      "Legal",
+      "For operators"
+     ],
+     "upperShare": 0.04,
+     "centerShare": 0.01,
+     "smallText": 3
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#fbf6f0",
+       "top": 0,
+       "hsl": {
+        "h": 33,
+        "s": 0.58,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#f2f1ee",
+       "top": 57,
+       "hsl": {
+        "h": 45,
+        "s": 0.13,
+        "l": 0.94
+       }
+      },
+      {
+       "color": "#3a0b0d",
+       "top": 446,
+       "hsl": {
+        "h": 357,
+        "s": 0.68,
+        "l": 0.14
+       }
+      },
+      {
+       "color": "#e3ded6",
+       "top": 2065,
+       "hsl": {
+        "h": 37,
+        "s": 0.19,
+        "l": 0.86
+       }
+      },
+      {
+       "color": "#1c0405",
+       "top": 5363,
+       "hsl": {
+        "h": 358,
+        "s": 0.75,
+        "l": 0.06
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 5700,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#1f1715",
+       "share": 0.29
+      },
+      {
+       "color": "#f7f7f5",
+       "share": 0.27
+      },
+      {
+       "color": "#fbf6f0",
+       "share": 0.2
+      },
+      {
+       "color": "#d9cfc4",
+       "share": 0.1
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.09
+      }
+     ],
+     "button": {
+      "bg": "#f0a322",
+      "hsl": {
+       "h": 38,
+       "s": 0.87,
+       "l": 0.54
+      },
+      "fg": "#3a0b0d"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 4,
+     "inHero": 2,
+     "radius": 0,
+     "height": 44,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Got it",
+      "Find kitchens"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "header.sticky.top-0 390px",
+      "div.mt-10.flex 358px",
+      "div.mt-6.border-t 358px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 2,
+     "boxRadius": 12,
+     "squareMedia": 6,
+     "roundedMedia": 1,
+     "mediaRadius": 33554400,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 793
+      },
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 1769
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "img",
+      "ratio": 0.19
+     }
+    ],
+    "nav": {
+     "links": 1,
+     "fixed": true,
+     "height": 57,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 8071,
+    "margins": {
+     "left": 16,
+     "right": 16
+    },
+    "sections": [
+     {
+      "sel": "main#main.flex-1",
+      "tag": "main",
+      "top": 57,
+      "height": 7059,
+      "words": 430,
+      "media": 7,
+      "middle": 0,
+      "heading": {
+       "text": "Order from",
+       "size": 40,
+       "tag": "h1"
+      },
+      "left": 16,
+      "right": 5,
+      "textLeft": 16,
+      "textRight": 16,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "footer.bg-oxblood.text-cream",
+      "tag": "footer",
+      "top": 7116,
+      "height": 955,
+      "words": 108,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "For customers",
+       "size": 12,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 29,
+      "textLeft": 16,
+      "textRight": 29,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from kitchens near you",
+      "size": 40,
+      "top": 93,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 10
+     },
+     {
+      "x": 36,
+      "n": 1
+     },
+     {
+      "x": 272,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 12,
+    "bodySize": 16,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "micro-label",
+   "width": 1440,
+   "message": "3 tiny uppercase letter-spaced labels (e.g. \"For customers\", \"Legal\", \"For operators\").",
+   "fix": "Use sentence-case text at a readable size, or delete the label.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "width": 1440,
+   "message": "3 thin rule(s)/divider line(s): header.sticky.top-0 1440px | div.mt-10.flex 1216px | div.mt-6.border-t 1216px",
+   "fix": "Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "outlined-box",
+   "width": 1440,
+   "message": "1 box(es) drawn with a 1px outline.",
+   "fix": "Prefer a filled surface or no box.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "palette-cream",
+   "width": 1440,
+   "message": "Yellow-cream background (section #fbf6f0, text #fbf6f0).",
+   "fix": "Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "size-count",
+   "width": 1440,
+   "message": "12 different font sizes (12, 14, 15, 16, 17, 18, 20, 22, 26, 58, 96, 208).",
+   "fix": "A page needs about five: display, heading, lead, body, small.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "no-footage",
+   "width": 1440,
+   "message": "No video anywhere on the page.",
+   "fix": "Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject."
+  },
+  {
+   "level": "WARN",
+   "id": "measure",
+   "width": 1440,
+   "message": "Longest paragraph runs about 203 characters per line.",
+   "fix": "Cap paragraphs at 45–75 characters (max-width: 60ch).",
+   "alsoAt": [
+    768
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "small-text",
+   "width": 1440,
+   "message": "3 text block(s) under 13px.",
+   "fix": "Nothing meant to be read goes below 13px.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "card-rows",
+   "width": 768,
+   "message": "2 rows of identical boxed cards.",
+   "fix": "Vary the composition; not every section is a card grid.",
+   "alsoAt": [
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "covered-text",
+   "width": 768,
+   "message": "Large text lies under another element at some scroll position: \"Built around the service you already run\" (screen 4, 50% hidden)",
+   "fix": "Nothing may sit on top of a headline or statement. Move the picture, shorten the pinned run, or raise the text above it (z-index) and give it a ground.",
+   "alsoAt": [
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "side-scroll",
+   "width": 390,
+   "message": "1 row(s) scroll sideways with content past their edge.",
+   "fix": "Jurors and most visitors read a row cut at the edge as clipped, not as scrollable. Wrap it onto more lines, or end it inside the grid."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/desktop-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/desktop-page-01.jpg",
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/desktop-page-02.jpg"
+   ],
+   "film": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/desktop-film-01.jpg"
+   ]
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/tablet-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/tablet-page-01.jpg",
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/tablet-page-02.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/mobile-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/mobile-page-01.jpg",
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-design-run/design/runs/2026-11-01-landing/inspect/mobile-page-02.jpg"
+   ],
+   "film": []
+  }
+ ]
+}
