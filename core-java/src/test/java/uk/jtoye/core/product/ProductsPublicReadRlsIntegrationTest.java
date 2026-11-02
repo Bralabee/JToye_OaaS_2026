@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -20,6 +21,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.SystemPrincipal;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -172,14 +176,34 @@ class ProductsPublicReadRlsIntegrationTest {
         // raising 22P02. A public-read branch keyed on `current_tenant_id() IS NULL` would therefore read
         // a malformed setting as "anonymous" and open the public menu to it. The branch must key on the
         // raw setting being empty / 'default' / unset, so a malformed one sees nothing.
+        //
+        // Run on ONE raw connection: TenantSetLocalAspect resets the setting to DEFAULT before every
+        // JdbcTemplate call when no tenant is pinned, so a set_config through separate JdbcTemplate
+        // calls never reaches the read (measured: the read-back below returned "" that way). The
+        // aspect fires once, before this callback, and not between the statements inside it.
         TenantContext.clear();
-        jdbc.execute("SELECT set_config('app.current_tenant_id', 'not-a-uuid', true)");
-        jdbc.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);
+        String[] settingAtRead = new String[1];
+        Long total = jdbc.execute((ConnectionCallback<Long>) connection -> {
+            try (Statement st = connection.createStatement()) {
+                st.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);
+                st.execute("SELECT set_config('app.current_tenant_id', 'not-a-uuid', true)");
+                try (ResultSet rs = st.executeQuery("SELECT current_setting('app.current_tenant_id', true)")) {
+                    rs.next();
+                    settingAtRead[0] = rs.getString(1);
+                }
+            }
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT count(*) FROM products WHERE tenant_id IN (?, ?)")) {
+                ps.setObject(1, tenantA);
+                ps.setObject(2, tenantB);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    return rs.getLong(1);
+                }
+            }
+        });
         // the setting really is malformed when the read runs (not reset by anything in between)
-        assertThat(jdbc.queryForObject("SELECT current_setting('app.current_tenant_id', true)", String.class))
-                .isEqualTo("not-a-uuid");
-        Long total = jdbc.queryForObject("SELECT count(*) FROM products WHERE tenant_id IN (?, ?)",
-                Long.class, tenantA, tenantB);
+        assertThat(settingAtRead[0]).isEqualTo("not-a-uuid");
         assertThat(total).as("products visible under a malformed app.current_tenant_id").isZero();
     }
 
