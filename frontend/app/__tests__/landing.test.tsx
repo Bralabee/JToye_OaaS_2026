@@ -524,6 +524,28 @@ describe("Landing fold, order, footer and chips (D15)", () => {
     expect(strip?.getAttribute("class")).not.toMatch(/(^|\s)hidden(\s|$)/)
   })
 
+  it("keeps each collage grid item one block box, never a display:contents picture (review round 2)", async () => {
+    const { container } = render(await Home())
+    const hero = container.querySelector("[data-hero-section]") as HTMLElement
+    const collage = hero.querySelector("div[aria-hidden].grid-cols-2") as HTMLElement
+    // Control: the collage and its four tiles rendered.
+    expect(collage).not.toBeNull()
+    expect(collage.querySelectorAll("img")).toHaveLength(4)
+    // A display:contents <picture> hands its <source> to the grid as an item: a
+    // blank 282x200 cell, three row tracks, the door pushed 5px further down
+    // (measured on the production build, PR #1097 round 2). Four direct items,
+    // each an img or a block picture.
+    const items = Array.from(collage.children) as HTMLElement[]
+    expect(items).toHaveLength(4)
+    for (const item of items) {
+      expect(["IMG", "PICTURE"]).toContain(item.tagName)
+      expect(item.classList.contains("contents")).toBe(false)
+      if (item.tagName === "PICTURE") expect(item.classList.contains("block")).toBe(true)
+    }
+    // ...and the egusi tile is still the first one, the fold's high-priority picture.
+    expect(items[0].querySelector("img") ?? items[0]).toHaveAttribute("fetchpriority", "high")
+  })
+
   it("folds the photo credits behind a native disclosure, attribution still in the DOM", async () => {
     render(await Home())
     const line = screen.getByText(/^Photographs/)

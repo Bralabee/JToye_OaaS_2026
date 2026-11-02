@@ -7,7 +7,7 @@ const [base, label, outJson] = process.argv.slice(2)
 ;(async () => {
   const browser = await chromium.launch()
   const out = { label, base, takenAt: new Date().toISOString(), viewports: {} }
-  for (const [w, h] of [[1366, 768], [390, 844]]) {
+  for (const [w, h] of [[1024, 768], [1280, 800], [1366, 768], [1440, 900], [390, 844]]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h } })
     const page = await ctx.newPage()
     const cdp = await ctx.newCDPSession(page)

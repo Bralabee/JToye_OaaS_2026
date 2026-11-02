@@ -1,0 +1,9 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/__tests__/landing.test.tsx components/public
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 9 passed, 9 total
+Tests:       126 passed, 126 total
+Snapshots:   0 total
+Time:        2.662 s
+Ran all test suites matching app/__tests__/landing.test.tsx|components/public.

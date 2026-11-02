@@ -49,7 +49,30 @@ const VIEWPORTS = [
         bg: (s.className.match(/bg-[a-z]+(-\d+)?/) || [""])[0],
         firstHeading: ((s.querySelector("h1,h2") || {}).textContent || "").trim().slice(0, 40),
       }))
+      // The desktop collage grid: its row tracks, and which column the egusi tile sits in.
+      const collage = hero.querySelector("div[aria-hidden].grid-cols-2")
+      let collageInfo = null
+      if (collage && getComputedStyle(collage).display === "grid") {
+        const cr = collage.getBoundingClientRect()
+        const egusi = Array.from(collage.querySelectorAll("img")).find((i) => /egusi/.test(i.currentSrc || i.src))
+        const item = egusi ? (egusi.parentElement === collage ? egusi : egusi.parentElement) : null
+        const ir = item ? item.getBoundingClientRect() : null
+        const er = egusi ? egusi.getBoundingClientRect() : null
+        collageInfo = {
+          rows: getComputedStyle(collage).gridTemplateRows,
+          rowTrackCount: getComputedStyle(collage).gridTemplateRows.split(" ").filter(Boolean).length,
+          columns: getComputedStyle(collage).gridTemplateColumns,
+          height: Math.round(cr.height),
+          gridItems: Array.from(collage.children).map((c) => c.tagName + "(" + getComputedStyle(c).display + ")"),
+          egusiItemTag: item ? item.tagName : null,
+          egusiColumn: er ? (er.left + er.width / 2 < cr.left + cr.width / 2 ? 1 : 2) : null,
+          egusiRow: er ? (er.top + er.height / 2 < cr.top + cr.height / 3 ? 1 : 2) : null,
+          egusiRect: er ? { w: Math.round(er.width), h: Math.round(er.height) } : null,
+          egusiCurrentSrc: egusi ? (egusi.currentSrc || "").replace(location.origin, "").slice(0, 90) : null,
+        }
+      }
       return {
+        collage: collageInfo,
         scrollY: window.scrollY,
         chipCount: chips.length,
         chipRowTops: tops,
@@ -88,7 +111,25 @@ const VIEWPORTS = [
     await page.close()
   }
   await browser.close()
+  // Assertions (D15 review round 2): from 1280 up the collage has exactly two row tracks, the
+  // egusi tile sits in column 1, row 1, and the gold door ends at or above 768 (unscrolled).
+  const failures = []
+  for (const name of ["1280x800", "1366x768", "1440x900"]) {
+    const v = results.viewports[name]
+    if (!v.collage) failures.push(`${name}: collage grid not found`)
+    else {
+      if (v.collage.rowTrackCount !== 2) failures.push(`${name}: collage has ${v.collage.rowTrackCount} row tracks (${v.collage.rows})`)
+      if (v.collage.egusiColumn !== 1 || v.collage.egusiRow !== 1) failures.push(`${name}: egusi tile in column ${v.collage.egusiColumn}, row ${v.collage.egusiRow}`)
+    }
+    if (v.goldDoorBottom > 768) failures.push(`${name}: gold door bottom ${v.goldDoorBottom} > 768`)
+  }
+  results.assertions = { failures, passed: failures.length === 0 }
   fs.writeFileSync(path.join(outDir, `measure-${label}.json`), JSON.stringify(results, null, 2))
+  for (const [k, v] of Object.entries(results.viewports)) {
+    if (v.collage) console.log(k, "collage", JSON.stringify({ rows: v.collage.rows, n: v.collage.rowTrackCount, h: v.collage.height, egusiCol: v.collage.egusiColumn, egusiRow: v.collage.egusiRow, items: v.collage.gridItems, egusiSrc: v.collage.egusiCurrentSrc }))
+  }
+  console.log(failures.length ? "ASSERTIONS FAILED:\n  " + failures.join("\n  ") : "ASSERTIONS PASSED")
+  if (failures.length) process.exitCode = 3
   for (const [k, v] of Object.entries(results.viewports)) {
     console.log(
       k,

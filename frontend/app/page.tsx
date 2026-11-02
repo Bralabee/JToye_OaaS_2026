@@ -430,9 +430,14 @@ export default async function Home() {
                   still be fetched (measured: a 32w High request on a 390
                   phone), so the first tile mirrors the strip: a <picture>
                   whose below-lg source is the same 1x1 data URI, so a phone
-                  requests nothing for it, exactly as before. `contents` keeps
-                  the img itself the grid item. The other three stay lazy, and
-                  a lazy img in a display:none grid is never fetched. */}
+                  requests nothing for it, exactly as before. The picture is
+                  the grid item and is a BLOCK: as `display: contents` it
+                  handed its <source> to the grid as a fifth item (a blank
+                  cell, three row tracks, the door 5px lower; PR #1097 round
+                  2). The img inside keeps the size and tilt classes, and
+                  preflight makes it a block, so the rendered tile is the same
+                  box as the other three. The other three stay lazy, and a lazy
+                  img in a display:none grid is never fetched. */}
               <div aria-hidden className="hidden grid-cols-2 gap-4 lg:grid">
                 {heroTiles.map((t, i) => {
                   const tile = (
@@ -449,7 +454,7 @@ export default async function Home() {
                     />
                   )
                   return i === 0 ? (
-                    <picture key={t.photo.src} className="contents">
+                    <picture key={t.photo.src} className="block">
                       <source media="(max-width: 1023px)" srcSet={BLANK_PIXEL} />
                       {tile}
                     </picture>

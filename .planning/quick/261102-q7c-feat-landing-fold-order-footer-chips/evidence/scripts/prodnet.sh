@@ -22,7 +22,12 @@ done
 echo "server http=$code"
 FRONTEND="$WT/frontend" node "$S/m/netprobe.cjs" http://localhost:3437 "$LABEL" "$S/laneC-net-$LABEL.json"
 nrc=$?
+FRONTEND="$WT/frontend" node "$S/m/measure.cjs" http://localhost:3437 "$S/laneC-measure-$LABEL" "$LABEL"
+mrc=$?
+echo "measure rc=$mrc"
+if [ "${SKIP_LCP:-}" != 1 ]; then
 FRONTEND="$WT/frontend" node "$S/m/lcpprobe.cjs" http://localhost:3437 "$LABEL" "$S/laneC-lcp-prod2-$LABEL.json" 5 | sed 's/_next\/image?url=%2Fmarketing%2Flanding%2F//'
+fi
 wrc=skipped
 if [ "$WEBPERF" = webperf ]; then
   PLAYWRIGHT_BASE_URL=http://localhost:3437 npx playwright test e2e/landing-webperf.spec.ts --reporter=line > "$S/laneC-webperf-$LABEL.txt" 2>&1
