@@ -1930,7 +1930,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The SARIF report pair (scan + upload) runs only while the repository is public:
+      # code scanning is not available to a private repository without GitHub Code
+      # Security (#1048), so after the visibility flip the upload would fail and the
+      # scan that feeds it would burn metered minutes for nothing. Gating on
+      # visibility, rather than continue-on-error, keeps an upload failure VISIBLE
+      # while the repository is public (a renamed sarif file or a broken action pin
+      # must still fail this required check). The gate is the table-format step below.
       - name: Run Trivy vulnerability scanner (filesystem, SARIF report)
+        if: ${{ !github.event.repository.private }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
@@ -1942,7 +1950,7 @@ jobs:
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
-        if: always()
+        if: ${{ always() && !github.event.repository.private }}
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -1972,6 +1980,11 @@ jobs:
         with:
           cache-disabled: true
           dependency-graph: ${{ github.event_name == 'push' && 'generate-submit-and-upload' || 'generate-and-upload' }}
+          # A private repository has Dependency graph OFF by default, and the submit
+          # mode (push only) then fails the step and this required check — after the
+          # #1048 flip and only on main, where nothing else would say why. Warn instead;
+          # the pre-flip checklist enables Dependency graph so the submission still lands.
+          dependency-graph-continue-on-failure: true
           artifact-retention-days: 5
 
   # Job 2b: Lint gate (#99 do-now). Resurrects linting that was silently dead —
@@ -2276,7 +2289,9 @@ jobs:
           # emulation per push for core-java Gradle and edge-go Go builds.
           platforms: linux/amd64
 
+      # Public-only, as in security-scan (#1048): the image gate is the table step after.
       - name: Scan Docker image with Trivy (SARIF report)
+        if: ${{ !github.event.repository.private }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
@@ -2287,7 +2302,7 @@ jobs:
 
       - name: Upload image scan results
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
-        if: always()
+        if: ${{ always() && !github.event.repository.private }}
         with:
           sarif_file: 'trivy-image-results.sarif'
 
