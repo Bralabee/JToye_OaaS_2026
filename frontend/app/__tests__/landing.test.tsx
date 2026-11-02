@@ -60,6 +60,9 @@ jest.mock("@/lib/storefront-server", () => ({
     state: "ok",
     data: { content: [FIXTURE_SHOP], totalElements: 1, totalPages: 1, number: 0, size: 8 },
   })),
+  // D-03 (quick 261102-r6u): the featured list is a second server-side read. Nothing is
+  // featured by default, so every test above renders exactly what it rendered before.
+  loadFeaturedShops: jest.fn(async () => []),
 }))
 
 /**
@@ -575,5 +578,66 @@ describe("Landing fold, order, footer and chips (D15)", () => {
       expect(text).toContain(statement)
     }
     expect(para.querySelectorAll("br")).toHaveLength(0)
+  })
+})
+
+/**
+ * D-03 (quick 261102-r6u, design D17): before location is shared, the featured
+ * kitchens lead the row in their configured order, then the rest of the listing
+ * in its own order, with no slug twice. With nothing featured, the row is
+ * exactly today's.
+ *
+ * The featured shop here is deliberately NOT on the listing's page 0: a page
+ * that ignored the featured read would still render the listing and pass any
+ * test that only checked the listing was there.
+ */
+describe("Featured kitchens lead the landing row (D-03)", () => {
+  const FEATURED_ONLY: PublicShop = {
+    ...FIXTURE_SHOP,
+    slug: "brixton-village-grill",
+    name: "Brixton Village Grill",
+    tags: "Grill",
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const server = jest.requireMock("@/lib/storefront-server") as {
+    loadFeaturedShops: jest.Mock
+  }
+
+  afterEach(() => {
+    server.loadFeaturedShops.mockImplementation(async () => [])
+  })
+
+  function rowCardHrefs(): string[] {
+    const row = screen.getByRole("region", { name: "Dishes cooking near you" })
+    return Array.from(row.querySelectorAll("a"))
+      .map((a) => a.getAttribute("href") ?? "")
+      .filter((href) => href.startsWith("/shop/"))
+  }
+
+  it("renders the featured shop FIRST, then the listing", async () => {
+    server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY])
+    render(await Home())
+    expect(rowCardHrefs()).toEqual(["/shop/brixton-village-grill", "/shop/mama-ades-kitchen"])
+  })
+
+  it("puts a featured shop that is ALSO on the listing once, in the featured position", async () => {
+    server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY, FIXTURE_SHOP])
+    render(await Home())
+    expect(rowCardHrefs()).toEqual(["/shop/brixton-village-grill", "/shop/mama-ades-kitchen"])
+  })
+
+  it("renders today's row when nothing is featured", async () => {
+    render(await Home())
+    expect(rowCardHrefs()).toEqual(["/shop/mama-ades-kitchen"])
+  })
+
+  it("puts the featured shops in the landing JSON-LD", async () => {
+    server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY])
+    const { container } = render(await Home())
+    const ld = container.querySelector('script[type="application/ld+json"]')?.innerHTML ?? ""
+    // Control: the listing shop is in it (the script rendered at all).
+    expect(ld).toContain("mama-ades-kitchen")
+    expect(ld).toContain("brixton-village-grill")
   })
 })

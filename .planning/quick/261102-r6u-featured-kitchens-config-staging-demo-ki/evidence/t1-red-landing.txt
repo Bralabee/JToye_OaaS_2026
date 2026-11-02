@@ -1,0 +1,70 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/__tests__/landing.test.tsx
+  Using tsconfig file: tsconfig.build.json
+FAIL app/__tests__/landing.test.tsx
+  ● Featured kitchens lead the landing row (D-03) › renders the featured shop FIRST, then the listing
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+    -   "/shop/brixton-village-grill",
+        "/shop/mama-ades-kitchen",
+      ]
+
+      619 |     server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY])
+      620 |     render(await Home())
+    > 621 |     expect(rowCardHrefs()).toEqual(["/shop/brixton-village-grill", "/shop/mama-ades-kitchen"])
+          |                            ^
+      622 |   })
+      623 |
+      624 |   it("puts a featured shop that is ALSO on the listing once, in the featured position", async () => {
+
+      at Object.toEqual (app/__tests__/landing.test.tsx:621:28)
+
+  ● Featured kitchens lead the landing row (D-03) › puts a featured shop that is ALSO on the listing once, in the featured position
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+    -   "/shop/brixton-village-grill",
+        "/shop/mama-ades-kitchen",
+      ]
+
+      625 |     server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY, FIXTURE_SHOP])
+      626 |     render(await Home())
+    > 627 |     expect(rowCardHrefs()).toEqual(["/shop/brixton-village-grill", "/shop/mama-ades-kitchen"])
+          |                            ^
+      628 |   })
+      629 |
+      630 |   it("renders today's row when nothing is featured", async () => {
+
+      at Object.toEqual (app/__tests__/landing.test.tsx:627:28)
+
+  ● Featured kitchens lead the landing row (D-03) › puts the featured shops in the landing JSON-LD
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "brixton-village-grill"
+    Received string:    "[{\"@context\":\"https://schema.org\",\"@type\":\"ItemList\",\"name\":\"Local kitchens on J'Toye\",\"numberOfItems\":1,\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"item\":{\"@type\":\"Restaurant\",\"name\":\"Mama Ade's Kitchen\",\"description\":\"Nigerian home cooking\",\"url\":\"http://localhost:3000/shop/mama-ades-kitchen\",\"image\":\"http://localhost:3000/brand/logo-mama-ades.png\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"48 Rye Lane, Peckham, London SE15 5BS\",\"addressCountry\":\"GB\"},\"servesCuisine\":[\"Nigerian\",\"Jollof\"]}}]},{\"@context\":\"https://schema.org\",\"@type\":\"BreadcrumbList\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"Home\",\"item\":\"http://localhost:3000/\"},{\"@type\":\"ListItem\",\"position\":2,\"name\":\"Kitchens\",\"item\":\"http://localhost:3000/shop\"}]}]"
+
+      639 |     // Control: the listing shop is in it (the script rendered at all).
+      640 |     expect(ld).toContain("mama-ades-kitchen")
+    > 641 |     expect(ld).toContain("brixton-village-grill")
+          |                ^
+      642 |   })
+      643 | })
+      644 |
+
+      at Object.toContain (app/__tests__/landing.test.tsx:641:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 33 passed, 36 total
+Snapshots:   0 total
+Time:        2.189 s
+Ran all test suites matching app/__tests__/landing.test.tsx.
