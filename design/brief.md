@@ -48,8 +48,15 @@ operators to "Run your food business". Everything else supports that.
 - 3 demo vendor logos (`frontend/public/brand/`).
 - 4 product screenshots for operators (`frontend/public/marketing/operators/`: cook sheet, PPDS
   label, slot picker, storefront menu).
-- **No food photography.** Emoji stand-ins are no longer allowed (lifted 2026-11-01), so a run
-  must choose a source before it builds: the kitchens' own photos, a commissioned shoot,
-  licensed stock, or open-collection pictures (taste-skill `assets.mjs`, credited).
+- **Seven BeesLens food photographs, the owner's own (D16, 2026-11-02)**, in
+  `frontend/public/marketing/landing/beeslens-*.webp`: spaghetti with chicken and plantain, a jollof
+  meal box, rice/beans/plantain with pepper stew, plantain and yam meal-prep boxes, puff-puff, a
+  catering buffet soup, a fruit-punch dispenser. Credited "Photography: BeesLens".
+- Four credited open-collection pictures where no own photograph exists yet (suya, Jamaican rice and
+  peas, mutton biryani, chana masala; `credits.json` beside them).
+- History: until 2026-11-02 there was no food photography. Emoji stand-ins are no longer allowed
+  (lifted 2026-11-01), so a run had to choose a source before it built: the kitchens' own photos, a
+  commissioned shoot, licensed stock, or open-collection pictures (taste-skill `assets.mjs`, credited).
   **RULED by Sanmi 2026-11-01 (D10): open-collection pictures now, credited; each kitchen's own photos
-  replace them as tenants upload through the Phase 24 media pipeline.**
+  replace them as tenants upload through the Phase 24 media pipeline.** D16 put the owner's own
+  photography first.

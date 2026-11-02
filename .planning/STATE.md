@@ -1552,6 +1552,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 261026-9qm | fix: three scheduled-CI reds on main: core-java curl/libcurl CVE-2026-92392 (named apk upgrade, GHA layer cache kept 8.22.0), the order page keeps an open Void dialog through an SSE refresh (E2E G-37-6 item 4), and the kitchen lapse spec waits out the 2 s session burst cache (#1045) | 2026-10-26 | 7c8d443e | [261026-9qm-fix-three-scheduled-ci-reds-core-java-cu](./quick/261026-9qm-fix-three-scheduled-ci-reds-core-java-cu/) |
 | 261102-apf | Fix #1090: Stripe refuses connected-account creation with legacy type=express; owner ruled Managed Risk - controller properties (losses=stripe, fees.payer=account, requirement_collection=stripe, dashboard=full), test, docs | 2026-11-02 | 49e652dd | [261102-apf-fix-1090-stripe-refuses-connected-accoun](./quick/261102-apf-fix-1090-stripe-refuses-connected-accoun/) |
 | 55 | Fix #1090 second observation: Stripe idempotency key for the connected-account create names the body (16-hex SHA-256 of the sorted form params); PR #1092 | 2026-11-02 | da30359d | — |
+| 261102-qfo | Landing: the owner's own BeesLens photographs replace the open-collection dish pictures (D16, amends D10): strip, collage, Jollof/Desserts chips, kitchen cards (+ catering, drinks/juice); 4 Wikimedia pictures retired; credits.json kind; identity palette traced to tokens; PR #1103 | 2026-11-02 | 501c95f5 | [261102-qfo-landing-elevate-beeslens-photos-replace-](./quick/261102-qfo-landing-elevate-beeslens-photos-replace-/) |
 
 ## Session Continuity
 

@@ -17,7 +17,13 @@ import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
 import { NearYouRow } from "@/components/marketing/near-you-row"
-import { PHOTOS, PHOTO_CREDITS, PHOTO_DERIVATION_NOTE, type LandingPhoto } from "@/components/marketing/landing-photos"
+import {
+  PHOTOS,
+  PHOTO_CREDITS,
+  PHOTO_DERIVATION_NOTE,
+  OWN_PHOTO_CREDIT,
+  type LandingPhoto,
+} from "@/components/marketing/landing-photos"
 import { loadShopList } from "@/lib/storefront-server"
 import { headers } from "next/headers"
 import { resolvePublicOrigin } from "@/lib/public-origin"
@@ -76,7 +82,7 @@ const trustMarkers = [
 // decorative (`alt=""`): the label is the link's name.
 const categories: Array<{ photo: LandingPhoto; label: string; q: string }> = [
   { photo: PHOTOS.suya, label: "Grill", q: "grill" },
-  { photo: PHOTOS.jollofVeg, label: "Jollof", q: "jollof" },
+  { photo: PHOTOS.jollofBox, label: "Jollof", q: "jollof" },
   { photo: PHOTOS.riceAndPeas, label: "Caribbean", q: "caribbean" },
   { photo: PHOTOS.biryani, label: "South Asian", q: "south asian" },
   { photo: PHOTOS.chana, label: "Vegan", q: "vegan" },
@@ -93,9 +99,9 @@ const BLANK_PIXEL =
 // The desktop collage (A): four dish photographs in place of the four gradient
 // emoji tiles (D9, D14). The small tilts are static, kept from the old tiles.
 const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
-  { photo: PHOTOS.egusi, extra: "-rotate-2" },
-  { photo: PHOTOS.suya, extra: "rotate-2 mt-6" },
-  { photo: PHOTOS.jollofVeg, extra: "rotate-2" },
+  { photo: PHOTOS.jollofBox, extra: "-rotate-2" },
+  { photo: PHOTOS.riceBeansStew, extra: "rotate-2 mt-6" },
+  { photo: PHOTOS.plantainYam, extra: "rotate-2" },
   { photo: PHOTOS.puffPuff, extra: "-rotate-2 -mt-2" },
 ]
 
@@ -374,11 +380,11 @@ export default async function Home() {
                         srcSet={BLANK_PIXEL}
                       />
                       <Image
-                        src={PHOTOS.jollofDodo.src}
-                        width={PHOTOS.jollofDodo.width}
-                        height={PHOTOS.jollofDodo.height}
+                        src={PHOTOS.spaghetti.src}
+                        width={PHOTOS.spaghetti.width}
+                        height={PHOTOS.spaghetti.height}
                         sizes="(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
-                        alt={PHOTOS.jollofDodo.alt}
+                        alt={PHOTOS.spaghetti.alt}
                         loading="eager"
                         fetchPriority="high"
                         className="h-[120px] w-full object-cover lg:hidden"
@@ -423,7 +429,7 @@ export default async function Home() {
 
                   D15 review (PR #1097): the FIRST tile is eager and high
                   priority. On a desktop the LCP element is the h1 or this
-                  egusi tile (measured on production builds, before and after
+                  jollof meal-box tile (measured on production builds, before and after
                   D15; the door strip never was), and with the strip no longer
                   requested from lg this tile is the fold's first picture. Below
                   lg the grid is display:none, and an eager img there would
@@ -568,6 +574,7 @@ export default async function Home() {
               <summary className="w-fit cursor-pointer rounded-sm font-medium underline decoration-warm-300 underline-offset-2 [@media(hover:hover)_and_(pointer:fine)]:hover:decoration-warm-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2">
                 Photo credits
               </summary>
+              <p className="mt-2">{OWN_PHOTO_CREDIT}</p>
               <p className="mt-2">
                 Photographs ({PHOTO_DERIVATION_NOTE}), via Wikimedia Commons:{" "}
                 {PHOTO_CREDITS.map((c, i) => (

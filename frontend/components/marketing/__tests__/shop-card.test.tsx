@@ -16,7 +16,7 @@
 
 import { render, screen } from "@testing-library/react"
 import { ShopCard as Card } from "@/components/marketing/shop-card"
-import { assignExamplePhotos } from "@/components/marketing/landing-photos"
+import { PHOTOS, assignExamplePhotos } from "@/components/marketing/landing-photos"
 import type { PublicShop } from "@/types/storefront"
 
 /**
@@ -134,10 +134,10 @@ describe("ShopCard", () => {
     // Without these the browser cannot reserve space and the picture's arrival
     // shifts everything below it — the exact risk the landing CWV budget in
     // e2e/landing-webperf.spec.ts exists to catch. "Jollof" is the first tag,
-    // so the picture is the jollof-and-plantain plate at its real 800x532.
-    expect(img!.getAttribute("width")).toBe("800")
-    expect(img!.getAttribute("height")).toBe("532")
-    expect(img!.getAttribute("src")).toContain("jollof-rice-and-dodo.webp")
+    // so the picture is the owner's jollof meal box (D16) at its real 1000x667.
+    expect(img!.getAttribute("width")).toBe("1000")
+    expect(img!.getAttribute("height")).toBe("667")
+    expect(img!.getAttribute("src")).toContain("beeslens-jollof-rice-meal-box.webp")
     expect(screen.getByText("Jollof — example photo")).toBeTruthy()
   })
 
@@ -154,7 +154,7 @@ describe("ShopCard", () => {
   it("says 'example photo' once per card, in the caption, not again in the alt (review 1085)", () => {
     const { container } = render(<ShopCard shop={makeShop()} />)
     const img = container.querySelector("img")!
-    expect(img.getAttribute("alt")).toBe("A plate of jollof rice with fried plantain")
+    expect(img.getAttribute("alt")).toBe(PHOTOS.jollofBox.alt)
     // Everything a screen reader would announce for the picture: alt + caption.
     const announced = `${img.getAttribute("alt")} ${container.querySelector("figcaption")?.textContent ?? ""}`
     expect(announced.match(/example photo/g)).toHaveLength(1)
