@@ -27,7 +27,11 @@
 #   scripts/staging-seed.sh --context NAME --stage connect-onboard --link-out FILE [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage settlement-mode [--set MODE] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage money-loop --mode destination|direct
-#                           [--refund-pennies N] [--evidence FILE] [--dry-run]
+#                           [--refund-pennies N] [--run-id ID] [--evidence FILE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage payout --account acct_…
+#                           [--amount-pennies N] [--run-id ID] [--evidence FILE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage payout-read --account acct_… --payout po_…
+#                           [--evidence FILE] [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -166,6 +170,27 @@
 #                        and no reversal exist to read. --evidence adds .modes.direct
 #                        (modes sort destination, direct; each entry's steps array is
 #                        in the order the loop ran).
+#     --run-id ID        money-loop and payout: the run every Idempotency-Key derives
+#                        from (default loop-<UTC stamp>). A run interrupted and re-run
+#                        with the same ID writes nothing twice: the order POST replays
+#                        its key, a refund row carrying <ID>-refund and a payout
+#                        carrying metadata.loop_run_id ID are found and read, not made.
+#     --stage payout --account acct_… [--amount-pennies N]
+#                        plan 30-29: money from the connected account's balance to its
+#                        bank. The account must be the staging tenant's ENABLED one
+#                        (else REFUSED [other-account] / [connect-status], no Stripe
+#                        call). Sets the payout schedule to manual (platform-level),
+#                        reads the available GBP balance (REFUSED [no-available-balance]
+#                        at 0), pays out min(N, available) (default: all of it; never
+#                        more) with Stripe-Account and <run id>-payout-<acct>, and reads
+#                        it until paid (deadline 180 s, every state printed). Ends
+#                        PAYOUT account=… payout=po_… amount=… status=… livemode=false
+#                        with Stripe's status verbatim: in_transit or pending at the
+#                        deadline is rc 0 with a payout-read hint. --evidence adds
+#                        .payouts[] (ids, amounts, statuses; no bank detail).
+#     --stage payout-read --account acct_… --payout po_…
+#                        one read of the payout on the account; PAYOUT line with its
+#                        current status; --evidence updates that entry's status only.
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -347,7 +372,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -357,6 +382,24 @@ print_tool_plan() {
     echo "  02 GET        ${STRIPE_API}${STRIPE_PATH}${STRIPE_ACCOUNT:+   Stripe-Account ${STRIPE_ACCOUNT} (in a per-call copy of the mode-600 config)}"
     echo "  03 check      livemode false (refund and account objects carry no livemode field: printed with LIVEMODE n/a)"
     echo "  04 print      the object without client_secret, secret, billing_details, receipt_email, email, name, phone, address, shipping"
+    return 0
+  fi
+  if [ "$STAGE" = payout ] || [ "$STAGE" = payout-read ]; then
+    echo "  target        Stripe ${STRIPE_API} (TEST only); connected account ${STRIPE_ACCOUNT}; tenant \"${TENANT_NAME}\""
+    echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: keycloak-credentials--admin-username keycloak-credentials--admin-password keycloak-credentials--frontend-client-secret (values never printed)"
+    echo "  02 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [other-account] unless ${STRIPE_ACCOUNT} is the tenant's ENABLED account; the operator is deleted HERE"
+    echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+    if [ "$STAGE" = payout-read ]; then
+      echo "  04 GET        ${STRIPE_API}/v1/payouts/${PAYOUT_ID}   Stripe-Account ${STRIPE_ACCOUNT}; livemode false"
+      echo "  05 print      PAYOUT account=${STRIPE_ACCOUNT} payout=${PAYOUT_ID} amount=… status=<Stripe's>${LOOP_EVIDENCE:+; the status of its .payouts entry updated in ${LOOP_EVIDENCE}}"
+      return 0
+    fi
+    echo "  04 GET        ${STRIPE_API}/v1/payouts?limit=100   Stripe-Account; this run's payout (metadata.loop_run_id ${RUN_ID:-loop-<UTC>}): found = steps 05-07 skipped"
+    echo "  05 POST       ${STRIPE_API}/v1/accounts/${STRIPE_ACCOUNT}   platform-level (no Stripe-Account): settings[payouts][schedule][interval]=manual, Idempotency-Key ${RUN_ID:-loop-<UTC>}-schedule-${STRIPE_ACCOUNT}"
+    echo "  06 GET        ${STRIPE_API}/v1/balance   Stripe-Account; available gbp; REFUSED [no-available-balance] at 0"
+    echo "  07 POST       ${STRIPE_API}/v1/payouts   Stripe-Account; amount=min(${PAYOUT_PENNIES:-available}, available) currency=gbp metadata[loop_run_id], Idempotency-Key ${RUN_ID:-loop-<UTC>}-payout-${STRIPE_ACCOUNT}"
+    echo "  08 GET        ${STRIPE_API}/v1/payouts/{id}   Stripe-Account; every ${POLL_SECONDS}s until paid (deadline ${PAYOUT_DEADLINE_SECONDS}s), each state printed"
+    echo "  09 print      PAYOUT account=${STRIPE_ACCOUNT} payout=po_… amount=… status=<paid|in_transit|pending> livemode=false${LOOP_EVIDENCE:+; .payouts[] in ${LOOP_EVIDENCE} (jq -S, mode 600)}"
     return 0
   fi
   if [ "$STAGE" = connect-onboard ]; then
@@ -2642,20 +2685,41 @@ loop_refund() {
   local code row n lamt sre k sst ramt rch rpi trr t0 lst rvamt
   [ "$LOOP_REFUND_PENNIES" -lt "$LP_CAPTURED" ] \
     || { echo "FAIL: --refund-pennies $LOOP_REFUND_PENNIES is not less than the captured ${LP_CAPTURED}p; no refund was issued (partial only)" >&2; exit 1; }
-  jq -n --argjson a "$LOOP_REFUND_PENNIES" --arg r "$LOOP_REFUND_REASON" --arg n "PAY-03 staging money loop $LP_RUN: a partial refund" \
-    '{amountPennies: $a, reason: $r, note: $n}' | body "$WORKDIR/ml-refund.json"
-  API_EXTRA_HEADER="Idempotency-Key: $LP_RUN-refund"
-  code=$(api vendor POST "/api/v1/orders/$LP_ORDER_ID/refund" "$WORKDIR/ml-refund-out.json" "$WORKDIR/ml-refund.json")
-  API_EXTRA_HEADER=""
-  rm -f "$WORKDIR/ml-refund.json"
-  [ "$code" = 201 ] || fail_http "POST /api/v1/orders/{id}/refund ($LP_ORDER, ${LOOP_REFUND_PENNIES}p)" "$code" "$WORKDIR/ml-refund-out.json"
-  row=$(jq -r '[.id // "", (.amountPennies // "" | tostring), .stripeRefundId // ""] | join("\u001f")' "$WORKDIR/ml-refund-out.json" 2>/dev/null) || row=""
-  rm -f "$WORKDIR/ml-refund-out.json"
-  IFS=$'\x1f' read -r LP_LOCAL_REFUND lamt sre <<<"$row" || true
-  [[ "$LP_LOCAL_REFUND" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the refund 201 carried no refund id" >&2; exit 1; }
-  [ "$lamt" = "$LOOP_REFUND_PENNIES" ] || { echo "FAIL: the refund row is for '$lamt'p, not ${LOOP_REFUND_PENNIES}p" >&2; exit 1; }
-  echo "OK: refund $LP_LOCAL_REFUND requested through the vendor API for ${lamt}p (Idempotency-Key $LP_RUN-refund)"
-  LP_STEPS+=(refund)
+  # Plan 30-29 (T-30-112): a re-run with the same --run-id finds the refund it already
+  # issued (RefundService stores the client's Idempotency-Key on the row, and the order
+  # detail lists it) and requests nothing again.
+  code=$(api vendor GET "/api/v1/orders/$LP_ORDER_ID/detail" "$WORKDIR/ml-detail0.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($LP_ORDER)" "$code" "$WORKDIR/ml-detail0.json"
+  row=$(jq -r --arg k "$LP_RUN-refund" '[.refunds[]? | select(.idempotencyKey == $k)]
+          | if length == 0 then "" elif length == 1 then ([.[0].id // "", (.[0].amountPennies // "" | tostring), .[0].stripeRefundId // ""] | join("\u001f"))
+            else "many" end' "$WORKDIR/ml-detail0.json" 2>/dev/null) || row="unparseable"
+  rm -f "$WORKDIR/ml-detail0.json"
+  case "$row" in
+    many|unparseable) echo "FAIL: order $LP_ORDER's refunds could not be matched to run $LP_RUN ($row)" >&2; exit 1 ;;
+  esac
+  if [ -n "$row" ]; then
+    IFS=$'\x1f' read -r LP_LOCAL_REFUND lamt sre <<<"$row" || true
+    [[ "$LP_LOCAL_REFUND" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: run $LP_RUN's refund row carries no refund id" >&2; exit 1; }
+    [ "$lamt" = "$LOOP_REFUND_PENNIES" ] \
+      || { echo "FAIL: run $LP_RUN already refunded ${lamt}p of $LP_ORDER, not ${LOOP_REFUND_PENNIES}p; re-run it with the same --refund-pennies" >&2; exit 1; }
+    echo "SKIP: run $LP_RUN already requested refund $LP_LOCAL_REFUND (${lamt}p, Idempotency-Key $LP_RUN-refund); not requested again"
+    LP_STEPS+=(refund-found)
+  else
+    jq -n --argjson a "$LOOP_REFUND_PENNIES" --arg r "$LOOP_REFUND_REASON" --arg n "PAY-03 staging money loop $LP_RUN: a partial refund" \
+      '{amountPennies: $a, reason: $r, note: $n}' | body "$WORKDIR/ml-refund.json"
+    API_EXTRA_HEADER="Idempotency-Key: $LP_RUN-refund"
+    code=$(api vendor POST "/api/v1/orders/$LP_ORDER_ID/refund" "$WORKDIR/ml-refund-out.json" "$WORKDIR/ml-refund.json")
+    API_EXTRA_HEADER=""
+    rm -f "$WORKDIR/ml-refund.json"
+    [ "$code" = 201 ] || fail_http "POST /api/v1/orders/{id}/refund ($LP_ORDER, ${LOOP_REFUND_PENNIES}p)" "$code" "$WORKDIR/ml-refund-out.json"
+    row=$(jq -r '[.id // "", (.amountPennies // "" | tostring), .stripeRefundId // ""] | join("\u001f")' "$WORKDIR/ml-refund-out.json" 2>/dev/null) || row=""
+    rm -f "$WORKDIR/ml-refund-out.json"
+    IFS=$'\x1f' read -r LP_LOCAL_REFUND lamt sre <<<"$row" || true
+    [[ "$LP_LOCAL_REFUND" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the refund 201 carried no refund id" >&2; exit 1; }
+    [ "$lamt" = "$LOOP_REFUND_PENNIES" ] || { echo "FAIL: the refund row is for '$lamt'p, not ${LOOP_REFUND_PENNIES}p" >&2; exit 1; }
+    echo "OK: refund $LP_LOCAL_REFUND requested through the vendor API for ${lamt}p (Idempotency-Key $LP_RUN-refund)"
+    LP_STEPS+=(refund)
+  fi
 
   # This run's refund among the intent's: RefundService stamps metadata.refund_id. In
   # direct mode the refund is the connected account's (RefundService sends Stripe-Account),
@@ -2797,7 +2861,7 @@ loop_evidence() {
 }
 
 money_loop_stage() {
-  LP_RUN="loop-$(date -u +%Y%m%dT%H%M%SZ)"
+  LP_RUN="${RUN_ID:-loop-$(date -u +%Y%m%dT%H%M%SZ)}"
   echo "OK: money loop --mode $LOOP_MODE, run id $LP_RUN (every Idempotency-Key derives from it); refund ${LOOP_REFUND_PENNIES}p"
   loop_evidence_check
   loop_menu
@@ -2812,6 +2876,236 @@ money_loop_stage() {
   loop_accept
   loop_refund
   loop_evidence
+}
+
+# ===========================================================================
+# PAY-03, the payout (plan 30-29; D-06 TEST mode only; T-30-112..T-30-115). Money
+# leaves the platform for the vendor's bank as a payout FROM THE CONNECTED ACCOUNT's
+# balance. 30-RESEARCH A4: a platform may set a manual payout schedule and create
+# payouts for an Express account it controls; the stage verifies that by doing it.
+#   --stage payout --account acct_… [--amount-pennies N] [--run-id ID] [--evidence FILE]
+#       the account must be the staging tenant's own, ENABLED (read by a per-run
+#       operator that is deleted before any Stripe call, else REFUSED [other-account] /
+#       [connect-status]). This run's payout is looked up first (metadata.loop_run_id):
+#       a re-run with the same --run-id reads it again and writes nothing. Otherwise:
+#       POST /v1/accounts/{acct} settings[payouts][schedule][interval]=manual
+#       (platform-level, no Stripe-Account; Idempotency-Key <run id>-schedule-<acct>),
+#       GET /v1/balance on the account (REFUSED [no-available-balance] at 0), POST
+#       /v1/payouts amount=min(N, available) (default N = available; a payout above the
+#       available balance is never requested) currency=gbp with Stripe-Account and
+#       Idempotency-Key <run id>-payout-<acct>, then GET /v1/payouts/{id} every
+#       POLL_SECONDS until paid or the deadline (PAYOUT_DEADLINE_SECONDS, 180), every
+#       state printed. Stripe's status is printed VERBATIM: a payout still in_transit or
+#       pending at the deadline is rc 0 with that status and a payout-read hint, never
+#       "paid". Ends PAYOUT account=… payout=po_… amount=… status=… livemode=false.
+#   --stage payout-read --account acct_… --payout po_… [--evidence FILE]
+#       one read of the payout by id on the account; PAYOUT line with Stripe's current
+#       status; with --evidence, that payout's .payouts[] entry gets the status (the
+#       only way a deferred payout becomes paid in the evidence).
+# Only ids, amounts, statuses and the destination object's id are ever extracted: the
+# account and payout objects carry bank details, which are never printed (T-30-115).
+# ===========================================================================
+PAYOUT_DEADLINE_SECONDS="${STAGING_SEED_PAYOUT_DEADLINE_SECONDS:-180}"
+PO_RUN=""; PO_ID=""; PO_AMOUNT=""; PO_STATUS=""; PO_DEST=""; PO_REQUESTED=""; PO_AVAILABLE=""; PO_WHOLE=""; PO_INTERVAL=""
+
+# payout_account_check — T-30-114: --account must be the staging tenant's connected
+# account, ENABLED. The operator is deleted before the Stripe key is read.
+payout_account_check() {
+  operator_login
+  admin_tenant_row
+  operator_down || exit 1
+  if [ "$AT_STATUS" != ENABLED ] || ! [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+    refuse connect-status "tenant $AT_ID's connected account is ${AT_ACCOUNT:-none} with status $AT_STATUS, not ENABLED; no Stripe call was made"
+  fi
+  [ "$STRIPE_ACCOUNT" = "$AT_ACCOUNT" ] \
+    || refuse other-account "--account $STRIPE_ACCOUNT is not the staging tenant's connected account ($AT_ACCOUNT); no Stripe call was made on it"
+  echo "OK: $STRIPE_ACCOUNT is tenant $AT_ID's connected account (ENABLED)"
+  read_stripe_key
+}
+
+# payout_fields FILE — PO_ID PO_AMOUNT PO_STATUS PO_DEST from a payout object, after its
+# livemode is asserted false. Only ids, the amount and the status are extracted.
+payout_fields() {
+  local row cur
+  assert_test_mode "$1" "Payout"
+  row=$(jq -r '[.id // "", (.amount // "" | tostring), .status // "", (.currency // ""),
+                (if (.destination | type) == "object" then .destination.id else (.destination // "") end)] | join("\u001f")' \
+          "$1" 2>/dev/null) || row=""
+  IFS=$'\x1f' read -r PO_ID PO_AMOUNT PO_STATUS cur PO_DEST <<<"$row" || true
+  [[ "$PO_ID" =~ ^po_[A-Za-z0-9]+$ ]] || { echo "FAIL: the payout object carries no po_ id" >&2; exit 1; }
+  [[ "$PO_AMOUNT" =~ ^[0-9]+$ ]] || { echo "FAIL: payout $PO_ID carries no integer amount" >&2; exit 1; }
+  [ "$cur" = gbp ] || { echo "FAIL: payout $PO_ID is in '$cur', not gbp" >&2; exit 1; }
+  [[ "$PO_DEST" =~ ^(ba|card)_[A-Za-z0-9]+$ ]] || PO_DEST=""
+}
+
+# payout_read_once ID — one GET /v1/payouts/ID on the account; the id must match.
+payout_read_once() {
+  local code
+  code=$(stripe_acct "$STRIPE_ACCOUNT" GET "/v1/payouts/$1" "$WORKDIR/po-get.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payouts/$1 on $STRIPE_ACCOUNT (Stripe-Account)" "$code" "$WORKDIR/po-get.json"
+  payout_fields "$WORKDIR/po-get.json"
+  rm -f "$WORKDIR/po-get.json"
+  [ "$PO_ID" = "$1" ] || { echo "FAIL: GET /v1/payouts/$1 returned payout $PO_ID" >&2; exit 1; }
+}
+
+# payout_poll — the payout read by id until paid or the deadline; every state printed.
+# failed or canceled is a failure, printed as Stripe states it.
+payout_poll() {
+  local t0
+  t0=$(date +%s)
+  while :; do
+    payout_read_once "$PO_ID"
+    echo "PAYOUT-WAIT payout=$PO_ID status=$PO_STATUS elapsed=$(( $(date +%s) - t0 ))s"
+    case "$PO_STATUS" in
+      paid) return 0 ;;
+      failed|canceled) echo "FAIL: payout $PO_ID is $PO_STATUS (Stripe's status)" >&2; exit 1 ;;
+    esac
+    [ $(( $(date +%s) - t0 )) -lt "$PAYOUT_DEADLINE_SECONDS" ] || return 0
+    sleep "$POLL_SECONDS"
+  done
+}
+
+# payout_evidence MODE — with --evidence: MODE upsert adds (or replaces, by payout id) this
+# payout's .payouts[] entry; MODE status changes only the status (and read_at) of the
+# entry already there, else fails leaving the file untouched. jq -S, mode 600.
+payout_evidence() {
+  local src entry tmp at
+  [ -n "$LOOP_EVIDENCE" ] || return 0
+  loop_evidence_check
+  if [ -s "$LOOP_EVIDENCE" ]; then src="$LOOP_EVIDENCE"; else src="$WORKDIR/po-evidence-empty.json"; printf '{}' > "$src"; fi
+  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  tmp="$WORKDIR/po-evidence.next.json"
+  if [ "$1" = status ]; then
+    jq -e --arg p "$PO_ID" --arg a "$STRIPE_ACCOUNT" '[.payouts[]? | select(.payout == $p and .account == $a)] | length == 1' "$src" >/dev/null 2>&1 \
+      || { echo "FAIL: $LOOP_EVIDENCE has no .payouts entry for $PO_ID on $STRIPE_ACCOUNT; it was left untouched" >&2; exit 1; }
+    (umask 077 && jq -S --arg p "$PO_ID" --arg s "$PO_STATUS" --arg at "$at" \
+        '.payouts |= map(if .payout == $p then (.status = $s | .read_at = $at) else . end)' "$src" > "$tmp") \
+      || { echo "FAIL: the evidence could not be composed; $LOOP_EVIDENCE was not written" >&2; exit 1; }
+  else
+    entry=$(jq -cn --arg run "$PO_RUN" --arg a "$STRIPE_ACCOUNT" --arg p "$PO_ID" --argjson amt "$PO_AMOUNT" \
+              --argjson req "${PO_REQUESTED:-null}" --argjson av "${PO_AVAILABLE:-null}" --argjson whole "${PO_WHOLE:-null}" \
+              --arg iv "$PO_INTERVAL" --arg s "$PO_STATUS" --arg d "$PO_DEST" --arg at "$at" '
+        {run_id: $run, account: $a, payout: $p, amount: $amt, requested: $req, available: $av, whole_balance: $whole,
+         schedule_interval: (if $iv == "" then null else $iv end), status: $s, destination: (if $d == "" then null else $d end),
+         livemode: false, at: $at}')
+    if command grep -qiE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@' <<<"$entry"; then
+      echo "FAIL: the payout evidence entry carries a key, secret, URL or e-mail shape; $LOOP_EVIDENCE was not written" >&2; exit 1
+    fi
+    (umask 077 && jq -S --argjson e "$entry" '
+        if any(.payouts[]?; .payout == $e.payout) then .payouts |= map(if .payout == $e.payout then $e else . end)
+        else .payouts = ((.payouts // []) + [$e]) end' "$src" > "$tmp") \
+      || { echo "FAIL: the evidence could not be composed; $LOOP_EVIDENCE was not written" >&2; exit 1; }
+  fi
+  if [ -e "$LOOP_EVIDENCE" ]; then chmod 600 "$LOOP_EVIDENCE" || { echo "FAIL: could not chmod 600 $LOOP_EVIDENCE" >&2; exit 1; }; fi
+  (umask 077 && cp "$tmp" "$LOOP_EVIDENCE") || { echo "FAIL: could not write $LOOP_EVIDENCE" >&2; exit 1; }
+  chmod 600 "$LOOP_EVIDENCE"
+  rm -f "$tmp"
+  echo "PAYOUT-EVIDENCE file=$LOOP_EVIDENCE payout=$PO_ID status=$PO_STATUS"
+}
+
+# payout_verdict — the hint for a payout Stripe has not reported paid, then the line.
+payout_verdict() {
+  if [ "$PO_STATUS" != paid ]; then
+    echo "HINT: payout $PO_ID is $PO_STATUS, as Stripe reports it; read it again later with --stage payout-read --account $STRIPE_ACCOUNT --payout $PO_ID${LOOP_EVIDENCE:+ --evidence $LOOP_EVIDENCE}"
+  fi
+  echo "PAYOUT account=$STRIPE_ACCOUNT payout=$PO_ID amount=$PO_AMOUNT status=$PO_STATUS livemode=false"
+}
+
+# --stage payout
+payout_stage() {
+  local code n verdict acct="$STRIPE_ACCOUNT" pend
+  PO_RUN="${RUN_ID:-loop-$(date -u +%Y%m%dT%H%M%SZ)}"
+  echo "OK: payout on $acct, run id $PO_RUN (every Idempotency-Key derives from it)"
+  loop_evidence_check
+  payout_account_check
+
+  # This run's payout, if a run with the same id already made it (T-30-112).
+  code=$(stripe_acct "$acct" GET "/v1/payouts?limit=100" "$WORKDIR/po-list.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payouts on $acct (Stripe-Account)" "$code" "$WORKDIR/po-list.json"
+  assert_test_mode "$WORKDIR/po-list.json" "GET /v1/payouts on $acct"
+  n=$(jq -r --arg r "$PO_RUN" 'if .object == "list" then ([.data[]? | select(.metadata.loop_run_id == $r)] | length | tostring) else "not-a-list" end' \
+        "$WORKDIR/po-list.json" 2>/dev/null || echo unparseable)
+  case "$n" in
+    0) ;;
+    1)
+      PO_ID=$(jq -r --arg r "$PO_RUN" '[.data[] | select(.metadata.loop_run_id == $r)][0].id // ""' "$WORKDIR/po-list.json")
+      rm -f "$WORKDIR/po-list.json"
+      echo "SKIP: run $PO_RUN already made payout $PO_ID on $acct; nothing is written again (it is read by id)"
+      payout_poll
+      if [ -n "$LOOP_EVIDENCE" ] && [ -s "$LOOP_EVIDENCE" ] \
+         && jq -e --arg p "$PO_ID" '[.payouts[]? | select(.payout == $p)] | length == 1' "$LOOP_EVIDENCE" >/dev/null 2>&1; then
+        payout_evidence status
+      else
+        payout_evidence upsert
+      fi
+      payout_verdict
+      return 0 ;;
+    *) rm -f "$WORKDIR/po-list.json"; echo "FAIL: $n payouts on $acct carry metadata.loop_run_id $PO_RUN (want 0 or 1)" >&2; exit 1 ;;
+  esac
+  rm -f "$WORKDIR/po-list.json"
+
+  # The schedule: platform-level, so NO Stripe-Account header.
+  STRIPE_EXTRA_HEADER="Idempotency-Key: $PO_RUN-schedule-$acct"
+  code=$(stripe_api POST "/v1/accounts/$acct" "$WORKDIR/po-acct.json" "settings[payouts][schedule][interval]=manual")
+  STRIPE_EXTRA_HEADER=""
+  [ "$code" = 200 ] || stripe_fail "POST /v1/accounts/$acct (platform-level, settings[payouts][schedule][interval]=manual)" "$code" "$WORKDIR/po-acct.json"
+  verdict=$(jq -r 'if type != "object" then "unparseable" elif has("livemode") then (if .livemode == false then "false" else "live" end) else "absent" end' \
+              "$WORKDIR/po-acct.json" 2>/dev/null || echo unparseable)
+  case "$verdict" in
+    false) ;;
+    absent) echo "LIVEMODE n/a object=account (Stripe defines no livemode field on an Account; TEST mode rests on the sk_test_ key)" ;;
+    live) rm -f "$WORKDIR/po-acct.json"; refuse stripe-mode "POST /v1/accounts/$acct returned a live account (D-28)" ;;
+    *) rm -f "$WORKDIR/po-acct.json"; echo "FAIL: POST /v1/accounts/$acct returned no account object" >&2; exit 1 ;;
+  esac
+  [ "$(jq -r '.id // ""' "$WORKDIR/po-acct.json")" = "$acct" ] \
+    || { rm -f "$WORKDIR/po-acct.json"; echo "FAIL: POST /v1/accounts/$acct returned another account" >&2; exit 1; }
+  PO_INTERVAL=$(jq -r '.settings.payouts.schedule.interval // ""' "$WORKDIR/po-acct.json")
+  rm -f "$WORKDIR/po-acct.json"
+  [ "$PO_INTERVAL" = manual ] || { echo "FAIL: $acct's payout schedule reads '$PO_INTERVAL' after the update, not manual" >&2; exit 1; }
+  echo "OK: $acct payout schedule interval=manual (platform-level update; Idempotency-Key $PO_RUN-schedule-$acct)"
+
+  # The available GBP balance on the account.
+  code=$(stripe_acct "$acct" GET "/v1/balance" "$WORKDIR/po-bal.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/balance on $acct (Stripe-Account)" "$code" "$WORKDIR/po-bal.json"
+  assert_test_mode "$WORKDIR/po-bal.json" "Balance of $acct"
+  PO_AVAILABLE=$(jq -r '[.available[]? | select(.currency == "gbp") | .amount] | add // 0 | tostring' "$WORKDIR/po-bal.json" 2>/dev/null || echo "")
+  pend=$(jq -r '[.pending[]? | select(.currency == "gbp") | .amount] | add // 0 | tostring' "$WORKDIR/po-bal.json" 2>/dev/null || echo "?")
+  rm -f "$WORKDIR/po-bal.json"
+  [[ "$PO_AVAILABLE" =~ ^-?[0-9]+$ ]] || { echo "FAIL: the balance of $acct carries no integer available gbp amount" >&2; exit 1; }
+  echo "PAYOUT-BALANCE account=$acct available=${PO_AVAILABLE}p pending=${pend}p currency=gbp"
+  [ "$PO_AVAILABLE" -gt 0 ] \
+    || refuse no-available-balance "$acct has ${PO_AVAILABLE}p available in gbp (pending ${pend}p): there is nothing to pay out; no payout was requested"
+
+  # min(requested, available): a payout above the available balance is never requested.
+  PO_REQUESTED="${PAYOUT_PENNIES:-$PO_AVAILABLE}"
+  if [ "$PO_REQUESTED" -ge "$PO_AVAILABLE" ]; then
+    PO_AMOUNT="$PO_AVAILABLE"; PO_WHOLE=true
+    echo "OK: the payout is the whole available balance, ${PO_AVAILABLE}p (requested ${PO_REQUESTED}p; never more than is available)"
+  else
+    PO_AMOUNT="$PO_REQUESTED"; PO_WHOLE=false
+  fi
+  local want="$PO_AMOUNT"
+  STRIPE_EXTRA_HEADER="Idempotency-Key: $PO_RUN-payout-$acct"
+  code=$(stripe_acct "$acct" POST "/v1/payouts" "$WORKDIR/po-create.json" "amount=$want" "currency=gbp" "metadata[loop_run_id]=$PO_RUN")
+  STRIPE_EXTRA_HEADER=""
+  [ "$code" = 200 ] || stripe_fail "POST /v1/payouts on $acct (Stripe-Account, ${want}p)" "$code" "$WORKDIR/po-create.json"
+  payout_fields "$WORKDIR/po-create.json"
+  rm -f "$WORKDIR/po-create.json"
+  [ "$PO_AMOUNT" = "$want" ] || { echo "FAIL: payout $PO_ID is for ${PO_AMOUNT}p, not the ${want}p requested" >&2; exit 1; }
+  echo "OK: payout $PO_ID of ${want}p created on $acct (status $PO_STATUS; Idempotency-Key $PO_RUN-payout-$acct)"
+  payout_poll
+  [ "$PO_AMOUNT" = "$want" ] || { echo "FAIL: payout $PO_ID reads ${PO_AMOUNT}p, not the ${want}p requested" >&2; exit 1; }
+  payout_evidence upsert
+  payout_verdict
+}
+
+# --stage payout-read
+payout_read_stage() {
+  loop_evidence_check
+  payout_account_check
+  payout_read_once "$PAYOUT_ID"
+  payout_evidence status
+  payout_verdict
 }
 
 # --selftest
@@ -5187,6 +5481,9 @@ SET_MODE=""
 LOOP_MODE=""
 LOOP_EVIDENCE=""
 LOOP_REFUND_PENNIES=""
+RUN_ID=""
+PAYOUT_PENNIES=""
+PAYOUT_ID=""
 STRIPE_PATH_RE='^/v1/(webhook_endpoints|payment_intents|charges|refunds|transfers|payouts|accounts|subscriptions|invoices|events|balance)(/[A-Za-z0-9_]+)*(\?[]A-Za-z0-9_.=&[-]*)?$'
 
 while [ "$#" -gt 0 ]; do
@@ -5205,6 +5502,9 @@ while [ "$#" -gt 0 ]; do
     --mode)            shift; [ "$#" -gt 0 ] || usage_error "--mode needs destination or direct"; LOOP_MODE="$1" ;;
     --evidence)        shift; [ "$#" -gt 0 ] || usage_error "--evidence needs a file path"; LOOP_EVIDENCE="$1" ;;
     --refund-pennies)  shift; [ "$#" -gt 0 ] || usage_error "--refund-pennies needs a whole number of pennies"; LOOP_REFUND_PENNIES="$1" ;;
+    --run-id)          shift; [ "$#" -gt 0 ] || usage_error "--run-id needs an id"; RUN_ID="$1" ;;
+    --amount-pennies)  shift; [ "$#" -gt 0 ] || usage_error "--amount-pennies needs a whole number of pennies"; PAYOUT_PENNIES="$1" ;;
+    --payout)          shift; [ "$#" -gt 0 ] || usage_error "--payout needs a payout id (po_…)"; PAYOUT_ID="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -5222,9 +5522,9 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing, billing-sync-check, connect-onboard, settlement-mode or money-loop" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing, billing-sync-check, connect-onboard, settlement-mode, money-loop, payout or payout-read" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
@@ -5238,13 +5538,30 @@ if [ "$STAGE" != settlement-mode ]; then
 fi
 if [ "$STAGE" != money-loop ]; then
   [ -z "$LOOP_MODE" ] || usage_error "--mode is taken by --stage money-loop only"
-  [ -z "$LOOP_EVIDENCE" ] || usage_error "--evidence is taken by --stage money-loop only"
   [ -z "$LOOP_REFUND_PENNIES" ] || usage_error "--refund-pennies is taken by --stage money-loop only"
 fi
+case "$STAGE" in
+  money-loop|payout|payout-read) ;;
+  *) [ -z "$LOOP_EVIDENCE" ] || usage_error "--evidence is taken by --stage money-loop, payout and payout-read only" ;;
+esac
+# --run-id (plan 30-29) names the run every Idempotency-Key derives from, so only the
+# stages that write take it; a re-run with the same id replays instead of writing again.
+case "$STAGE" in
+  money-loop|payout) ;;
+  *) [ -z "$RUN_ID" ] || usage_error "--run-id is taken by --stage money-loop and payout only (the stages that write)" ;;
+esac
+if [ -n "$RUN_ID" ] && ! [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,63}$ ]]; then
+  usage_error "--run-id must be 1-64 letters, digits, '.' or '-', starting with a letter or digit (got '$RUN_ID'); it becomes every Idempotency-Key"
+fi
+[ "$STAGE" = payout ] || [ -z "$PAYOUT_PENNIES" ] || usage_error "--amount-pennies is taken by --stage payout only"
+[ "$STAGE" = payout-read ] || [ -z "$PAYOUT_ID" ] || usage_error "--payout is taken by --stage payout-read only"
 if [ "$STAGE" != stripe-get ]; then
   [ -z "$STRIPE_PATH" ] || usage_error "--path is taken by --stage stripe-get only"
-  [ -z "$STRIPE_ACCOUNT" ] || usage_error "--account is taken by --stage stripe-get only"
 fi
+case "$STAGE" in
+  stripe-get|payout|payout-read) ;;
+  *) [ -z "$STRIPE_ACCOUNT" ] || usage_error "--account is taken by --stage stripe-get, payout and payout-read only" ;;
+esac
 # Stage-specific flags are checked before any guard or call. A flag a stage
 # does not take is an error, never ignored: an order list must not be mistaken
 # for a filter by a stage that would not honour it.
@@ -5324,6 +5641,22 @@ case "$STAGE" in
       [ ! -d "$LOOP_EVIDENCE" ] || usage_error "--evidence '$LOOP_EVIDENCE' is a directory; name a file"
       [ -d "$(dirname "$LOOP_EVIDENCE")" ] || usage_error "--evidence: the directory of '$LOOP_EVIDENCE' does not exist"
     fi ;;
+  payout|payout-read)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage $STAGE"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    [ -n "$STRIPE_ACCOUNT" ] || usage_error "--stage $STAGE needs --account acct_… (the staging tenant's connected account)"
+    [[ "$STRIPE_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]] \
+      || usage_error "--account must be a connected account id (acct_ followed by letters and digits)"
+    if [ "$STAGE" = payout ]; then
+      [ -z "$PAYOUT_PENNIES" ] || [[ "$PAYOUT_PENNIES" =~ ^[1-9][0-9]{0,8}$ ]] \
+        || usage_error "--amount-pennies must be a positive whole number of pennies (got '$PAYOUT_PENNIES'); the payout is min(N, the available balance)"
+    else
+      [[ "$PAYOUT_ID" =~ ^po_[A-Za-z0-9]+$ ]] || usage_error "--stage payout-read needs --payout po_… (the payout id a --stage payout run printed)"
+    fi
+    if [ -n "$LOOP_EVIDENCE" ]; then
+      [ ! -d "$LOOP_EVIDENCE" ] || usage_error "--evidence '$LOOP_EVIDENCE' is a directory; name a file"
+      [ -d "$(dirname "$LOOP_EVIDENCE")" ] || usage_error "--evidence: the directory of '$LOOP_EVIDENCE' does not exist"
+    fi ;;
   pay-link)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage pay-link"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
@@ -5356,6 +5689,8 @@ case "$STAGE" in
   connect-onboard)  connect_onboard_stage ;;
   settlement-mode)  settlement_mode_stage ;;
   money-loop)       money_loop_stage ;;
+  payout)           payout_stage ;;
+  payout-read)      payout_read_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
