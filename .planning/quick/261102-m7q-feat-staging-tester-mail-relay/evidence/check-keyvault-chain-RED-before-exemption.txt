@@ -1,0 +1,9 @@
+FAIL: Deployment/mailpit reads mailpit-relay/host (env MP_SMTP_RELAY_HOST), which no SecretProviderClass produces
+FAIL: Deployment/mailpit reads mailpit-relay/port (env MP_SMTP_RELAY_PORT), which no SecretProviderClass produces
+FAIL: Deployment/mailpit reads mailpit-relay/username (env MP_SMTP_RELAY_USERNAME), which no SecretProviderClass produces
+FAIL: Deployment/mailpit reads mailpit-relay/password (env MP_SMTP_RELAY_PASSWORD), which no SecretProviderClass produces
+FAIL: Deployment/mailpit reads mailpit-relay/allowlist (env MP_SMTP_RELAY_MATCHING), which no SecretProviderClass produces
+FAIL: Deployment/mailpit reads mailpit-relay/allowlist (env MP_SMTP_RELAY_ALLOWED_RECIPIENTS), which no SecretProviderClass produces
+FAIL: Deployment/mailpit reads mailpit-relay/override-from (env MP_SMTP_RELAY_OVERRIDE_FROM), which no SecretProviderClass produces
+FAIL: 7 break(s) in the Key Vault chain
+rc=1

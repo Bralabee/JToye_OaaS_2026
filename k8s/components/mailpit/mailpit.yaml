@@ -1,6 +1,7 @@
-# In-cluster Mailpit (D-13 as amended by D-20): ServiceAccount, Deployment, Service,
-# NetworkPolicy. The staging mail trap: every application email is captured here and
-# never leaves the cluster.
+# In-cluster Mailpit (D-13 as amended by D-20, and D-20 as amended on 2026-11-02):
+# ServiceAccount, Deployment, Service, NetworkPolicy. The staging mail trap: every
+# application email is captured here, and NONE leaves the cluster except a copy to a
+# recipient on the owner's tester allow-list (TESTER RELAY below).
 #
 # STARTTLS REQUIRED. MP_SMTP_TLS_CERT/KEY load the cert-manager certificate
 # mailpit-tls (cluster-ca.yaml); MP_SMTP_REQUIRE_STARTTLS refuses any message sent
@@ -14,11 +15,42 @@
 # staging does not create). The answer to plan 29-14's open item is read live in
 # plan 29-22 Task 3 from the EHLO reply.
 #
-# SENDS NOTHING. No relay, release or forward variable is set (MP_SMTP_RELAY_*,
-# MP_SMTP_FORWARD_*), and the policy below has no egress rule at all. Without DNS
-# egress a reverse-DNS lookup of each SMTP client could only time out, so
-# MP_SMTP_DISABLE_RDNS skips it; MP_DISABLE_VERSION_CHECK stops the UI asking
-# GitHub for the latest release.
+# TESTER RELAY (owner ruling 2026-11-02, amending D-20 narrowly; runbook
+# docs/runbooks/staging-tester-mail.md). An outside tester could not finish sign-up: the
+# verification email was captured here and never delivered. So Mailpit still captures
+# EVERY message, and additionally relays a copy to the envelope recipients that match the
+# owner's allow-list regex, and to nobody else. Mailpit v1.31.6 (config/config.go,
+# config/validators.go, internal/smtpd/relay.go at tag v1.31.6):
+#   MP_SMTP_RELAY_HOST/PORT/USERNAME/PASSWORD  the submission server (Zoho, 587)
+#   MP_SMTP_RELAY_STARTTLS "true"             STARTTLS on the relay hop, certificate checked
+#   MP_SMTP_RELAY_AUTH "plain"                Go's PlainAuth, which refuses to send the
+#                                             password over an unencrypted connection
+#   MP_SMTP_RELAY_MATCHING                    auto-relay ONLY recipients matching this regex
+#                                             (never MP_SMTP_RELAY_ALL, which relays everything)
+#   MP_SMTP_RELAY_ALLOWED_RECIPIENTS          the SAME regex: a configured relay also enables
+#                                             the UI/API "release" button, and this bounds a
+#                                             manual release to the same allow-list
+#   MP_SMTP_RELAY_OVERRIDE_FROM               optional: Zoho accepts only its own account (or
+#                                             an alias) as the sender
+# Every value comes from the OPTIONAL Secret mailpit-relay (each ref `optional: true`),
+# which nothing in git creates: the allow-list names real people, so it lives only in
+# that Secret. ABSENT OR INCOMPLETE MEANS OFF: the container's start script below turns
+# the relay on only when host, port, username, password and the allow-list are ALL
+# non-empty, and otherwise unsets every MP_SMTP_RELAY_* before Mailpit starts, so a
+# fresh environment traps everything exactly as before, and a half-made Secret cannot
+# crash-loop the pod (Mailpit refuses to start on "matching without a relay host" and on
+# "auth without a password"). A relay failure is logged as `[relay] error: ...` (ERROR)
+# and the message is still captured; core-java and Keycloak never see it, because
+# MP_SMTP_RELAY_FWD_SMTP_ERRORS is not set. INV-18(c) (check-render-invariants.sh) pins
+# this exact variable set, the Secret name, every ref optional, and the regex coming from
+# the Secret only, never a literal or a ConfigMap; keyvault-chain.py names mailpit-relay as
+# its one out-of-band optional Secret. Never set: MP_SMTP_RELAY_ALL, MP_SMTP_RELAY_CONFIG,
+# MP_SMTP_RELAY_ALLOW_INSECURE, MP_SMTP_RELAY_TLS, MP_SMTP_FORWARD_*.
+#
+# EGRESS. DNS to kube-dns and TCP 587 to the public range (RFC1918 excluded), the
+# Alertmanager-to-Zoho shape, and nothing else; with the relay off nothing uses either.
+# MP_SMTP_DISABLE_RDNS stays set (no reverse-DNS lookup of each SMTP client);
+# MP_DISABLE_VERSION_CHECK stops the UI asking GitHub for the latest release.
 #
 # THE SEND API IS LOCKED (D-33, T-29-110). POST /api/v1/send injects a message into
 # the mailbox testers read. With neither MP_SEND_API_AUTH_FILE nor MP_SEND_API_AUTH
@@ -131,10 +163,19 @@ spec:
         #   * STARTTLS stays REQUIRED: MP_SMTP_REQUIRE_STARTTLS below is untouched, and the
         #     files hashed are the ones MP_SMTP_TLS_CERT/KEY name, so the two cannot drift apart.
         # INV-23 (k8s/scripts/check-render-invariants.sh) pins this block in the render.
+        # The first lines are the TESTER RELAY gate (header): relay only when the whole
+        # Secret mailpit-relay is there, otherwise unset every relay variable. It prints the
+        # relay host and port, never the allow-list or a credential.
         command:
         - sh
         - -c
         - |
+          if [ -n "${MP_SMTP_RELAY_HOST:-}" ] && [ -n "${MP_SMTP_RELAY_PORT:-}" ] && [ -n "${MP_SMTP_RELAY_USERNAME:-}" ] && [ -n "${MP_SMTP_RELAY_PASSWORD:-}" ] && [ -n "${MP_SMTP_RELAY_MATCHING:-}" ] && [ -n "${MP_SMTP_RELAY_ALLOWED_RECIPIENTS:-}" ]; then
+            echo "mailpit-relay: ON via $MP_SMTP_RELAY_HOST:$MP_SMTP_RELAY_PORT (STARTTLS), ONLY to recipients on the Secret mailpit-relay allow-list; every message is still captured"
+          else
+            unset MP_SMTP_RELAY_HOST MP_SMTP_RELAY_PORT MP_SMTP_RELAY_USERNAME MP_SMTP_RELAY_PASSWORD MP_SMTP_RELAY_MATCHING MP_SMTP_RELAY_ALLOWED_RECIPIENTS MP_SMTP_RELAY_OVERRIDE_FROM MP_SMTP_RELAY_STARTTLS MP_SMTP_RELAY_AUTH
+            echo "mailpit-relay: OFF (Secret mailpit-relay absent or incomplete); every message is captured and none is delivered"
+          fi
           fp() { sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY" 2>/dev/null; }
           start=$(fp) || { echo "mailpit-cert-reload: cannot read $MP_SMTP_TLS_CERT / $MP_SMTP_TLS_KEY" >&2; exit 1; }
           /mailpit &
@@ -169,6 +210,56 @@ spec:
           value: /data/mailpit.db
         - name: MP_SEND_API_AUTH_FILE
           value: /send-api-lock/passwords
+        # TESTER RELAY (header; owner ruling 2026-11-02). Every value from the OPTIONAL
+        # Secret mailpit-relay, which no manifest creates; the start script above turns the
+        # relay off unless all of host, port, username, password and allowlist are set.
+        # The two literals only shape a relay that is on: STARTTLS required, PLAIN auth.
+        - name: MP_SMTP_RELAY_HOST
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: host
+              optional: true
+        - name: MP_SMTP_RELAY_PORT
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: port
+              optional: true
+        - name: MP_SMTP_RELAY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: username
+              optional: true
+        - name: MP_SMTP_RELAY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: password
+              optional: true
+        - name: MP_SMTP_RELAY_MATCHING
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: allowlist
+              optional: true
+        - name: MP_SMTP_RELAY_ALLOWED_RECIPIENTS
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: allowlist
+              optional: true
+        - name: MP_SMTP_RELAY_OVERRIDE_FROM
+          valueFrom:
+            secretKeyRef:
+              name: mailpit-relay
+              key: override-from
+              optional: true
+        - name: MP_SMTP_RELAY_STARTTLS
+          value: "true"
+        - name: MP_SMTP_RELAY_AUTH
+          value: plain
         ports:
         - containerPort: 1025
           name: smtp
@@ -259,8 +350,12 @@ spec:
 #            8025 ONLY, for the authenticated testers' UI (Ingress mailpit-ui, D-33).
 #            1025 never gains a peer: SMTP is never published. Operator reads of 8025
 #            through a port-forward are not seen by NetworkPolicy.
-#   Egress:  NONE. Mailpit sends nothing anywhere (no relay, no forward) and needs no
-#            DNS (MP_SMTP_DISABLE_RDNS).
+#   Egress:  kube-dns (UDP/TCP 53), to resolve the relay host, and TCP 587 to the public
+#            range with RFC1918 excluded, for the TESTER RELAY's STARTTLS submission to
+#            Zoho (owner ruling 2026-11-02; the same shape alertmanager-allow uses for the
+#            same provider, since a NetworkPolicy cannot name a host). Nothing else: no
+#            in-cluster peer, no 25, no 465, no 443. With Secret mailpit-relay absent the
+#            relay is off and neither rule is used. Forward stays unset.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -297,3 +392,26 @@ spec:
       ports:
         - protocol: TCP
           port: 8025
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 587

@@ -1,0 +1,22 @@
+ARM undeclared-key caught=yes
+ARM two-producers caught=yes
+ARM clientid-mismatch caught=yes
+ARM sync-lifetime caught=yes
+ARM shared-identity caught=yes
+ARM object-not-mounted caught=yes
+ARM cert-secret-spc-producer caught=yes
+ARM cert-secret-foreign-key caught=yes
+ARM ingress-auth-unproduced caught=yes
+ARM ingress-auth-unsynced caught=yes
+ARM grafana-auth-unproduced caught=yes
+ARM grafana-spc-missing caught=yes
+ARM grafana-mount-missing caught=yes
+ARM relay-required caught=yes
+ARM relay-foreign-reader caught=yes
+ARM relay-envfrom caught=yes
+ARM zero-spc caught=yes
+ARM pyyaml-missing caught=yes
+ARM kubectl-missing caught=yes
+CLEAN clean-library rc=0
+CLEAN clean-gate rc=0
+SELFTEST: 21/21 as expected

@@ -104,7 +104,8 @@ render none of them.
 | `secret-sync-allow` | both | nothing: no ingress and no egress rule (plan 29-12; the Key Vault fetch is the CSI provider's, on the node) | |
 | `mailpit-allow` | ingress | pods `app=core-java`, `app=keycloak`, `app=alertmanager` | TCP 1025 |
 | `mailpit-allow` | ingress | namespace `<controller ns>` (a literal `traefik` in the manifest; the row says `<controller ns>`, so a disagreement fails INV-7), for the D-33 authenticated testers' UI | TCP 8025 |
-| `mailpit-allow` | egress | nothing: no egress rule (plan 29-22; Mailpit relays and forwards nothing, and skips reverse DNS) | |
+| `mailpit-allow` | egress | `kube-system` pods `k8s-app=kube-dns` (to resolve the tester-relay host; owner ruling 2026-11-02, D-20 amended) | UDP 53, TCP 53 |
+| `mailpit-allow` | egress | public (Zoho `smtp.zoho.eu`, STARTTLS submission for the tester relay ONLY: a copy to the allow-listed recipients in the optional Secret `mailpit-relay`, everything else stays trapped; unused while that Secret is absent) | TCP 587 |
 | `prometheus-allow` | ingress | pod `app=grafana` (plan 29-24); no Ingress, D-19 | TCP 9090 |
 | `prometheus-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
 | `prometheus-allow` | egress | pod `app=core-java` (per pod, through the headless `core-java-metrics`) | TCP 9091 |

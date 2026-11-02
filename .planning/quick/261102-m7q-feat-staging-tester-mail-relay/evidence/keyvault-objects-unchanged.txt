@@ -1,0 +1,4 @@
+# keyvault-chain.py objects: derived Key Vault list unchanged (mailpit-relay is not a Key Vault object)
+before (origin/main library, before render): 38 objects
+after  (branch library, after render):       38 objects
+diff rc=0 (identical)

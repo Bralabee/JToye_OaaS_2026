@@ -172,6 +172,21 @@ elif arm == "grafana-mount-missing":
     spec["volumes"] = [v for v in spec["volumes"] if v.get("name") != "kv-grafana-edge"]
     for c in spec["containers"]:
         c["volumeMounts"] = [m for m in c.get("volumeMounts", []) if m.get("name") != "kv-grafana-edge"]
+elif arm == "relay-required":
+    # owner ruling 2026-11-02: the out-of-band mailpit-relay ref loses optional: true, so a
+    # missing Secret would stick Mailpit in CreateContainerConfigError instead of trapping all
+    for e in container(find("Deployment", "mailpit"), "mailpit")["env"]:
+        if e["name"] == "MP_SMTP_RELAY_HOST":
+            del e["valueFrom"]["secretKeyRef"]["optional"]
+elif arm == "relay-foreign-reader":
+    # another workload starts depending on the hand-applied mailpit-relay Secret
+    container(find("Deployment", "core-java"), "core-java").setdefault("env", []).append(
+        {"name": "PLANTED_RELAY", "valueFrom": {"secretKeyRef": {"name": "mailpit-relay", "key": "password",
+                                                                 "optional": True}}})
+elif arm == "relay-envfrom":
+    # Mailpit imports the whole out-of-band Secret: names the render cannot enumerate
+    container(find("Deployment", "mailpit"), "mailpit").setdefault("envFrom", []).append(
+        {"secretRef": {"name": "mailpit-relay", "optional": True}})
 elif arm == "zero-spc":
     docs = [d for d in docs if d.get("kind") != "SecretProviderClass"]
 else:
@@ -193,7 +208,7 @@ selftest() {
     "$KUBECTL" kustomize "$K8S_DIR/staging" > "$tmp/real.yaml" 2> "$tmp/err" || { cat "$tmp/err" >&2; void "the staging render failed"; }
     [[ -s "$tmp/real.yaml" ]] || void "the staging render is empty"
 
-    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key ingress-auth-unproduced ingress-auth-unsynced grafana-auth-unproduced grafana-spc-missing grafana-mount-missing zero-spc pyyaml-missing kubectl-missing)
+    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key ingress-auth-unproduced ingress-auth-unsynced grafana-auth-unproduced grafana-spc-missing grafana-mount-missing relay-required relay-foreign-reader relay-envfrom zero-spc pyyaml-missing kubectl-missing)
     declare -A WANT=(
         [undeclared-key]="Deployment/core-java reads dsar-credentials/not-a-key"
         [two-producers]="Secret postgres-credentials has two producers"
@@ -208,6 +223,9 @@ selftest() {
         [grafana-auth-unproduced]="Deployment/secret-sync reads grafana-edge-planted/auth (auth-secret of Ingress/grafana-public), which no SecretProviderClass produces"
         [grafana-spc-missing]="Deployment/secret-sync reads grafana-edge-credentials/auth (auth-secret of Ingress/grafana-public), which no SecretProviderClass produces"
         [grafana-mount-missing]="Deployment/secret-sync reads grafana-edge-credentials/auth (auth-secret of Ingress/grafana-public), produced by grafana-edge-kv, which Deployment/secret-sync does not mount"
+        [relay-required]="Deployment/mailpit reads mailpit-relay/host (env MP_SMTP_RELAY_HOST) without an env secretKeyRef carrying optional: true"
+        [relay-foreign-reader]="Deployment/core-java reads mailpit-relay/password (env PLANTED_RELAY): Secret mailpit-relay is out-of-band and optional for Deployment/mailpit alone"
+        [relay-envfrom]="Deployment/mailpit reads mailpit-relay/* (envFrom) without an env secretKeyRef carrying optional: true"
         [zero-spc]="the render holds no SecretProviderClass"
         [pyyaml-missing]="PyYAML is not importable"
         [kubectl-missing]="kubectl not found"

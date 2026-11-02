@@ -45,11 +45,15 @@
 #   UI-6 the certificate served for the host is issued by O=Let's Encrypt and names the
 #        host; control: an unknown SNI on the same IP is served TRAEFIK DEFAULT CERT (if
 #        not, VOID: the read could not tell the two apart).
-#   UI-7 Mailpit sends nothing: authenticated GET /api/v1/webui reports
-#        MessageRelay.Enabled false, an authenticated POST /api/v1/send answers 401 (its
-#        Send API credential is random per pod and held by nobody), and the Ready mailpit
-#        pod's env carries none of the relay/forward/accept-any/chaos names and exactly one
-#        MP_SEND_API_AUTH_FILE.
+#   UI-7 Mailpit sends nothing beyond the tester relay: authenticated GET /api/v1/webui
+#        reports MessageRelay.Enabled false, OR (owner ruling 2026-11-02, D-20 amended; the
+#        relay is on only while the optional Secret mailpit-relay exists) Enabled true with
+#        a NON-EMPTY AllowedRecipients (a UI release is bounded by the tester allow-list;
+#        only its length is printed, never the list) and SMTPServer on :587; an
+#        authenticated POST /api/v1/send answers 401 (its Send API credential is random per
+#        pod and held by nobody); and the Ready mailpit pod's env carries none of the
+#        relay/forward/accept-any/chaos names OTHER than the nine tester-relay names
+#        (TESTER_RELAY_ENV) and exactly one MP_SEND_API_AUTH_FILE.
 #   UI-8 300 authenticated GETs of /api/v1/info, 20 in parallel, meet at least one 429 (the
 #        edge limiter is live AFTER auth). The same burst without credentials is printed as
 #        `UNAUTH-429=<n>` and not asserted: Traefik v3.7.15 orders basic auth BEFORE the
@@ -78,7 +82,10 @@ NS="jtoye-staging"
 INVITE_TO="staff.invite.staging@olajay.co.uk"
 UI_SHELL="<title>Mailpit</title>"
 DNS1="dns1.registrar-servers.com"
-FORBIDDEN_ENV="MP_SMTP_RELAY_CONFIG MP_SMTP_RELAY_ALL MP_SMTP_RELAY_MATCHING MP_SMTP_FORWARD_CONFIG MP_SEND_API_AUTH_ACCEPT_ANY MP_ENABLE_CHAOS"
+FORBIDDEN_ENV="MP_SMTP_RELAY_CONFIG MP_SMTP_RELAY_ALL MP_SMTP_FORWARD_CONFIG MP_SEND_API_AUTH_ACCEPT_ANY MP_ENABLE_CHAOS"
+# The tester relay's env names (k8s/components/mailpit/mailpit.yaml TESTER RELAY; INV-18(c)
+# pins their shape in the render). The only relay names the Ready pod may carry.
+TESTER_RELAY_ENV='^MP_SMTP_RELAY_(HOST|PORT|USERNAME|PASSWORD|MATCHING|ALLOWED_RECIPIENTS|OVERRIDE_FROM|STARTTLS|AUTH)$'
 
 usage_error() { echo "USAGE ERROR: $*" >&2; exit 2; }
 void() { echo "VOID: $*" >&2; exit 2; }
@@ -148,14 +155,18 @@ judge_ui6() {
   [[ "$mine" == *"O=Let's Encrypt"* ]] && [[ "$mine" == *"$HOST"* ]] && [[ "$mine" != *"TRAEFIK DEFAULT CERT"* ]]
 }
 judge_ui7() {
-  local relay send forb lock n
+  local relay send forb lock n alen srv relay_ok=no
   relay=$(jq -r '.MessageRelay.Enabled' "$W/webui.body" 2>/dev/null); send=$(code send)
+  alen=$(jq -r '(.MessageRelay.AllowedRecipients // "") | length' "$W/webui.body" 2>/dev/null)
+  srv=$(jq -r '.MessageRelay.SMTPServer // ""' "$W/webui.body" 2>/dev/null)
   # Every relay/forward variable (MP_SMTP_RELAY_*, MP_SMTP_FORWARD_*, a superset of
-  # FORBIDDEN_ENV's four) plus accept-any and chaos.
-  forb=$(command grep -cE '^(MP_SMTP_RELAY_[A-Z_]+|MP_SMTP_FORWARD_[A-Z_]+|MP_SEND_API_AUTH_ACCEPT_ANY|MP_ENABLE_CHAOS)$' "$W/mailpit.env")
+  # FORBIDDEN_ENV) plus accept-any and chaos, less the nine tester-relay names.
+  forb=$(command grep -vE "$TESTER_RELAY_ENV" "$W/mailpit.env" | command grep -cE '^(MP_SMTP_RELAY_[A-Z_]+|MP_SMTP_FORWARD_[A-Z_]+|MP_SEND_API_AUTH_ACCEPT_ANY|MP_ENABLE_CHAOS)$')
   lock=$(command grep -cxF MP_SEND_API_AUTH_FILE "$W/mailpit.env")
-  echo "webui HTTP $(code webui) MessageRelay.Enabled=${relay:-?}; authenticated POST /api/v1/send HTTP $send; Ready pod $(cat "$W/mailpit.pod") forbidden-env=$forb MP_SEND_API_AUTH_FILE=$lock"
-  [ "$(code webui)" = 200 ] && [ "$relay" = false ] && [ "$send" = 401 ] && [ "$forb" = 0 ] && [ "$lock" = 1 ]
+  if [ "$relay" = false ]; then relay_ok=yes
+  elif [ "$relay" = true ] && [[ "$alen" =~ ^[0-9]+$ ]] && [ "$alen" -gt 0 ] && [[ "$srv" == *:587 ]]; then relay_ok=yes; fi
+  echo "webui HTTP $(code webui) MessageRelay.Enabled=${relay:-?} (tester relay: AllowedRecipients length ${alen:-?}, server ${srv:-none}); authenticated POST /api/v1/send HTTP $send; Ready pod $(cat "$W/mailpit.pod") forbidden-env=$forb MP_SEND_API_AUTH_FILE=$lock"
+  [ "$(code webui)" = 200 ] && [ "$relay_ok" = yes ] && [ "$send" = 401 ] && [ "$forb" = 0 ] && [ "$lock" = 1 ]
 }
 judge_ui8() {
   local a u
@@ -302,6 +313,7 @@ case "\$a" in
   *" get pods -l app=mailpit "*) printf 'mailpit-stub True\n' ;;
   *" get pod mailpit-stub "*)
     printf 'MP_SMTP_TLS_CERT\nMP_SMTP_TLS_KEY\nMP_SMTP_REQUIRE_STARTTLS\nMP_DATABASE\nMP_SEND_API_AUTH_FILE\n'
+    printf 'MP_SMTP_RELAY_HOST\nMP_SMTP_RELAY_PORT\nMP_SMTP_RELAY_USERNAME\nMP_SMTP_RELAY_PASSWORD\nMP_SMTP_RELAY_MATCHING\nMP_SMTP_RELAY_ALLOWED_RECIPIENTS\nMP_SMTP_RELAY_OVERRIDE_FROM\nMP_SMTP_RELAY_STARTTLS\nMP_SMTP_RELAY_AUTH\n'
     if [ "\${STUB_MODE:-good}" = ui7-relay-env ]; then printf 'MP_SMTP_RELAY_ALL\n'; fi ;;
   *) echo "stub kubectl: \$*" >&2; exit 9 ;;
 esac
@@ -345,7 +357,12 @@ case "\$url" in
     else
       case "\$url" in
         */api/v1/search*) body='{"total":1,"messages":[{"ID":"StubId1","Subject":"x"}]}' ;;
-        */api/v1/webui) if [ "\$mode" = ui7-relay ]; then body='{"MessageRelay":{"Enabled":true}}'; else body='{"MessageRelay":{"Enabled":false}}'; fi ;;
+        */api/v1/webui) case "\$mode" in
+            ui7-relay) body='{"MessageRelay":{"Enabled":true}}' ;;
+            ui7-relay-unbounded) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":""}}' ;;
+            good-relay) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"(?i)^(someone@example\\\\.invalid)\$"}}' ;;
+            *) body='{"MessageRelay":{"Enabled":false}}' ;;
+          esac ;;
         */api/v1/send) if [ "\$mode" = ui7-send-open ]; then body='{"ID":"x"}'; else code=401; body="Unauthorised."; fi ;;
         */api/v1/info)
           echo x >> "$st/state/info.\$auth"; n=\$(wc -l < "$st/state/info.\$auth")
@@ -366,14 +383,14 @@ STUB
 exit 1
 STUB
   chmod +x "$st/bin/"*
-  local -a ARMS=(good ui1-open ui2-wrong-accepted ui3-missing-id ui4-plain-ui ui5-smtp-open ui5-loadbalancer ui6-default-cert ui7-relay ui7-relay-env ui7-send-open ui8-no-429 dns-wrong list-kv-objects)
+  local -a ARMS=(good good-relay ui1-open ui2-wrong-accepted ui3-missing-id ui4-plain-ui ui5-smtp-open ui5-loadbalancer ui6-default-cert ui7-relay ui7-relay-unbounded ui7-relay-env ui7-send-open ui8-no-429 dns-wrong list-kv-objects)
   declare -A WANT=(
-    [good]="PROBE: 8/8 PASS" [ui1-open]="ARM UI-1 FAIL" [ui2-wrong-accepted]="ARM UI-2 FAIL" [ui3-missing-id]="ARM UI-3 FAIL"
+    [good]="PROBE: 8/8 PASS" [good-relay]="PROBE: 8/8 PASS" [ui1-open]="ARM UI-1 FAIL" [ui2-wrong-accepted]="ARM UI-2 FAIL" [ui3-missing-id]="ARM UI-3 FAIL"
     [ui4-plain-ui]="ARM UI-4 FAIL" [ui5-smtp-open]="ARM UI-5 FAIL" [ui5-loadbalancer]="ARM UI-5 FAIL" [ui6-default-cert]="ARM UI-6 FAIL"
-    [ui7-relay]="ARM UI-7 FAIL" [ui7-relay-env]="ARM UI-7 FAIL" [ui7-send-open]="ARM UI-7 FAIL" [ui8-no-429]="ARM UI-8 FAIL"
+    [ui7-relay]="ARM UI-7 FAIL" [ui7-relay-unbounded]="ARM UI-7 FAIL" [ui7-relay-env]="ARM UI-7 FAIL" [ui7-send-open]="ARM UI-7 FAIL" [ui8-no-429]="ARM UI-8 FAIL"
     [dns-wrong]="VOID: $HOST resolves to '203.0.113.7'" [list-kv-objects]="$KV_PASSWORD_OBJECT"
   )
-  declare -A WANT_RC=([good]=0 [dns-wrong]=2 [list-kv-objects]=0)
+  declare -A WANT_RC=([good]=0 [good-relay]=0 [dns-wrong]=2 [list-kv-objects]=0)
   for mode in "${ARMS[@]}"; do
     n=$((n + 1)); want="${WANT[$mode]}"; wantrc="${WANT_RC[$mode]:-1}"; line=""
     rm -f "$st/state/"*

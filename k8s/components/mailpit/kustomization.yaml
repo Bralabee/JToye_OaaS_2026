@@ -2,7 +2,8 @@
 #
 # Staging application mail is CAPTURED, never delivered: core-java's only SMTP
 # destination is mailpit.jtoye-staging.svc.cluster.local:1025 (app-config smtp.host,
-# plan 29-08), and Mailpit has no relay, release or forward configured. STARTTLS is
+# plan 29-08), and Mailpit has no forward configured and relays nothing EXCEPT under
+# the amendment below. STARTTLS is
 # REQUIRED on both ends: core-java by the D-20 literal in application-prod.yml and
 # application-staging.yml (plan 29-16), Mailpit by MP_SMTP_REQUIRE_STARTTLS. The
 # server certificate comes from a cert-manager INTERNAL CA (cluster-ca.yaml), which
@@ -14,9 +15,24 @@
 # as ../redis: k8s/local reaches the host compose mail sink (LOC-1), and production
 # chooses its own mail path in Phase 32. Only k8s/staging lists it.
 #
-# Mailpit reads no Key Vault secret (its only Secret is the cert-manager TLS pair),
-# so it needs no Workload Identity: D-23's list named it conditionally on reading a
-# secret.
+# D-20 AMENDED, NARROWLY (owner ruling 2026-11-02). A real outside tester registered on
+# 2026-10-30, Keycloak reported "an email has been sent", and nothing arrived: D-13/D-20
+# trap every message, so no outside tester could finish sign-up. Amendment: Mailpit keeps
+# capturing EVERY message, and relays a copy ONLY to recipients on an owner-maintained
+# allow-list of named tester addresses, through the real SMTP provider (Zoho, 587,
+# STARTTLS). Nothing else about staging mail changes: core-java and Keycloak still send
+# only to Mailpit, every other recipient stays trapped, and with no allow-list Secret the
+# relay is off. Mechanism in mailpit.yaml (TESTER RELAY); owner steps in
+# docs/runbooks/staging-tester-mail.md; recorded as D-35 in Phase 29's 29-CONTEXT.md.
+#
+# Mailpit reads no Key Vault secret (its Secrets are the cert-manager TLS pair and the
+# OPTIONAL mailpit-relay, which the owner applies by hand and which may be absent), so
+# it needs no Workload Identity: D-23's list named it conditionally on reading a secret.
+# mailpit-relay deliberately does NOT follow D-23's Key Vault sync: an SPC mount fails
+# the pod when an object is missing, so a Key Vault-backed relay could not be "absent =
+# trap everything", and the allow-list (personal data, edited per tester) would become
+# a write-once deploy prerequisite. Losing the Secret with the cluster fails SAFE (relay
+# off), the opposite of the D-23 concern (a key that dies with the cluster).
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 

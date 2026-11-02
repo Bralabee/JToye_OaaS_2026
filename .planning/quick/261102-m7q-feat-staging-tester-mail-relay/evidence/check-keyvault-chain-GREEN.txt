@@ -1,0 +1,2 @@
+OK   [k8s/staging] OK: 12 SecretProviderClasses, 57 consumed (Secret, key) reference(s), 38 Key Vault objects; every consumer mounts its one producer, every clientID is its ServiceAccount's
+PASS: the Key Vault chain holds in 1 target(s) (k8s/staging).
