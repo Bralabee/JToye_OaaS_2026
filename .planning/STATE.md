@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing at 26/32 (30-01..30-26). 30-26 COMPLETE 2026-11-01 on feat/30-billing-per-location (not pushed): scripts/staging-seed.sh --stage billing (BILLING sub=… quantity=… locations=… invoice=… amount_paid=… status=paid livemode=false, from Stripe objects read by id) and --stage billing-sync-check (BILLING-SYNC before=n after-add=n+1 after-remove=n, probe shop deleted on every exit path); selftest 60 PASS 0 FAIL, both break arms recorded red then restored (30-26-SUMMARY.md). Next: 30-27 — PR 7 (30-25 is #1067 on main; this branch carries 30-26), merge, deploy, then run both stages on staging for the PAY-02 / D-04 evidence."
-last_updated: "2026-11-01T23:39:34.533Z"
-last_activity: 2026-11-01
-last_activity_desc: "30-26 complete: staging-seed.sh --stage billing and --stage billing-sync-check, selftest 60/0, break arms recorded"
-state_head: ee939be5531f5546a2c3be00bc095b4b7bc1f6da
+stopped_at: "Phase 30 executing at 27/32 (30-01..30-27). 30-27 COMPLETE 2026-11-02 on feat/30-pay03-staging-loop (cut from origin/main 2fe0837b, not pushed): PR 7 #1087 MERGED squash 2fe0837b, deployed by run 41375140960 with digest parity MATCH (core-java, edge-go, frontend); PAY-02 on staging: sub_1UXBDhDpS9ICNeRthdSjxKoZ quantity 1 = 1 location (all-shops), invoice in_1UXBDhDpS9ICNeRtw8DKqYXs paid 3900 livemode false read by id, live sync 1 -> 2 -> 1, replay same ids; evidence/30-pay02-billing.json leak-scanned with controls; issue #102 comment posted and read back (30-27-SUMMARY.md). Next: 30-28 — PAY-03 PR 8 (connect-onboard, settlement-mode, destination money loop) on this branch."
+last_updated: "2026-11-02T02:57:14.009Z"
+last_activity: 2026-11-02
+last_activity_desc: "30-27 complete: PR 7 merged 2fe0837b and deployed with parity; PAY-02 evidenced on staging from Stripe by id; live sync observed; #102 comment"
+state_head: 758a3129d71e89b6ca151f83107e4317508f1bd9
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 309
+  completed_plans: 310
   percent: 90
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 Phase: 30 (The Money Path, Executed) — EXECUTING
 Status: Executing Phase 30
-Last activity: 2026-11-01 — 30-26 complete (staging billing evidence stages); next 30-27
+Last activity: 2026-11-02 — 30-27 complete (PR 7 merged 2fe0837b; PAY-02 per-location billing evidenced on staging); next 30-28
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1463,6 +1463,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 30]: 30-22 complete on PR #1065 head 1f69a7f0: the CI sk_test_ never enters Playwright (Node fetch client; the request fixture's call log leaked it into the JSON report even with trace off), and the nightly deletes any artifact file holding a Stripe secret before upload (check-stripe-ci-keys.sh --scan-artifacts, zip members read)
 - [Phase 30]: 30-22: the refund read-back settles only on exactly one succeeded refund on two consecutive reads within 30 s; a second refund is a violation at once
 - [Phase 30]: 30-26: both staging billing stages sign in as the staging vendor (BillingController gates on requireGroupAdmin; the vendor holds GROUP_ADMIN), take BILLING_LOCATION_RULE=all-shops from evidence/30-25-d04-decision.txt, and check 3900 three ways (DTO monthlyAmountPennies, Stripe price unit_amount, amount_paid = 3900 x quantity) as FAILs, never recomputed — PAY-02's falsifier is a test-mode invoice retrieved from Stripe by id; the stage reads subscription and invoice by id with the staging key and asserts livemode false on each
+- [Phase 30]: 30-27: the staging tenant had no subscription, so --stage billing SUBSCRIBED it (sub_1UXBDhDpS9ICNeRthdSjxKoZ, quantity 1 = 1 location); it is left ACTIVE as TEST-mode billing evidence, cancellable through the billing API
+- [Phase 30]: 30-27: round-1 #1087 finding 8 OBSERVED live (after-commit billing sync is synchronous, both polls hit at 0s); findings recorded, not patched; staging-seed.sh is next edited by 30-28
 
 ### Pending Todos
 
@@ -1543,9 +1545,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-11-01T23:40:00.000Z
-Stopped at: Phase 30 — 30-26 done (26/32) on feat/30-billing-per-location (not pushed); next is 30-27, PR 7 and the staging run of --stage billing and --stage billing-sync-check
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-26-SUMMARY.md` (Known Limits for 30-27)
+Last session: 2026-11-02T02:58:00.000Z
+Stopped at: Phase 30 — 30-27 done (27/32) on feat/30-pay03-staging-loop (not pushed; no upstream); PR 7 #1087 merged 2fe0837b; next is 30-28, PAY-03 PR 8 on this branch
+Resume file: `.planning/STATE.md` (Current Position), `HANDOFF.md` (RESUME HERE) and `.planning/phases/30-live-stripe-test-mode-execution/30-27-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 

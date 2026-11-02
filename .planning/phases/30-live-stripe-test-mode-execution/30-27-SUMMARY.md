@@ -175,6 +175,10 @@ These are recorded only; nothing in `scripts/staging-seed.sh` was patched in thi
 - I recorded which `--stage billing` path ran, as the task asked. The tenant had no subscription, so the first run SUBSCRIBED. The second run read it back.
 - The subscription is left ACTIVE as the staging billing evidence, as the plan's reversibility note says.
 - The new branch has no upstream. It was created with `--track` defaulting to origin/main, and I unset that so a bare push cannot target main.
+- **PAY-02's checkbox in REQUIREMENTS.md stays unticked.**
+  - `requirements.ready-ids` returned PAY-02 as ready, since 30-25, 30-26 and 30-27 all have SUMMARYs.
+  - But `requirements.mark-complete` ticked only the checkbox (traceability `applied: false`). The traceability row records PAY-02 as "unticked pending owner acceptance", and the requirement's own line says it "Closes #102's remainder", which UXT-033 still leaves open.
+  - So I reverted the tick and added the 30-27 staging evidence to the traceability row. Ticking the checkbox is the owner's call, at phase verification. `requirements-completed` above copies the plan's `requirements` field verbatim, as the template requires.
 
 ## Deviations from Plan
 
