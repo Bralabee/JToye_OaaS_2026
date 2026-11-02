@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Landing: The Owner's Own BeesLens Photographs Lead — 2026-11-02 (#PR-PENDING)
+
+The owner supplied seven of his own BeesLens photographs and approved where each goes; recorded as D16 in `design/decisions.md` (amends D10), run record `design/runs/2026-11-02-landing-beeslens/`.
+
+- **What changed:** the phone's Order-food door strip shows spaghetti with chicken and plantain; the desktop collage shows a jollof meal box, rice/beans/plantain with pepper stew, plantain and yam meal-prep boxes and puff-puff; the Jollof and Desserts chips use the owner's photographs; kitchen cards with no banner get them by cuisine, and catering and drinks/juice kitchens now get a picture too (captions still "<Cuisine> — example photo", D10/D13).
+- **What stays Wikimedia:** Grill (suya), Caribbean (rice and peas), South Asian (biryani) and Vegan (chana), with their CC credits unchanged. The four replaced Wikimedia pictures and their credit records are retired.
+- **Credits:** one line "Photography: BeesLens" inside the Photo credits disclosure; `credits.json` gains a `kind` (own / open-collection) and the tests hold files on disk = `PHOTOS` = `credits.json`.
+- **LCP wiring kept:** the strip's `<picture>` + 1x1 `lg` source and the first tile's eager / high-priority wiring are unchanged (0 changed lines). The strip is 52,598 B (was 53,586), the first tile 84,376 B (was 189,454), every new file under 200,000 B; all metadata stripped, the watermark cropped on three.
+- **Proof:** Jest RED then GREEN (164 in the landing suites), four break arms (size, orphan file, unstripped EXIF, missing record) each RED then restored by hash; `npm run build` and eslint rc 0; the landing web-perf spec PASS on the production build.
+
 ### Storefront Search: A Kitchen Is Found by the Dishes It Sells — 2026-11-02 (#1098)
 
 An external tester searched "pounded yam" and "plantain" on `/shop` and got "No kitchens found" while a published kitchen sold both. The search read only the shop's own `search_vector` (name, tags, description, address); the dishes were never consulted.

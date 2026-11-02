@@ -168,6 +168,29 @@ dev server against the Compose stack's API; the BEFORE figures equal the ones me
    kitchen row, and the cut-off chip is that peek here (taste-skill `edge-text` WARN at 390, the
    peeking "South Asian", is this choice).
 - **Status: KEEP** (Sanmi approved the four amendments; the two deviations above, no H1 fallback
-  and no fade mask, are open for Sanmi to overrule).
+  and no fade mask, are open for Sanmi to overrule) (the no-fade-mask deviation was confirmed for
+  the chip rail by Sanmi on 2026-11-02, D16).
 - **Review when:** the landing's next blind A/B, or the h1 copy is revisited (then the 48px
   fallback can be re-measured against a shorter headline).
+
+## D16 · 2026-11-02 · Imagery: the owner's own BeesLens photography leads
+Sanmi supplied seven of his own BeesLens photographs on 2026-11-02 and approved where each one goes
+(design-run step 6, build): the phone's Order-food door strip (spaghetti with chicken and plantain),
+the desktop collage (jollof meal box, rice/beans/plantain with pepper stew, plantain and yam boxes,
+puff-puff), the Jollof and Desserts chips, and the kitchen cards by cuisine, including two new
+cuisines (catering: a buffet soup; drinks and juice: a fruit-punch dispenser). The mapping, the
+processing and the measured bytes are in `runs/2026-11-02-landing-beeslens/direction.md`, with the
+before/after board `runs/2026-11-02-landing-beeslens/before-after.jpg`.
+- **Status: KEEP (Sanmi).** Amends D10: the owner's own photography now, and open-collection
+  pictures only where no own photograph exists yet (Grill, Caribbean, South Asian, Vegan). D10/D13's
+  rule stands: on a kitchen card any such picture is captioned "<Cuisine> — example photo" and never
+  presented as that kitchen's dish.
+- **Credit:** one line, "Photography: BeesLens", inside the Photo credits disclosure; the CC wording
+  for the remaining open-collection pictures is unchanged. The photographer's watermark was cropped
+  (the bottom 6%) on the three photographs that carried it, and all metadata (EXIF, XMP, ICC) was
+  stripped from every derivative.
+- **Evidence:** the owner's answers of 2026-11-02.
+- **Also ruled 2026-11-02:** the chip rail's mouse affordance at 1024-1279px stays the D14 "peek"
+  (the cut-off chip); the owner chose no change.
+- **Review when:** more owner photographs arrive for the remaining cuisines, or kitchens upload their
+  own through the Phase 24 media pipeline.
