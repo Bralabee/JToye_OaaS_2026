@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { coreBaseUrl } from "@/lib/customer-orders-server"
+import { forwardedForHeader } from "@/lib/forwarded-for"
 
 /**
  * GET /api/customer-orders?page=&size=
@@ -22,6 +23,11 @@ import { coreBaseUrl } from "@/lib/customer-orders-server"
  *  - The access token never reaches browser JS: HttpOnly cookie in, custom
  *    header out, both server-side only.
  *  - Only pagination params are forwarded, and only when strictly numeric.
+ *  - The visitor's X-Forwarded-For chain is forwarded verbatim beside the token
+ *    (quick 261102-vwa), read from `req.headers` through the shared
+ *    `lib/forwarded-for.ts`, so core's public limiter buckets this read per visitor
+ *    and not per frontend pod. Core reads it only from a peer declared in
+ *    jtoye.security.trusted-proxies; nothing here chooses a hop.
  */
 
 const ACCESS_COOKIE = "jtoye-customer-access"
@@ -79,7 +85,7 @@ export async function GET(req: NextRequest) {
     const upstream = await fetch(
       `${coreBaseUrl()}/public/orders/mine${qs ? `?${qs}` : ""}`,
       {
-        headers: { "X-Customer-Token": access },
+        headers: { "X-Customer-Token": access, ...forwardedForHeader(req.headers) },
         cache: "no-store",
       }
     )
@@ -109,9 +115,10 @@ export async function GET(req: NextRequest) {
  *
  * Forwarded, and nothing else: the JSON body as received, the Idempotency-Key header (the
  * platform contract the checkout speaks), and the chain in X-Forwarded-For if one reached this
- * server — core reads it only from a peer declared in jtoye.security.trusted-proxies
- * (TRUSTED_PROXY_CIDRS), otherwise the socket peer (this container) is the address its IP axis
- * digests. Status, body and Retry-After pass through unchanged so the checkout's typed-error
+ * server, through the same shared `lib/forwarded-for.ts` as the GET (quick 261102-vwa; same key,
+ * same verbatim value, same position, so the output is unchanged) — core reads it only from a
+ * peer declared in jtoye.security.trusted-proxies (TRUSTED_PROXY_CIDRS), otherwise the socket
+ * peer (this container) is the address its IP axis digests. Status, body and Retry-After pass through unchanged so the checkout's typed-error
  * handling sees exactly what core said.
  */
 const SHOP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$/
@@ -133,8 +140,7 @@ export async function POST(req: NextRequest) {
   if (access) headers["X-Customer-Token"] = access
   const idempotencyKey = req.headers.get("idempotency-key")
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey
-  const forwardedFor = req.headers.get("x-forwarded-for")
-  if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor
+  Object.assign(headers, forwardedForHeader(req.headers))
 
   try {
     const upstream = await fetch(`${coreBaseUrl()}/public/shops/${shop}/orders`, {

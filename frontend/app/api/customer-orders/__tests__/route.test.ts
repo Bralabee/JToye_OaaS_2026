@@ -20,11 +20,17 @@ import { NextRequest } from "next/server"
 
 const ACCESS_COOKIE = "jtoye-customer-access"
 
-function makeRequest(url: string, cookie?: string): NextRequest {
+function makeRequest(url: string, cookie?: string, extra: Record<string, string> = {}): NextRequest {
   return new NextRequest(url, {
-    headers: cookie ? { cookie: `${ACCESS_COOKIE}=${cookie}` } : {},
+    headers: { ...(cookie ? { cookie: `${ACCESS_COOKIE}=${cookie}` } : {}), ...extra },
   })
 }
+
+/**
+ * Quick 261102-vwa: a visitor's chain, client-written left part and mixed spacing included. It
+ * must reach core byte-for-byte; core's ClientIpResolver alone decides which hop to believe.
+ */
+const CHAIN = "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9"
 
 describe("/api/customer-orders", () => {
   const realFetch = global.fetch
@@ -165,6 +171,37 @@ describe("/api/customer-orders", () => {
     expect(res.status).toBe(401)
   })
 
+  describe("forwards the visitor's X-Forwarded-For through the shared helper (quick 261102-vwa)", () => {
+    const ok = () =>
+      jest.fn().mockResolvedValue({ status: 200, json: async () => ({ content: [] }) })
+
+    it("R1 GET sends the chain verbatim beside the token, and no other request header", async () => {
+      const fetchSpy = ok()
+      global.fetch = fetchSpy as unknown as typeof fetch
+
+      await GET(
+        makeRequest("http://localhost/api/customer-orders?size=5", "tok-abc", {
+          "x-forwarded-for": CHAIN,
+          "x-real-ip": "203.0.113.50",
+          authorization: "Bearer secret",
+        })
+      )
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const [, init] = fetchSpy.mock.calls[0]
+      expect(init.headers).toEqual({ "X-Customer-Token": "tok-abc", "X-Forwarded-For": CHAIN })
+      expect(init.cache).toBe("no-store")
+    })
+
+    it("R2 GET with no X-Forwarded-For sends the token alone", async () => {
+      const fetchSpy = ok()
+      global.fetch = fetchSpy as unknown as typeof fetch
+
+      await GET(makeRequest("http://localhost/api/customer-orders?size=5", "tok-abc"))
+      const [, init] = fetchSpy.mock.calls[0]
+      expect(init.headers).toEqual({ "X-Customer-Token": "tok-abc" })
+    })
+  })
+
   it("returns 502 when core is unreachable", async () => {
     const fetchSpy = jest.fn().mockRejectedValue(new Error("ECONNREFUSED"))
     global.fetch = fetchSpy as unknown as typeof fetch
@@ -258,6 +295,47 @@ describe("POST /api/customer-orders?shop=", () => {
     const res = await POST(postRequest("http://localhost/api/customer-orders?shop=../admin", {}))
     expect(res.status).toBe(400)
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Quick 261102-vwa. The POST forwarded X-Forwarded-For before the shared helper existed, and no
+   * test pinned it. These two pin its exact output (keys, their order, values) BEFORE it is moved
+   * onto lib/forwarded-for.ts, and stay green after: losing the chain here would put every cash
+   * order on the frontend pod's per-IP cap (37-28, D-27).
+   */
+  it("R3 POST output is pinned: Content-Type, X-Customer-Token, Idempotency-Key, X-Forwarded-For, in that order", async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({ status: 201, headers: new Headers(), json: async () => ({}) })
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    await POST(
+      postRequest(
+        "http://localhost/api/customer-orders?shop=jollof-express",
+        {},
+        {
+          cookie: `${ACCESS_COOKIE}=tok-abc`,
+          "idempotency-key": "k-1",
+          "x-forwarded-for": CHAIN,
+          "x-real-ip": "203.0.113.50",
+        }
+      )
+    )
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(Object.keys(init.headers)).toEqual([
+      "Content-Type",
+      "X-Customer-Token",
+      "Idempotency-Key",
+      "X-Forwarded-For",
+    ])
+    expect(Object.values(init.headers)).toEqual(["application/json", "tok-abc", "k-1", CHAIN])
+  })
+
+  it("R4 POST as a guest with no X-Forwarded-For sends Content-Type alone", async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({ status: 201, headers: new Headers(), json: async () => ({}) })
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    await POST(postRequest("http://localhost/api/customer-orders?shop=jollof-express", {}))
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init.headers).toEqual({ "Content-Type": "application/json" })
   })
 
   it("upstream network failure is a 502, not an unhandled rejection", async () => {

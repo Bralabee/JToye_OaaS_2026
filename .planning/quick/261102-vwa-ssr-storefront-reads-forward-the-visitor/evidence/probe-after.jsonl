@@ -1,0 +1,24 @@
+{"method":"GET","url":"/public/shops?page=0&size=function%28%29%7Bthrow+Error%28%22Attempted+to+call+SHOPS_PAGE_SIZE%28%29+from+the+server+but+SHOPS_PAGE_SIZE+is+on+the+client.+It%27s+not+possible+to+invoke+a+client+function+from+the+server%2C+it+can+only+be+rendered+as+a+Component+or+passed+to+props+of+a+Client+Component.%22%29%7D","xff":"127.0.0.1","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"landing"}
+{"method":"GET","url":"/public/shops?page=0&size=8","xff":"192.0.2.66, 198.51.100.1","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"method":"GET","url":"/public/featured-shops","xff":"192.0.2.66, 198.51.100.1","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"shop"}
+{"method":"GET","url":"/public/shops?page=0&size=function%28%29%7Bthrow+Error%28%22Attempted+to+call+SHOPS_PAGE_SIZE%28%29+from+the+server+but+SHOPS_PAGE_SIZE+is+on+the+client.+It%27s+not+possible+to+invoke+a+client+function+from+the+server%2C+it+can+only+be+rendered+as+a+Component+or+passed+to+props+of+a+Client+Component.%22%29%7D","xff":"198.51.100.2","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"slug"}
+{"method":"GET","url":"/public/shops/probe-kitchen","xff":"192.0.2.66,198.51.100.3","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"method":"GET","url":"/public/shops/probe-kitchen/products","xff":"192.0.2.66,198.51.100.3","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"method":"GET","url":"/public/shops/probe-kitchen/reviews?size=5","xff":"192.0.2.66,198.51.100.3","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"method":"GET","url":"/public/shops/probe-kitchen/announcements","xff":"192.0.2.66,198.51.100.3","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"cart"}
+{"method":"GET","url":"/public/shops/probe-kitchen","xff":"198.51.100.4","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"sitemap"}
+{"method":"GET","url":"/public/shops?page=0&size=500","xff":"198.51.100.5","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"orders"}
+{"method":"GET","url":"/public/orders/mine?size=100","xff":"198.51.100.6","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-customer-token","x-forwarded-for"]}
+{"mark":"api-get"}
+{"method":"GET","url":"/public/orders/mine?size=5","xff":"198.51.100.7","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-customer-token","x-forwarded-for"]}
+{"mark":"api-post"}
+{"method":"POST","url":"/public/shops/probe-kitchen/orders","xff":"198.51.100.8","names":["accept","accept-encoding","accept-language","cache-control","connection","content-length","content-type","host","idempotency-key","pragma","sec-fetch-mode","user-agent","x-customer-token","x-forwarded-for"]}
+{"mark":"none"}
+{"method":"GET","url":"/public/shops?page=0&size=function%28%29%7Bthrow+Error%28%22Attempted+to+call+SHOPS_PAGE_SIZE%28%29+from+the+server+but+SHOPS_PAGE_SIZE+is+on+the+client.+It%27s+not+possible+to+invoke+a+client+function+from+the+server%2C+it+can+only+be+rendered+as+a+Component+or+passed+to+props+of+a+Client+Component.%22%29%7D","xff":"127.0.0.1","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+{"mark":"end"}

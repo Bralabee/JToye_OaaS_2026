@@ -1,0 +1,19 @@
+# single-copy gate at BASE 6ce700eb (route.ts:136-137 expected; must FAIL)
+rg rc=0 (0 = matches, 1 = none, 2 = error)
+comment lines filtered: 1
+code lines naming the header:
+  frontend/app/api/customer-orders/route.ts:136:  const forwardedFor = req.headers.get("x-forwarded-for")
+frontend/app/api/customer-orders/route.ts:137:  if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor
+FAIL: code outside lib/forwarded-for.ts names the header:
+  frontend/app/api/customer-orders/route.ts:136:  const forwardedFor = req.headers.get("x-forwarded-for")
+frontend/app/api/customer-orders/route.ts:137:  if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor
+gate rc=1 (must be 1)
+
+# single-copy gate on the working tree after Task 2 wiring (must PASS)
+rg rc=0 (0 = matches, 1 = none, 2 = error)
+comment lines filtered: 8
+code lines naming the header:
+  frontend/lib/forwarded-for.ts:53:  const chain = source?.get("x-forwarded-for")
+frontend/lib/forwarded-for.ts:54:  return chain ? { "X-Forwarded-For": chain } : {}
+PASS: every code line naming the header is in lib/forwarded-for.ts
+gate rc=0 (must be 0)

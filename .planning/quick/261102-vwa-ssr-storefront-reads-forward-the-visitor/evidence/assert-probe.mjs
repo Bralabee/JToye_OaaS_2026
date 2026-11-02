@@ -2,6 +2,9 @@
 //   node assert-probe.mjs <log> before
 //   node assert-probe.mjs <log> after [--cases a,b,...]
 //   node assert-probe.mjs diff <before.jsonl> <after.jsonl> [--cases a,b,...]
+// diff rule (the plan's): after-minus-before header names are exactly ["x-forwarded-for"] for every
+// case except api-post, which must be identical. That includes `none`: Next fills x-forwarded-for
+// with its own socket peer for a header-less request, and the change now forwards that fill.
 // Exit 0 pass, 1 violation (offending line printed), 2 VOID (the probe exercised nothing).
 import fs from "node:fs"
 
@@ -97,9 +100,6 @@ if (args[0] === "diff") {
       if (c === "api-post") {
         if (added.length || removed.length || x.xff !== y.xff)
           bad(`case api-post must be identical; added=${JSON.stringify(added)} removed=${JSON.stringify(removed)} xff ${JSON.stringify(y.xff)} -> ${JSON.stringify(x.xff)}`, x)
-      } else if (c === "none") {
-        if (removed.length || added.length)
-          bad(`case none: header names changed added=${JSON.stringify(added)} removed=${JSON.stringify(removed)}`, x)
       } else if (removed.length || JSON.stringify(added) !== JSON.stringify(["x-forwarded-for"])) {
         bad(`case ${c}: after-minus-before names must be exactly ["x-forwarded-for"]; added=${JSON.stringify(added)} removed=${JSON.stringify(removed)}`, x)
       }
