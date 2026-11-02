@@ -557,7 +557,9 @@ public class PublicStorefrontService {
      *
      * <ol>
      *   <li><strong>the term read as a GB postcode</strong>, answered by distance</li>
-     *   <li>ranked full-text search over {@code shops.search_vector}</li>
+     *   <li>ranked full-text search over {@code shops.search_vector}, and over the
+     *       {@code search_vector} of each published shop's available products (a kitchen is
+     *       found by the dishes it sells; own-vector matches rank first, V89)</li>
      *   <li>the pre-existing {@code LIKE} fallback for short queries</li>
      * </ol>
      *
@@ -623,12 +625,17 @@ public class PublicStorefrontService {
                     SearchInterpretation.proximity(postcode.key(), postcode.precision(), defaultRadiusKm));
         }
 
-        // TIER 2 + 3 — the pre-existing text path, unchanged. Reached by every non-postcode term
+        // TIER 2 + 3 — the text path (tier 2 also matches dishes since V89). Reached by every non-postcode term
         // and by every postcode-shaped term the dataset does not know.
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
             // Use unsorted Pageable for native queries — ts_rank handles ordering
             Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+            // Dish matches (V89) follow the caller's tenant like every other read: an anonymous
+            // caller sees every published kitchen's available dishes; a caller carrying a tenant
+            // sees dish matches from its own tenant only, the same restriction
+            // resolvePublicShopForSlug enforces (ruling 2026-11-02, review of #1098), so the
+            // search never offers a kitchen the caller could not then open.
             Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
