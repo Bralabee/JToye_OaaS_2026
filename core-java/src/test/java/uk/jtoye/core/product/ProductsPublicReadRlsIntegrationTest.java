@@ -165,6 +165,24 @@ class ProductsPublicReadRlsIntegrationTest {
         assertThat(visible(availableOnUnpublishedB)).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a MALFORMED (non-UUID) tenant setting sees no product: it fails filtered, never as anonymous")
+    void malformedTenantSettingFailsFiltered() {
+        // V51's current_tenant_id() returns NULL for a non-UUID setting so that it filters instead of
+        // raising 22P02. A public-read branch keyed on `current_tenant_id() IS NULL` would therefore read
+        // a malformed setting as "anonymous" and open the public menu to it. The branch must key on the
+        // raw setting being empty / 'default' / unset, so a malformed one sees nothing.
+        TenantContext.clear();
+        jdbc.execute("SELECT set_config('app.current_tenant_id', 'not-a-uuid', true)");
+        jdbc.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);
+        // the setting really is malformed when the read runs (not reset by anything in between)
+        assertThat(jdbc.queryForObject("SELECT current_setting('app.current_tenant_id', true)", String.class))
+                .isEqualTo("not-a-uuid");
+        Long total = jdbc.queryForObject("SELECT count(*) FROM products WHERE tenant_id IN (?, ?)",
+                Long.class, tenantA, tenantB);
+        assertThat(total).as("products visible under a malformed app.current_tenant_id").isZero();
+    }
+
     // ---- writes: the policy is FOR SELECT only ----
 
     @Test
