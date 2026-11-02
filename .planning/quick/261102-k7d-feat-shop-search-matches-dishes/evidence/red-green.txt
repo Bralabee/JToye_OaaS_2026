@@ -1,0 +1,231 @@
+# Red/green record, quick 261102-k7d (shop search matches dishes)
+# Every block is the verbatim per-test summary of the JUnit XML in core-java/build-local/test-results/integrationTest,
+# produced by a small XML reader (suite counts + one PASS/FAIL line per test, failure message truncated to 220 chars).
+
+## 0. Probe on origin/main 9b737e61 (before any change): the products-aware query under the SUPERUSER vs NOSUPERUSER role, no tenant
+PROBE superuser (test role, bypasses RLS): [Mama's Kitchen]
+PROBE anon NOSUPERUSER products visible: 0
+PROBE anon NOSUPERUSER shops visible: 1
+PROBE anon NOSUPERUSER query result: []
+PROBE products policies: [products_rls_policy ALL (tenant_id = current_tenant_id())]
+
+## 1. RED: both new test classes on origin/main 9b737e61 (no V89, old query, no ProductService change). gradle rc=1
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 failures=4 errors=0 skipped=0
+  PASS the unpublished kitchen never appears, whatever it sells
+  FAIL the paging count query agrees with the result set (page size 1 forces the count query) | java.lang.AssertionError:  Expecting actual:   [] to contain exactly in any order:   ["Mama's Kitchen", "Ade's Buka"] but could not find the following elements:   ["Mama's Kitchen", "Ade's Buka"] 
+  PASS q=plantain finds nothing: the only plantain dish is not available
+  FAIL q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL a kitchen whose NAME matches ranks above a kitchen matched only through a dish | org.opentest4j.AssertionFailedError:  Expecting actual:   ["Pounded Yam Palace"] to contain exactly (and in same order):   ["Pounded Yam Palace", "Mama's Kitchen"] but could not find the following elements:   ["Mama's Ki
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=11 failures=2 errors=0 skipped=0
+  FAIL anonymous sees nothing beyond those rows: the whole visible table is the one product | org.opentest4j.AssertionFailedError:  expected: 1L  but was: 0L
+  PASS ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS ProductService list as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS anonymous DELETE of a publicly readable product matches 0 rows
+  FAIL anonymous sees an AVAILABLE product of a PUBLISHED shop | org.opentest4j.AssertionFailedError:  expected: 1L  but was: 0L
+  PASS anonymous UPDATE of a publicly readable product matches 0 rows
+  PASS control: the same GROUP_ADMIN-equivalent list WITH tenant A pinned returns tenant A's products
+  PASS anonymous INSERT into products is refused by row-level security (42501)
+  PASS anonymous does NOT see an available product of an UNPUBLISHED shop
+  PASS a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard)
+  PASS anonymous does NOT see an unavailable product of a published shop
+
+## 2. V89 ONLY (policy added; old query; ProductService unchanged). gradle rc=1
+#    The audit finding made real: a GROUP_ADMIN-equivalent caller with no tenant now lists another tenant's published product.
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 failures=4 errors=0 skipped=0
+  PASS the unpublished kitchen never appears, whatever it sells
+  FAIL the paging count query agrees with the result set (page size 1 forces the count query) | java.lang.AssertionError:  Expecting actual:   [] to contain exactly in any order:   ["Mama's Kitchen", "Ade's Buka"] but could not find the following elements:   ["Mama's Kitchen", "Ade's Buka"] 
+  PASS q=plantain finds nothing: the only plantain dish is not available
+  FAIL q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL a kitchen whose NAME matches ranks above a kitchen matched only through a dish | org.opentest4j.AssertionFailedError:  Expecting actual:   ["Pounded Yam Palace"] to contain exactly (and in same order):   ["Pounded Yam Palace", "Mama's Kitchen"] but could not find the following elements:   ["Mama's Ki
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=11 failures=2 errors=0 skipped=0
+  PASS anonymous sees nothing beyond those rows: the whole visible table is the one product
+  FAIL ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  FAIL ProductService list as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  PASS anonymous DELETE of a publicly readable product matches 0 rows
+  PASS anonymous sees an AVAILABLE product of a PUBLISHED shop
+  PASS anonymous UPDATE of a publicly readable product matches 0 rows
+  PASS control: the same GROUP_ADMIN-equivalent list WITH tenant A pinned returns tenant A's products
+  PASS anonymous INSERT into products is refused by row-level security (42501)
+  PASS anonymous does NOT see an available product of an UNPUBLISHED shop
+  PASS a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard)
+  PASS anonymous does NOT see an unavailable product of a published shop
+
+## 3. GREEN: V89 + ProductService fix + new query + tenant-less search, with the related RLS/search suites. gradle rc=0
+SUITE uk.jtoye.core.product.ProductSearchFtsIntegrationTest tests=17 failures=0 errors=0 skipped=0
+  PASS v44BackfillRestoresShopsSearchVectorIdenticalToTriggerOutput()
+  PASS v44BackfillMakesTriggerBypassedProductSearchableWithTriggerIdenticalVector()
+  PASS v44LeakproofMakesGinIndexServeShopsFtsUnderRls()
+  PASS prefixMatchesPartialWords()
+  PASS searchIsCaseInsensitive()
+  PASS searchEndpointCapsPageSizeAtGlobalMaximumAndKeepsArrayContract()
+  PASS v44LeakproofMakesGinIndexServeFtsUnderRls()
+  PASS queryPlanUsesGinIndexOnceRlsBarrierIsAbsent()
+  PASS likeWildcardsInQueryMatchLiterallyNotAsWildcards()
+  PASS skuPrefixLookupIsPreserved()
+  PASS blankAndPunctuationOnlyQueriesReturnEmptyPage()
+  PASS v25TriggerKeepsSearchVectorFreshOnUpdate()
+  PASS searchCoversCategoryIngredientsAndDietaryTags()
+  PASS searchNeverReturnsAnotherTenantsProducts()
+  PASS searchPathPaginates()
+  PASS tsqueryOperatorsInUserInputAreHarmless()
+  PASS multiWordQueryRequiresAllWordsAndRanksTitleMatchesFirst()
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=11 failures=0 errors=0 skipped=0
+  PASS anonymous sees nothing beyond those rows: the whole visible table is the one product
+  PASS ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS ProductService list as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS anonymous DELETE of a publicly readable product matches 0 rows
+  PASS anonymous sees an AVAILABLE product of a PUBLISHED shop
+  PASS anonymous UPDATE of a publicly readable product matches 0 rows
+  PASS control: the same GROUP_ADMIN-equivalent list WITH tenant A pinned returns tenant A's products
+  PASS anonymous INSERT into products is refused by row-level security (42501)
+  PASS anonymous does NOT see an available product of an UNPUBLISHED shop
+  PASS a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard)
+  PASS anonymous does NOT see an unavailable product of a published shop
+SUITE uk.jtoye.core.security.access.CrossTenantAuthzIntegrationTest tests=6 failures=0 errors=0 skipped=0
+  PASS createPromotion_crossTenantShop_isBlocked()
+  PASS getAllPromotions_forGroupAdmin_isConfinedToOwnTenant()
+  PASS createPromotion_ownTenantShop_succeeds()
+  PASS createProduct_crossTenantShop_isBlocked()
+  PASS getAllAnnouncements_forGroupAdmin_isConfinedToOwnTenant()
+  PASS createAnnouncement_crossTenantShop_isBlocked()
+SUITE uk.jtoye.core.security.CrossTenantSpoofIntegrationTest tests=6 failures=0 errors=0 skipped=0
+  PASS anonymousGuestSucceeds()
+  PASS crossTenantRequestLogsSpoofEvent(CapturedOutput)
+  PASS crossTenantJwtReturns403OnReviews()
+  PASS crossTenantJwtReturns403OnCreateOrder()
+  PASS crossTenantJwtReturns403OnProducts()
+  PASS sameTenantJwtSucceeds()
+SUITE uk.jtoye.core.security.MultiTenantIsolationIntegrationTest tests=6 failures=0 errors=0 skipped=0
+  PASS shouldVerifyRlsPoliciesAreEnabled()
+  PASS shouldVerifyCurrentTenantIdFunctionExists()
+  PASS shouldEnforceTenantIsolationForShops()
+  PASS shouldEnforceTenantIsolationForCustomers()
+  PASS shouldEnforceTenantIsolationForProducts()
+  PASS shouldPreventCrossTenantAccessByPrimaryKey()
+SUITE uk.jtoye.core.security.RlsContractTest tests=7 failures=0 errors=0 skipped=0
+  PASS dsarRequestHasNoTenantDimension()
+  PASS everyPublicTableHasRlsAndForce()
+  PASS img01_mediaTablesAreForced()
+  PASS noPolicyReadsBuggyAppTenantIdGuc()
+  PASS noPolicyUsesRawTenantGucCast()
+  PASS auditW0_05_targetTablesAreForced()
+  PASS everyRlsEnabledTableHasAtLeastOnePolicy()
+SUITE uk.jtoye.core.storefront.PublicStorefrontDistanceIntegrationTest tests=14 failures=0 errors=0 skipped=0
+  PASS an explicit radius widens the result set — the parameter is honoured, not decorative
+  PASS results are ordered by real distance, and the ordering spans tenants
+  PASS with NO tenant GUC the distance endpoint returns published shops from more than one tenant
+  PASS a query point EXACTLY on a shop's coordinates returns distance 0.0, not a 500
+  PASS with NO coordinate the listing is exactly what it was: name-ascending, distanceKm null
+  PASS an unpublished shop is absent from the CONTENT and from the TOTAL
+  PASS swapping two shops' coordinates changes the order — the SQL is driving the sort
+  PASS with a coordinate the endpoint returns distance-ordered results carrying distanceKm
+  PASS a shop inside the bounding box but outside the radius is excluded — and reappears when the radius widens
+  PASS out-of-range and incoherent parameters are typed 400s, not 500s and not clamps
+  PASS getTotalElements survives an offset past the end of the result set
+  PASS a coincident query at an acos-hostile latitude returns 0.0 rather than a 500
+  PASS the radius ceiling is refused, never clamped — 51 km must not silently become 50
+  PASS a shop with NULL coordinates is absent, and its presence in the table throws nothing
+SUITE uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest tests=14 failures=0 errors=0 skipped=0
+  PASS 29-29 — case 9: a tenant-A join row naming tenant B's asset shows no image, and B appears nowhere in A's bodies
+  PASS 29-29 — case 3: Both Dish shows the asset, never the legacy column, as imageUrl and imageUrls[0]
+  PASS 29-29 — case 13: a menu read resolves every image in one query (prepared-statement deltas equal)
+  PASS 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery
+  PASS 29-29 — case 2: /config featuredProducts carries Asset Dish with the same derivative
+  PASS 29-29 — case 11: an unpublished shop's menu and config are 404 and never name its asset
+  PASS 29-29 — case 4: Legacy Dish and Seed Dish (no media rows) are exactly what the flat columns say
+  PASS 29-29 — case 12: as the downgraded role, an unpinned read sees no media rows; a pin sees only its own tenant's
+  PASS 29-29 — case 10: shop B's own menu resolves B's asset (case 9's control)
+  PASS 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a)
+  PASS 29-29 — case 8: an ACTIVE row with a quarantine key is skipped; the menu answers 200 and names no quarantine object
+  PASS 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key
+  PASS 29-29 — case 5: a PENDING and a FAILED primary show no image
+  PASS 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url
+SUITE uk.jtoye.core.storefront.PublicStorefrontPostcodeSearchIntegrationTest tests=15 failures=0 errors=0 skipped=0
+  PASS q combined with a caller-supplied coordinate is STILL a typed 400 on $.type
+  PASS CA-F: the fixture can actually distinguish a guarded M1 lookup from an unguarded one — asserted, so the arm below cannot quietly stop being decisive
+  PASS CA-A: an ordinary food search is unchanged — the FTS page, header 'text', and distanceKm NULL on every shop
+  PASS 'SE22 pizza' is a text search, not a proximity one
+  PASS a 400-character q is answered by the text page and never reaches the geocoder (T-33-08-01)
+  PASS a bare outward code returns nearby published kitchens, nearest first, where it returned NONE before
+  PASS D-A FLIP: 'SE15 5BS' answers with the kitchens NEAR SE15 5BS, not with the far-away kitchen whose own name carries that string
+  PASS a Northern Ireland postcode falls through to text — never a proximity claim on a branch that did not apply
+  PASS a full unit resolves by primary key: precision=unit, and the key loses its space
+  PASS CA-F: an M1 search is not pulled toward M11's units — the length guard is real
+  PASS the unpublished shop on the nearest shop's exact coordinates is absent from the content AND from the total, at a page size that actually issues the count query
+  PASS with NO tenant GUC the postcode result spans more than one tenant
+  PASS SE15 4QA — well-formed, in our own demo data, and not real — now answers with SE15's area instead of nothing
+  PASS REGRESSION: the plain listing carries no interpretation header at all
+  PASS D-A FLIP CONTROL: the namesake is still reachable by a term that is NOT a postcode — the text path was reordered, not removed
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 failures=0 errors=0 skipped=0
+  PASS the unpublished kitchen never appears, whatever it sells
+  PASS the paging count query agrees with the result set (page size 1 forces the count query)
+  PASS q=plantain finds nothing: the only plantain dish is not available
+  PASS q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller
+  PASS a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer
+  PASS a kitchen whose NAME matches ranks above a kitchen matched only through a dish
+
+## 4. BREAK ARM A: products_public_read replaced by FOR ALL USING (true) WITH CHECK (true). gradle rc=1, then restored (git checkout; git diff --quiet HEAD rc 0)
+#    Every negative read criterion and every write criterion goes RED. (The two ProductService no-tenant tests stay green here: their own fail direction is section 2.)
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=11 failures=8 errors=0 skipped=0
+  FAIL anonymous sees nothing beyond those rows: the whole visible table is the one product | org.opentest4j.AssertionFailedError:  expected: 1L  but was: 3L
+  PASS ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS ProductService list as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  FAIL anonymous DELETE of a publicly readable product matches 0 rows | org.opentest4j.AssertionFailedError:  expected: 0  but was: 1
+  PASS anonymous sees an AVAILABLE product of a PUBLISHED shop
+  FAIL anonymous UPDATE of a publicly readable product matches 0 rows | org.opentest4j.AssertionFailedError:  expected: 0  but was: 1
+  FAIL control: the same GROUP_ADMIN-equivalent list WITH tenant A pinned returns tenant A's products | org.opentest4j.AssertionFailedError:  expected: 2L  but was: 3L
+  FAIL anonymous INSERT into products is refused by row-level security (42501) | java.lang.AssertionError:  Expecting code to raise a throwable.
+  FAIL anonymous does NOT see an available product of an UNPUBLISHED shop | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  FAIL a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard) | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  FAIL anonymous does NOT see an unavailable product of a published shop | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+
+## 5. BREAK ARM B: 'available = true' removed from BOTH the policy and the search query's EXISTS. gradle rc=1, then restored
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 failures=1 errors=0 skipped=0
+  PASS the unpublished kitchen never appears, whatever it sells
+  PASS the paging count query agrees with the result set (page size 1 forces the count query)
+  FAIL q=plantain finds nothing: the only plantain dish is not available | java.lang.AssertionError:  Expecting empty but was: [uk.jtoye.core.storefront.dto.PublicShopDto@1f40754c]
+  PASS q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller
+  PASS a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer
+  PASS a kitchen whose NAME matches ranks above a kitchen matched only through a dish
+
+## 6. BREAK ARM C: the TenantContext.clear() before the search commented out. gradle rc=1, then restored
+#    The sed in this arm also commented out five other identically-indented TenantContext.clear() lines in other methods of
+#    PublicStorefrontService (none executed by this test class); all restored by git checkout, git diff --quiet HEAD rc 0.
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 failures=1 errors=0 skipped=0
+  PASS the unpublished kitchen never appears, whatever it sells
+  PASS the paging count query agrees with the result set (page size 1 forces the count query)
+  PASS q=plantain finds nothing: the only plantain dish is not available
+  PASS q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller
+  FAIL a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  PASS a kitchen whose NAME matches ranks above a kitchen matched only through a dish
+
+## Criterion with no single-break fail direction
+#  'the unpublished kitchen never appears': held by two independent layers for an anonymous caller (shops RLS hides an
+#  unpublished shop; the query also says s.published = true). Its products-side half (an unpublished shop's product is
+#  invisible) is proven RED by arm A ('anonymous does NOT see an available product of an UNPUBLISHED shop').
+
+## 7. Full suite on baf3ef0c: ./gradlew :core-java:test :core-java:integrationTest --continue
+#    rc=0; BUILD SUCCESSFUL in 17m 47s
+#    test:            228 XML files, tests=2083 skipped=1 failures=0 errors=0
+#    integrationTest: 234 XML files, tests=1430 skipped=1 failures=0 errors=0
+#    ProductSearchFtsIntegrationTest 17/17 in both the targeted run (section 3) and this one; no flake observed (#1083).
+
+## 8. Doc gates
+#    check-doc-metrics.sh after docs-freshness.sh --write, before the prose edits: rc=1, 12 FAIL lines:
+#      FAIL: README.md [total_logical_invocations]: doc says 6997, docs/metrics.json says 7014
+#      FAIL: README.md [total_logical_invocations]: doc says 6997, docs/metrics.json says 7014
+#      FAIL: README.md [java_test_methods]: doc says 3164, docs/metrics.json says 3181
+#      FAIL: README.md [java_test_files]: doc says 435, docs/metrics.json says 437
+#      FAIL: README.md [schema_version]: doc says 88, docs/metrics.json says 89
+#      FAIL: CLAUDE.md [schema_version]: doc says 88, docs/metrics.json says 89
+#      FAIL: CLAUDE.md [total_logical_invocations]: doc says 6997, docs/metrics.json says 7014
+#      FAIL: CLAUDE.md [java_test_methods]: doc says 3164, docs/metrics.json says 3181
+#      FAIL: CLAUDE.md [java_test_files]: doc says 435, docs/metrics.json says 437
+#      FAIL: AGENTS.md [schema_version]: doc says 88, docs/metrics.json says 89
+#      FAIL: AGENTS.md [total_logical_invocations]: doc says 6997, docs/metrics.json says 7014
+#      FAIL: AGENTS.md [java_test_methods]: doc says 3164, docs/metrics.json says 3181
+#      FAIL: AGENTS.md [java_test_files]: doc says 435, docs/metrics.json says 437
+#    after the prose edits: rc=0, PASS: all 37 prose metric claim(s) across 3 doc(s); docs-freshness.sh check rc=0
+#    check-branch-behind-base.sh: rc=0, 0 behind origin/main 9b737e61
