@@ -1,0 +1,8 @@
+claim-gate 1.1.2  (2026-11-02T16:27:44Z)
+  manifest : /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/scripts/gates/claims.manifest
+  source   : metrics      json   docs/metrics.json            (json: per-key lookup)
+  source   : gradle       regex  build.gradle.kts             2.3.0
+  source   : retention    json   docs/retention-manifest.json (json: per-key lookup)
+  rules    : 56 across 8 doc(s)
+  claims   : 56 compared
+PASS: all 56 claim(s) across 8 doc(s) match their source of truth.

@@ -1,0 +1,4 @@
+<testsuite name="uk.jtoye.core.product.ProductSearchFtsIntegrationTest" tests="17" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest" tests="12" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest" tests="7" skipped="0" failures="0" errors="0"

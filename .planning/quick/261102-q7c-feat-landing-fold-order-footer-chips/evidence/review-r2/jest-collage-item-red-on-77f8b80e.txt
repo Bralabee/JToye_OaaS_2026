@@ -1,0 +1,26 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/__tests__/landing.test.tsx -t collage grid item
+  Using tsconfig file: tsconfig.build.json
+FAIL app/__tests__/landing.test.tsx
+  ● Landing fold, order, footer and chips (D15) › keeps each collage grid item one block box, never a display:contents picture (review round 2)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      540 |     for (const item of items) {
+      541 |       expect(["IMG", "PICTURE"]).toContain(item.tagName)
+    > 542 |       expect(item.classList.contains("contents")).toBe(false)
+          |                                                   ^
+      543 |       if (item.tagName === "PICTURE") expect(item.classList.contains("block")).toBe(true)
+      544 |     }
+      545 |     // ...and the egusi tile is still the first one, the fold's high-priority picture.
+
+      at Object.toBe (app/__tests__/landing.test.tsx:542:51)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 31 skipped, 32 total
+Snapshots:   0 total
+Time:        0.788 s, estimated 3 s
+Ran all test suites matching app/__tests__/landing.test.tsx with tests matching "collage grid item".

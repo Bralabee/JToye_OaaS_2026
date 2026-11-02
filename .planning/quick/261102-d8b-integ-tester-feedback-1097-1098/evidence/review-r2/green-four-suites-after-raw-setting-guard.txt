@@ -1,0 +1,75 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.7.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :core-java:compileJava
+> Task :core-java:processResources
+> Task :core-java:classes
+
+> Task :core-java:compileTestJava
+Note: /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/core-java/src/test/java/uk/jtoye/core/storefront/GuestCheckoutIdempotencyIntegrationTest.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :core-java:processTestResources UP-TO-DATE
+> Task :core-java:testClasses
+
+> Task :core-java:integrationTest
+integrationTest: availableProcessors=16, maxParallelForks=4, forkEvery=16
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::loadLibrary has been called by io.netty.util.internal.NativeLibraryUtil in an unnamed module (file:/home/sanmi/.gradle/caches/modules-2/files-2.1/io.netty/netty-common/4.2.17.Final/57fa9e9af0bf70530e2fe1c8c8d6138f9167cf7a/netty-common-4.2.17.Final.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::loadLibrary has been called by io.netty.util.internal.NativeLibraryUtil in an unnamed module (file:/home/sanmi/.gradle/caches/modules-2/files-2.1/io.netty/netty-common/4.2.17.Final/57fa9e9af0bf70530e2fe1c8c8d6138f9167cf7a/netty-common-4.2.17.Final.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::loadLibrary has been called by io.netty.util.internal.NativeLibraryUtil in an unnamed module (file:/home/sanmi/.gradle/caches/modules-2/files-2.1/io.netty/netty-common/4.2.17.Final/57fa9e9af0bf70530e2fe1c8c8d6138f9167cf7a/netty-common-4.2.17.Final.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::loadLibrary has been called by io.netty.util.internal.NativeLibraryUtil in an unnamed module (file:/home/sanmi/.gradle/caches/modules-2/files-2.1/io.netty/netty-common/4.2.17.Final/57fa9e9af0bf70530e2fe1c8c8d6138f9167cf7a/netty-common-4.2.17.Final.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-11-02 16:47:26 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopping...
+2026-11-02 16:47:26 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - BrokerAvailabilityEvent[available=false, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@1cc5fd9]]
+2026-11-02 16:47:26 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopped.
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-11-02 16:47:27 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopping...
+2026-11-02 16:47:27 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - BrokerAvailabilityEvent[available=false, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@727e89e4]]
+2026-11-02 16:47:27 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopped.
+2026-11-02 16:47:27 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopping...
+2026-11-02 16:47:27 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - BrokerAvailabilityEvent[available=false, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@19de1764]]
+2026-11-02 16:47:27 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopped.
+2026-11-02 16:47:28 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopping...
+2026-11-02 16:47:28 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - BrokerAvailabilityEvent[available=false, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@b5a35bf]]
+2026-11-02 16:47:28 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopped.
+2026-11-02 16:47:28 [core-java,,] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-02 16:47:28 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown initiated...
+2026-11-02 16:47:28 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown completed.
+2026-11-02 16:47:29 [core-java,,] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-02 16:47:29 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown initiated...
+2026-11-02 16:47:29 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown completed.
+2026-11-02 16:47:29 [core-java,,] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-02 16:47:29 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown initiated...
+2026-11-02 16:47:29 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown completed.
+2026-11-02 16:47:30 [core-java,,] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-02 16:47:30 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown initiated...
+2026-11-02 16:47:30 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown completed.
+
+[Incubating] Problems report is available at: file:///home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 1m 3s
+5 actionable tasks: 4 executed, 1 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.7.1/userguide/configuration_cache_enabling.html
+gradle rc=0
+<testsuite name="uk.jtoye.core.product.ProductSearchFtsIntegrationTest" tests="17" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest" tests="13" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest" tests="7" skipped="0" failures="0" errors="0"

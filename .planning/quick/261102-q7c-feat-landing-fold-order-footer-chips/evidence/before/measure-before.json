@@ -1,0 +1,278 @@
+{
+  "label": "before",
+  "base": "http://localhost:3437",
+  "takenAt": "2026-11-02T14:47:06.838Z",
+  "viewports": {
+    "1024x768": {
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        536,
+        584
+      ],
+      "chipRows": 2,
+      "railScrollWidth": 452,
+      "railClientWidth": 452,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 652,
+      "goldDoorBottom": 1014,
+      "goldDoorHeight": 362,
+      "browseShopsBottom": 990,
+      "goldDoorStripVisible": true,
+      "h2Order": [
+        "Kitchens on J'Toye",
+        "How it works"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 517,
+      "creditsHeight": 160,
+      "creditsMarginTop": 32,
+      "creditsTag": "P",
+      "trustBottomToFooterBottom": 717,
+      "footerPlusCredits": 709,
+      "docHeight": 2862,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1024x768",
+        "width": 1024,
+        "height": 768
+      }
+    },
+    "1280x800": {
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        506,
+        554
+      ],
+      "chipRows": 2,
+      "railScrollWidth": 580,
+      "railClientWidth": 580,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 622,
+      "goldDoorBottom": 937,
+      "goldDoorHeight": 315,
+      "browseShopsBottom": 913,
+      "goldDoorStripVisible": true,
+      "h2Order": [
+        "Kitchens on J'Toye",
+        "How it works"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 497,
+      "creditsHeight": 160,
+      "creditsMarginTop": 32,
+      "creditsTag": "P",
+      "trustBottomToFooterBottom": 697,
+      "footerPlusCredits": 689,
+      "docHeight": 2741,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1280x800",
+        "width": 1280,
+        "height": 800
+      }
+    },
+    "1366x768": {
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        506,
+        554
+      ],
+      "chipRows": 2,
+      "railScrollWidth": 580,
+      "railClientWidth": 580,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 622,
+      "goldDoorBottom": 937,
+      "goldDoorHeight": 315,
+      "browseShopsBottom": 913,
+      "goldDoorStripVisible": true,
+      "h2Order": [
+        "Kitchens on J'Toye",
+        "How it works"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 497,
+      "creditsHeight": 160,
+      "creditsMarginTop": 32,
+      "creditsTag": "P",
+      "trustBottomToFooterBottom": 697,
+      "footerPlusCredits": 689,
+      "docHeight": 2741,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1366x768",
+        "width": 1366,
+        "height": 768
+      }
+    },
+    "1440x900": {
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        506,
+        554
+      ],
+      "chipRows": 2,
+      "railScrollWidth": 580,
+      "railClientWidth": 580,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 622,
+      "goldDoorBottom": 937,
+      "goldDoorHeight": 315,
+      "browseShopsBottom": 913,
+      "goldDoorStripVisible": true,
+      "h2Order": [
+        "Kitchens on J'Toye",
+        "How it works"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 497,
+      "creditsHeight": 160,
+      "creditsMarginTop": 32,
+      "creditsTag": "P",
+      "trustBottomToFooterBottom": 697,
+      "footerPlusCredits": 689,
+      "docHeight": 2741,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1440x900",
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "390x844": {
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        411,
+        459,
+        507
+      ],
+      "chipRows": 3,
+      "railScrollWidth": 358,
+      "railClientWidth": 358,
+      "railFits": true,
+      "h1FontSize": "34px",
+      "h1Height": 106,
+      "goldDoorTop": 575,
+      "goldDoorBottom": 890,
+      "goldDoorHeight": 315,
+      "browseShopsBottom": 866,
+      "goldDoorStripVisible": true,
+      "h2Order": [
+        "Kitchens on J'Toye",
+        "How it works"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 955,
+      "creditsHeight": 260,
+      "creditsMarginTop": 32,
+      "creditsTag": "P",
+      "trustBottomToFooterBottom": 1279,
+      "footerPlusCredits": 1247,
+      "docHeight": 3863,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "390x844",
+        "width": 390,
+        "height": 844
+      }
+    }
+  }
+}

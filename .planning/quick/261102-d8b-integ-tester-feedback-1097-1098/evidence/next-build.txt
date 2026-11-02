@@ -1,0 +1,92 @@
+npm notice run frontend@2.3.0 build
+npm notice run next build
+▲ Next.js 16.4.3 (Turbopack)
+✓ Running next.config.mjs took 26ms
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+
+  To migrate automatically, run:
+  npx @next/codemod@canary middleware-to-proxy .
+
+  Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+(node:2502786) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/tailwind.config.ts?id=1793636824319 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✓ Compiled successfully in 8.3s
+  Running TypeScript ...
+  Finished TypeScript in 10.2s ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/7) ...
+  Generating static pages using 15 workers (1/7) 
+  Generating static pages using 15 workers (3/7) 
+  Generating static pages using 15 workers (5/7) 
+✓ Generating static pages using 15 workers (7/7) in 120ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/customer-auth/login
+├ ƒ /api/customer-auth/logout
+├ ƒ /api/customer-auth/logout-url
+├ ƒ /api/customer-auth/session
+├ ƒ /api/customer-orders
+├ ƒ /api/health
+├ ƒ /api/vendor-auth/logout-complete
+├ ƒ /api/vendor-auth/logout-url
+├ ƒ /auth/signin
+├ ƒ /business-model-guide
+├ ƒ /competitive
+├ ƒ /contact
+├ ƒ /dashboard
+├ ƒ /dashboard/customers
+├ ƒ /dashboard/developers
+├ ƒ /dashboard/finance
+├ ƒ /dashboard/kitchen
+├ ƒ /dashboard/marketing
+├ ƒ /dashboard/media/review
+├ ƒ /dashboard/onboarding
+├ ƒ /dashboard/onboarding/approvals
+├ ƒ /dashboard/orders
+├ ƒ /dashboard/orders/[id]
+├ ƒ /dashboard/payments/connect/refresh
+├ ƒ /dashboard/payments/connect/return
+├ ƒ /dashboard/products
+├ ƒ /dashboard/products/import
+├ ƒ /dashboard/shops
+├ ƒ /dashboard/staff
+├ ƒ /dashboard/webhooks
+├ ƒ /dashboard/webhooks/[id]
+├ ƒ /data-request/confirm
+├ ƒ /data-request/download
+├ ƒ /for-operators
+├ ƒ /invite
+├ ƒ /legal
+├ ƒ /legal/accessibility
+├ ƒ /legal/cookies
+├ ƒ /legal/privacy
+├ ƒ /legal/retention
+├ ƒ /legal/terms
+├ ƒ /pay
+├ ƒ /robots.txt
+├ ƒ /shop
+├ ƒ /shop/[slug]
+├ ƒ /shop/[slug]/cart
+├ ƒ /shop/[slug]/checkout
+├ ƒ /shop/[slug]/orders/[orderNumber]
+├ ƒ /shop/account
+├ ƒ /shop/auth/callback
+├ ƒ /shop/orders
+├ ƒ /shop/signin
+├ ƒ /sitemap.xml
+├ ƒ /track
+└ ƒ /unsubscribe
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+

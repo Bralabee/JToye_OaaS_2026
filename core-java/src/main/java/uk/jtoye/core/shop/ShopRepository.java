@@ -82,14 +82,69 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
 
     Page<Shop> findByPublishedTrue(Pageable pageable);
 
-    @Query("SELECT s FROM Shop s WHERE s.published = true AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.tags) LIKE LOWER(CONCAT('%', :q, '%')))")
+    // LIKE tier of the public search (reached when the full-text tier finds nothing: a partial
+    // word such as "plantai", a stopword, a very short query). Matches a shop's name or tags, OR
+    // an available product of that shop (same tenant) whose title contains the fragment, so the
+    // fragment the customer has typed so far still finds a kitchen by its dish.
+    @Query("SELECT s FROM Shop s WHERE s.published = true AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) "
+            + "OR LOWER(s.tags) LIKE LOWER(CONCAT('%', :q, '%')) "
+            + "OR EXISTS (SELECT 1 FROM Product p WHERE p.shopId = s.id AND p.tenantId = s.tenantId "
+            + "AND p.available = true AND LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%'))))")
     Page<Shop> searchPublished(@Param("q") String query, Pageable pageable);
 
     @Query("SELECT s FROM Shop s WHERE LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<Shop> search(@Param("q") String query);
 
-    @Query(value = "SELECT * FROM shops WHERE published = true AND search_vector @@ plainto_tsquery('english', :q) ORDER BY ts_rank(search_vector, plainto_tsquery('english', :q)) DESC",
-           countQuery = "SELECT COUNT(*) FROM shops WHERE published = true AND search_vector @@ plainto_tsquery('english', :q)",
+    // Public kitchen search: a published shop matches on its OWN vector (V25: name, tags,
+    // description, address) OR through an available product of that shop whose vector (V25:
+    // title, category, description, ingredients, dietary tags) matches the same query. Before
+    // this, "pounded yam" found no kitchen that sold pounded yam unless its name said so.
+    //
+    // SHAPE: two index arms UNIONed into (shop id, tenant id) pairs, then joined back. An
+    // "own vector OR EXISTS(products)" WHERE cannot use idx_shops_search (measured: the shops
+    // side became a scan of idx_shops_published with the tsvector match as a filter); each arm
+    // here is a plain @@ that the leakproof ts_match_vq (V44) lets reach its GIN index under
+    // RLS. Matching the PAIR, not just the id, keeps "the product and its shop share a tenant"
+    // (the same rule V89's policy enforces). ProductSearchFtsIntegrationTest EXPLAINs this
+    // constant and pins both GIN indexes.
+    //
+    // RLS: an anonymous caller (no tenant) reads products through V89 products_public_read,
+    // which admits the rows GET /shops/{slug}/products already serves; a caller carrying a
+    // tenant reads only its own tenant's products (products_rls_policy), so its dish matches are
+    // its own tenant's. p.available is repeated so the query means the same under either policy.
+    //
+    // Ordering: shops whose own vector matches come first, by ts_rank as before; shops matched
+    // only through a dish follow. COALESCE because a NULL vector would otherwise sort FIRST under
+    // DESC. name, id make paging deterministic. The count query carries the identical WHERE.
+    String FULL_TEXT_SEARCH_PUBLISHED_SQL = """
+            SELECT s.* FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+                    SELECT sh.id, sh.tenant_id FROM shops sh
+                     WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+                    UNION
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.search_vector @@ plainto_tsquery('english', :q)
+                       AND p.available = true)
+             ORDER BY COALESCE(s.search_vector @@ plainto_tsquery('english', :q), false) DESC,
+                      COALESCE(ts_rank(s.search_vector, plainto_tsquery('english', :q)), 0) DESC,
+                      s.name ASC, s.id ASC
+            """;
+
+    String FULL_TEXT_SEARCH_PUBLISHED_COUNT_SQL = """
+            SELECT COUNT(*) FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+                    SELECT sh.id, sh.tenant_id FROM shops sh
+                     WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+                    UNION
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.search_vector @@ plainto_tsquery('english', :q)
+                       AND p.available = true)
+            """;
+
+    @Query(value = FULL_TEXT_SEARCH_PUBLISHED_SQL,
+           countQuery = FULL_TEXT_SEARCH_PUBLISHED_COUNT_SQL,
            nativeQuery = true)
     Page<Shop> fullTextSearchPublished(@Param("q") String query, Pageable pageable);
 

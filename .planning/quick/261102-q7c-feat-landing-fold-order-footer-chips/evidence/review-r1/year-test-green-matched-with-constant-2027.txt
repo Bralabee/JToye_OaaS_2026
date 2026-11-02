@@ -1,0 +1,8 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/__tests__/landing.test.tsx -t statutory attributions
+  Using tsconfig file: tsconfig.build.json
+Test Suites: 1 passed, 1 total
+Tests:       30 skipped, 1 passed, 31 total
+Snapshots:   0 total
+Time:        1.451 s
+Ran all test suites matching app/__tests__/landing.test.tsx with tests matching "statutory attributions".

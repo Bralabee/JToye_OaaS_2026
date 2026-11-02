@@ -324,8 +324,11 @@ describe("PublicFooter declares the Marketing width tier (ORCH-04)", () => {
 
     // Executable displaced-goods ledger: the cap token is the only thing this
     // change may move. `py-12` is included because the footer rail carries its
-    // vertical rhythm on the same element as its width.
-    for (const preserved of ["mx-auto", "px-4", "sm:px-6", "lg:px-8", "py-12"]) {
+    // vertical rhythm on the same element as its width. D15 (design/decisions.md,
+    // 2026-11-02) is the one deliberate move of that rhythm: the owner approved
+    // a shorter footer, so `py-12` became `py-8`; the horizontal padding the
+    // width tier depends on is unchanged.
+    for (const preserved of ["mx-auto", "px-4", "sm:px-6", "lg:px-8", "py-8"]) {
       expect(rail.classList.contains(preserved)).toBe(true)
     }
   })

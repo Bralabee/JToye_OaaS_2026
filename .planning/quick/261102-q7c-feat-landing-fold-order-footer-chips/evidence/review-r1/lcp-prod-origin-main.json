@@ -1,0 +1,1771 @@
+{
+  "label": "main",
+  "base": "http://localhost:3437",
+  "takenAt": "2026-11-02T15:23:11.339Z",
+  "viewports": {
+    "1366x768": [
+      {
+        "lcpElement": {
+          "tag": "IMG",
+          "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+          "loading": "lazy",
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": true,
+          "text": null
+        },
+        "lcpStartTime": 252,
+        "lcpRenderTime": 252,
+        "lcpLoadTime": 230,
+        "lcpSize": 60568,
+        "candidates": [
+          {
+            "t": 72,
+            "tag": null,
+            "size": 1488
+          },
+          {
+            "t": 224,
+            "tag": "P",
+            "size": 47460
+          },
+          {
+            "t": 252,
+            "tag": "IMG",
+            "size": 60568
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 217,
+            "end": 223,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 217,
+            "end": 223,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 217,
+            "end": 224,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 217,
+            "end": 224,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 217,
+            "end": 225,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 217,
+            "end": 225,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 217,
+            "end": 229,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 217,
+            "end": 229,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 217,
+            "end": 230,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 217,
+            "end": 231,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 217,
+            "end": 231,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 217,
+            "end": 232,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 217,
+            "end": 257,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "IMG",
+          "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+          "loading": "lazy",
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": true,
+          "text": null
+        },
+        "lcpStartTime": 224,
+        "lcpRenderTime": 224,
+        "lcpLoadTime": 188,
+        "lcpSize": 60568,
+        "candidates": [
+          {
+            "t": 44,
+            "tag": null,
+            "size": 1488
+          },
+          {
+            "t": 184,
+            "tag": "P",
+            "size": 47460
+          },
+          {
+            "t": 224,
+            "tag": "IMG",
+            "size": 60568
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 179,
+            "end": 184,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 179,
+            "end": 184,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 179,
+            "end": 184,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 179,
+            "end": 185,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 179,
+            "end": 185,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 179,
+            "end": 185,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 179,
+            "end": 188,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 179,
+            "end": 189,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 179,
+            "end": 189,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 179,
+            "end": 189,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 179,
+            "end": 190,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 179,
+            "end": 190,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 180,
+            "end": 203,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "H1",
+          "src": null,
+          "loading": null,
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": false,
+          "text": "Order from local kitchens. Or run yours."
+        },
+        "lcpStartTime": 72,
+        "lcpRenderTime": 72,
+        "lcpLoadTime": 0,
+        "lcpSize": 70252,
+        "candidates": [
+          {
+            "t": 72,
+            "tag": "H1",
+            "size": 70252
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 62,
+            "end": 67,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 62,
+            "end": 68,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 62,
+            "end": 68,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 62,
+            "end": 68,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 62,
+            "end": 69,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 63,
+            "end": 69,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 63,
+            "end": 72,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 63,
+            "end": 73,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 63,
+            "end": 73,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 63,
+            "end": 73,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 63,
+            "end": 73,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 63,
+            "end": 74,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 63,
+            "end": 74,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "H1",
+          "src": null,
+          "loading": null,
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": false,
+          "text": "Order from local kitchens. Or run yours."
+        },
+        "lcpStartTime": 104,
+        "lcpRenderTime": 104,
+        "lcpLoadTime": 0,
+        "lcpSize": 70252,
+        "candidates": [
+          {
+            "t": 104,
+            "tag": "H1",
+            "size": 70252
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 93,
+            "end": 98,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 93,
+            "end": 98,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 93,
+            "end": 98,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 94,
+            "end": 99,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 94,
+            "end": 99,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 94,
+            "end": 99,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 94,
+            "end": 102,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 94,
+            "end": 103,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 94,
+            "end": 103,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 94,
+            "end": 104,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 94,
+            "end": 105,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 94,
+            "end": 105,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 94,
+            "end": 106,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "IMG",
+          "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+          "loading": "lazy",
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": true,
+          "text": null
+        },
+        "lcpStartTime": 220,
+        "lcpRenderTime": 220,
+        "lcpLoadTime": 185,
+        "lcpSize": 60568,
+        "candidates": [
+          {
+            "t": 40,
+            "tag": null,
+            "size": 1488
+          },
+          {
+            "t": 184,
+            "tag": "P",
+            "size": 47460
+          },
+          {
+            "t": 220,
+            "tag": "IMG",
+            "size": 60568
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 176,
+            "end": 181,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 176,
+            "end": 180,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 176,
+            "end": 181,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 176,
+            "end": 182,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 176,
+            "end": 182,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 176,
+            "end": 182,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 176,
+            "end": 185,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 176,
+            "end": 185,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 176,
+            "end": 185,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 176,
+            "end": 185,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 176,
+            "end": 187,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 176,
+            "end": 187,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 176,
+            "end": 190,
+            "bytes": 28938
+          }
+        ]
+      }
+    ],
+    "1440x900": [
+      {
+        "lcpElement": {
+          "tag": "IMG",
+          "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+          "loading": "lazy",
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": true,
+          "text": null
+        },
+        "lcpStartTime": 228,
+        "lcpRenderTime": 228,
+        "lcpLoadTime": 202,
+        "lcpSize": 60568,
+        "candidates": [
+          {
+            "t": 52,
+            "tag": null,
+            "size": 1488
+          },
+          {
+            "t": 200,
+            "tag": "P",
+            "size": 47460
+          },
+          {
+            "t": 228,
+            "tag": "IMG",
+            "size": 60568
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 192,
+            "end": 198,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 193,
+            "end": 199,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 193,
+            "end": 199,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 193,
+            "end": 199,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 193,
+            "end": 199,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 193,
+            "end": 199,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 193,
+            "end": 202,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 193,
+            "end": 203,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 193,
+            "end": 202,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 193,
+            "end": 202,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 193,
+            "end": 204,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 193,
+            "end": 204,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 193,
+            "end": 215,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "IMG",
+          "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+          "loading": "lazy",
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": true,
+          "text": null
+        },
+        "lcpStartTime": 376,
+        "lcpRenderTime": 376,
+        "lcpLoadTime": 332,
+        "lcpSize": 60568,
+        "candidates": [
+          {
+            "t": 72,
+            "tag": null,
+            "size": 1488
+          },
+          {
+            "t": 340,
+            "tag": "P",
+            "size": 47460
+          },
+          {
+            "t": 376,
+            "tag": "IMG",
+            "size": 60568
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 312,
+            "end": 322,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 312,
+            "end": 323,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 312,
+            "end": 323,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 312,
+            "end": 324,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 312,
+            "end": 324,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 312,
+            "end": 324,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 312,
+            "end": 329,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 312,
+            "end": 333,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 312,
+            "end": 331,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 312,
+            "end": 330,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 312,
+            "end": 334,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 312,
+            "end": 335,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 313,
+            "end": 358,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "IMG",
+          "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+          "loading": "lazy",
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": true,
+          "text": null
+        },
+        "lcpStartTime": 260,
+        "lcpRenderTime": 260,
+        "lcpLoadTime": 218,
+        "lcpSize": 60568,
+        "candidates": [
+          {
+            "t": 92,
+            "tag": null,
+            "size": 1488
+          },
+          {
+            "t": 212,
+            "tag": "P",
+            "size": 47460
+          },
+          {
+            "t": 260,
+            "tag": "IMG",
+            "size": 60568
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 199,
+            "end": 206,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 199,
+            "end": 207,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 199,
+            "end": 207,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 199,
+            "end": 207,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 199,
+            "end": 210,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 199,
+            "end": 210,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 199,
+            "end": 217,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 199,
+            "end": 217,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 199,
+            "end": 217,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 199,
+            "end": 216,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 200,
+            "end": 218,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 200,
+            "end": 218,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 200,
+            "end": 228,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "H1",
+          "src": null,
+          "loading": null,
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": false,
+          "text": "Order from local kitchens. Or run yours."
+        },
+        "lcpStartTime": 108,
+        "lcpRenderTime": 108,
+        "lcpLoadTime": 0,
+        "lcpSize": 70252,
+        "candidates": [
+          {
+            "t": 108,
+            "tag": "H1",
+            "size": 70252
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 97,
+            "end": 101,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 97,
+            "end": 102,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 97,
+            "end": 103,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 98,
+            "end": 103,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 98,
+            "end": 103,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 98,
+            "end": 104,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 98,
+            "end": 104,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 98,
+            "end": 107,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 98,
+            "end": 108,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 98,
+            "end": 108,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 98,
+            "end": 108,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 98,
+            "end": 109,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 98,
+            "end": 109,
+            "bytes": 28938
+          }
+        ]
+      },
+      {
+        "lcpElement": {
+          "tag": "H1",
+          "src": null,
+          "loading": null,
+          "fetchpriority": null,
+          "inDoor": false,
+          "inCollage": false,
+          "text": "Order from local kitchens. Or run yours."
+        },
+        "lcpStartTime": 104,
+        "lcpRenderTime": 104,
+        "lcpLoadTime": 0,
+        "lcpSize": 70252,
+        "candidates": [
+          {
+            "t": 104,
+            "tag": "H1",
+            "size": 70252
+          }
+        ],
+        "heroImages": [
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+            "loading": "eager",
+            "fetchpriority": "high",
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          },
+          {
+            "src": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "loading": "lazy",
+            "fetchpriority": null,
+            "visible": true
+          }
+        ],
+        "imgResources": [
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=32&q=75",
+            "start": 94,
+            "end": 102,
+            "bytes": 998
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=32&q=75",
+            "start": 94,
+            "end": 102,
+            "bytes": 822
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjamaican-rice-and-peas.webp&w=32&q=75",
+            "start": 94,
+            "end": 102,
+            "bytes": 832
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fmutton-biryani.webp&w=32&q=75",
+            "start": 94,
+            "end": 103,
+            "bytes": 696
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fchana-masala.webp&w=32&q=75",
+            "start": 94,
+            "end": 103,
+            "bytes": 634
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=32&q=75",
+            "start": 94,
+            "end": 104,
+            "bytes": 834
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75",
+            "start": 94,
+            "end": 108,
+            "bytes": 41918
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=384&q=75",
+            "start": 94,
+            "end": 109,
+            "bytes": 38648
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-with-vegetable.webp&w=384&q=75",
+            "start": 94,
+            "end": 109,
+            "bytes": 31034
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fpuff-puff.webp&w=384&q=75",
+            "start": 94,
+            "end": 110,
+            "bytes": 16072
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fsuya-with-pepper-sauce.webp&w=640&q=75",
+            "start": 94,
+            "end": 110,
+            "bytes": 89760
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=640&q=75",
+            "start": 94,
+            "end": 110,
+            "bytes": 101124
+          },
+          {
+            "name": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75",
+            "start": 94,
+            "end": 111,
+            "bytes": 28938
+          }
+        ]
+      }
+    ]
+  }
+}

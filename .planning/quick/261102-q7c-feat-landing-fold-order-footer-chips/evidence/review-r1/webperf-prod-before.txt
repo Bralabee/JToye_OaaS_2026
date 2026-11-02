@@ -1,0 +1,98 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/landing-webperf.spec.ts --reporter=line
+
+Running 9 tests using 1 worker
+
+[1/9] [mobile] › e2e/landing-webperf.spec.ts:181:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds LCP and CLS at a throttled mobile profile, with the real card pictures loaded
+[2/9] [mobile] › e2e/landing-webperf.spec.ts:245:7 › Landing route `/` — throttled-mobile CWV (33-03) › every card picture reserves its box before it loads (the CLS mechanism)
+[3/9] [mobile] › e2e/landing-webperf.spec.ts:267:7 › Landing route `/` — throttled-mobile CWV (33-03) › records the / client-JS baseline and bounds its growth
+[4/9] [mobile] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one
+  1) [mobile] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('heading', { name: /near you/i })
+    Expected: 1
+    Received: 0
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" getByRole('heading', { name: /near you/i }) with timeout 10000ms
+      - waiting for getByRole('heading', { name: /near you/i })
+        24 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      365 |     // heading: the streaming staging buffer is visible to attribute locators
+      366 |     // and not to this one (556, 593).
+    > 367 |     await expect(page.getByRole("heading", { name: /near you/i })).toHaveCount(1)
+          |                                                                    ^
+      368 |     await imagesSettled(page)
+      369 |     // Let anything late — a reflowing heading, a picture swap — actually land.
+      370 |     await page.waitForTimeout(1500)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a0c738f005c12b2b9/frontend/e2e/landing-webperf.spec.ts:367:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[5/9] [desktop] › e2e/landing-webperf.spec.ts:181:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds LCP and CLS at a throttled mobile profile, with the real card pictures loaded
+[6/9] [desktop] › e2e/landing-webperf.spec.ts:245:7 › Landing route `/` — throttled-mobile CWV (33-03) › every card picture reserves its box before it loads (the CLS mechanism)
+[7/9] [desktop] › e2e/landing-webperf.spec.ts:267:7 › Landing route `/` — throttled-mobile CWV (33-03) › records the / client-JS baseline and bounds its growth
+[8/9] [desktop] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one
+  2) [desktop] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('heading', { name: /near you/i })
+    Expected: 1
+    Received: 0
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" getByRole('heading', { name: /near you/i }) with timeout 10000ms
+      - waiting for getByRole('heading', { name: /near you/i })
+        24 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      365 |     // heading: the streaming staging buffer is visible to attribute locators
+      366 |     // and not to this one (556, 593).
+    > 367 |     await expect(page.getByRole("heading", { name: /near you/i })).toHaveCount(1)
+          |                                                                    ^
+      368 |     await imagesSettled(page)
+      369 |     // Let anything late — a reflowing heading, a picture swap — actually land.
+      370 |     await page.waitForTimeout(1500)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a0c738f005c12b2b9/frontend/e2e/landing-webperf.spec.ts:367:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/landing-webperf-Landing-ro-10464-te-not-only-the-initial-one-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[9/9] [desktop] › e2e/landing-webperf.spec.ts:470:7 › @desktop-only Landing route `/` — desktop CLS (35-09, ORCH-02) › holds desktop CLS no worse than its measured pre-change control
+  2 failed
+    [mobile] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one 
+    [desktop] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one 
+  7 passed (48.4s)

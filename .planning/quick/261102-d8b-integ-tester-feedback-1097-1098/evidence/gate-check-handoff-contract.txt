@@ -1,0 +1,10 @@
+check-handoff-contract  (2026-11-02T16:27:44Z)
+  doc       : HANDOFF.md
+  config    : scripts/gates/handoff-contract.conf
+  H-1 gates : 1 claim(s), repo has 64 gate script(s)
+  H-2 state : 38 claim(s), 38 matched the forge
+  H-3 stale : 0 commit(s) behind origin/main (budget 3)
+  H-4 self  : both extractors fire and decline
+  H-5 cites : 8 path(s) checked, 8 resolve, 1 skipped (unrecognised extension)
+PASS: HANDOFF.md — 1 gate-count claim(s) and 38 state claim(s) hold; 0 commit(s) behind (budget 3).
+      NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".

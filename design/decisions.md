@@ -125,3 +125,49 @@ Sanmi approved the elevate sketch (`runs/2026-11-01-landing-elevate/sketch/after
 - **Status: KEEP** (Sanmi). Supersedes D13's palette; D13's kitchen-card rule (own banner, else a
   credited cuisine photo captioned "<Cuisine> — example photo") stands.
 - **Review when:** the built page's blind A/B (design-run step 8), or the h1 copy is next revisited.
+
+## D15 · 2026-11-02 · Landing amendments from an external tester: fold, order, footer, chips
+An external tester (2026-10-30) made four points about the D14 landing; each was measured on staging
+on 2026-11-02 and Sanmi approved these resolutions. The measurements, before and after, are in
+`.planning/quick/261102-q7c-feat-landing-fold-order-footer-chips/evidence/` (Playwright, the local
+dev server against the Compose stack's API; the BEFORE figures equal the ones measured on staging).
+1. **"The buttons are below the fold."** At 1366x768 the gold door started at 622px and ended at
+   937px, so a laptop saw 146px of it. **From 1280 wide up** (1280x800, 1366x768, 1440x900) it now
+   ends at **759px**, "Browse shops" included, inside a 768px-tall viewport. **At 1024x768 it does
+   not:** the door ends at **836px** there (was 1014), because the half-width column is narrower and
+   the copy above it wraps to more lines. The door's 120px photo strip is hidden from `lg` up (the
+   collage carries the food there; the strip stays on phones, where it is the first food picture),
+   the doors sit one step closer (`mt-7` to `mt-6`), and at `lg` the door padding and the hero's top
+   padding are one step tighter. PR #1097 review: a 1px `sizes` slot did not stop a desktop fetching
+   the hidden 384w strip at high priority, so the strip sits in a `<picture>` whose `lg` source is a
+   1x1 data URI (no request from 1366, phone request unchanged) and the first collage tile is eager
+   and high priority (`evidence/review-r1/network-prod-*.json`, `lcp-*.json`). The gold door is
+   217px, not the 195px its own content needs: the doors share a row and the operator door's longer
+   copy sets it.
+   **The recorded fallback (h1 56px to 48px at `lg`) was NOT used:** measured, 48px sets the
+   headline on TWO lines from 1280 up, which D14 item 2 ruled against, and its 3-line CLS
+   reservation would then leave an empty line under it.
+2. **"How it works should come first."** It now follows the hero, and the kitchen row follows it.
+   Grounds are stone hero / white body (How it works and the kitchen row share one white field, the
+   kitchen cards keeping their own stone step) / stone trust band (its chips flip to white) / oxblood
+   footer, the same with or without published shops. This amends `identity.md`'s ground table,
+   which still lists How it works on warm-100.
+3. **"The footer is too tall."** Footer plus photo credits went from 657px (497 + 160) to
+   **397px** (377 + a 20px disclosure) on desktop, and the footer from 955px to 732px at 390. All
+   four columns and every link stay. The rhythm is tighter; a phone takes two tracks with the brand
+   spanning both; the three statutory statements (Ordnance Survey, Royal Mail, National Statistics)
+   run on as one paragraph, each worded verbatim (`scripts/check-geo-attribution.sh` PASS), which
+   wraps once on desktop because the three are wider than the 1216px rail; and both 1px rules went
+   (taste-skill `hairline`). The CC BY-SA photo credits sit behind a native
+   `<details><summary>Photo credits</summary>`, in the DOM and one Enter away.
+4. **"The cuisine chips wrap."** All six stay (Sanmi: not fewer). They sit in one non-wrapping rail:
+   24px pictures, 13px labels, tighter gaps, so from 1280 up the six (569px) fit the 580px column
+   with no scrolling, and below that the rail swipes with scroll-snap and a hidden scrollbar. Tab
+   reaches the sixth chip at every width and the browser scrolls it into view, focus ring inside the
+   rail. **No right-edge fade mask:** D14 item 4 chose a peek over a gradient edge fade for the
+   kitchen row, and the cut-off chip is that peek here (taste-skill `edge-text` WARN at 390, the
+   peeking "South Asian", is this choice).
+- **Status: KEEP** (Sanmi approved the four amendments; the two deviations above, no H1 fallback
+  and no fade mask, are open for Sanmi to overrule).
+- **Review when:** the landing's next blind A/B, or the h1 copy is revisited (then the 48px
+  fallback can be re-measured against a shorter headline).

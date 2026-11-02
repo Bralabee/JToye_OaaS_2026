@@ -1,0 +1,26 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/__tests__/landing.test.tsx -t statutory attributions
+  Using tsconfig file: tsconfig.build.json
+FAIL app/__tests__/landing.test.tsx
+  ● Landing fold, order, footer and chips (D15) › runs the three statutory attributions on as one paragraph, wording verbatim
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Contains Royal Mail data © Royal Mail copyright and database right 2027."
+    Received string:    "Contains Ordnance Survey data © Crown copyright and database right 2027. Contains Royal Mail data © Royal Mail copyright and database right 2025. Contains National Statistics data © Crown copyright and database right 2027."
+
+      551 |       `Contains National Statistics data © Crown copyright and database right ${year}.`,
+      552 |     ]) {
+    > 553 |       expect(text).toContain(statement)
+          |                    ^
+      554 |     }
+      555 |     expect(para.querySelectorAll("br")).toHaveLength(0)
+      556 |   })
+
+      at Object.toContain (app/__tests__/landing.test.tsx:553:20)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 30 skipped, 31 total
+Snapshots:   0 total
+Time:        1.886 s
+Ran all test suites matching app/__tests__/landing.test.tsx with tests matching "statutory attributions".

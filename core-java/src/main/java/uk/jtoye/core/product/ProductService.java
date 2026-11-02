@@ -251,6 +251,13 @@ public class ProductService {
         // is deliberately kept so the null-shop policy did NOT widen to "everyone sees
         // tenant-wide products").
         if (shopAccessService.isGroupAdmin()) {
+            // V89 (products_public_read): this read carries no tenant predicate and relied on RLS
+            // alone. With NO tenant pinned (a realm admin or declared system caller whose token
+            // has no tenant claim) RLS now admits every tenant's published, available products,
+            // so answer what RLS answered before the policy: nothing.
+            if (TenantContext.get().isEmpty()) {
+                return Page.empty(pageable);
+            }
             return (availableOnly ? productRepository.findByAvailableTrue(pageable) : productRepository.findAll(pageable))
                     .map(productMapper::toDto)
                     .map(this::resolveAssetFirst);
@@ -356,6 +363,11 @@ public class ProductService {
         // uses the grant-set + tenant-wide (shop_id IS NULL) FTS variant (WR-08 read half,
         // plan 23-10); a zero-grant user → empty (deny-by-default preserved).
         if (shopAccessService.isGroupAdmin()) {
+            // V89: unpredicated like listProducts' GROUP_ADMIN branch; with no tenant pinned RLS
+            // would now admit every tenant's published, available products. Same answer as before.
+            if (TenantContext.get().isEmpty()) {
+                return Page.empty(pageable);
+            }
             return productRepository.searchFullText(tsQuery, skuPrefix, unsorted)
                     .map(productMapper::toDto)
                     .map(this::resolveAssetFirst);

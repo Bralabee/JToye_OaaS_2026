@@ -1,0 +1,8 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/landing-webperf.spec.ts -g POST-GRANT --reporter=line
+
+Running 2 tests using 1 worker
+
+[1/2] [mobile] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one
+[2/2] [desktop] › e2e/landing-webperf.spec.ts:342:7 › Landing route `/` — throttled-mobile CWV (33-03) › holds its budget in the POST-GRANT state, not only the initial one
+  2 passed (1.6m)
