@@ -711,15 +711,20 @@ dependencies:
       cluster operator v2.23.1 (row rabbitmq-cluster-operator) from the RabbitmqCluster `rabbitmq`
       in k8s/components/rabbitmq/rabbitmq-cluster.yaml, which only k8s/staging includes. The broker
       version is that CR's spec.image, the same tag compose runs (row rabbitmq), so the two rows
-      share one pin and, through the vendor date, one horizon: both enter the 90-day window on
-      ~2026-11-02 and must be moved together. Before this plan the row was `pin: unknown`,
+      share one pin and, through the vendor date, one horizon, and must be moved together
+      (both entered the 90-day window on 2026-11-02, as predicted here on 2026-10-18; the dated
+      exemption above, re-opened under #724 in PR #1088, is what holds this row green until
+      2026-12-31). Before this plan the row was `pin: unknown`,
       `kind: out_of_repo`, `owner: UNASSIGNED` with a manual_review expiring 2027-01-16; that review
       is RETIRED per docs/runbooks/rabbitmq-broker-upgrade.md §7 step 4 (a row with a declared pin
       and a site needs no human re-check of an unknown), and the owner is the maintainer, who can
       now act on it in-repo. Production's broker is still decided in Phase 32 and is NOT covered by
       this row. Vendor date as on the compose row: 4.3 End of Community Support 2027-01-31
-      (https://www.rabbitmq.com/release-information, re-verified 2026-10-16); the catalogue returns
-      `eol: false` for cycle 4.3, hence eol_source vendor. H-1 discovers this pin only because
+      (https://www.rabbitmq.com/release-information, re-verified 2026-10-16 and 2026-11-02). On
+      2026-10-16 the catalogue returned `eol: false` for cycle 4.3, which is why eol_source is
+      vendor; re-measured 2026-11-02 the catalogue returns `eol: 2027-01-31` for 4.3 and lists a
+      4.4 cycle (`eol: 2027-07-31`), agreeing with the vendor, and eol_source stays vendor because
+      the vendor page is the authority this row cites. H-1 discovers this pin only because
       scripts/check-dependency-horizons.sh scans k8s/components (also plan 29-10).
 
   # ------------------------------------------------------------------ Key Vault secret sync (Phase 29)
