@@ -24,6 +24,9 @@
 #                           [--account acct_…] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage pay-link --link-out FILE [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage billing|billing-sync-check [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage connect-onboard --link-out FILE [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage settlement-mode [--set MODE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage money-loop --mode destination [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -122,6 +125,27 @@
 #                        read printed, deadline 90 s each). Ends on BILLING-SYNC
 #                        before=n after-add=n+1 after-remove=n livemode=false; the
 #                        probe is deleted on EVERY exit path.
+#   PAY-03, the staging money loop (plan 30-28; D-06 TEST mode only):
+#     --stage connect-onboard --link-out FILE
+#                        start or resume the staging tenant's Stripe Express
+#                        onboarding through POST /api/v1/admin/tenants/{id}/stripe/
+#                        connect (a per-run realm-admin operator, deleted on every
+#                        exit path). An ENABLED account is printed and nothing is
+#                        called. The single-use onboarding URL goes ONLY to FILE,
+#                        mode 600. Ends CONNECT-ONBOARD tenant=… account=acct_…
+#                        status=PENDING|ENABLED.
+#     --stage settlement-mode [--set DESTINATION_CHARGE_PLATFORM_MOR|DIRECT_CHARGE_VENDOR_MOR]
+#                        read (or set, then read back) staging-test-kitchen's
+#                        settlementPolicyMode: GET, then PUT of the same body with
+#                        that one field changed. Ends SETTLEMENT-MODE shop=… mode=…
+#                        [previous=…].
+#     --stage money-loop --mode destination
+#                        the loop, destination mode, every Stripe object read by id:
+#                        preflight (an ENABLED account and a destination-routed shop,
+#                        else REFUSED [connect-status] / [mode-mismatch] before any
+#                        write), one storefront order, pm_card_bypassPending,
+#                        CAPTURED, then LOOP-ORDER, LOOP-CAPTURE and LOOP-TRANSFER. A
+#                        platform charge with no destination is REFUSED [plain-charge].
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -303,7 +327,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -313,6 +337,16 @@ print_tool_plan() {
     echo "  02 GET        ${STRIPE_API}${STRIPE_PATH}${STRIPE_ACCOUNT:+   Stripe-Account ${STRIPE_ACCOUNT} (in a per-call copy of the mode-600 config)}"
     echo "  03 check      livemode false (refund and account objects carry no livemode field: printed with LIVEMODE n/a)"
     echo "  04 print      the object without client_secret, secret, billing_details, receipt_email, email, name, phone, address, shipping"
+    return 0
+  fi
+  if [ "$STAGE" = connect-onboard ]; then
+    echo "  target        api ${API_BASE}; tenant \"${TENANT_NAME}\"; a per-run realm-admin operator"
+    echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: keycloak-credentials--admin-username keycloak-credentials--admin-password keycloak-credentials--frontend-client-secret (values never printed)"
+    echo "  02 operator   port-forward svc/keycloak ${PF_PORTS[*]}; POST /admin/realms/${REALM}/users seed-operator-<UTC> + realm role admin (deleted on EVERY exit path)"
+    echo "  03 GET        /api/v1/admin/tenants   the tenant named \"${TENANT_NAME}\": stripeConnectStatus, stripeAccountId; ENABLED: steps 04-05 are skipped"
+    echo "  04 POST       /api/v1/admin/tenants/{id}/stripe/connect   start or resume Express onboarding; the operator is deleted next"
+    echo "  05 write      the onboardingUrl to ${LINK_OUT} (mode 600; single-use; never printed)"
+    echo "  06 print      CONNECT-ONBOARD tenant=… account=acct_… status=…"
     return 0
   fi
   echo "  target        api ${API_BASE}; shop ${SHOP_SLUG}; signed in as ${VENDOR_USERNAME}"
@@ -351,6 +385,25 @@ print_tool_plan() {
       echo "  07 GET        ${STRIPE_API}/v1/subscriptions/{id}   every ${POLL_SECONDS}s until quantity n+1 (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s), each read printed"
       echo "  08 DELETE     /api/v1/shops/{probe}   then poll until quantity n (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s)"
       echo "  09 print      BILLING-SYNC before=n after-add=n+1 after-remove=n livemode=false" ;;
+    settlement-mode)
+      echo "  03 GET        /api/v1/shops?size=100 (the ${SHOP_SLUG} id), /api/v1/shops/{id}   settlementPolicyMode"
+      if [ -n "$SET_MODE" ]; then
+        echo "  04 PUT        /api/v1/shops/{id}   the GET body with settlementPolicyMode ${SET_MODE}, no other field changed"
+        echo "  05 GET        /api/v1/shops/{id}   read back; FAIL unless ${SET_MODE}"
+        echo "  06 print      SETTLEMENT-MODE shop=${SHOP_SLUG} mode=${SET_MODE} previous=…"
+      else
+        echo "  04 print      SETTLEMENT-MODE shop=${SHOP_SLUG} mode=…   READ-ONLY, nothing is written"
+      fi ;;
+    money-loop)
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_), keycloak-credentials--admin-username/-password (values never printed)"
+      echo "  04 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [connect-status] unless ENABLED with an acct_; the operator is deleted HERE"
+      echo "  05 GET        /api/v1/shops/{id}   REFUSED [mode-mismatch] unless settlementPolicyMode is null or DESTINATION_CHARGE_PLATFORM_MOR"
+      echo "  06 POST       /api/v1/public/shops/${SHOP_SLUG}/orders   Idempotency-Key loop-<UTC>-order; the first available dish"
+      echo "  07 POST       ${STRIPE_API}/v1/payment_intents/{id}/confirm   payment_method=pm_card_bypassPending, Idempotency-Key loop-<UTC>-confirm"
+      echo "  08 GET        /api/v1/public/orders/{orderNumber}?email=…   until CAPTURED (deadline ${PAID_DEADLINE_SECONDS}s), every read printed"
+      echo "  09 GET        ${STRIPE_API}/v1/payment_intents/{id}   succeeded, livemode false, transfer_data.destination = the account (else REFUSED [plain-charge]), application_fee_amount > 0, metadata.settlement_mode"
+      echo "  10 GET        ${STRIPE_API}/v1/charges/{id}, ${STRIPE_API}/v1/transfers/{id}   captured; the transfer to the account for amount minus fee"
+      echo "  11 print      LOOP-ORDER, LOOP-CAPTURE, LOOP-TRANSFER" ;;
     order-transition)
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
@@ -579,6 +632,112 @@ delete_operator() {
   esac
 }
 
+# operator_up — the Keycloak port-forward (PID captured at start, never killed by a
+# pattern) and the per-run realm-admin operator seed-operator-<UTC>, with a random
+# in-memory password, then its token. Needs kv-admin-username, kv-admin-password and
+# kv-client-secret in WORKDIR. The EXIT trap deletes the operator (OP_CREATED=1 is set
+# before the create is sent, so a create whose answer is lost is still looked up).
+operator_up() {
+  local code t0
+  # The port-forward.
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" port-forward svc/keycloak "${PF_PORTS[@]}" > "$WORKDIR/port-forward.log" 2>&1 &
+  PF_PID=$!
+  t0=$(date +%s)
+  while :; do
+    if ! kill -0 "$PF_PID" 2>/dev/null; then
+      PF_PID=""
+      echo "FAIL: the port-forward exited before Keycloak answered: $(head -c 300 "$WORKDIR/port-forward.log" | tr '\n' ' ')" >&2
+      exit 1
+    fi
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${MGMT_BASE}/health/ready" 2>/dev/null || true)
+    [ "$code" = 200 ] && break
+    if [ $(( $(date +%s) - t0 )) -ge "$READY_DEADLINE_SECONDS" ]; then
+      echo "FAIL: Keycloak was not ready within ${READY_DEADLINE_SECONDS}s (last ${MGMT_BASE}/health/ready status ${code:-none})" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  echo "OK: Keycloak ready through the port-forward (pid $PF_PID)"
+
+  # The operator.
+  admin_token || exit 1
+  OP_USERNAME="seed-operator-$(date -u +%Y%m%dt%H%M%Sz)"
+  (umask 077 && printf '%s' "$OP_USERNAME" > "$WORKDIR/operator-username")
+  (umask 077 && openssl rand -base64 32 | tr -d '\n' > "$WORKDIR/operator-password") \
+    || void "openssl rand failed"
+  [ -s "$WORKDIR/operator-password" ] || void "openssl rand produced no password"
+  jq -n --arg u "$OP_USERNAME" --rawfile p "$WORKDIR/operator-password" '{
+      username: $u, enabled: true, emailVerified: true, firstName: "Seed", lastName: "Operator",
+      email: ($u + "@seed.invalid"), requiredActions: [],
+      credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/op-create.json"
+  OP_CREATED=1
+  code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/op-created.json" "$WORKDIR/op-create.json")
+  rm -f "$WORKDIR/op-create.json"
+  [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($OP_USERNAME)" "$code" "$WORKDIR/op-created.json"
+  OP_ID=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
+  [ -n "$OP_ID" ] || { echo "FAIL: the operator create returned no Location" >&2; exit 1; }
+  code=$(kc_api GET "/admin/realms/$REALM/roles/admin" "$WORKDIR/role-admin.json")
+  [ "$code" = 200 ] || fail_http "GET /admin/realms/$REALM/roles/admin" "$code" "$WORKDIR/role-admin.json"
+  jq '[.]' "$WORKDIR/role-admin.json" | body "$WORKDIR/role-map.json"
+  code=$(kc_api POST "/admin/realms/$REALM/users/$OP_ID/role-mappings/realm" "$WORKDIR/role-mapped.json" "$WORKDIR/role-map.json")
+  [ "$code" = 204 ] || fail_http "POST role-mappings/realm admin for $OP_USERNAME" "$code" "$WORKDIR/role-mapped.json"
+  echo "OK: created the per-run operator $OP_USERNAME ($OP_ID) with realm role admin; it is deleted on exit"
+  user_token operator || exit 1
+}
+
+# operator_down — the operator deleted now and the port-forward stopped, for a stage
+# whose admin read is done before it writes anything (plan 30-28): no realm admin
+# stands while an order, a refund or a link exists. Returns 1 when the operator may
+# still exist (the EXIT trap then tries again and fails the run).
+operator_down() {
+  if [ "$OP_CREATED" -eq 1 ]; then delete_operator || return 1; fi
+  if [ -n "${PF_PID:-}" ]; then kill "$PF_PID" 2>/dev/null || true; wait "$PF_PID" 2>/dev/null || true; PF_PID=""; fi
+  return 0
+}
+
+# read_kv NAME... — the named KV_MAP rows from Key Vault into their mode-600 files in
+# WORKDIR (the same files vendor_stage and vendor_login write). A file already present
+# is not read again. A value is never printed and never in argv.
+read_kv() {
+  local want row name obj v rc file n=0 found
+  set +x
+  for want in "$@"; do
+    found=0
+    for row in "${KV_MAP[@]}"; do
+      name="${row%%=*}"; obj="${row#*=}"
+      [ "$name" = "$want" ] || continue
+      found=1
+      case "$name" in
+        VENDOR_PASSWORD)        file=vendor-password ;;
+        KC_ADMIN_USERNAME)      file=kv-admin-username ;;
+        KC_ADMIN_PASSWORD)      file=kv-admin-password ;;
+        CORE_API_CLIENT_SECRET) file=kv-client-secret ;;
+        *) void "read_kv: no file for $name" ;;
+      esac
+      [ ! -s "$WORKDIR/$file" ] || continue
+      rc=0; v=$(az_read keyvault secret show --vault-name "$KEY_VAULT_NAME" -n "$obj" --query value -o tsv) || rc=$?
+      if [ "$rc" -ne 0 ] || [ -z "$v" ]; then
+        refuse key-vault "could not read $obj from $KEY_VAULT_NAME (az rc=$rc); plan 29-13 generates it"
+      fi
+      (umask 077 && printf '%s' "$v" > "$WORKDIR/$file")
+      n=$((n + 1))
+    done
+    [ "$found" -eq 1 ] || void "read_kv: $want is not a KV_MAP name"
+  done
+  v=""
+  echo "OK: read $n more Key Vault object(s) from $KEY_VAULT_NAME (values not shown)"
+}
+
+# operator_login — the subscription guard, the operator's Key Vault objects, then
+# operator_up (plan 30-28: connect-onboard and the money loop's preflight).
+operator_login() {
+  azure_guard_once
+  need_tool curl; need_tool openssl; need_tool base64
+  ensure_workdir
+  read_kv KC_ADMIN_USERNAME KC_ADMIN_PASSWORD CORE_API_CLIENT_SECRET
+  operator_up
+}
+
 vendor_stage() {
   local row name obj v rc code t0
 
@@ -607,50 +766,8 @@ vendor_stage() {
   (umask 077 && printf '%s' "$VENDOR_USERNAME" > "$WORKDIR/vendor-username")
   echo "OK: read ${#KV_MAP[@]} Key Vault objects from $KEY_VAULT_NAME (values not shown)"
 
-  # 3. The port-forward, PID captured at start (never killed by a pattern).
-  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" port-forward svc/keycloak "${PF_PORTS[@]}" > "$WORKDIR/port-forward.log" 2>&1 &
-  PF_PID=$!
-  t0=$(date +%s)
-  while :; do
-    if ! kill -0 "$PF_PID" 2>/dev/null; then
-      PF_PID=""
-      echo "FAIL: the port-forward exited before Keycloak answered: $(head -c 300 "$WORKDIR/port-forward.log" | tr '\n' ' ')" >&2
-      exit 1
-    fi
-    code=$(curl -sS -o /dev/null -w '%{http_code}' "${MGMT_BASE}/health/ready" 2>/dev/null || true)
-    [ "$code" = 200 ] && break
-    if [ $(( $(date +%s) - t0 )) -ge "$READY_DEADLINE_SECONDS" ]; then
-      echo "FAIL: Keycloak was not ready within ${READY_DEADLINE_SECONDS}s (last ${MGMT_BASE}/health/ready status ${code:-none})" >&2
-      exit 1
-    fi
-    sleep "$POLL_SECONDS"
-  done
-  echo "OK: Keycloak ready through the port-forward (pid $PF_PID)"
-
-  # 4. The per-run realm-admin operator.
-  admin_token || exit 1
-  OP_USERNAME="seed-operator-$(date -u +%Y%m%dt%H%M%Sz)"
-  (umask 077 && printf '%s' "$OP_USERNAME" > "$WORKDIR/operator-username")
-  (umask 077 && openssl rand -base64 32 | tr -d '\n' > "$WORKDIR/operator-password") \
-    || void "openssl rand failed"
-  [ -s "$WORKDIR/operator-password" ] || void "openssl rand produced no password"
-  jq -n --arg u "$OP_USERNAME" --rawfile p "$WORKDIR/operator-password" '{
-      username: $u, enabled: true, emailVerified: true, firstName: "Seed", lastName: "Operator",
-      email: ($u + "@seed.invalid"), requiredActions: [],
-      credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/op-create.json"
-  OP_CREATED=1
-  code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/op-created.json" "$WORKDIR/op-create.json")
-  rm -f "$WORKDIR/op-create.json"
-  [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($OP_USERNAME)" "$code" "$WORKDIR/op-created.json"
-  OP_ID=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
-  [ -n "$OP_ID" ] || { echo "FAIL: the operator create returned no Location" >&2; exit 1; }
-  code=$(kc_api GET "/admin/realms/$REALM/roles/admin" "$WORKDIR/role-admin.json")
-  [ "$code" = 200 ] || fail_http "GET /admin/realms/$REALM/roles/admin" "$code" "$WORKDIR/role-admin.json"
-  jq '[.]' "$WORKDIR/role-admin.json" | body "$WORKDIR/role-map.json"
-  code=$(kc_api POST "/admin/realms/$REALM/users/$OP_ID/role-mappings/realm" "$WORKDIR/role-mapped.json" "$WORKDIR/role-map.json")
-  [ "$code" = 204 ] || fail_http "POST role-mappings/realm admin for $OP_USERNAME" "$code" "$WORKDIR/role-mapped.json"
-  echo "OK: created the per-run operator $OP_USERNAME ($OP_ID) with realm role admin; it is deleted on exit"
-  user_token operator || exit 1
+  # 3-4. The port-forward and the per-run realm-admin operator (operator_up).
+  operator_up
 
   # 5. The tenant, by name.
   local tenant_id n
@@ -1979,6 +2096,359 @@ billing_sync_check_stage() {
   delete_probe_shop || exit 1
   wait_quantity after-remove "$n"
   echo "BILLING-SYNC before=$n after-add=$((n + 1)) after-remove=$n livemode=false"
+}
+
+# ===========================================================================
+# PAY-03 (plan 30-28; D-06 TEST mode only; T-30-107..T-30-111): the staging money
+# loop, destination mode, and the two stages that set it up. PAY-03 needs the loop
+# onboard -> order -> capture -> money to the connected account -> refund, each
+# step read from Stripe's API by id. Both modes run on ONE tenant and ONE shop in
+# sequence (onboarding publishes one shop per tenant), so the shop's mode is
+# switched between runs with --stage settlement-mode, and each mode's order is
+# refunded before the switch: refund routing is resolved from the shop's CURRENT
+# mode at refund time (RefundService -> resolveSettlementRouting).
+#   --stage connect-onboard --link-out FILE
+#       a per-run realm-admin operator reads the tenant from GET /api/v1/admin/tenants;
+#       an ENABLED account is printed and nothing else is called; otherwise POST
+#       /api/v1/admin/tenants/{id}/stripe/connect starts or resumes Express
+#       onboarding, the operator is deleted, and the single-use onboarding URL (a
+#       bearer link to the vendor's Stripe onboarding, T-30-108) goes ONLY to FILE,
+#       mode 600. Prints CONNECT-ONBOARD tenant=… account=acct_… status=….
+#   --stage settlement-mode [--set DESTINATION_CHARGE_PLATFORM_MOR|DIRECT_CHARGE_VENDOR_MOR]
+#       the vendor reads staging-test-kitchen (GET /api/v1/shops/{id}); with --set,
+#       the SAME body goes back through PUT with settlementPolicyMode alone changed
+#       (absent fields keep their stored values) and is read back. Prints
+#       SETTLEMENT-MODE shop=… mode=…[ previous=…].
+#   --stage money-loop --mode destination
+#       REFUSED [connect-status] unless the tenant's account is ENABLED, REFUSED
+#       [mode-mismatch] unless the shop routes as a destination charge, both before
+#       any write and with the operator already deleted; then one storefront order,
+#       its intent confirmed with pm_card_bypassPending (funds straight to the
+#       available balance), the tracking read until CAPTURED (every read printed),
+#       and the intent, its charge and its transfer read by id. A platform charge
+#       with no transfer_data is REFUSED [plain-charge] (Pitfall 6): it is never
+#       recorded as a destination-charge proof. Every Idempotency-Key derives from
+#       the run id loop-<UTC stamp>.
+# ===========================================================================
+
+# admin_tenant_row — the operator's GET /api/v1/admin/tenants: the one tenant named
+# TENANT_NAME. Sets AT_ID AT_STATUS (stripeConnectStatus, NONE when absent) and
+# AT_ACCOUNT (stripeAccountId). Called directly, never inside $(…).
+AT_ID=""; AT_STATUS=""; AT_ACCOUNT=""
+admin_tenant_row() {
+  local code n row
+  code=$(api operator GET /api/v1/admin/tenants "$WORKDIR/at-tenants.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/admin/tenants" "$code" "$WORKDIR/at-tenants.json"
+  n=$(jq -r --arg n "$TENANT_NAME" 'if type == "array" then ([.[] | select(.name == $n)] | length | tostring) else "not-a-list" end' \
+        "$WORKDIR/at-tenants.json" 2>/dev/null || echo unparseable)
+  if [ "$n" != 1 ]; then
+    rm -f "$WORKDIR/at-tenants.json"
+    echo "FAIL: GET /api/v1/admin/tenants lists $n tenant(s) named \"$TENANT_NAME\" (want exactly 1)" >&2; exit 1
+  fi
+  row=$(jq -r --arg n "$TENANT_NAME" '.[] | select(.name == $n) | [.id // "", .stripeConnectStatus // "NONE", .stripeAccountId // ""] | join("\u001f")' \
+          "$WORKDIR/at-tenants.json")
+  rm -f "$WORKDIR/at-tenants.json"
+  IFS=$'\x1f' read -r AT_ID AT_STATUS AT_ACCOUNT <<<"$row" || true
+  [[ "$AT_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the admin tenant row carries no tenant id" >&2; exit 1; }
+}
+
+# shop_by_slug — SHOP_ID of staging-test-kitchen from the vendor's shop list.
+# read_shop OUT — GET /api/v1/shops/SHOP_ID into OUT; SHOP_MODE is its
+# settlementPolicyMode ("" when null). Both called directly, never inside $(…).
+SHOP_ID=""; SHOP_MODE=""
+shop_by_slug() {
+  local code
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/sb-shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/sb-shops.json"
+  SHOP_ID=$(jq -r --arg s "$SHOP_SLUG" '[.content[]? | select(.slug == $s)] | if length == 1 then .[0].id else "" end' \
+              "$WORKDIR/sb-shops.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/sb-shops.json"
+  [[ "$SHOP_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the vendor does not hold exactly one shop $SHOP_SLUG" >&2; exit 1; }
+}
+read_shop() {
+  local code
+  code=$(api vendor GET "/api/v1/shops/$SHOP_ID" "$1")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops/$SHOP_ID" "$code" "$1"
+  jq -e --arg id "$SHOP_ID" 'type == "object" and .id == $id' "$1" >/dev/null 2>&1 \
+    || { echo "FAIL: GET /api/v1/shops/$SHOP_ID did not return that shop" >&2; exit 1; }
+  SHOP_MODE=$(jq -r '.settlementPolicyMode // empty' "$1")
+}
+
+# --stage connect-onboard --link-out FILE
+connect_onboard_stage() {
+  local code acct cst url
+  operator_login
+  admin_tenant_row
+  echo "OK: tenant \"$TENANT_NAME\" ($AT_ID): connect status $AT_STATUS, account ${AT_ACCOUNT:-none}"
+  if [ "$AT_STATUS" = ENABLED ] && [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+    operator_down || exit 1
+    echo "SKIP: the connected account is ENABLED; no onboarding link was requested and $LINK_OUT was not written"
+    echo "CONNECT-ONBOARD tenant=$AT_ID account=$AT_ACCOUNT status=ENABLED"
+    return 0
+  fi
+  code=$(api operator POST "/api/v1/admin/tenants/$AT_ID/stripe/connect" "$WORKDIR/connect-out.json")
+  if [ "$code" != 200 ]; then
+    jq '{type, title, detail}' "$WORKDIR/connect-out.json" > "$WORKDIR/connect-problem.json" 2>/dev/null || printf '{}' > "$WORKDIR/connect-problem.json"
+    rm -f "$WORKDIR/connect-out.json"
+    fail_http "POST /api/v1/admin/tenants/$AT_ID/stripe/connect" "$code" "$WORKDIR/connect-problem.json"
+  fi
+  url=$(jq -r '.onboardingUrl // empty' "$WORKDIR/connect-out.json" 2>/dev/null || true)
+  acct=$(jq -r '.stripeAccountId // empty' "$WORKDIR/connect-out.json" 2>/dev/null || true)
+  cst=$(jq -r '.connectStatus // empty' "$WORKDIR/connect-out.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/connect-out.json"
+  # No realm admin stands while the link exists.
+  operator_down || { url=""; exit 1; }
+  [[ "$acct" =~ ^acct_[A-Za-z0-9]+$ ]] || { url=""; echo "FAIL: the connect answer names no acct_ account" >&2; exit 1; }
+  [ -z "$AT_ACCOUNT" ] || [ "$AT_ACCOUNT" = "$acct" ] \
+    || { url=""; echo "FAIL: the tenant was linked to $AT_ACCOUNT but the connect answer names $acct" >&2; exit 1; }
+  case "$cst" in PENDING|ENABLED|DISABLED) ;; *) url=""; echo "FAIL: the connect answer carries status '$cst'" >&2; exit 1 ;; esac
+  case "$url" in
+    https://?*) ;;
+    *) url=""; echo "FAIL: the onboarding link is not an https URL (shape only; not shown)" >&2; exit 1 ;;
+  esac
+  (umask 077 && : > "$LINK_OUT") || { url=""; echo "FAIL: could not create --link-out $LINK_OUT" >&2; exit 1; }
+  chmod 600 "$LINK_OUT" || { url=""; echo "FAIL: could not chmod 600 $LINK_OUT" >&2; exit 1; }
+  printf '%s\n' "$url" > "$LINK_OUT"
+  url=""
+  echo "OK: the single-use onboarding link is in $LINK_OUT (mode 600; not shown)"
+  echo "CONNECT-ONBOARD tenant=$AT_ID account=$acct status=$cst"
+}
+
+# --stage settlement-mode [--set MODE]
+settlement_mode_stage() {
+  local code before after
+  vendor_login
+  shop_by_slug
+  read_shop "$WORKDIR/sm-shop.json"
+  before="$SHOP_MODE"
+  if [ -z "$SET_MODE" ]; then
+    rm -f "$WORKDIR/sm-shop.json"
+    echo "SETTLEMENT-MODE shop=$SHOP_SLUG mode=${before:-null}"
+    return 0
+  fi
+  if [ "$before" = "$SET_MODE" ]; then
+    rm -f "$WORKDIR/sm-shop.json"
+    echo "SKIP: $SHOP_SLUG is already $SET_MODE; nothing was written"
+    echo "SETTLEMENT-MODE shop=$SHOP_SLUG mode=$SET_MODE previous=$before"
+    return 0
+  fi
+  # The GET body with one field changed: CreateShopRequest keeps every absent field,
+  # and every present one is the value just read.
+  jq --arg m "$SET_MODE" '.settlementPolicyMode = $m' "$WORKDIR/sm-shop.json" | body "$WORKDIR/sm-put.json"
+  rm -f "$WORKDIR/sm-shop.json"
+  code=$(api vendor PUT "/api/v1/shops/$SHOP_ID" "$WORKDIR/sm-put-out.json" "$WORKDIR/sm-put.json")
+  rm -f "$WORKDIR/sm-put.json"
+  [ "$code" = 200 ] || fail_http "PUT /api/v1/shops/$SHOP_ID (settlementPolicyMode $SET_MODE)" "$code" "$WORKDIR/sm-put-out.json"
+  rm -f "$WORKDIR/sm-put-out.json"
+  read_shop "$WORKDIR/sm-shop-after.json"
+  rm -f "$WORKDIR/sm-shop-after.json"
+  after="$SHOP_MODE"
+  [ "$after" = "$SET_MODE" ] || { echo "FAIL: $SHOP_SLUG's settlementPolicyMode read back as '${after:-null}' after the PUT, not $SET_MODE" >&2; exit 1; }
+  echo "SETTLEMENT-MODE shop=$SHOP_SLUG mode=$after previous=${before:-null}"
+}
+
+# --stage money-loop --mode destination. The steps share these globals; every
+# helper is called directly, never inside $(…), so a refusal exits the script.
+LP_RUN=""; LP_ACCOUNT=""; LP_ORDER=""; LP_INTENT=""; LP_TOTAL=""; LP_AMOUNT=""; LP_FEE=""
+LP_CHARGE=""; LP_CAPTURED=""; LP_TRANSFER=""; LP_TRANSFER_AMOUNT=""
+
+# loop_preflight — the tenant's connected account (read by a per-run operator that
+# is deleted before anything is written) and the shop's mode. Refusals write nothing.
+loop_preflight() {
+  vendor_login
+  vendor_tenant
+  read_stripe_key
+  need_tool openssl; need_tool base64
+  read_kv KC_ADMIN_USERNAME KC_ADMIN_PASSWORD
+  operator_up
+  admin_tenant_row
+  operator_down || exit 1
+  [ "$AT_ID" = "$VENDOR_TENANT" ] \
+    || { echo "FAIL: the vendor's tenant $VENDOR_TENANT is not \"$TENANT_NAME\" ($AT_ID)" >&2; exit 1; }
+  if [ "$AT_STATUS" != ENABLED ] || ! [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+    refuse connect-status "tenant $AT_ID's connected account is ${AT_ACCOUNT:-none} with status $AT_STATUS, not ENABLED: an order now would be a plain platform charge, never a settlement-mode proof (finish --stage connect-onboard first). Nothing was written"
+  fi
+  LP_ACCOUNT="$AT_ACCOUNT"
+  shop_by_slug
+  read_shop "$WORKDIR/ml-shop.json"
+  rm -f "$WORKDIR/ml-shop.json"
+  case "$LOOP_MODE:${SHOP_MODE:-null}" in
+    destination:null|destination:DESTINATION_CHARGE_PLATFORM_MOR) ;;
+    *) refuse mode-mismatch "$SHOP_SLUG routes as ${SHOP_MODE:-null}, but --mode $LOOP_MODE needs DESTINATION_CHARGE_PLATFORM_MOR (or null under the MARKETPLACE onboarding); set it with --stage settlement-mode first. Nothing was written" ;;
+  esac
+  echo "OK: preflight: tenant $AT_ID account $LP_ACCOUNT is ENABLED; $SHOP_SLUG mode ${SHOP_MODE:-null} routes as a destination charge"
+}
+
+# loop_order — the first available dish from the public menu, one storefront order.
+loop_order() {
+  local code fulfilment fee pick pid price mask title cs ost acct_cs
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG" "$WORKDIR/ml-pub-shop.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG" "$code" "$WORKDIR/ml-pub-shop.json"
+  if [ "$(jq -r '.offersCollection' "$WORKDIR/ml-pub-shop.json")" = true ]; then
+    fulfilment=COLLECTION; fee=0
+  elif [ "$(jq -r '.offersDelivery' "$WORKDIR/ml-pub-shop.json")" = true ]; then
+    fulfilment=DELIVERY; fee=$(jq -r '.deliveryFeePennies // 0' "$WORKDIR/ml-pub-shop.json")
+  else
+    echo "FAIL: $SHOP_SLUG offers neither collection nor delivery" >&2; exit 1
+  fi
+  rm -f "$WORKDIR/ml-pub-shop.json"
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG/products" "$WORKDIR/ml-pub-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG/products" "$code" "$WORKDIR/ml-pub-products.json"
+  pick=$(jq -c '[(if type == "object" and has("content") then .content[] elif type == "object" then .[][] else .[] end)
+                 | select(.inStock == true)][0] // empty' "$WORKDIR/ml-pub-products.json")
+  rm -f "$WORKDIR/ml-pub-products.json"
+  [ -n "$pick" ] || { echo "FAIL: $SHOP_SLUG has no available product on its public menu" >&2; exit 1; }
+  pid=$(jq -r '.id' <<<"$pick"); price=$(jq -r '.pricePennies' <<<"$pick")
+  mask=$(jq -r '.allergenMask // 0' <<<"$pick"); title=$(jq -r '.title // .name // "?"' <<<"$pick")
+  [[ "$price" =~ ^[0-9]+$ ]] && [[ "$mask" =~ ^[0-9]+$ ]] || { echo "FAIL: the menu entry for $pid has no integer price or allergen mask" >&2; exit 1; }
+  LP_TOTAL=$((price + fee))
+  echo "OK: basket = 1 x \"$title\" ($pid) at ${price}p, allergen mask $mask, $fulfilment, expected total ${LP_TOTAL}p"
+  jq -n --arg n "$GUEST_NAME" --arg e "$GUEST_EMAIL" --arg ph "$GUEST_PHONE" --arg f "$fulfilment" \
+        --arg p "$pid" --argjson pr "$price" --argjson m "$mask" --argjson t "$LP_TOTAL" '
+      {customerName: $n, customerEmail: $e, customerPhone: $ph, fulfilmentType: $f,
+       items: [{productId: $p, quantity: 1, expectedUnitPricePennies: $pr}],
+       acknowledgedAllergenMask: $m, expectedTotalPennies: $t}
+      + (if $f == "DELIVERY" then {addressLine1: "1 Staging Test Street", addressCity: "Birmingham", addressPostcode: "B1 1AA"} else {} end)' \
+    | body "$WORKDIR/ml-order.json"
+  code=$(pub_api POST "/api/v1/public/shops/$SHOP_SLUG/orders" "$WORKDIR/ml-order-out.json" "$WORKDIR/ml-order.json" \
+    "Idempotency-Key: $LP_RUN-order")
+  rm -f "$WORKDIR/ml-order.json"
+  [ "$code" = 201 ] || fail_http "POST /api/v1/public/shops/$SHOP_SLUG/orders" "$code" "$WORKDIR/ml-order-out.json"
+  LP_ORDER=$(jq -r '.orderNumber // empty' "$WORKDIR/ml-order-out.json")
+  ost=$(jq -r '.status // empty' "$WORKDIR/ml-order-out.json")
+  cs=$(jq -r '.clientSecret // empty' "$WORKDIR/ml-order-out.json")
+  acct_cs=$(jq -r '.stripeAccountId // empty' "$WORKDIR/ml-order-out.json")
+  rm -f "$WORKDIR/ml-order-out.json"
+  [ -n "$LP_ORDER" ] || { cs=""; echo "FAIL: the 201 carried no orderNumber" >&2; exit 1; }
+  if [ -n "$acct_cs" ]; then
+    cs=""; refuse mode-mismatch "order $LP_ORDER's intent was created on connected account $acct_cs (a direct charge), not as a destination charge on the platform"
+  fi
+  [ -n "$cs" ] || { echo "FAIL: order $LP_ORDER came back with no client secret: a cash order, which the loop must never place (is the Stripe key configured on core-java?)" >&2; exit 1; }
+  LP_INTENT="${cs%%_secret_*}"
+  cs=""
+  [[ "$LP_INTENT" =~ ^pi_[A-Za-z0-9]+$ ]] || { echo "FAIL: the client secret does not carry a PaymentIntent id" >&2; exit 1; }
+  echo "OK: order $LP_ORDER status $ost (Idempotency-Key $LP_RUN-order; client secret not shown)"
+}
+
+# loop_confirm — the intent confirmed with pm_card_bypassPending, unless it succeeded.
+loop_confirm() {
+  local code pstatus
+  code=$(stripe_api GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT" "$code" "$WORKDIR/ml-pi.json"
+  assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
+  if [ "$(jq -r '.metadata.order_number // empty' "$WORKDIR/ml-pi.json")" != "$LP_ORDER" ]; then
+    echo "FAIL: PaymentIntent $LP_INTENT names order '$(jq -r '.metadata.order_number // ""' "$WORKDIR/ml-pi.json")', not $LP_ORDER" >&2; exit 1
+  fi
+  pstatus=$(jq -r '.status' "$WORKDIR/ml-pi.json")
+  rm -f "$WORKDIR/ml-pi.json"
+  case "$pstatus" in
+    succeeded)
+      echo "SKIP: PaymentIntent $LP_INTENT already succeeded; not confirmed again" ;;
+    requires_payment_method|requires_confirmation)
+      STRIPE_EXTRA_HEADER="Idempotency-Key: $LP_RUN-confirm"
+      code=$(stripe_api POST "/v1/payment_intents/$LP_INTENT/confirm" "$WORKDIR/ml-pi-confirm.json" \
+        "payment_method=pm_card_bypassPending" "return_url=$ORDER_RETURN_URL")
+      STRIPE_EXTRA_HEADER=""
+      [ "$code" = 200 ] || stripe_fail "POST /v1/payment_intents/$LP_INTENT/confirm" "$code" "$WORKDIR/ml-pi-confirm.json"
+      assert_test_mode "$WORKDIR/ml-pi-confirm.json" "the confirmed PaymentIntent $LP_INTENT"
+      echo "CONFIRMED: PaymentIntent $LP_INTENT with pm_card_bypassPending (status $(jq -r '.status' "$WORKDIR/ml-pi-confirm.json"); Idempotency-Key $LP_RUN-confirm)"
+      rm -f "$WORKDIR/ml-pi-confirm.json" ;;
+    *)
+      echo "FAIL: PaymentIntent $LP_INTENT is $pstatus, which the loop cannot settle" >&2; exit 1 ;;
+  esac
+}
+
+# loop_wait_captured — the public tracking read until paymentStatus CAPTURED (the
+# D-28 webhook settled it); every read printed; deadline PAID_DEADLINE_SECONDS.
+loop_wait_captured() {
+  local code q t0 track tstatus tpay
+  q=$(jq -rn --arg e "$GUEST_EMAIL" '$e | @uri')
+  t0=$(date +%s)
+  while :; do
+    tpay=""
+    code=$(pub_api GET "/api/v1/public/orders/$LP_ORDER?email=$q" "$WORKDIR/ml-track.json")
+    if [ "$code" = 200 ]; then
+      tstatus=$(jq -r '.status // ""' "$WORKDIR/ml-track.json"); tpay=$(jq -r '.paymentStatus // ""' "$WORKDIR/ml-track.json")
+      track="status=$tstatus payment_status=$tpay"
+    else
+      track="http=$code"
+    fi
+    rm -f "$WORKDIR/ml-track.json"
+    echo "LOOP-WAIT order=$LP_ORDER $track elapsed=$(( $(date +%s) - t0 ))s"
+    [ "$tpay" != CAPTURED ] || break
+    if [ $(( $(date +%s) - t0 )) -ge "$PAID_DEADLINE_SECONDS" ]; then
+      echo "FAIL: order $LP_ORDER did not read CAPTURED within ${PAID_DEADLINE_SECONDS}s (deadline); last tracking read: $track" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+}
+
+# loop_read_destination — the intent, its charge and its transfer, each by id. The
+# intent must be a destination charge to the tenant's account (Pitfall 6).
+loop_read_destination() {
+  local code row st tdtype dest fee smode on amt ch cap cpi ctr tdest tamt tsrc
+  code=$(stripe_api GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT" "$code" "$WORKDIR/ml-pi.json"
+  assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
+  row=$(jq -r '[.status // "", (.transfer_data | type), (.transfer_data.destination // ""), (.application_fee_amount // "" | tostring),
+                .metadata.settlement_mode // "", .metadata.order_number // "", (.amount // "" | tostring),
+                (if (.latest_charge | type) == "object" then .latest_charge.id else (.latest_charge // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-pi.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-pi.json"
+  [ -n "$row" ] || { echo "FAIL: PaymentIntent $LP_INTENT could not be read" >&2; exit 1; }
+  IFS=$'\x1f' read -r st tdtype dest fee smode on amt ch <<<"$row" || true
+  [ "$on" = "$LP_ORDER" ] || { echo "FAIL: PaymentIntent $LP_INTENT names order '$on', not $LP_ORDER" >&2; exit 1; }
+  [ "$st" = succeeded ] || { echo "FAIL: PaymentIntent $LP_INTENT is '$st' after CAPTURED, not succeeded" >&2; exit 1; }
+  if [ "$tdtype" != object ] || [ -z "$dest" ]; then
+    refuse plain-charge "PaymentIntent $LP_INTENT has no transfer_data.destination: a plain platform charge, never recorded as a destination-charge proof (Pitfall 6); the order is not accepted or refunded by the loop"
+  fi
+  [ "$dest" = "$LP_ACCOUNT" ] || { echo "FAIL: PaymentIntent $LP_INTENT transfer_data.destination is $dest, not the tenant's account $LP_ACCOUNT" >&2; exit 1; }
+  [[ "$fee" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT application_fee_amount is '${fee:-absent}' (want > 0 on a destination charge)" >&2; exit 1; }
+  [ "$smode" = DESTINATION_CHARGE_PLATFORM_MOR ] \
+    || { echo "FAIL: PaymentIntent $LP_INTENT metadata.settlement_mode is '${smode:-absent}', not DESTINATION_CHARGE_PLATFORM_MOR" >&2; exit 1; }
+  [ "$amt" = "$LP_TOTAL" ] || { echo "FAIL: PaymentIntent $LP_INTENT amount is $amt, not the order total $LP_TOTAL" >&2; exit 1; }
+  [[ "$ch" =~ ^ch_[A-Za-z0-9]+$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT names no ch_ latest_charge ('$ch')" >&2; exit 1; }
+  LP_AMOUNT="$amt"; LP_FEE="$fee"; LP_CHARGE="$ch"
+  echo "LOOP-ORDER mode=destination order=$LP_ORDER intent=$LP_INTENT amount=$amt application_fee=$fee"
+
+  code=$(stripe_api GET "/v1/charges/$ch" "$WORKDIR/ml-ch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$ch" "$code" "$WORKDIR/ml-ch.json"
+  assert_test_mode "$WORKDIR/ml-ch.json" "Charge $ch"
+  row=$(jq -r '[(.captured | tostring), (.amount_captured // "" | tostring), (.payment_intent // ""),
+                (if (.transfer | type) == "object" then .transfer.id else (.transfer // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-ch.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-ch.json"
+  IFS=$'\x1f' read -r cap LP_CAPTURED cpi ctr <<<"$row" || true
+  [ "$cap" = true ] || { echo "FAIL: Charge $ch reads captured '$cap', not true" >&2; exit 1; }
+  [ "$cpi" = "$LP_INTENT" ] || { echo "FAIL: Charge $ch belongs to '$cpi', not $LP_INTENT" >&2; exit 1; }
+  [ "$LP_CAPTURED" = "$amt" ] || { echo "FAIL: Charge $ch amount_captured is '$LP_CAPTURED', not $amt" >&2; exit 1; }
+  [[ "$ctr" =~ ^tr_[A-Za-z0-9]+$ ]] || { echo "FAIL: Charge $ch carries no tr_ transfer ('$ctr'); a destination charge creates one" >&2; exit 1; }
+  echo "LOOP-CAPTURE charge=$ch captured=true amount=$LP_CAPTURED"
+
+  code=$(stripe_api GET "/v1/transfers/$ctr" "$WORKDIR/ml-tr.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/transfers/$ctr" "$code" "$WORKDIR/ml-tr.json"
+  assert_test_mode "$WORKDIR/ml-tr.json" "Transfer $ctr"
+  row=$(jq -r '[(if (.destination | type) == "object" then .destination.id else (.destination // "") end), (.amount // "" | tostring),
+                (if (.source_transaction | type) == "object" then .source_transaction.id else (.source_transaction // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-tr.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-tr.json"
+  IFS=$'\x1f' read -r tdest tamt tsrc <<<"$row" || true
+  [ "$tdest" = "$LP_ACCOUNT" ] || { echo "FAIL: Transfer $ctr destination is '$tdest', not the tenant's account $LP_ACCOUNT" >&2; exit 1; }
+  [ "$tamt" = "$((amt - fee))" ] || { echo "FAIL: Transfer $ctr amount is '$tamt', not amount $amt minus application_fee_amount $fee" >&2; exit 1; }
+  [ -z "$tsrc" ] || [ "$tsrc" = "$ch" ] || { echo "FAIL: Transfer $ctr source_transaction is $tsrc, not $ch" >&2; exit 1; }
+  LP_TRANSFER="$ctr"; LP_TRANSFER_AMOUNT="$tamt"
+  echo "LOOP-TRANSFER transfer=$ctr destination=$tdest amount=$tamt"
+}
+
+money_loop_stage() {
+  LP_RUN="loop-$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "OK: money loop --mode $LOOP_MODE, run id $LP_RUN (every Idempotency-Key derives from it)"
+  loop_preflight
+  loop_order
+  loop_confirm
+  loop_wait_captured
+  loop_read_destination
 }
 
 # --selftest
@@ -3681,6 +4151,8 @@ EVENT=""
 STRIPE_PATH=""
 STRIPE_ACCOUNT=""
 LINK_OUT=""
+SET_MODE=""
+LOOP_MODE=""
 STRIPE_PATH_RE='^/v1/(webhook_endpoints|payment_intents|charges|refunds|transfers|payouts|accounts|subscriptions|invoices|events|balance)(/[A-Za-z0-9_]+)*(\?[]A-Za-z0-9_.=&[-]*)?$'
 
 while [ "$#" -gt 0 ]; do
@@ -3695,6 +4167,8 @@ while [ "$#" -gt 0 ]; do
     --path)            shift; [ "$#" -gt 0 ] || usage_error "--path needs a Stripe path (/v1/…)"; STRIPE_PATH="$1" ;;
     --account)         shift; [ "$#" -gt 0 ] || usage_error "--account needs a connected account id (acct_…)"; STRIPE_ACCOUNT="$1" ;;
     --link-out)        shift; [ "$#" -gt 0 ] || usage_error "--link-out needs a file path"; LINK_OUT="$1" ;;
+    --set)             shift; [ "$#" -gt 0 ] || usage_error "--set needs a settlement mode"; SET_MODE="$1" ;;
+    --mode)            shift; [ "$#" -gt 0 ] || usage_error "--mode needs destination"; LOOP_MODE="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -3712,15 +4186,22 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing or billing-sync-check" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing, billing-sync-check, connect-onboard, settlement-mode or money-loop" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
 fi
-if [ "$STAGE" != pay-link ]; then
-  [ -z "$LINK_OUT" ] || usage_error "--link-out is taken by --stage pay-link only"
+case "$STAGE" in
+  pay-link|connect-onboard) ;;
+  *) [ -z "$LINK_OUT" ] || usage_error "--link-out is taken by --stage pay-link and --stage connect-onboard only" ;;
+esac
+if [ "$STAGE" != settlement-mode ]; then
+  [ -z "$SET_MODE" ] || usage_error "--set is taken by --stage settlement-mode only"
+fi
+if [ "$STAGE" != money-loop ]; then
+  [ -z "$LOOP_MODE" ] || usage_error "--mode is taken by --stage money-loop only"
 fi
 if [ "$STAGE" != stripe-get ]; then
   [ -z "$STRIPE_PATH" ] || usage_error "--path is taken by --stage stripe-get only"
@@ -3777,6 +4258,27 @@ case "$STAGE" in
       || refuse stripe-path "'$STRIPE_PATH' is not an allowlisted evidence path (webhook_endpoints, payment_intents, charges, refunds, transfers, payouts, accounts, subscriptions, invoices, events, balance); nothing was called"
     [ -z "$STRIPE_ACCOUNT" ] || [[ "$STRIPE_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]] \
       || usage_error "--account must be a connected account id (acct_ followed by letters and digits)" ;;
+  connect-onboard)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage connect-onboard"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    [ -n "$LINK_OUT" ] || usage_error "--stage connect-onboard needs --link-out FILE (the onboarding link is a single-use bearer URL and is written only there, mode 600)"
+    [ ! -d "$LINK_OUT" ] || usage_error "--link-out '$LINK_OUT' is a directory; name a file"
+    [ -d "$(dirname "$LINK_OUT")" ] || usage_error "--link-out: the directory of '$LINK_OUT' does not exist" ;;
+  settlement-mode)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage settlement-mode"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    case "$SET_MODE" in
+      ""|DESTINATION_CHARGE_PLATFORM_MOR|DIRECT_CHARGE_VENDOR_MOR) ;;
+      *) usage_error "--set must be DESTINATION_CHARGE_PLATFORM_MOR or DIRECT_CHARGE_VENDOR_MOR (got '$SET_MODE'); the money loop proves those two modes only" ;;
+    esac ;;
+  money-loop)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage money-loop"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    case "$LOOP_MODE" in
+      destination) ;;
+      "") usage_error "--stage money-loop needs --mode destination" ;;
+      *) usage_error "--mode must be destination (got '$LOOP_MODE')" ;;
+    esac ;;
   pay-link)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage pay-link"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
@@ -3806,6 +4308,9 @@ case "$STAGE" in
   pay-link)         pay_link_stage ;;
   billing)          billing_stage ;;
   billing-sync-check) billing_sync_check_stage ;;
+  connect-onboard)  connect_onboard_stage ;;
+  settlement-mode)  settlement_mode_stage ;;
+  money-loop)       money_loop_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
