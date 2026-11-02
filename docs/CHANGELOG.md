@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Kitchen Directory Search: One Clear Button, and Backspacing No Longer Searches Every Fragment — 2026-11-02
+### Kitchen Directory Search: One Clear Button, and Backspacing No Longer Searches Every Fragment — 2026-11-02 (#1094)
 
 An external tester on `/shop` reported two X buttons in the search box and "a glitch" when backspacing the query to empty instead of using the X. Both are fixed in `frontend/app/shop/shop-discovery-client.tsx`.
 
