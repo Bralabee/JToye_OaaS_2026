@@ -1,0 +1,39 @@
+== typed {"appearance":"auto","webkitAppearance":"auto","display":"inline-block"}
+typed+1.2s     "pounded yam"    ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs1            "pounded ya"     ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs2            "pounded y"      ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs3            "pounded "       ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs4            "pounded"        ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs5            "pounde"         ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs6            "pound"          ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs7            "poun"           ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs8            "pou"            ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs9            "po"             ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs10           "p"              ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs11           ""               ?q=pounded+yam         skel=6 cards=0 none=false busy=false err=false x=0 | null
+quiet+200ms    ""               ?q=pounded+yam         skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+500ms    ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+1000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+2000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+timeline: 1288:"p" > 1415:"po" > 1532:"pou" > 1648:"poun" > 1765:"pound" > 1881:"pounde" > 1998:"pounded" > 2115:"pounded " > 2233:"pounded y" > 2351:"pounded ya" > 2469:"pounded yam" > 2883:"pounded yam"?q=pounded+yam > 3798:"pounded ya"?q=pounded+yam > 3949:"pounded y"?q=pounded+yam > 4115:"pounded "?q=pounded+yam > 4265:"pounded"?q=pounded+yam > 4431:"pounde"?q=pounded+yam > 4581:"pound"?q=pounded+yam > 4748:"poun"?q=pounded+yam > 4898:"pou"?q=pounded+yam > 5065:"po"?q=pounded+yam > 5215:"p"?q=pounded+yam > 5367:""?q=pounded+yam > 5781:""
+requests: 3
+== deeplink {"appearance":"auto","webkitAppearance":"auto","display":"inline-block"}
+deeplink-loaded "jollof"         ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs1            "jollo"          ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs2            "joll"           ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs3            "jol"            ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs4            "jo"             ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs5            "j"              ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs6            ""               ?q=jollof              skel=6 cards=0 none=false busy=false err=false x=0 | null
+quiet+200ms    ""               ?q=jollof              skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+500ms    ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+1000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+2000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+timeline: 1280:"jollo"?q=jollof > 1440:"joll"?q=jollof > 1605:"jol"?q=jollof > 1759:"jo"?q=jollof > 1922:"j"?q=jollof > 2078:""?q=jollof > 2492:""
+requests: 2
+-- typed render transitions (latency 250ms): 5
+   cards:3@"" > skeleton@"pounded yam" > cards:1@"pounded yam" > skeleton@"" > cards:3@""
+   requests 3, statuses 200
+-- deeplink render transitions (latency 250ms): 3
+   cards:2@"jollof" > skeleton@"" > cards:3@""
+   requests 2, statuses 200

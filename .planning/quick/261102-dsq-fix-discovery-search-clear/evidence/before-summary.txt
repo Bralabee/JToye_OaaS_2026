@@ -1,0 +1,39 @@
+== typed {"appearance":"auto","webkitAppearance":"auto","display":"inline-block"}
+typed+1.2s     "pounded yam"    ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded yam”
+bs1            "pounded ya"     ?q=pounded+yam         skel=0 cards=0 none=true busy=false err=false x=1 | No kitchens match “pounded ya”
+bs2            "pounded y"      ?q=pounded+yam         skel=0 cards=0 none=true busy=false err=false x=1 | No kitchens match “pounded y”
+bs3            "pounded "       ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded”
+bs4            "pounded"        ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounded”
+bs5            "pounde"         ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pounde”
+bs6            "pound"          ?q=pounded+yam         skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “pound”
+bs7            "poun"           ?q=pounded+yam         skel=0 cards=0 none=true busy=false err=false x=1 | No kitchens match “poun”
+bs8            "pou"            ?q=pounded+yam         skel=0 cards=0 none=true busy=false err=false x=1 | No kitchens match “pou”
+bs9            "po"             ?q=pounded+yam         skel=0 cards=0 none=true busy=false err=false x=1 | No kitchens match “po”
+bs10           "p"              ?q=pounded+yam         skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “p”
+bs11           ""               ?q=pounded+yam         skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+200ms    ""               ?q=pounded+yam         skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+500ms    ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+1000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+2000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+timeline: 2001:"p" > 2120:"po" > 2236:"pou" > 2351:"poun" > 2467:"pound" > 2584:"pounde" > 2700:"pounded" > 2817:"pounded " > 2935:"pounded y" > 3050:"pounded ya" > 3167:"pounded yam" > 3572:"pounded yam"?q=pounded+yam > 4489:"pounded ya"?q=pounded+yam > 4617:"pounded y"?q=pounded+yam > 4750:"pounded "?q=pounded+yam > 4884:"pounded"?q=pounded+yam > 5017:"pounde"?q=pounded+yam > 5137:"pound"?q=pounded+yam > 5267:"poun"?q=pounded+yam > 5400:"pou"?q=pounded+yam > 5520:"po"?q=pounded+yam > 5650:"p"?q=pounded+yam > 5784:""?q=pounded+yam > 6186:""
+requests: 23
+== deeplink {"appearance":"auto","webkitAppearance":"auto","display":"inline-block"}
+deeplink-loaded "jollof"         ?q=jollof              skel=0 cards=2 none=false busy=false err=false x=1 | 2 kitchens for “jollof”
+bs1            "jollo"          ?q=jollof              skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “jollo”
+bs2            "joll"           ?q=jollof              skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “joll”
+bs3            "jol"            ?q=jollof              skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “jol”
+bs4            "jo"             ?q=jollof              skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “jo”
+bs5            "j"              ?q=jollof              skel=0 cards=1 none=false busy=false err=false x=1 | 1 kitchen for “j”
+bs6            ""               ?q=jollof              skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+200ms    ""               ?q=jollof              skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+500ms    ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+1000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+quiet+2000ms   ""               -                      skel=0 cards=3 none=false busy=false err=false x=0 | null
+timeline: 1146:"jollo"?q=jollof > 1274:"joll"?q=jollof > 1406:"jol"?q=jollof > 1539:"jo"?q=jollof > 1673:"j"?q=jollof > 1806:""?q=jollof > 2209:""
+requests: 8
+-- typed render transitions (latency undefinedms): 0
+   
+   requests 23, statuses 200
+-- deeplink render transitions (latency undefinedms): 0
+   
+   requests 8, statuses 200

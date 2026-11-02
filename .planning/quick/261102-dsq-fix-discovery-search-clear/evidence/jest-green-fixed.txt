@@ -1,0 +1,8 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/shop/__tests__/shop-discovery-client.test.tsx
+  Using tsconfig file: tsconfig.build.json
+Test Suites: 1 passed, 1 total
+Tests:       42 passed, 42 total
+Snapshots:   0 total
+Time:        4.435 s
+Ran all test suites matching app/shop/__tests__/shop-discovery-client.test.tsx.
