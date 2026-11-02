@@ -1,0 +1,12 @@
+# 30-26 Task 1 break arm, bracketed clean -> arm -> clean; HEAD cb7213e5; file sha256 at HEAD 87c5093993e4477ee81030f196b353f77b64f2f3ff9461bc9dc985818b5a5306
+CLEAN-1 rc=0 pass=57 fail=0
+PASS billing-amount-mismatch rc=1 quantity=2 amount_paid=3900 want=7800
+arm anchor matches=1
+ARM: want=$BILLING_UNIT_PENNIES (3900 regardless of quantity); diff:
+-  want=$((BILLING_UNIT_PENNIES * SUB_QTY))
++  want=$BILLING_UNIT_PENNIES
+ARM rc=1 pass=56 fail=1
+FAIL billing-amount-mismatch rc=0 (want 1): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+RESTORE sha256 87c5093993e4477ee81030f196b353f77b64f2f3ff9461bc9dc985818b5a5306 MATCHES-HEAD
+CLEAN-2 rc=0 pass=57 fail=0
+PASS billing-amount-mismatch rc=1 quantity=2 amount_paid=3900 want=7800

@@ -1,0 +1,19 @@
+# 30-26 Task 2 break arm, bracketed clean -> arm -> clean; HEAD c9505fab; file sha256 at HEAD b1804c77e942e151851dccf3013d81520c75d8fbfb35ca932e1024894a2df370
+CLEAN-1 rc=0 pass=60 fail=0
+PASS sync-ok rc=0 quantity=1>2>1 order=read<create<delete<read probe_deleted=1
+PASS sync-no-subscription rc=1 tag=no-subscription shop_writes=0
+PASS sync-cleanup-on-fail rc=1 probe_deleted=1 summary=none
+arm anchor matches=1
+ARM: the EXIT-path delete removed from cleanup(); diff:
+-  if [ -n "${PROBE_SHOP_ID:-}" ]; then
+-    if ! delete_probe_shop; then
+-      [ "$rc" -ne 0 ] || rc=1
+-    fi
+-  fi
+ARM rc=1 pass=59 fail=1
+FAIL sync-cleanup-on-fail the probe shop was not deleted exactly once: POST https://api-staging.olajay.co.uk/api/v1/shops -> 201|
+RESTORE sha256 b1804c77e942e151851dccf3013d81520c75d8fbfb35ca932e1024894a2df370 MATCHES-HEAD
+CLEAN-2 rc=0 pass=60 fail=0
+PASS sync-ok rc=0 quantity=1>2>1 order=read<create<delete<read probe_deleted=1
+PASS sync-no-subscription rc=1 tag=no-subscription shop_writes=0
+PASS sync-cleanup-on-fail rc=1 probe_deleted=1 summary=none

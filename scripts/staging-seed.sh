@@ -23,6 +23,7 @@
 #   scripts/staging-seed.sh --context NAME --stage stripe-get --path /v1/<object>/<id>
 #                           [--account acct_…] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage pay-link --link-out FILE [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage billing|billing-sync-check [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -103,6 +104,24 @@
 #                        the public verify, then the vendor's payment link. Prints
 #                        PAY-LINK order=… link=… expires=…; the URL goes ONLY to
 #                        FILE, mode 600, never to stdout, stderr or evidence.
+#     --stage billing    PAY-02 / D-04 (plan 30-26): subscribes the staging tenant
+#                        to SAAS_HYBRID_STANDARD through POST /api/v1/billing/
+#                        subscription with a TEST payment method made from
+#                        tok_visa (an ACTIVE subscription is read back, never
+#                        re-created), then reads the subscription and its latest
+#                        invoice from Stripe BY ID. Ends on BILLING sub=… quantity=…
+#                        locations=… invoice=… amount_paid=… status=paid
+#                        livemode=false at=<ISO>; FAIL unless quantity equals the
+#                        locations (D-04 all-shops) and amount_paid equals
+#                        3900 x quantity.
+#     --stage billing-sync-check
+#                        D-04 (plan 30-26): with an ACTIVE subscription
+#                        (else REFUSED [no-subscription], no shop written), a
+#                        probe shop is created, Stripe's quantity polled to n+1,
+#                        the probe deleted, the quantity polled back to n (every
+#                        read printed, deadline 90 s each). Ends on BILLING-SYNC
+#                        before=n after-add=n+1 after-remove=n livemode=false; the
+#                        probe is deleted on EVERY exit path.
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -174,6 +193,12 @@ OP_CREATED=0
 cleanup() {
   local rc=$?
   set +e
+  # The billing-sync-check probe shop (plan 30-26, T-30-102) never outlives the run.
+  if [ -n "${PROBE_SHOP_ID:-}" ]; then
+    if ! delete_probe_shop; then
+      [ "$rc" -ne 0 ] || rc=1
+    fi
+  fi
   if [ "$OP_CREATED" -eq 1 ]; then
     if ! delete_operator; then
       [ "$rc" -ne 0 ] || rc=1
@@ -278,7 +303,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -309,6 +334,23 @@ print_tool_plan() {
       echo "  07 POST       /api/v1/orders/{id}/payment-links   {purpose: UPFRONT}"
       echo "  08 write      the paymentUrl to ${LINK_OUT} (mode 600; never printed)"
       echo "  09 print      PAY-LINK order=… link=… expires=…" ;;
+    billing)
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+      echo "  04 GET        /api/v1/billing/subscription   ACTIVE with a subscription id: steps 05-06 are skipped (read back, never re-created)"
+      echo "  05 POST       ${STRIPE_API}/v1/payment_methods   type=card card[token]=tok_visa; livemode false; only the pm_ id is kept"
+      echo "  06 POST       /api/v1/billing/subscription   {planMode: ${BILLING_PLAN_MODE}, paymentMethodId}"
+      echo "  07 GET        ${STRIPE_API}/v1/subscriptions/{id}   livemode false; status active; one item; unit_amount ${BILLING_UNIT_PENNIES}"
+      echo "  08 GET        ${STRIPE_API}/v1/invoices/{latest_invoice}   livemode false; amount_paid, status"
+      echo "  09 GET        /api/v1/shops?size=100   locations under the D-04 ${BILLING_LOCATION_RULE} rule"
+      echo "  10 print      BILLING sub=… quantity=… locations=… invoice=… amount_paid=… status=paid livemode=false at=… (FAIL unless quantity == locations and amount_paid == ${BILLING_UNIT_PENNIES} x quantity)" ;;
+    billing-sync-check)
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+      echo "  04 GET        /api/v1/billing/subscription   REFUSED [no-subscription] unless ACTIVE with a subscription id (no shop written)"
+      echo "  05 GET        ${STRIPE_API}/v1/subscriptions/{id}   quantity n; livemode false (rule ${BILLING_LOCATION_RULE}; published-shops: not-runnable, exit 0)"
+      echo "  06 POST       /api/v1/shops   {name: Staging Billing Probe <UTC>}; its id registered for the EXIT-path DELETE"
+      echo "  07 GET        ${STRIPE_API}/v1/subscriptions/{id}   every ${POLL_SECONDS}s until quantity n+1 (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s), each read printed"
+      echo "  08 DELETE     /api/v1/shops/{probe}   then poll until quantity n (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s)"
+      echo "  09 print      BILLING-SYNC before=n after-add=n+1 after-remove=n livemode=false" ;;
     order-transition)
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
@@ -1679,6 +1721,266 @@ pay_link_stage() {
   echo "PAY-LINK order=$order_no link=$link_id expires=$expires"
 }
 
+# ===========================================================================
+# --stage billing — plan 30-26 (PAY-02 / D-04, T-30-101, T-30-103).
+# PAY-02's falsifier is "a test-mode subscription invoice retrieved from Stripe by
+# id"; D-04 adds "whose quantity matches" the tenant's locations. So the staging
+# tenant is subscribed the way a vendor subscribes, through the product's own
+# billing API, with a TEST card payment method made from tok_visa, and the
+# evidence is then read from Stripe BY ID with the staging key, never from an
+# application log:
+#   1. GET /api/v1/billing/subscription. ACTIVE with a subscription id: read back
+#      only, no payment method and no subscribe (a re-run never adds a second
+#      price or subscription, T-30-101). Otherwise:
+#   2. POST /v1/payment_methods type=card card[token]=tok_visa (only its id is
+#      kept), then POST /api/v1/billing/subscription {planMode, paymentMethodId};
+#   3. GET /v1/subscriptions/{id} and GET /v1/invoices/{latest_invoice}, each
+#      livemode false;
+#   4. the locations: GET /api/v1/shops under the owner's D-04 rule
+#      (evidence/30-25-d04-decision.txt: all-shops, every shop row of the tenant);
+#   5. quantity == locations, the price's unit amount == BILLING_UNIT_PENNIES,
+#      amount_paid == BILLING_UNIT_PENNIES x quantity, status paid, or FAIL.
+# BILLING_UNIT_PENNIES is StripeProperties.Billing's hybridMonthlyPennies default
+# (STRIPE_BILLING_HYBRID_MONTHLY_PENNIES:3900). A running config that bills
+# another amount is a FAIL, never a recomputation.
+# Who calls: the staging test vendor. BillingController calls
+# ShopAccessService.requireGroupAdmin(), and the vendor holds the tenant-wide
+# GROUP_ADMIN grant the vendor stage made (no realm-admin operator is created).
+# Printed: ids, counts, amounts and statuses only. The Stripe key stays in the
+# mode-600 curl config; the payment method, subscription, invoice and billing
+# responses are projected with jq to named fields and removed, so no customer id,
+# email, name, card detail or client secret reaches stdout or stderr.
+BILLING_UNIT_PENNIES=3900
+BILLING_PLAN_MODE="SAAS_HYBRID_STANDARD"
+BILLING_LOCATION_RULE="all-shops"
+
+# read_billing_state — GET /api/v1/billing/subscription as the vendor. Sets
+# BL_TENANT BL_MODE BL_STATUS BL_SUB BL_INVOICE BL_UNIT from named fields only.
+BL_TENANT=""; BL_MODE=""; BL_STATUS=""; BL_SUB=""; BL_INVOICE=""; BL_UNIT=""
+read_billing_state() {
+  local code
+  code=$(api vendor GET /api/v1/billing/subscription "$WORKDIR/bl-state.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/billing/subscription" "$code" "$WORKDIR/bl-state.json"
+  billing_dto_fields "$WORKDIR/bl-state.json" "GET /api/v1/billing/subscription"
+}
+# billing_dto_fields FILE WHAT — the named fields of a BillingSubscriptionDto,
+# then the file is removed (it carries stripeCustomerId, which is never printed).
+billing_dto_fields() {
+  local row
+  row=$(jq -r '[.tenantId // "", .billingPlanMode // "", .subscriptionStatus // "", .stripeSubscriptionId // "",
+                .latestStripeInvoiceId // "", (.monthlyAmountPennies // "" | tostring)] | join("\u001f")' "$1" 2>/dev/null) \
+    || { rm -f "$1"; echo "FAIL: $2 did not return a billing subscription object" >&2; exit 1; }
+  rm -f "$1"
+  IFS=$'\x1f' read -r BL_TENANT BL_MODE BL_STATUS BL_SUB BL_INVOICE BL_UNIT <<<"$row" || true
+  [[ "$BL_TENANT" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: $2 carried no tenantId" >&2; exit 1; }
+}
+
+# read_stripe_subscription SUB — GET /v1/subscriptions/SUB, livemode false. Sets
+# SUB_STATUS SUB_ITEMS SUB_QTY SUB_UNIT SUB_INVOICE. Called directly, never in $(…).
+SUB_STATUS=""; SUB_ITEMS=""; SUB_QTY=""; SUB_UNIT=""; SUB_INVOICE=""
+read_stripe_subscription() {
+  local code row
+  code=$(stripe_api GET "/v1/subscriptions/$1" "$WORKDIR/bl-sub-read.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/subscriptions/$1" "$code" "$WORKDIR/bl-sub-read.json"
+  assert_test_mode "$WORKDIR/bl-sub-read.json" "GET /v1/subscriptions/$1"
+  row=$(jq -r '[.status // "", ((.items.data // []) | length | tostring), (.items.data[0].quantity // "" | tostring),
+                (.items.data[0].price.unit_amount // "" | tostring),
+                (if (.latest_invoice | type) == "object" then .latest_invoice.id else .latest_invoice end // "")] | join("\u001f")' \
+          "$WORKDIR/bl-sub-read.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/bl-sub-read.json"
+  [ -n "$row" ] || { echo "FAIL: GET /v1/subscriptions/$1 could not be read" >&2; exit 1; }
+  IFS=$'\x1f' read -r SUB_STATUS SUB_ITEMS SUB_QTY SUB_UNIT SUB_INVOICE <<<"$row" || true
+  [ "$SUB_ITEMS" = 1 ] || { echo "FAIL: subscription $1 has $SUB_ITEMS item(s); one per-location price is expected" >&2; exit 1; }
+  [[ "$SUB_QTY" =~ ^[0-9]+$ ]] || { echo "FAIL: subscription $1 carries no integer quantity ('$SUB_QTY')" >&2; exit 1; }
+}
+
+# count_locations TENANT — LOC_COUNT under BILLING_LOCATION_RULE, from the
+# vendor's GET /api/v1/shops. A shop of another tenant, or more shops than one
+# page holds, is a FAIL rather than a guess.
+LOC_COUNT=""
+count_locations() {
+  local code verdict
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/bl-shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/bl-shops.json"
+  verdict=$(jq -r --arg t "$1" --arg r "$BILLING_LOCATION_RULE" '
+    if (.content | type) != "array" then "no-content"
+    elif (.totalElements // (.content | length)) != (.content | length) then "paged \(.totalElements)"
+    elif any(.content[]; .tenantId != $t) then "foreign"
+    elif $r == "published-shops" then ([.content[] | select(.published == true)] | length | tostring)
+    else (.content | length | tostring) end' "$WORKDIR/bl-shops.json" 2>/dev/null || echo unparseable)
+  rm -f "$WORKDIR/bl-shops.json"
+  case "$verdict" in
+    no-content|unparseable) echo "FAIL: GET /api/v1/shops did not return a page with a content array" >&2; exit 1 ;;
+    paged*) echo "FAIL: the tenant has ${verdict#paged } shops, more than one page of 100; refusing to guess the location count" >&2; exit 1 ;;
+    foreign) echo "FAIL: GET /api/v1/shops returned a shop whose tenantId is not the billing tenant's; refusing to count it" >&2; exit 1 ;;
+  esac
+  LOC_COUNT="$verdict"
+}
+
+billing_stage() {
+  local code pm sub api_inv="" inv row paid ist inv_sub want
+  case "$BILLING_LOCATION_RULE" in all-shops|published-shops) ;; *) void "BILLING_LOCATION_RULE '$BILLING_LOCATION_RULE' is not a D-04 rule" ;; esac
+  vendor_login
+  read_stripe_key
+  read_billing_state
+  if [ "$BL_STATUS" = ACTIVE ] && [ -n "$BL_SUB" ]; then
+    [ "$BL_MODE" = "$BILLING_PLAN_MODE" ] \
+      || { echo "FAIL: the ACTIVE subscription $BL_SUB is on plan $BL_MODE, not $BILLING_PLAN_MODE; this stage never switches a plan" >&2; exit 1; }
+    echo "OK: an ACTIVE $BL_MODE subscription $BL_SUB is in place; reading it back (no payment method, no subscribe)"
+  else
+    echo "OK: subscription status ${BL_STATUS:-none}; subscribing the tenant to $BILLING_PLAN_MODE"
+    code=$(stripe_api POST /v1/payment_methods "$WORKDIR/bl-pm.json" type=card "card[token]=tok_visa")
+    [ "$code" = 200 ] || stripe_fail "POST /v1/payment_methods" "$code" "$WORKDIR/bl-pm.json"
+    assert_test_mode "$WORKDIR/bl-pm.json" "POST /v1/payment_methods"
+    pm=$(jq -r '.id // empty' "$WORKDIR/bl-pm.json" 2>/dev/null || true)
+    rm -f "$WORKDIR/bl-pm.json"
+    [[ "$pm" =~ ^pm_[A-Za-z0-9]+$ ]] || { echo "FAIL: POST /v1/payment_methods returned no pm_ id" >&2; exit 1; }
+    echo "OK: TEST payment method $pm created from tok_visa (only its id is kept)"
+    jq -n --arg m "$BILLING_PLAN_MODE" --arg p "$pm" '{planMode: $m, paymentMethodId: $p}' | body "$WORKDIR/bl-subscribe.json"
+    code=$(api vendor POST /api/v1/billing/subscription "$WORKDIR/bl-subscribe-out.json" "$WORKDIR/bl-subscribe.json")
+    rm -f "$WORKDIR/bl-subscribe.json"
+    [ "$code" = 200 ] || fail_http "POST /api/v1/billing/subscription" "$code" "$WORKDIR/bl-subscribe-out.json"
+    billing_dto_fields "$WORKDIR/bl-subscribe-out.json" "POST /api/v1/billing/subscription"
+    [ "$BL_STATUS" = ACTIVE ] && [ "$BL_MODE" = "$BILLING_PLAN_MODE" ] \
+      || { echo "FAIL: the subscribe answered status '$BL_STATUS' plan '$BL_MODE' (want ACTIVE $BILLING_PLAN_MODE)" >&2; exit 1; }
+    api_inv="$BL_INVOICE"
+    echo "OK: subscribed through POST /api/v1/billing/subscription: subscription ${BL_SUB:-none}"
+  fi
+  sub="$BL_SUB"
+  [[ "$sub" =~ ^sub_[A-Za-z0-9]+$ ]] || { echo "FAIL: the billing API names no sub_ subscription ('$sub')" >&2; exit 1; }
+  [ "$BL_UNIT" = "$BILLING_UNIT_PENNIES" ] \
+    || { echo "FAIL: the running config bills ${BL_UNIT:-?} per location on $BILLING_PLAN_MODE, not the stage's BILLING_UNIT_PENNIES=$BILLING_UNIT_PENNIES (not recomputed)" >&2; exit 1; }
+
+  read_stripe_subscription "$sub"
+  [ "$SUB_STATUS" = active ] || { echo "FAIL: Stripe reads subscription $sub status '$SUB_STATUS' (want active)" >&2; exit 1; }
+  [ "$SUB_UNIT" = "$BILLING_UNIT_PENNIES" ] \
+    || { echo "FAIL: subscription $sub's price is ${SUB_UNIT:-?} per location, not BILLING_UNIT_PENNIES=$BILLING_UNIT_PENNIES (not recomputed)" >&2; exit 1; }
+  inv="$SUB_INVOICE"
+  [[ "$inv" =~ ^in_[A-Za-z0-9]+$ ]] || { echo "FAIL: subscription $sub names no in_ latest_invoice ('$inv')" >&2; exit 1; }
+  [ -z "$api_inv" ] || [ "$api_inv" = "$inv" ] \
+    || { echo "FAIL: the billing API recorded invoice $api_inv but Stripe's latest_invoice is $inv" >&2; exit 1; }
+
+  code=$(stripe_api GET "/v1/invoices/$inv" "$WORKDIR/bl-inv.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/invoices/$inv" "$code" "$WORKDIR/bl-inv.json"
+  assert_test_mode "$WORKDIR/bl-inv.json" "GET /v1/invoices/$inv"
+  row=$(jq -r '[(.amount_paid // "" | tostring), .status // "",
+                (.subscription // .parent.subscription_details.subscription // "")] | join("\u001f")' "$WORKDIR/bl-inv.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/bl-inv.json"
+  IFS=$'\x1f' read -r paid ist inv_sub <<<"$row" || true
+  [ -z "$inv_sub" ] || [ "$inv_sub" = "$sub" ] || { echo "FAIL: invoice $inv belongs to subscription $inv_sub, not $sub" >&2; exit 1; }
+  [[ "$paid" =~ ^[0-9]+$ ]] || { echo "FAIL: invoice $inv carries no integer amount_paid ('$paid')" >&2; exit 1; }
+
+  count_locations "$BL_TENANT"
+  if [ "$SUB_QTY" != "$LOC_COUNT" ]; then
+    echo "FAIL: the subscription quantity is $SUB_QTY but the tenant has $LOC_COUNT location(s) under the $BILLING_LOCATION_RULE rule (D-04)" >&2; exit 1
+  fi
+  want=$((BILLING_UNIT_PENNIES * SUB_QTY))
+  if [ "$paid" != "$want" ]; then
+    echo "FAIL: invoice $inv amount_paid $paid is not $want ($BILLING_UNIT_PENNIES x quantity $SUB_QTY)" >&2; exit 1
+  fi
+  [ "$ist" = paid ] || { echo "FAIL: invoice $inv status is '$ist' (want paid)" >&2; exit 1; }
+  echo "BILLING sub=$sub quantity=$SUB_QTY locations=$LOC_COUNT invoice=$inv amount_paid=$paid status=$ist livemode=false at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# ===========================================================================
+# --stage billing-sync-check — plan 30-26 (D-04, T-30-102). The after-commit
+# quantity sync (30-25 BillingLocationSync) watched happening on staging, under
+# the owner's D-04 rule:
+#   all-shops: read the subscription quantity n from Stripe; create one probe
+#     shop "Staging Billing Probe <UTC>" through POST /api/v1/shops (its id is
+#     registered for the EXIT-path delete the moment it is known); poll Stripe
+#     until the quantity reads n+1; DELETE the probe; poll until it reads n.
+#     Every read is printed; each wait has a deadline
+#     (STAGING_SEED_BILLING_SYNC_DEADLINE_SECONDS, default 90). Ends on
+#     BILLING-SYNC before=n after-add=n+1 after-remove=n livemode=false.
+#   published-shops: not runnable today (a second shop cannot be published: only
+#     the onboarding shop goes live), so it prints
+#     BILLING-SYNC not-runnable reason=no-second-publishable-shop and exits 0,
+#     a recorded limitation and NOT a pass of the sync.
+# No ACTIVE subscription: REFUSED [no-subscription] before any shop is written.
+# The probe never outlives the run: cleanup() deletes it on every exit path, and
+# a delete that fails turns the run into a failure that names the shop.
+BILLING_SYNC_DEADLINE_SECONDS="${STAGING_SEED_BILLING_SYNC_DEADLINE_SECONDS:-90}"
+PROBE_SHOP_ID=""
+
+# delete_probe_shop — called by the stage and from the EXIT trap. Never exits;
+# returns 1 when the probe may still exist.
+delete_probe_shop() {
+  local code
+  code=$(api vendor DELETE "/api/v1/shops/$PROBE_SHOP_ID" "$WORKDIR/probe-delete.json")
+  rm -f "$WORKDIR/probe-delete.json"
+  case "$code" in
+    204|404) echo "PROBE-SHOP-DELETED: $PROBE_SHOP_ID HTTP $code"; PROBE_SHOP_ID=""; return 0 ;;
+    *) echo "FAIL: the probe shop $PROBE_SHOP_ID was NOT deleted (HTTP $code); it is a billable location: delete it by hand now (DELETE /api/v1/shops/$PROBE_SHOP_ID as $VENDOR_USERNAME)" >&2; return 1 ;;
+  esac
+}
+
+# probe_lookup NAME — when the create's answer gave no id, the shop may exist
+# anyway: find it by its unique name so the EXIT path can delete it.
+probe_lookup() {
+  local code hits
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/probe-find.json")
+  if [ "$code" = 200 ]; then
+    hits=$(jq -r --arg n "$1" '[.content[]? | select(.name == $n) | .id] | if length == 1 then .[0] else "" end' "$WORKDIR/probe-find.json" 2>/dev/null || true)
+    [[ "$hits" =~ ^[0-9a-f-]{36}$ ]] && PROBE_SHOP_ID="$hits"
+  fi
+  rm -f "$WORKDIR/probe-find.json"
+  [ -n "$PROBE_SHOP_ID" ] || echo "FAIL: a probe shop named '$1' may exist and could not be found (HTTP $code); delete it by hand" >&2
+}
+
+# wait_quantity PHASE WANT — poll the subscription until its quantity is WANT.
+wait_quantity() {
+  local phase="$1" want="$2" start=$SECONDS
+  while :; do
+    read_stripe_subscription "$BL_SUB"
+    echo "BILLING-SYNC-READ phase=$phase quantity=$SUB_QTY want=$want elapsed=$((SECONDS - start))s"
+    [ "$SUB_QTY" != "$want" ] || return 0
+    if [ $((SECONDS - start)) -ge "$BILLING_SYNC_DEADLINE_SECONDS" ]; then
+      echo "FAIL: Stripe's subscription $BL_SUB quantity did not reach $want within ${BILLING_SYNC_DEADLINE_SECONDS}s ($phase; last read $SUB_QTY)" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+}
+
+billing_sync_check_stage() {
+  local n name code
+  case "$BILLING_LOCATION_RULE" in all-shops|published-shops) ;; *) void "BILLING_LOCATION_RULE '$BILLING_LOCATION_RULE' is not a D-04 rule" ;; esac
+  vendor_login
+  read_stripe_key
+  read_billing_state
+  if ! { [ "$BL_STATUS" = ACTIVE ] && [[ "$BL_SUB" =~ ^sub_[A-Za-z0-9]+$ ]]; }; then
+    refuse no-subscription "the tenant has no ACTIVE subscription (status ${BL_STATUS:-none}); run --stage billing first. No shop was written"
+  fi
+  read_stripe_subscription "$BL_SUB"
+  n="$SUB_QTY"
+  echo "BILLING-SYNC-READ phase=before quantity=$n at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [ "$BILLING_LOCATION_RULE" = published-shops ]; then
+    echo "BILLING-SYNC not-runnable reason=no-second-publishable-shop"
+    return 0
+  fi
+
+  name="Staging Billing Probe $(date -u +%Y%m%dT%H%M%SZ)"
+  jq -n --arg n "$name" '{name: $n}' | body "$WORKDIR/probe.json"
+  code=$(api vendor POST /api/v1/shops "$WORKDIR/probe-out.json" "$WORKDIR/probe.json")
+  rm -f "$WORKDIR/probe.json"
+  PROBE_SHOP_ID=$(jq -r '.id // empty' "$WORKDIR/probe-out.json" 2>/dev/null || true)
+  if ! [[ "$PROBE_SHOP_ID" =~ ^[0-9a-f-]{36}$ ]]; then
+    # A 4xx wrote nothing; a 201 without an id, a 5xx or no answer may have.
+    PROBE_SHOP_ID=""
+    case "$code" in 4??) ;; *) probe_lookup "$name" ;; esac
+  fi
+  [ "$code" = 201 ] || fail_http "POST /api/v1/shops (the probe location)" "$code" "$WORKDIR/probe-out.json"
+  rm -f "$WORKDIR/probe-out.json"
+  [ -n "$PROBE_SHOP_ID" ] || { echo "FAIL: the probe create answered 201 without an id" >&2; exit 1; }
+  echo "OK: probe shop $PROBE_SHOP_ID created ('$name'); deleted on every exit path"
+
+  wait_quantity after-add $((n + 1))
+  delete_probe_shop || exit 1
+  wait_quantity after-remove "$n"
+  echo "BILLING-SYNC before=$n after-add=$((n + 1)) after-remove=$n livemode=false"
+}
+
 # --selftest
 # ===========================================================================
 _ST_RESULTS=()
@@ -1825,6 +2127,20 @@ case "$method $base" in
     oid="${base#/api/v1/orders/}"; oid="${oid%/cancel}"; key=empty; code=200; : > "$STUB_LOG_DIR/order-cancelled-$oid" ;;
   "POST /api/v1/orders/"*"/submit"|"POST /api/v1/orders/"*"/confirm"|"POST /api/v1/orders/"*"/start-preparation")
     key=transition; code="${STUB_TRANSITION_CODE:-200}" ;;
+  # billing (plan 30-26, PAY-02 / D-04): the product's billing API, a TEST payment
+  # method, then the subscription and its invoice read from Stripe by id.
+  "GET /api/v1/billing/subscription") key=billing-get; code=200 ;;
+  "POST /api/v1/billing/subscription") key=billing-post; code=200 ;;
+  "POST /v1/payment_methods") key=pm-create; code=200 ;;
+  "GET /v1/subscriptions/"*)
+    subid="${base#/v1/subscriptions/}"; key="sub-$subid"
+    if [ -f "$STUB_LOG_DIR/shop-created" ] && [ ! -f "$STUB_LOG_DIR/shop-deleted" ] && [ -f "$STUB_RESP_DIR/sub-$subid-added.json" ]; then
+      key="sub-$subid-added"
+    fi; code=200 ;;
+  # billing-sync-check (plan 30-26): the probe location's create and delete.
+  "POST /api/v1/shops") key=shop-create-out; code=201; : > "$STUB_LOG_DIR/shop-created" ;;
+  "DELETE /api/v1/shops/"*) key=empty; code=204; : > "$STUB_LOG_DIR/shop-deleted" ;;
+  "GET /v1/invoices/"*) key="inv-${base#/v1/invoices/}"; code=200 ;;
   # stripe-get: any other Stripe read answers the one generic fixture.
   "GET /v1/"*) key=stripe-get; code=200 ;;
 esac
@@ -1905,6 +2221,7 @@ IDF
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
     rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
+    rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -2821,9 +3138,208 @@ IDF
   if [ -z "$why" ]; then _st_result "PASS stripe-get-livemode-absent refund=printed+n/a intent=refused"
   else _st_result "FAIL stripe-get-livemode-absent $why"; fails=$((fails + 1)); fi
 
+  # ===== billing (plan 30-26, PAY-02 / D-04): the staging tenant's subscription and
+  # its latest invoice, read from Stripe BY ID and checked against the tenant's
+  # locations. The customer id, the card fingerprint and the invoice's customer
+  # fields carry markers (STUBCUSbl1, STUBFPbl1, piizq7), so a print is detectable.
+  local bl_args=("${tool_args[@]}" --stage billing) bl_leak_re='STUBCUSbl1|STUBFPbl1|piizq7|PIIZQ7'
+  local bl_line_re='^BILLING sub=sub_bl1 quantity=1 locations=1 invoice=in_bl1 amount_paid=3900 status=paid livemode=false at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
+  cp "$ast/resp/shops.json" "$ast/resp/shops-before-billing.json"
+  _st_bl_fx() {   # STATUS(NONE|ACTIVE) QUANTITY LOCATIONS AMOUNT_PAID INVOICE_LIVEMODE(true|false)
+    local active=false; [ "$1" = ACTIVE ] && active=true
+    jq -n --arg t "$tid" --argjson a "$active" --arg st "$1" '{tenantId: $t, billingPlanMode: "SAAS_HYBRID_STANDARD", subscriptionStatus: $st,
+        stripeCustomerId: (if $a then "cus_STUBCUSbl1" else null end), stripeSubscriptionId: (if $a then "sub_bl1" else null end),
+        latestStripeInvoiceId: (if $a then "in_bl1" else null end), monthlyAmountPennies: 3900, effectiveFeeBps: 50,
+        monthlyFeeCapPennies: 0, monthlyFeeChargedPennies: 0, walkSetupCompleted: false, cancelAtPeriodEnd: false, currentPeriodEnd: null}' \
+      > "$ast/resp/billing-get.json"
+    jq -n --arg t "$tid" '{tenantId: $t, billingPlanMode: "SAAS_HYBRID_STANDARD", subscriptionStatus: "ACTIVE",
+        stripeCustomerId: "cus_STUBCUSbl1", stripeSubscriptionId: "sub_bl1", latestStripeInvoiceId: "in_bl1",
+        monthlyAmountPennies: 3900, effectiveFeeBps: 50, monthlyFeeCapPennies: 0, monthlyFeeChargedPennies: 0,
+        walkSetupCompleted: false, cancelAtPeriodEnd: false, currentPeriodEnd: null}' > "$ast/resp/billing-post.json"
+    jq -n '{id: "pm_bl1", object: "payment_method", livemode: false, type: "card",
+        card: {brand: "visa", last4: "4242", fingerprint: "STUBFPbl1"},
+        billing_details: {email: "piizq7@example.invalid", name: "Pii PIIZQ7"}}' > "$ast/resp/pm-create.json"
+    jq -n --argjson q "$2" '{id: "sub_bl1", object: "subscription", livemode: false, status: "active",
+        customer: "cus_STUBCUSbl1", latest_invoice: "in_bl1",
+        items: {object: "list", data: [{id: "si_bl1", object: "subscription_item", quantity: $q,
+          price: {id: "price_bl1", object: "price", unit_amount: 3900, currency: "gbp", recurring: {interval: "month"}}}]}}' \
+      > "$ast/resp/sub-sub_bl1.json"
+    jq -n --argjson p "$4" --argjson lm "$5" '{id: "in_bl1", object: "invoice", livemode: $lm, status: "paid", amount_paid: $p,
+        customer: "cus_STUBCUSbl1", customer_email: "piizq7@example.invalid", customer_name: "Pii PIIZQ7",
+        parent: {subscription_details: {subscription: "sub_bl1"}}}' > "$ast/resp/inv-in_bl1.json"
+    jq -n --arg t "$tid" --arg s "$sid" --argjson n "$3" '{content: [range(0; $n) as $i
+        | {id: (if $i == 0 then $s else "77777777-0000-4000-8000-00000000000\($i)" end), tenantId: $t,
+           slug: (if $i == 0 then "staging-test-kitchen" else "staging-second-\($i)" end), published: ($i == 0)}],
+        totalElements: $n, totalPages: 1}' > "$ast/resp/shops.json"
+  }
+
+  # --- billing-ok: no subscription yet -> a TEST pm from tok_visa, the product's own
+  #     subscribe, then the subscription and its invoice read from Stripe by id
+  _st_bl_fx NONE 1 1 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  local bl_ok_out="$ST_OUT" bl_ok_err="$ST_ERR" bl_ok_rc="$ST_RC" bl_ok_curl bl_body l_bget l_pm l_bpost l_sub l_inv l_shops
+  bl_ok_curl=$(cat "$ast/logs/curl.log")
+  bl_body=$(command grep -F '"planMode"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  l_bget=$(_st_line '^GET https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')
+  l_pm=$(_st_line '^POST https://api\.stripe\.com/v1/payment_methods -> 200$')
+  l_bpost=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')
+  l_sub=$(_st_line '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$')
+  l_inv=$(_st_line '^GET https://api\.stripe\.com/v1/invoices/in_bl1 -> 200$')
+  l_shops=$(_st_line '^GET https://api-staging\.olajay\.co\.uk/api/v1/shops\?size=100 -> 200$')
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ $bl_line_re ]]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ -z "$l_bget" ] || [ -z "$l_pm" ] || [ -z "$l_bpost" ] || [ -z "$l_sub" ] || [ -z "$l_inv" ] || [ -z "$l_shops" ]; then
+    why="a call is missing: billing_get=$l_bget pm=$l_pm subscribe=$l_bpost sub=$l_sub invoice=$l_inv shops=$l_shops"
+  elif ! { [ "$l_bget" -lt "$l_pm" ] && [ "$l_pm" -lt "$l_bpost" ] && [ "$l_bpost" -lt "$l_sub" ] && [ "$l_sub" -lt "$l_inv" ]; }; then
+    why="call order is not billing_get<pm<subscribe<sub<invoice: $l_bget $l_pm $l_bpost $l_sub $l_inv"
+  elif [ "$(_st_flow '^POST https://api\.stripe\.com/v1/payment_methods ')" -ne 1 ] || [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription ')" -ne 1 ]; then
+    why="want exactly one pm creation and one subscribe: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
+  elif [ "$(command grep -E '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/' "$ast/logs/curl-flow.log" | command grep -vcE '^POST https://api\.stripe\.com/v1/payment_methods -> ' || true)" -ne 0 ]; then
+    why="a Stripe write other than the pm creation: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
+  elif ! command grep -qF -- '--data-urlencode type=card' <<<"$bl_ok_curl" || ! command grep -qF -- '--data-urlencode card[token]=tok_visa' <<<"$bl_ok_curl"; then
+    why="the pm was not created as type=card from card[token]=tok_visa"
+  elif [ "$(jq -cS . <<<"${bl_body:-null}" 2>/dev/null)" != '{"paymentMethodId":"pm_bl1","planMode":"SAAS_HYBRID_STANDARD"}' ]; then
+    why="the subscribe body is not {planMode: SAAS_HYBRID_STANDARD, paymentMethodId: the pm}: ${bl_body:-<none>}"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-ok rc=0 order=billing_get<pm<subscribe<sub<invoice quantity=1 locations=1 amount_paid=3900"
+  else _st_result "FAIL billing-ok $why"; fails=$((fails + 1)); fi
+
+  # --- billing-quantity-mismatch: Stripe bills 1 location, the tenant has 2 --------
+  _st_bl_fx NONE 1 2 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qE 'quantity is 1 but the tenant has 2 location' <<<"$ST_ERR"; then why="stderr does not name the quantity mismatch: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^BILLING ' <<<"$ST_OUT"; then why="a BILLING line was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$')" -ne 1 ]; then why="the subscription was not read (the refusal did not come from Stripe's quantity)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-quantity-mismatch rc=1 quantity=1 locations=2"
+  else _st_result "FAIL billing-quantity-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- billing-amount-mismatch: quantity 2 and 2 locations, but the invoice paid 3900
+  _st_bl_fx NONE 2 2 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qE 'amount_paid 3900 is not 7800' <<<"$ST_ERR"; then why="stderr does not name the amount mismatch: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^BILLING ' <<<"$ST_OUT"; then why="a BILLING line was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/invoices/in_bl1 -> 200$')" -ne 1 ]; then why="the invoice was not read by id"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-amount-mismatch rc=1 quantity=2 amount_paid=3900 want=7800"
+  else _st_result "FAIL billing-amount-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- billing-live: the invoice reads livemode true -> refused, nothing printed ---
+  _st_bl_fx NONE 1 1 3900 true
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^BILLING ' <<<"$ST_OUT"; then why="a BILLING line was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/invoices/in_bl1 -> 200$')" -ne 1 ]; then why="the refusal did not come from the invoice read by id"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-live rc=1 tag=stripe-mode printed=none"
+  else _st_result "FAIL billing-live $why"; fails=$((fails + 1)); fi
+
+  # --- billing-replay: an ACTIVE subscription is read back, never re-created -------
+  _st_bl_fx ACTIVE 1 1 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  local bl_rp_out="$ST_OUT" bl_rp_err="$ST_ERR"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')" -ne 1 ]; then why="the subscription state was not read from the billing API"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription ')" -ne 0 ]; then why="the replay subscribed again"
+  elif [ "$(_st_flow '^POST https://api\.stripe\.com/v1/payment_methods ')" -ne 0 ]; then why="the replay created a payment method"
+  elif [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/')" -ne 0 ]; then why="the replay wrote to Stripe"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ $bl_line_re ]]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-replay rc=0 subscribe_calls=0 pm_calls=0 verdict=BILLING"
+  else _st_result "FAIL billing-replay $why"; fails=$((fails + 1)); fi
+
+  # --- billing-no-secret: the ok and replay runs printed no key, no pm body, no
+  #     customer field (the ok run must have printed its BILLING line: non-vacuity)
+  why=""
+  local bl_hits
+  bl_hits=$(command grep -cE "$bl_leak_re" <<<"$bl_ok_out$bl_ok_err$bl_rp_out$bl_rp_err" || true)
+  if [ "$bl_ok_rc" -ne 0 ] || ! command grep -qE '^BILLING ' <<<"$bl_ok_out"; then why="the ok run did not finish (nothing to inspect; the arm would pass vacuously)"
+  elif [ "$bl_hits" -ne 0 ]; then why="$bl_hits line(s) carry the customer id, the card fingerprint or a customer field"
+  elif command grep -qE '"payment_method"|"billing_details"|"fingerprint"|"customer_email"' <<<"$bl_ok_out$bl_ok_err"; then why="a Stripe response body was printed"
+  elif command grep -qE 'STUB-SECRET-|STUBSECRET' <<<"$bl_ok_out$bl_ok_err$bl_ok_curl$bl_rp_out$bl_rp_err"; then why="a key or secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-no-secret printed_key=0 printed_pm_body=0 printed_customer=0"
+  else _st_result "FAIL billing-no-secret $why"; fails=$((fails + 1)); fi
+  cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
+
+  # ===== billing-sync-check (plan 30-26, D-04): the quantity sync watched around a
+  # probe location. While the probe exists the stub's subscription read answers the
+  # -added fixture (when one is present), so the sync is observable; the probe's
+  # DELETE must happen on every exit path.
+  local bs_args=("${tool_args[@]}" --stage billing-sync-check) bs_probe="99999999-0000-4000-8000-000000000001"
+  local bs_env=(STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_BILLING_SYNC_DEADLINE_SECONDS=3 STAGING_SEED_POLL_SECONDS=1)
+  _st_bs_fx() {   # STATUS(NONE|ACTIVE) ADDED_QUANTITY(or "" for "Stripe never moves")
+    _st_bl_fx "$1" 1 1 3900 false
+    rm -f "$ast/resp/sub-sub_bl1-added.json"
+    [ -z "$2" ] || jq --argjson q "$2" '.items.data[0].quantity = $q' "$ast/resp/sub-sub_bl1.json" > "$ast/resp/sub-sub_bl1-added.json"
+    jq -n --arg id "$bs_probe" --arg t "$tid" '{id: $id, tenantId: $t, name: "Staging Billing Probe", slug: "staging-billing-probe", published: false}' \
+      > "$ast/resp/shop-create-out.json"
+  }
+
+  # --- sync-ok (all-shops): 1 -> 2 -> 1 around the probe's create and delete -------
+  _st_bs_fx ACTIVE 2
+  _st_run "${bs_env[@]}" -- "${bs_args[@]}"
+  why=""
+  local bs_name l_first l_post l_del l_last
+  bs_name=$(command grep -F '"Staging Billing Probe' "$ast/logs/bodies.log" | tail -n 1 | jq -r '.name // empty' 2>/dev/null || true)
+  l_first=$(_st_line '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$')
+  l_post=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> 201$')
+  l_del=$(_st_line "^DELETE https://api-staging\.olajay\.co\.uk/api/v1/shops/$bs_probe -> 204$")
+  l_last=$(command grep -nE '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "BILLING-SYNC before=1 after-add=2 after-remove=1 livemode=false" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> ')" -ne 1 ] || [ "$(_st_flow '^DELETE https://api-staging\.olajay\.co\.uk/api/v1/shops/')" -ne 1 ]; then
+    why="want exactly one probe create and one probe delete: $(command grep -E '/api/v1/shops' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ -z "$l_first" ] || [ -z "$l_post" ] || [ -z "$l_del" ] || ! { [ "$l_first" -lt "$l_post" ] && [ "$l_post" -lt "$l_del" ] && [ "$l_del" -lt "$l_last" ]; }; then
+    why="call order is not read<create<delete<read: first=$l_first create=$l_post delete=$l_del last=$l_last"
+  elif ! [[ "$bs_name" =~ ^Staging\ Billing\ Probe\ [0-9]{8}T[0-9]{6}Z$ ]]; then why="the probe is not named 'Staging Billing Probe <UTC>': '${bs_name:-<none>}'"
+  elif [ "$(command grep -cE '^BILLING-SYNC-READ phase=(before|after-add|after-remove) quantity=[0-9]+ ' <<<"$ST_OUT" || true)" -lt 3 ]; then why="the reads were not printed (want one line per read)"
+  elif [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/')" -ne 0 ]; then why="a Stripe write was made"
+  elif [ "$(_st_leaks)" -ne 0 ] || [ "$(command grep -cE "$bl_leak_re" <<<"$ST_OUT$ST_ERR" || true)" -ne 0 ]; then why="a secret or customer marker was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS sync-ok rc=0 quantity=1>2>1 order=read<create<delete<read probe_deleted=1"
+  else _st_result "FAIL sync-ok $why"; fails=$((fails + 1)); fi
+
+  # --- sync-no-subscription: no ACTIVE subscription -> refused, no shop written ----
+  _st_bs_fx NONE 2
+  _st_run "${bs_env[@]}" -- "${bs_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [no-subscription]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [no-subscription]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')" -ne 1 ]; then why="the refusal was not reached through the billing API read"
+  elif [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) https://api-staging\.olajay\.co\.uk/api/v1/shops')" -ne 0 ]; then why="a shop was written: $(command grep -E '/api/v1/shops' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif command grep -q '^BILLING-SYNC ' <<<"$ST_OUT"; then why="a BILLING-SYNC line was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS sync-no-subscription rc=1 tag=no-subscription shop_writes=0"
+  else _st_result "FAIL sync-no-subscription $why"; fails=$((fails + 1)); fi
+
+  # --- sync-cleanup-on-fail: Stripe never reaches n+1 -> rc 1, the probe still deleted
+  _st_bs_fx ACTIVE ""
+  _st_run "${bs_env[@]}" -- "${bs_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qE 'did not reach 2' <<<"$ST_ERR"; then why="stderr does not name the missed quantity: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> 201$')" -ne 1 ]; then why="the probe was not created (nothing to clean up; the arm would pass vacuously)"
+  elif [ "$(_st_flow "^DELETE https://api-staging\.olajay\.co\.uk/api/v1/shops/$bs_probe -> 204$")" -ne 1 ]; then why="the probe shop was not deleted exactly once: $(command grep -E '/api/v1/shops' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif ! command grep -qE "^PROBE-SHOP-DELETED: $bs_probe " <<<"$ST_OUT"; then why="no PROBE-SHOP-DELETED line"
+  elif command grep -q '^BILLING-SYNC before=' <<<"$ST_OUT"; then why="a BILLING-SYNC summary was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS sync-cleanup-on-fail rc=1 probe_deleted=1 summary=none"
+  else _st_result "FAIL sync-cleanup-on-fail $why"; fails=$((fails + 1)); fi
+  rm -f "$ast/resp/sub-sub_bl1-added.json"
+  cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
+
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
-  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link; do
+  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing billing-sync-check; do
     case "$sub" in
       order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
       cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
@@ -2841,7 +3357,7 @@ IDF
     [ -z "$why" ] || break
   done
   set --
-  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=8 az_calls=0 curl_calls=0"
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=10 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
@@ -2894,9 +3410,9 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get or pay-link" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing or billing-sync-check" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
@@ -2986,6 +3502,8 @@ case "$STAGE" in
   cancel-orphan-intents) cancel_orphan_intents_stage ;;
   stripe-get)       stripe_get_stage ;;
   pay-link)         pay_link_stage ;;
+  billing)          billing_stage ;;
+  billing-sync-check) billing_sync_check_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
