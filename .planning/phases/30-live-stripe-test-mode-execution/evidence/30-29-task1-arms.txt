@@ -1,0 +1,35 @@
+# break arms, bracketed clean -> arm -> clean; HEAD 8e03f030; file sha256 at HEAD 40c87d889224f65efcb36c5ee2788f8f999084a7a8cf852768707543160bc363
+CLEAN-1 rc=0 pass=80 fail=0
+ARM: drop the Stripe-Account header from the direct intent read (the plan's arm: loop_stripe -> stripe_api in loop_read_direct)
+  diff: <   code=$(loop_stripe GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  diff: >   code=$(stripe_api GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+ARM rc=1 pass=76 fail=4
+  arm: FAIL direct-ok rc=1 (want 0): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-c
+  arm: FAIL direct-missing-header charge: the planted header-less call was never made, so the guard could not fire (non-vacuity): GET /v1/payment_intents/pi_loopd1 acct=acct_loop1 key=none|POST /v1/payment_intents/pi_loopd1/confirm acct=acct_loop1 key=loop-20261102T040028Z-confirm|GET /v1/payment_intents/pi_loopd1 acct=none key=none|
+  arm: FAIL direct-local-refund-lag the failure does not name both statuses: DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-c
+  arm: FAIL evidence-order the direct run: rc=1 (want 0)
+  red arms: direct-ok direct-missing-header direct-local-refund-lag evidence-order 
+RESTORE sha256 40c87d889224f65efcb36c5ee2788f8f999084a7a8cf852768707543160bc363 MATCHES-HEAD
+ARM: let --mode direct run on any shop mode (the direct preflight case made a wildcard)
+  diff: <     direct:DIRECT_CHARGE_VENDOR_MOR) ;;
+  diff: >     direct:*) ;;
+ARM rc=1 pass=79 fail=1
+  arm: FAIL direct-mode-mismatch DESTINATION_CHARGE_PLATFORM_MOR: rc=0 (want 1): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+  red arms: direct-mode-mismatch 
+RESTORE sha256 40c87d889224f65efcb36c5ee2788f8f999084a7a8cf852768707543160bc363 MATCHES-HEAD
+ARM: write the evidence without jq -S (keys in insertion order)
+  diff: <   (umask 077 && jq -S --arg m "$LOOP_MODE" --argjson e "$entry" '.modes = ((.modes // {}) + {($m): $e})' "$src" > "$tmp") \
+  diff: >   (umask 077 && jq --arg m "$LOOP_MODE" --argjson e "$entry" '.modes = ((.modes // {}) + {($m): $e})' "$src" > "$tmp") \
+ARM rc=1 pass=77 fail=3
+  arm: FAIL loop-evidence-clean the amounts or statuses are not the loop's: {"amounts":{"captured":950,"application_fee":48,"transfer":902,"refund":100,"transfer_reversal":95},"statuses":{"intent":"succeeded","charge_captured":true,"order":"CONFIRMED","refund":"succeeded","local_refund":"succeeded"}}
+  arm: FAIL direct-ok the direct amounts or statuses are not the loop's: {"amounts":{"captured":950,"application_fee":48,"refund":100},"statuses":{"intent":"succeeded","charge_captured":true,"order":"CONFIRMED","refund":"succeeded","local_refund":"succeeded"}}
+  arm: FAIL evidence-order modes are listed ["direct","destination"], not destination then direct
+  red arms: loop-evidence-clean direct-ok evidence-order 
+RESTORE sha256 40c87d889224f65efcb36c5ee2788f8f999084a7a8cf852768707543160bc363 MATCHES-HEAD
+CLEAN-2 rc=0 pass=80 fail=0
+# NOTE (arm 1, the plan's arm): direct-ok's message is cut at 240 chars of stderr, which the
+# stub az's DRY-RUN lines fill; the cause is visible in direct-missing-header's own red line,
+# which lists the call log: the loop's second intent read went out "acct=none", and the stub
+# answered it resource_missing, so the run ended rc 1 before the charge read the arm plants.
+# Tracer gate: interactive, human_verify_mode end-of-phase, automated-only <verify>; CLEAN-1
+# above (80/0) is the end-to-end re-run of the tracer's verify before expansion.
