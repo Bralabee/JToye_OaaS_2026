@@ -539,10 +539,16 @@ describe("Landing fold, order, footer and chips (D15)", () => {
     const os = within(footer).getByText(/Contains Ordnance Survey data/)
     const para = os.closest("p") as HTMLElement
     const text = (para.textContent ?? "").replace(/\s+/g, " ")
+    // The year is matched, not pinned: GEO_ATTRIBUTION_YEAR moves with the
+    // dataset (scripts/check-geo-attribution.sh holds it equal to SOURCE.md),
+    // so a literal here would red the next refresh for a non-defect. The same
+    // four digits must close all three statements.
+    const year = text.match(/Contains Ordnance Survey data © Crown copyright and database right (\d{4})\./)?.[1]
+    expect(year).toMatch(/^\d{4}$/)
     for (const statement of [
-      "Contains Ordnance Survey data © Crown copyright and database right 2026.",
-      "Contains Royal Mail data © Royal Mail copyright and database right 2026.",
-      "Contains National Statistics data © Crown copyright and database right 2026.",
+      `Contains Ordnance Survey data © Crown copyright and database right ${year}.`,
+      `Contains Royal Mail data © Royal Mail copyright and database right ${year}.`,
+      `Contains National Statistics data © Crown copyright and database right ${year}.`,
     ]) {
       expect(text).toContain(statement)
     }
