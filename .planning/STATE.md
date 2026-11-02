@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing at 29/32 (30-01..30-29). 30-29 COMPLETE 2026-11-02 on feat/30-pay03-staging-loop (not pushed; no upstream): scripts/staging-seed.sh --stage money-loop --mode direct (every Stripe call with Stripe-Account; REFUSED [mode-mismatch] unless the shop is DIRECT_CHARGE_VENDOR_MOR and the 201 names the tenant's account; intent + charge read on the account; partial refund read on the account, local row = Stripe's), --stage payout (tenant's own ENABLED account only [other-account]; manual schedule platform-level; available GBP balance [no-available-balance]; payout min(N, available) with <run id>-payout-<acct>; Stripe's status verbatim, payout-read hint when not paid), --stage payout-read, --run-id replay (no second order, refund or payout). Selftest 88/0; eight break arms red on target; gitleaks range rc 0, control rc 1 (30-29-SUMMARY.md). Stub-tested only: the live loops are 30-30..30-32. Next: 30-30 — RED refusal on today's staging, merge, onboarding link for the owner."
-last_updated: "2026-11-02T09:25:40.668Z"
+stopped_at: "Phase 30 executing at 30/32 (30-01..30-30). 30-30 COMPLETE 2026-11-02 10:41Z on docs/30-phase-close: PR 8 #1089 merged 0ffad575 and deployed; the staging loop REFUSED [connect-status] as planned; connect-onboard hit Stripe refusing the legacy type=express create (issue #1090, closed), owner RULED Managed Risk, fix PRs #1091 (40d91e0e) and #1092 (de5d86f4) merged and deployed with parity; third run created acct_1UXIfkDK5xypxMXe (PENDING); onboarding link in $HOME/.local/state/jtoye/connect-onboard.url (mode 600). Next: 30-31, the owner in Stripe hosted onboarding from that link; then 30-32."
+last_updated: "2026-11-02T10:49:52.000Z"
 last_activity: 2026-11-02
-last_activity_desc: "30-29 complete: the direct-charge money loop on the connected account, --stage payout / payout-read and --run-id replay in staging-seed.sh; selftest 88/0, stub-tested"
+last_activity_desc: "30-30 complete: PR 8 merged and deployed, Stripe Connect refusal fixed (Managed Risk, #1091; body-fingerprinted idempotency key, #1092), staging connected account acct_1UXIfkDK5xypxMXe PENDING, onboarding link in the owner's mode-600 file"
 state_head: da30359dd013e5e687fb9be90a8e7ba2c448d3dd
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 312
+  completed_plans: 313
   percent: 90
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 Phase: 30 (The Money Path, Executed) — EXECUTING
 Status: Executing Phase 30
-Last activity: 2026-11-02 - Completed quick task 261102-apf: #1090 Managed Risk connected accounts (fix on fix/1090-connect-managed-risk, PR pending)
+Last activity: 2026-11-02 - 30-30 complete (PR 8 merged, #1090 fixed by #1091 + #1092, staging connected account acct_1UXIfkDK5xypxMXe PENDING, onboarding link ready for the owner); next 30-31
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1453,7 +1453,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 29]: 29-28: the Keycloak in-cluster forwarded-header residual is accepted, not fixed here: a public spoofed X-Forwarded-Host left token_endpoint unchanged (Traefik overwrites it) while the same header sent direct to keycloak:8080 moved it to evil.example; trusted proxies are tracked in their own PR
 - [Phase 30]: 30-12: one webhook route and one secret per Stripe scope; the Connect route is /api/v1/public/payments/webhook/connect (stripe.connect-webhook-secret), and the platform route refuses events carrying account
 - [Phase 30]: 30-12: stripe.environment-tag (empty fallback, written as 'unset') tags every PaymentIntent, Refund and Express Account; foreign-environment events are acknowledged before the dedup row, unknown-order PI events are acknowledged, BL-04 kept for same-environment refunds
-- [Phase 30]: 30-12: Express accounts request card_payments + transfers under idempotency key connect-account-create-<tenantId>; reused accounts missing either get both requested before the onboarding link
+- [Phase 30]: 30-12: connected accounts (Express at the time; Managed Risk since #1091) request card_payments + transfers under idempotency key connect-account-create-<tenantId> (since #1092: -<16 hex of the body>); reused accounts missing either get both requested before the onboarding link
 - [Phase 30]: 30-13: stripe-credentials--connect-webhook-secret is external whsec_, mounted by core-java-kv and synced as stripe-credentials/connect-webhook-secret; STRIPE_CONNECT_WEBHOOK_SECRET is an optional ref. The object must exist in jtoye-stg-kv before PR 4 merges (a missing SPC object fails the CSI mount)
 - [Phase 30]: 30-13: stripe.environment-tag is declared per overlay (local, staging, production) and never in base; STRIPE_ENVIRONMENT_TAG reads it through a configMapKeyRef that is NOT optional, so a forgotten overlay fails the pod at start
 - [Phase 30]: 30-13: no CI gate checks the tag VALUE per overlay (static suite stays rc 0 with an overlay tag deleted); recorded in deferred-items.md with a render-invariant route for 30-14 or 30-20
@@ -1555,9 +1555,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-11-02T04:20:00.000Z
-Stopped at: Phase 30 — 30-29 done (29/32) on feat/30-pay03-staging-loop (not pushed; no upstream); next is 30-30, the RED refusal on today's staging, the merge (PR 8) and the onboarding link for the owner
-Resume file: `.planning/STATE.md` (Current Position), `HANDOFF.md` (RESUME HERE) and `.planning/phases/30-live-stripe-test-mode-execution/30-29-SUMMARY.md`
+Last session: 2026-11-02T10:49:52.000Z
+Stopped at: Phase 30 — 30-30 done (30/32) on docs/30-phase-close; next is 30-31, the owner completing Stripe's hosted Connect onboarding from the link in $HOME/.local/state/jtoye/connect-onboard.url (mode 600), then the Connect positive arm and the live destination loop
+Resume file: `.planning/STATE.md` (Current Position), `HANDOFF.md` (RESUME HERE) and `.planning/phases/30-live-stripe-test-mode-execution/30-30-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
