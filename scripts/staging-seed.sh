@@ -26,7 +26,7 @@
 #   scripts/staging-seed.sh --context NAME --stage billing|billing-sync-check [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage connect-onboard --link-out FILE [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage settlement-mode [--set MODE] [--dry-run]
-#   scripts/staging-seed.sh --context NAME --stage money-loop --mode destination
+#   scripts/staging-seed.sh --context NAME --stage money-loop --mode destination|direct
 #                           [--refund-pennies N] [--evidence FILE] [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
@@ -154,6 +154,18 @@
 #                        polled to Stripe's status (LOOP-REFUND). --evidence FILE adds
 #                        .modes.destination (ids, amounts, statuses, livemode false;
 #                        jq -S, mode 600) and keeps the rest of the file.
+#     --stage money-loop --mode direct [--refund-pennies N] [--evidence FILE]
+#                        plan 30-29: the same loop for DIRECT_CHARGE_VENDOR_MOR, where
+#                        the intent, its charge and its refund live on the connected
+#                        account and EVERY Stripe call carries Stripe-Account. REFUSED
+#                        [mode-mismatch] unless the shop is DIRECT and the order's 201
+#                        names the tenant's account; the intent must carry no
+#                        transfer_data, an application_fee_amount > 0 and
+#                        metadata.settlement_mode DIRECT_CHARGE_VENDOR_MOR. Verdicts
+#                        LOOP-ORDER/-CAPTURE/-ACCEPT/-REFUND mode=direct; no transfer
+#                        and no reversal exist to read. --evidence adds .modes.direct
+#                        (modes sort destination, direct; each entry's steps array is
+#                        in the order the loop ran).
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -403,6 +415,25 @@ print_tool_plan() {
         echo "  04 print      SETTLEMENT-MODE shop=${SHOP_SLUG} mode=…   READ-ONLY, nothing is written"
       fi ;;
     money-loop)
+      if [ "$LOOP_MODE" = direct ]; then
+        echo "  mode          direct (DIRECT_CHARGE_VENDOR_MOR): the intent, its charge and its refund live on the tenant's connected account; EVERY Stripe call below carries Stripe-Account <the tenant's acct_> (per-call copy of the mode-600 config, never argv)"
+        echo "  00 GET        /api/v1/public/shops/${SHOP_SLUG}{,/products}   anonymous, FIRST: the first available dish; USAGE rc 2 unless --refund-pennies ${LOOP_REFUND_PENNIES} < the total (nothing written)"
+        echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_), keycloak-credentials--admin-username/-password (values never printed)"
+        echo "  04 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [connect-status] unless ENABLED with an acct_; the operator is deleted HERE"
+        echo "  05 GET        /api/v1/shops/{id}   REFUSED [mode-mismatch] unless settlementPolicyMode is DIRECT_CHARGE_VENDOR_MOR"
+        echo "  06 POST       /api/v1/public/shops/${SHOP_SLUG}/orders   Idempotency-Key loop-<UTC>-order; REFUSED [mode-mismatch] unless the 201 names the tenant's account"
+        echo "  07 POST       ${STRIPE_API}/v1/payment_intents/{id}/confirm   Stripe-Account; payment_method=pm_card_bypassPending, Idempotency-Key loop-<UTC>-confirm"
+        echo "  08 GET        /api/v1/public/orders/{orderNumber}?email=…   until CAPTURED (deadline ${PAID_DEADLINE_SECONDS}s; the direct payment_intent.succeeded arrives only through the Connect endpoint)"
+        echo "  09 GET        ${STRIPE_API}/v1/payment_intents/{id}   Stripe-Account; succeeded, livemode false, no transfer_data, application_fee_amount > 0, metadata.settlement_mode DIRECT_CHARGE_VENDOR_MOR"
+        echo "  10 GET        ${STRIPE_API}/v1/charges/{id}   Stripe-Account; captured, livemode false"
+        echo "  11 POST       /api/v1/orders/{id}/confirm   the vendor accepts the paid order"
+        echo "  12 POST       /api/v1/orders/{id}/refund   {amountPennies: ${LOOP_REFUND_PENNIES}, reason: ${LOOP_REFUND_REASON}}, Idempotency-Key loop-<UTC>-refund"
+        echo "  13 GET        ${STRIPE_API}/v1/refunds?payment_intent=…, ${STRIPE_API}/v1/refunds/{id}   Stripe-Account; exactly one for this run; succeeded (deadline ${REFUND_DEADLINE_SECONDS}s)"
+        echo "  14 GET        ${STRIPE_API}/v1/charges/{refund.charge}   Stripe-Account; livemode false (a Refund has no livemode field)"
+        echo "  15 GET        /api/v1/orders/{id}/detail   until the local refund status equals Stripe's (deadline ${REFUND_DEADLINE_SECONDS}s; Connect-scope refund.* events)"
+        echo "  16 print      LOOP-ORDER, LOOP-CAPTURE, LOOP-ACCEPT, LOOP-REFUND (each mode=direct)${LOOP_EVIDENCE:+; .modes.direct written to ${LOOP_EVIDENCE} (jq -S, mode 600)}"
+        return 0
+      fi
       echo "  00 GET        /api/v1/public/shops/${SHOP_SLUG}{,/products}   anonymous, FIRST: the first available dish; USAGE rc 2 unless --refund-pennies ${LOOP_REFUND_PENNIES} < the total (nothing written)"
       echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_), keycloak-credentials--admin-username/-password (values never printed)"
       echo "  04 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [connect-status] unless ENABLED with an acct_; the operator is deleted HERE"
@@ -1144,6 +1175,20 @@ stripe_api() {
     -o "$out" -w '%{http_code}' "${STRIPE_API}${path}") || rc=$?
   if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
   echo "$code"
+}
+
+# stripe_acct ACCT METHOD PATH OUT [FORM-FIELD...] — stripe_api on the connected
+# account ACCT (plan 30-29): the Stripe-Account header rides in a per-account copy of
+# the mode-600 config (the plan 30-07 mechanism), never in argv. The caller has
+# validated ACCT as acct_… before the first call.
+stripe_acct() {
+  local acct="$1" rcf
+  shift
+  rcf="$WORKDIR/stripe-acct-$acct.curlrc"
+  if [ ! -s "$rcf" ]; then
+    (umask 077 && { cat "$WORKDIR/stripe.curlrc"; printf 'header = "Stripe-Account: %s"\n' "$acct"; } > "$rcf")
+  fi
+  STRIPE_CURLRC="$rcf" stripe_api "$@"
 }
 
 # stripe_fail WHAT CODE OUT — Stripe's error type and message (never a secret).
@@ -2271,6 +2316,18 @@ settlement_mode_stage() {
 # helper is called directly, never inside $(…), so a refusal exits the script.
 LP_RUN=""; LP_ACCOUNT=""; LP_ORDER=""; LP_INTENT=""; LP_TOTAL=""; LP_AMOUNT=""; LP_FEE=""
 LP_CHARGE=""; LP_CAPTURED=""; LP_TRANSFER=""; LP_TRANSFER_AMOUNT=""
+# Plan 30-29: --mode direct puts the intent, its charge and its refund on the connected
+# account, so every loop Stripe call carries Stripe-Account LP_STRIPE_ACCT (empty in
+# destination mode: those objects are the platform's). LP_STEPS records the steps in
+# the order they ran, for the evidence entry. LP_VM prefixes a direct verdict.
+LP_STRIPE_ACCT=""; LP_STEPS=(); LP_VM=""
+
+# loop_stripe METHOD PATH OUT [FORM-FIELD...] — a loop Stripe call on the account the
+# mode's objects live on. lp_on is the " on acct_…" suffix for failure lines.
+loop_stripe() {
+  if [ -n "$LP_STRIPE_ACCT" ]; then stripe_acct "$LP_STRIPE_ACCT" "$@"; else stripe_api "$@"; fi
+}
+lp_on() { [ -z "$LP_STRIPE_ACCT" ] || printf ' on %s (Stripe-Account)' "$LP_STRIPE_ACCT"; }
 
 # loop_preflight — the tenant's connected account (read by a per-run operator that
 # is deleted before anything is written) and the shop's mode. Refusals write nothing.
@@ -2294,9 +2351,16 @@ loop_preflight() {
   rm -f "$WORKDIR/ml-shop.json"
   case "$LOOP_MODE:${SHOP_MODE:-null}" in
     destination:null|destination:DESTINATION_CHARGE_PLATFORM_MOR) ;;
-    *) refuse mode-mismatch "$SHOP_SLUG routes as ${SHOP_MODE:-null}, but --mode $LOOP_MODE needs DESTINATION_CHARGE_PLATFORM_MOR (or null under the MARKETPLACE onboarding); set it with --stage settlement-mode first. Nothing was written" ;;
+    direct:DIRECT_CHARGE_VENDOR_MOR) ;;
+    destination:*) refuse mode-mismatch "$SHOP_SLUG routes as ${SHOP_MODE:-null}, but --mode $LOOP_MODE needs DESTINATION_CHARGE_PLATFORM_MOR (or null under the MARKETPLACE onboarding); set it with --stage settlement-mode first. Nothing was written" ;;
+    *) refuse mode-mismatch "$SHOP_SLUG routes as ${SHOP_MODE:-null}, but --mode direct needs DIRECT_CHARGE_VENDOR_MOR (null routes as a destination charge under the MARKETPLACE onboarding); set it with --stage settlement-mode --set DIRECT_CHARGE_VENDOR_MOR first. Nothing was written" ;;
   esac
-  echo "OK: preflight: tenant $AT_ID account $LP_ACCOUNT is ENABLED; $SHOP_SLUG mode ${SHOP_MODE:-null} routes as a destination charge"
+  if [ "$LOOP_MODE" = direct ]; then
+    LP_STRIPE_ACCT="$LP_ACCOUNT"; LP_VM="mode=direct "
+    echo "OK: preflight: tenant $AT_ID account $LP_ACCOUNT is ENABLED; $SHOP_SLUG mode $SHOP_MODE routes as a direct charge on $LP_ACCOUNT (every Stripe call carries Stripe-Account)"
+  else
+    echo "OK: preflight: tenant $AT_ID account $LP_ACCOUNT is ENABLED; $SHOP_SLUG mode ${SHOP_MODE:-null} routes as a destination charge"
+  fi
 }
 
 # loop_evidence_check — a non-empty --evidence file must already be a JSON object; it
@@ -2362,7 +2426,14 @@ loop_order() {
   acct_cs=$(jq -r '.stripeAccountId // empty' "$WORKDIR/ml-order-out.json")
   rm -f "$WORKDIR/ml-order-out.json"
   [ -n "$LP_ORDER" ] || { cs=""; echo "FAIL: the 201 carried no orderNumber" >&2; exit 1; }
-  if [ -n "$acct_cs" ]; then
+  if [ "$LOOP_MODE" = direct ]; then
+    # A direct charge's intent lives on the connected account, and the 201 names it.
+    if [ -z "$acct_cs" ]; then
+      cs=""; refuse mode-mismatch "order $LP_ORDER's intent was created on the platform account (the 201 names no connected account), not as a direct charge on $LP_ACCOUNT; it is not confirmed or refunded by the loop"
+    fi
+    [ "$acct_cs" = "$LP_ACCOUNT" ] \
+      || { cs=""; echo "FAIL: order $LP_ORDER's intent is on connected account $acct_cs, not the tenant's account $LP_ACCOUNT" >&2; exit 1; }
+  elif [ -n "$acct_cs" ]; then
     cs=""; refuse mode-mismatch "order $LP_ORDER's intent was created on connected account $acct_cs (a direct charge), not as a destination charge on the platform"
   fi
   [ -n "$cs" ] || { echo "FAIL: order $LP_ORDER came back with no client secret: a cash order, which the loop must never place (is the Stripe key configured on core-java?)" >&2; exit 1; }
@@ -2370,13 +2441,14 @@ loop_order() {
   cs=""
   [[ "$LP_INTENT" =~ ^pi_[A-Za-z0-9]+$ ]] || { echo "FAIL: the client secret does not carry a PaymentIntent id" >&2; exit 1; }
   echo "OK: order $LP_ORDER status $ost (Idempotency-Key $LP_RUN-order; client secret not shown)"
+  LP_STEPS+=(order)
 }
 
 # loop_confirm — the intent confirmed with pm_card_bypassPending, unless it succeeded.
 loop_confirm() {
   local code pstatus
-  code=$(stripe_api GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
-  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT" "$code" "$WORKDIR/ml-pi.json"
+  code=$(loop_stripe GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT$(lp_on)" "$code" "$WORKDIR/ml-pi.json"
   assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
   if [ "$(jq -r '.metadata.order_number // empty' "$WORKDIR/ml-pi.json")" != "$LP_ORDER" ]; then
     echo "FAIL: PaymentIntent $LP_INTENT names order '$(jq -r '.metadata.order_number // ""' "$WORKDIR/ml-pi.json")', not $LP_ORDER" >&2; exit 1
@@ -2388,16 +2460,17 @@ loop_confirm() {
       echo "SKIP: PaymentIntent $LP_INTENT already succeeded; not confirmed again" ;;
     requires_payment_method|requires_confirmation)
       STRIPE_EXTRA_HEADER="Idempotency-Key: $LP_RUN-confirm"
-      code=$(stripe_api POST "/v1/payment_intents/$LP_INTENT/confirm" "$WORKDIR/ml-pi-confirm.json" \
+      code=$(loop_stripe POST "/v1/payment_intents/$LP_INTENT/confirm" "$WORKDIR/ml-pi-confirm.json" \
         "payment_method=pm_card_bypassPending" "return_url=$ORDER_RETURN_URL")
       STRIPE_EXTRA_HEADER=""
-      [ "$code" = 200 ] || stripe_fail "POST /v1/payment_intents/$LP_INTENT/confirm" "$code" "$WORKDIR/ml-pi-confirm.json"
+      [ "$code" = 200 ] || stripe_fail "POST /v1/payment_intents/$LP_INTENT/confirm$(lp_on)" "$code" "$WORKDIR/ml-pi-confirm.json"
       assert_test_mode "$WORKDIR/ml-pi-confirm.json" "the confirmed PaymentIntent $LP_INTENT"
       echo "CONFIRMED: PaymentIntent $LP_INTENT with pm_card_bypassPending (status $(jq -r '.status' "$WORKDIR/ml-pi-confirm.json"); Idempotency-Key $LP_RUN-confirm)"
       rm -f "$WORKDIR/ml-pi-confirm.json" ;;
     *)
       echo "FAIL: PaymentIntent $LP_INTENT is $pstatus, which the loop cannot settle" >&2; exit 1 ;;
   esac
+  LP_STEPS+=(confirm)
 }
 
 # loop_wait_captured — the public tracking read until paymentStatus CAPTURED (the
@@ -2420,10 +2493,14 @@ loop_wait_captured() {
     [ "$tpay" != CAPTURED ] || break
     if [ $(( $(date +%s) - t0 )) -ge "$PAID_DEADLINE_SECONDS" ]; then
       echo "FAIL: order $LP_ORDER did not read CAPTURED within ${PAID_DEADLINE_SECONDS}s (deadline); last tracking read: $track" >&2
+      # A direct charge's payment_intent.succeeded is an event on the connected account:
+      # it reaches core-java only through the Connect webhook endpoint (plan 30-12).
+      [ "$LOOP_MODE" != direct ] || echo "HINT: a direct charge settles through the Connect-scope webhook endpoint; check it is registered and delivering for $LP_ACCOUNT" >&2
       exit 1
     fi
     sleep "$POLL_SECONDS"
   done
+  LP_STEPS+=(captured)
 }
 
 # loop_read_destination — the intent, its charge and its transfer, each by id. The
@@ -2453,6 +2530,7 @@ loop_read_destination() {
   [[ "$ch" =~ ^ch_[A-Za-z0-9]+$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT names no ch_ latest_charge ('$ch')" >&2; exit 1; }
   LP_AMOUNT="$amt"; LP_FEE="$fee"; LP_CHARGE="$ch"
   echo "LOOP-ORDER mode=destination order=$LP_ORDER intent=$LP_INTENT amount=$amt application_fee=$fee"
+  LP_STEPS+=(intent)
 
   code=$(stripe_api GET "/v1/charges/$ch" "$WORKDIR/ml-ch.json")
   [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$ch" "$code" "$WORKDIR/ml-ch.json"
@@ -2467,6 +2545,7 @@ loop_read_destination() {
   [ "$LP_CAPTURED" = "$amt" ] || { echo "FAIL: Charge $ch amount_captured is '$LP_CAPTURED', not $amt" >&2; exit 1; }
   [[ "$ctr" =~ ^tr_[A-Za-z0-9]+$ ]] || { echo "FAIL: Charge $ch carries no tr_ transfer ('$ctr'); a destination charge creates one" >&2; exit 1; }
   echo "LOOP-CAPTURE charge=$ch captured=true amount=$LP_CAPTURED"
+  LP_STEPS+=(charge)
 
   code=$(stripe_api GET "/v1/transfers/$ctr" "$WORKDIR/ml-tr.json")
   [ "$code" = 200 ] || stripe_fail "GET /v1/transfers/$ctr" "$code" "$WORKDIR/ml-tr.json"
@@ -2481,6 +2560,51 @@ loop_read_destination() {
   [ -z "$tsrc" ] || [ "$tsrc" = "$ch" ] || { echo "FAIL: Transfer $ctr source_transaction is $tsrc, not $ch" >&2; exit 1; }
   LP_TRANSFER="$ctr"; LP_TRANSFER_AMOUNT="$tamt"
   echo "LOOP-TRANSFER transfer=$ctr destination=$tdest amount=$tamt"
+  LP_STEPS+=(transfer)
+}
+
+# loop_read_direct — plan 30-29: the intent and its charge, each by id ON THE CONNECTED
+# ACCOUNT (Stripe-Account). A direct charge carries no transfer_data (the money is the
+# vendor's from the start): the platform's share is application_fee_amount, and the
+# routing is named by metadata.settlement_mode. There is no transfer to read.
+loop_read_direct() {
+  local code row st tdtype fee smode on amt ch cap cpi cfee
+  code=$(loop_stripe GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT$(lp_on)" "$code" "$WORKDIR/ml-pi.json"
+  assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
+  row=$(jq -r '[.status // "", (.transfer_data | type), (.application_fee_amount // "" | tostring),
+                .metadata.settlement_mode // "", .metadata.order_number // "", (.amount // "" | tostring),
+                (if (.latest_charge | type) == "object" then .latest_charge.id else (.latest_charge // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-pi.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-pi.json"
+  [ -n "$row" ] || { echo "FAIL: PaymentIntent $LP_INTENT could not be read" >&2; exit 1; }
+  IFS=$'\x1f' read -r st tdtype fee smode on amt ch <<<"$row" || true
+  [ "$on" = "$LP_ORDER" ] || { echo "FAIL: PaymentIntent $LP_INTENT names order '$on', not $LP_ORDER" >&2; exit 1; }
+  [ "$st" = succeeded ] || { echo "FAIL: PaymentIntent $LP_INTENT is '$st' after CAPTURED, not succeeded" >&2; exit 1; }
+  [ "$tdtype" = null ] \
+    || { echo "FAIL: PaymentIntent $LP_INTENT on $LP_ACCOUNT carries transfer_data: a destination charge, not a direct charge" >&2; exit 1; }
+  [[ "$fee" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT application_fee_amount is '${fee:-absent}' (want > 0 on a direct charge)" >&2; exit 1; }
+  [ "$smode" = DIRECT_CHARGE_VENDOR_MOR ] \
+    || { echo "FAIL: PaymentIntent $LP_INTENT metadata.settlement_mode is '${smode:-absent}', not DIRECT_CHARGE_VENDOR_MOR" >&2; exit 1; }
+  [ "$amt" = "$LP_TOTAL" ] || { echo "FAIL: PaymentIntent $LP_INTENT amount is $amt, not the order total $LP_TOTAL" >&2; exit 1; }
+  [[ "$ch" =~ ^ch_[A-Za-z0-9]+$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT names no ch_ latest_charge ('$ch')" >&2; exit 1; }
+  LP_AMOUNT="$amt"; LP_FEE="$fee"; LP_CHARGE="$ch"
+  echo "LOOP-ORDER mode=direct order=$LP_ORDER intent=$LP_INTENT amount=$amt application_fee=$fee account=$LP_ACCOUNT"
+  LP_STEPS+=(intent)
+
+  code=$(loop_stripe GET "/v1/charges/$ch" "$WORKDIR/ml-ch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$ch$(lp_on)" "$code" "$WORKDIR/ml-ch.json"
+  assert_test_mode "$WORKDIR/ml-ch.json" "Charge $ch"
+  row=$(jq -r '[(.captured | tostring), (.amount_captured // "" | tostring), (.payment_intent // ""),
+                (.application_fee_amount // "" | tostring)] | join("\u001f")' "$WORKDIR/ml-ch.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-ch.json"
+  IFS=$'\x1f' read -r cap LP_CAPTURED cpi cfee <<<"$row" || true
+  [ "$cap" = true ] || { echo "FAIL: Charge $ch reads captured '$cap', not true" >&2; exit 1; }
+  [ "$cpi" = "$LP_INTENT" ] || { echo "FAIL: Charge $ch belongs to '$cpi', not $LP_INTENT" >&2; exit 1; }
+  [ "$LP_CAPTURED" = "$amt" ] || { echo "FAIL: Charge $ch amount_captured is '$LP_CAPTURED', not $amt" >&2; exit 1; }
+  [ -z "$cfee" ] || [ "$cfee" = "$fee" ] || { echo "FAIL: Charge $ch application_fee_amount is $cfee, not the intent's $fee" >&2; exit 1; }
+  echo "LOOP-CAPTURE mode=direct charge=$ch captured=true amount=$LP_CAPTURED account=$LP_ACCOUNT"
+  LP_STEPS+=(charge)
 }
 
 # The refund half (Task 2). REFUND_DEADLINE_SECONDS bounds both the Stripe refund read
@@ -2505,7 +2629,8 @@ loop_accept() {
     rm -f "$WORKDIR/ml-accept.json"
     [ "$st" = CONFIRMED ] || { echo "FAIL: the accept of $LP_ORDER answered status '$st', not CONFIRMED" >&2; exit 1; }
   fi
-  echo "LOOP-ACCEPT order=$LP_ORDER status=CONFIRMED"
+  echo "LOOP-ACCEPT ${LP_VM}order=$LP_ORDER status=CONFIRMED"
+  LP_STEPS+=(accept)
 }
 
 # loop_refund — a PARTIAL refund through the vendor API, then Stripe's refund read by
@@ -2530,10 +2655,13 @@ loop_refund() {
   [[ "$LP_LOCAL_REFUND" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the refund 201 carried no refund id" >&2; exit 1; }
   [ "$lamt" = "$LOOP_REFUND_PENNIES" ] || { echo "FAIL: the refund row is for '$lamt'p, not ${LOOP_REFUND_PENNIES}p" >&2; exit 1; }
   echo "OK: refund $LP_LOCAL_REFUND requested through the vendor API for ${lamt}p (Idempotency-Key $LP_RUN-refund)"
+  LP_STEPS+=(refund)
 
-  # This run's refund among the intent's: RefundService stamps metadata.refund_id.
-  code=$(stripe_api GET "/v1/refunds?payment_intent=$LP_INTENT&limit=100" "$WORKDIR/ml-refunds.json")
-  [ "$code" = 200 ] || stripe_fail "GET /v1/refunds?payment_intent=$LP_INTENT" "$code" "$WORKDIR/ml-refunds.json"
+  # This run's refund among the intent's: RefundService stamps metadata.refund_id. In
+  # direct mode the refund is the connected account's (RefundService sends Stripe-Account),
+  # so it is listed and read there.
+  code=$(loop_stripe GET "/v1/refunds?payment_intent=$LP_INTENT&limit=100" "$WORKDIR/ml-refunds.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/refunds?payment_intent=$LP_INTENT$(lp_on)" "$code" "$WORKDIR/ml-refunds.json"
   n=$(jq -r --arg r "$LP_LOCAL_REFUND" 'if .object == "list" then ([.data[]? | select(.metadata.refund_id == $r)] | length | tostring) else "not-a-list" end' \
         "$WORKDIR/ml-refunds.json" 2>/dev/null || echo unparseable)
   k=$(jq -r --arg r "$LP_LOCAL_REFUND" '[.data[]? | select(.metadata.refund_id == $r) | .id][0] // ""' "$WORKDIR/ml-refunds.json" 2>/dev/null || true)
@@ -2545,8 +2673,8 @@ loop_refund() {
 
   t0=$(date +%s)
   while :; do
-    code=$(stripe_api GET "/v1/refunds/$LP_REFUND" "$WORKDIR/ml-re.json")
-    [ "$code" = 200 ] || stripe_fail "GET /v1/refunds/$LP_REFUND" "$code" "$WORKDIR/ml-re.json"
+    code=$(loop_stripe GET "/v1/refunds/$LP_REFUND" "$WORKDIR/ml-re.json")
+    [ "$code" = 200 ] || stripe_fail "GET /v1/refunds/$LP_REFUND$(lp_on)" "$code" "$WORKDIR/ml-re.json"
     row=$(jq -r 'def id: if type == "object" then .id else (. // "") end;
                  [.status // "", (.amount // "" | tostring), (.charge | id), (.payment_intent | id), (.transfer_reversal | id)] | join("\u001f")' \
             "$WORKDIR/ml-re.json" 2>/dev/null) || row=""
@@ -2565,16 +2693,22 @@ loop_refund() {
   [ "$rpi" = "$LP_INTENT" ] || { echo "FAIL: Refund $LP_REFUND belongs to '$rpi', not $LP_INTENT" >&2; exit 1; }
   [ "$ramt" = "$LOOP_REFUND_PENNIES" ] || { echo "FAIL: Refund $LP_REFUND is for '$ramt', not $LOOP_REFUND_PENNIES" >&2; exit 1; }
   [ "$ramt" -lt "$LP_CAPTURED" ] || { echo "FAIL: Refund $LP_REFUND ($ramt) is not less than the captured $LP_CAPTURED: not a partial refund" >&2; exit 1; }
-  [[ "$trr" =~ ^trr_[A-Za-z0-9]+$ ]] \
-    || { echo "FAIL: Refund $LP_REFUND carries no transfer_reversal ('$trr'): a destination-charge refund must reverse the connected account's transfer (reverse_transfer)" >&2; exit 1; }
+  if [ "$LOOP_MODE" = destination ]; then
+    [[ "$trr" =~ ^trr_[A-Za-z0-9]+$ ]] \
+      || { echo "FAIL: Refund $LP_REFUND carries no transfer_reversal ('$trr'): a destination-charge refund must reverse the connected account's transfer (reverse_transfer)" >&2; exit 1; }
+  fi
   [ "$rch" = "$LP_CHARGE" ] || { echo "FAIL: Refund $LP_REFUND is on charge '$rch', not $LP_CHARGE" >&2; exit 1; }
   LP_REFUND_STATUS="$sst"; LP_REFUND_AMOUNT="$ramt"; LP_REVERSAL="$trr"
+  LP_STEPS+=(refund-read)
 
-  code=$(stripe_api GET "/v1/charges/$rch" "$WORKDIR/ml-rch.json")
-  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$rch" "$code" "$WORKDIR/ml-rch.json"
+  code=$(loop_stripe GET "/v1/charges/$rch" "$WORKDIR/ml-rch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$rch$(lp_on)" "$code" "$WORKDIR/ml-rch.json"
   assert_test_mode "$WORKDIR/ml-rch.json" "Charge $rch (refund $LP_REFUND's: a Refund carries no livemode field)"
   rm -f "$WORKDIR/ml-rch.json"
+  LP_STEPS+=(refund-charge)
 
+  # A direct charge has no transfer, so there is no reversal to read.
+  [ "$LOOP_MODE" = destination ] || { loop_refund_local; return 0; }
   code=$(stripe_api GET "/v1/transfers/$LP_TRANSFER" "$WORKDIR/ml-tr2.json")
   [ "$code" = 200 ] || stripe_fail "GET /v1/transfers/$LP_TRANSFER" "$code" "$WORKDIR/ml-tr2.json"
   assert_test_mode "$WORKDIR/ml-tr2.json" "Transfer $LP_TRANSFER"
@@ -2585,7 +2719,14 @@ loop_refund() {
     || { echo "FAIL: Transfer $LP_TRANSFER lists no reversal $trr of 1..${ramt}p (read '$rvamt')" >&2; exit 1; }
   LP_REVERSAL_AMOUNT="$rvamt"
   echo "OK: transfer $LP_TRANSFER carries reversal $trr of ${rvamt}p (proportional to the refund)"
+  LP_STEPS+=(transfer-reversal)
+  loop_refund_local
+}
 
+# loop_refund_local — the local refund row polled until it equals Stripe's status (the
+# refund.* events reached the app: Connect-scope ones in direct mode), then LOOP-REFUND.
+loop_refund_local() {
+  local code t0 lst
   t0=$(date +%s)
   while :; do
     lst=""
@@ -2603,37 +2744,56 @@ loop_refund() {
     sleep "$POLL_SECONDS"
   done
   LP_LOCAL_STATUS="$lst"
-  echo "LOOP-REFUND refund=$LP_REFUND amount=$LP_REFUND_AMOUNT status=$LP_REFUND_STATUS transfer_reversal=$LP_REVERSAL local_status=$LP_LOCAL_STATUS"
+  LP_STEPS+=(refund-local)
+  if [ "$LOOP_MODE" = direct ]; then
+    echo "LOOP-REFUND mode=direct refund=$LP_REFUND amount=$LP_REFUND_AMOUNT status=$LP_REFUND_STATUS account=$LP_ACCOUNT local_status=$LP_LOCAL_STATUS"
+  else
+    echo "LOOP-REFUND refund=$LP_REFUND amount=$LP_REFUND_AMOUNT status=$LP_REFUND_STATUS transfer_reversal=$LP_REVERSAL local_status=$LP_LOCAL_STATUS"
+  fi
 }
 
 # loop_evidence — with --evidence, .modes.destination = ids, amounts and statuses only
 # (T-30-111): built with jq from named values, refused if it carries a key, secret, URL
 # or e-mail shape, written jq -S, mode 600; the file's other content is kept.
 loop_evidence() {
-  local src entry tmp
+  local src entry tmp steps at
   [ -n "$LOOP_EVIDENCE" ] || return 0
   loop_evidence_check
   if [ -s "$LOOP_EVIDENCE" ]; then src="$LOOP_EVIDENCE"; else src="$WORKDIR/ml-evidence-empty.json"; printf '{}' > "$src"; fi
-  entry=$(jq -cn --arg run "$LP_RUN" --arg o "$LP_ORDER" --arg pi "$LP_INTENT" --arg ch "$LP_CHARGE" --arg tr "$LP_TRANSFER" \
-            --arg re "$LP_REFUND" --arg trr "$LP_REVERSAL" --arg a "$LP_ACCOUNT" \
-            --argjson cap "$LP_CAPTURED" --argjson fee "$LP_FEE" --argjson tamt "$LP_TRANSFER_AMOUNT" \
-            --argjson ramt "$LP_REFUND_AMOUNT" --argjson rvamt "$LP_REVERSAL_AMOUNT" \
-            --arg rs "$LP_REFUND_STATUS" --arg ls "$LP_LOCAL_STATUS" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
-      {run_id: $run, order: $o, intent: $pi, charge: $ch, transfer: $tr, refund: $re, transfer_reversal: $trr, account: $a,
-       amounts: {captured: $cap, application_fee: $fee, transfer: $tamt, refund: $ramt, transfer_reversal: $rvamt},
-       statuses: {intent: "succeeded", charge_captured: true, order: "CONFIRMED", refund: $rs, local_refund: $ls},
-       livemode: false, at: $at}')
+  # The steps in the order they ran (an array: jq -S sorts keys, never array items).
+  steps=$(printf '%s\n' "${LP_STEPS[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ "$LOOP_MODE" = direct ]; then
+    entry=$(jq -cn --arg run "$LP_RUN" --arg o "$LP_ORDER" --arg pi "$LP_INTENT" --arg ch "$LP_CHARGE" \
+              --arg re "$LP_REFUND" --arg a "$LP_ACCOUNT" --argjson cap "$LP_CAPTURED" --argjson fee "$LP_FEE" \
+              --argjson ramt "$LP_REFUND_AMOUNT" --arg rs "$LP_REFUND_STATUS" --arg ls "$LP_LOCAL_STATUS" \
+              --argjson steps "$steps" --arg at "$at" '
+        {run_id: $run, order: $o, intent: $pi, charge: $ch, refund: $re, account: $a, settlement_mode: "DIRECT_CHARGE_VENDOR_MOR",
+         amounts: {captured: $cap, application_fee: $fee, refund: $ramt},
+         statuses: {intent: "succeeded", charge_captured: true, order: "CONFIRMED", refund: $rs, local_refund: $ls},
+         steps: $steps, livemode: false, at: $at}')
+  else
+    entry=$(jq -cn --arg run "$LP_RUN" --arg o "$LP_ORDER" --arg pi "$LP_INTENT" --arg ch "$LP_CHARGE" --arg tr "$LP_TRANSFER" \
+              --arg re "$LP_REFUND" --arg trr "$LP_REVERSAL" --arg a "$LP_ACCOUNT" \
+              --argjson cap "$LP_CAPTURED" --argjson fee "$LP_FEE" --argjson tamt "$LP_TRANSFER_AMOUNT" \
+              --argjson ramt "$LP_REFUND_AMOUNT" --argjson rvamt "$LP_REVERSAL_AMOUNT" \
+              --arg rs "$LP_REFUND_STATUS" --arg ls "$LP_LOCAL_STATUS" --argjson steps "$steps" --arg at "$at" '
+        {run_id: $run, order: $o, intent: $pi, charge: $ch, transfer: $tr, refund: $re, transfer_reversal: $trr, account: $a,
+         amounts: {captured: $cap, application_fee: $fee, transfer: $tamt, refund: $ramt, transfer_reversal: $rvamt},
+         statuses: {intent: "succeeded", charge_captured: true, order: "CONFIRMED", refund: $rs, local_refund: $ls},
+         steps: $steps, livemode: false, at: $at}')
+  fi
   if command grep -qiE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@' <<<"$entry"; then
     echo "FAIL: the evidence entry carries a key, secret, URL or e-mail shape; $LOOP_EVIDENCE was not written" >&2; exit 1
   fi
   tmp="$WORKDIR/ml-evidence.next.json"
-  (umask 077 && jq -S --argjson e "$entry" '.modes = ((.modes // {}) + {destination: $e})' "$src" > "$tmp") \
+  (umask 077 && jq -S --arg m "$LOOP_MODE" --argjson e "$entry" '.modes = ((.modes // {}) + {($m): $e})' "$src" > "$tmp") \
     || { echo "FAIL: the evidence could not be composed; $LOOP_EVIDENCE was not written" >&2; exit 1; }
   if [ -e "$LOOP_EVIDENCE" ]; then chmod 600 "$LOOP_EVIDENCE" || { echo "FAIL: could not chmod 600 $LOOP_EVIDENCE" >&2; exit 1; }; fi
   (umask 077 && cp "$tmp" "$LOOP_EVIDENCE") || { echo "FAIL: could not write $LOOP_EVIDENCE" >&2; exit 1; }
   chmod 600 "$LOOP_EVIDENCE"
   rm -f "$tmp"
-  echo "LOOP-EVIDENCE file=$LOOP_EVIDENCE mode=destination"
+  echo "LOOP-EVIDENCE file=$LOOP_EVIDENCE mode=$LOOP_MODE"
 }
 
 money_loop_stage() {
@@ -2645,7 +2805,10 @@ money_loop_stage() {
   loop_order
   loop_confirm
   loop_wait_captured
-  loop_read_destination
+  case "$LOOP_MODE" in
+    destination) loop_read_destination ;;
+    direct)      loop_read_direct ;;
+  esac
   loop_accept
   loop_refund
   loop_evidence
@@ -4751,7 +4914,7 @@ while [ "$#" -gt 0 ]; do
     --account)         shift; [ "$#" -gt 0 ] || usage_error "--account needs a connected account id (acct_…)"; STRIPE_ACCOUNT="$1" ;;
     --link-out)        shift; [ "$#" -gt 0 ] || usage_error "--link-out needs a file path"; LINK_OUT="$1" ;;
     --set)             shift; [ "$#" -gt 0 ] || usage_error "--set needs a settlement mode"; SET_MODE="$1" ;;
-    --mode)            shift; [ "$#" -gt 0 ] || usage_error "--mode needs destination"; LOOP_MODE="$1" ;;
+    --mode)            shift; [ "$#" -gt 0 ] || usage_error "--mode needs destination or direct"; LOOP_MODE="$1" ;;
     --evidence)        shift; [ "$#" -gt 0 ] || usage_error "--evidence needs a file path"; LOOP_EVIDENCE="$1" ;;
     --refund-pennies)  shift; [ "$#" -gt 0 ] || usage_error "--refund-pennies needs a whole number of pennies"; LOOP_REFUND_PENNIES="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
@@ -4862,9 +5025,9 @@ case "$STAGE" in
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage money-loop"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
     case "$LOOP_MODE" in
-      destination) ;;
-      "") usage_error "--stage money-loop needs --mode destination" ;;
-      *) usage_error "--mode must be destination (got '$LOOP_MODE')" ;;
+      destination|direct) ;;
+      "") usage_error "--stage money-loop needs --mode destination|direct" ;;
+      *) usage_error "--mode must be destination or direct (got '$LOOP_MODE')" ;;
     esac
     LOOP_REFUND_PENNIES="${LOOP_REFUND_PENNIES:-100}"
     [[ "$LOOP_REFUND_PENNIES" =~ ^[1-9][0-9]{0,8}$ ]] \
