@@ -1,0 +1,2 @@
+none: observed xff="127.0.0.1" on /public/shops?page=0&size=12
+after: 13 upstream calls checked over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=0

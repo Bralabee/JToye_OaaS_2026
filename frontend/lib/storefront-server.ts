@@ -1,5 +1,6 @@
 import { cache } from "react"
 import { coreBaseUrl } from "@/lib/customer-orders-server"
+import { forwardedClientHeaders } from "@/lib/forwarded-for"
 import type { PageResponse } from "@/types/api"
 import type {
   PublicAnnouncement,
@@ -96,10 +97,17 @@ const NO_STORE: RequestInit = { cache: "no-store", redirect: "manual" }
  * 301 Moved Permanently for a retired shop slug alias (39-09). Everything else that is not a
  * 2xx — including 429 — becomes `defer`, because the caller must not present a non-answer as
  * an authoritative one.
+ *
+ * Every read carries the visitor's X-Forwarded-For chain verbatim and nothing else from the
+ * request, through `lib/forwarded-for.ts` (quick 261102-vwa), so core's public limiter buckets per
+ * visitor rather than per frontend pod.
  */
 async function getJson<T>(path: string): Promise<StorefrontLoad<T>> {
   try {
-    const res = await fetch(`${coreBaseUrl()}${path}`, NO_STORE)
+    const res = await fetch(`${coreBaseUrl()}${path}`, {
+      ...NO_STORE,
+      headers: await forwardedClientHeaders(),
+    })
     if (res.status === 301) {
       const canonical =
         res.headers?.get("x-shop-canonical-slug")?.trim() ||

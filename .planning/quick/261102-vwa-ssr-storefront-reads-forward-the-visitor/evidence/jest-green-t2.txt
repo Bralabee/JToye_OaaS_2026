@@ -1,0 +1,10 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/api/customer-orders/__tests__/route.test.ts lib/__tests__/forwarded-for.test.ts lib/__tests__/storefront-server.test.ts --ci
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 3 passed, 3 total
+Tests:       44 passed, 44 total
+Snapshots:   0 total
+Time:        0.75 s, estimated 1 s
+Ran all test suites matching app/api/customer-orders/__tests__/route.test.ts|lib/__tests__/forwarded-for.test.ts|lib/__tests__/storefront-server.test.ts.
+jest rc=0

@@ -1,0 +1,9 @@
+landing 200
+shop 200
+slug 200
+cart 200
+sitemap 200
+orders 200
+api-get 200
+api-post 404
+none 200

@@ -1,4 +1,5 @@
 import { ORDERS_FETCH_SIZE, toOrdersLoad, type OrdersLoad } from "@/lib/customer-orders"
+import { forwardedClientHeaders } from "@/lib/forwarded-for"
 
 /**
  * SERVER ONLY. Reads the customer's order history straight from the core API so
@@ -58,6 +59,10 @@ export function coreBaseUrl(): string {
  * Never throws: every failure becomes `{ state: "error" }`, because a thrown
  * error in a server component renders the route's error boundary — which is a
  * worse answer than an in-page error with a retry, and loses the page chrome.
+ *
+ * Beside the token it sends the visitor's X-Forwarded-For chain verbatim, through
+ * `lib/forwarded-for.ts` (quick 261102-vwa), so core's public limiter buckets this read
+ * per visitor rather than per frontend pod; outside a request scope it sends none.
  */
 export async function loadCustomerOrders(
   accessToken: string,
@@ -65,7 +70,7 @@ export async function loadCustomerOrders(
 ): Promise<OrdersLoad> {
   try {
     const res = await fetch(`${coreBaseUrl()}/public/orders/mine?size=${size}`, {
-      headers: { "X-Customer-Token": accessToken },
+      headers: { "X-Customer-Token": accessToken, ...(await forwardedClientHeaders()) },
       cache: "no-store",
     })
     const body = await res.json().catch(() => null)

@@ -3769,6 +3769,7 @@ is_noindex_target() {
 # went away; a standing excuse nobody needs must not stay). Format: file|name|reason
 INV24_ALLOW=(
     "frontend/lib/customer-orders-server.ts|X-Customer-Token|Server module: read only by the server components app/shop/orders/page.tsx and app/shop/account/page.tsx and by the route handler app/api/customer-orders/route.ts; it calls core from the pod with the access token taken from an httpOnly cookie, so the browser never sends this header and no preflight is involved."
+    "frontend/lib/forwarded-for.ts|X-Forwarded-For|Server module (#1106): read only by lib/storefront-server.ts, lib/customer-orders-server.ts and the route handler app/api/customer-orders/route.ts, and it reads next/headers, which a client component cannot import. It forwards the visitor's chain on the pod's server-to-core reads, so the browser never sends this header and no preflight is involved."
     "frontend/components/dashboard/onboarding/trader-identity-form.tsx|aria-required|React ARIA props returned for a form field, spread onto JSX; not a request."
     "frontend/components/dashboard/onboarding/trader-identity-form.tsx|aria-invalid|React ARIA props returned for a form field, spread onto JSX; not a request."
     "frontend/components/dashboard/onboarding/trader-identity-form.tsx|aria-describedby|React ARIA props returned for a form field, spread onto JSX; not a request."

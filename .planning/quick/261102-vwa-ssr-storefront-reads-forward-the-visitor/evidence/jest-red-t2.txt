@@ -1,0 +1,83 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/api/customer-orders/__tests__/route.test.ts lib/__tests__/forwarded-for.test.ts --ci
+  Using tsconfig file: tsconfig.build.json
+FAIL app/api/customer-orders/__tests__/route.test.ts
+  ● /api/customer-orders › forwards the visitor's X-Forwarded-For through the shared helper (quick 261102-vwa) › R1 GET sends the chain verbatim beside the token, and no other request header
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "X-Customer-Token": "tok-abc",
+    -   "X-Forwarded-For": "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9",
+      }
+
+      189 |       expect(fetchSpy).toHaveBeenCalledTimes(1)
+      190 |       const [, init] = fetchSpy.mock.calls[0]
+    > 191 |       expect(init.headers).toEqual({ "X-Customer-Token": "tok-abc", "X-Forwarded-For": CHAIN })
+          |                            ^
+      192 |       expect(init.cache).toBe("no-store")
+      193 |     })
+      194 |
+
+      at Object.toEqual (app/api/customer-orders/__tests__/route.test.ts:191:28)
+
+FAIL lib/__tests__/forwarded-for.test.ts
+  ● every server-side core read forwards the visitor's X-Forwarded-For (quick 261102-vwa) › E1 all 11 reads across the eight callers carry the chain verbatim and keep only their own headers
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 2
+
+    @@ -2,14 +2,13 @@
+        Object {
+          "caller": "GET /api/customer-orders",
+          "method": "GET",
+          "names": Array [
+            "x-customer-token",
+    -       "x-forwarded-for",
+          ],
+          "path": "/public/orders/mine?size=5",
+    -     "xff": "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9",
+    +     "xff": null,
+        },
+        Object {
+          "caller": "loadAllShopSlugs",
+          "method": "GET",
+          "names": Array [
+    @@ -21,14 +20,13 @@
+        Object {
+          "caller": "loadCustomerOrders",
+          "method": "GET",
+          "names": Array [
+            "x-customer-token",
+    -       "x-forwarded-for",
+          ],
+          "path": "/public/orders/mine?size=100",
+    -     "xff": "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9",
+    +     "xff": null,
+        },
+        Object {
+          "caller": "loadFeaturedShops",
+          "method": "GET",
+          "names": Array [
+
+      165 |       { caller: "loadShopList", method: "GET", path: "/public/shops?page=0&size=12", xff: CHAIN, names: XFF },
+      166 |     ].sort((a, b) => order(a).localeCompare(order(b)))
+    > 167 |     expect(sorted).toEqual(expected)
+          |                    ^
+      168 |   })
+      169 |
+      170 |   it("E2 loadCustomerOrders outside a request scope resolves, sends its token uncached, and no chain", async () => {
+
+      at Object.toEqual (lib/__tests__/forwarded-for.test.ts:167:20)
+
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 17 passed, 19 total
+Snapshots:   0 total
+Time:        0.44 s, estimated 1 s
+Ran all test suites matching app/api/customer-orders/__tests__/route.test.ts|lib/__tests__/forwarded-for.test.ts.
+jest rc=1

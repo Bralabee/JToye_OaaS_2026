@@ -1,0 +1,42 @@
+# Task 2 step 4 — final build (after)
+$ assert-probe.mjs probe-after.jsonl after   (all cases)
+none: observed xff="127.0.0.1" on /public/shops?page=0&size=function%28%29%7Bthrow+Error%28%22Attempted+to+call+SHOPS_PAGE_SIZE%28%29+from+the+server+but+SHOPS_
+after: 13 upstream calls checked over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=0
+rc=0 (must be 0)
+$ assert-probe.mjs diff probe-before.jsonl probe-after.jsonl   (all cases; api-post identical)
+VIOLATION: case none: header names changed added=["x-forwarded-for"] removed=[]
+  {"method":"GET","url":"/public/shops?page=0&size=function%28%29%7Bthrow+Error%28%22Attempted+to+call+SHOPS_PAGE_SIZE%28%29+from+the+server+but+SHOPS_PAGE_SIZE+is+on+the+client.+It%27s+not+possible+to+invoke+a+client+function+from+the+server%2C+it+can+only+be+rendered+as+a+Component+or+passed+to+props+of+a+Client+Component.%22%29%7D","xff":"127.0.0.1","names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-forwarded-for"]}
+diff: 13 call pairs compared over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=1
+rc=1 (must be 0)
+
+# fail direction of the diff form: before compared with itself must FAIL (nothing added)
+diff: 13 call pairs compared over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=11
+rc=1 (must be 1)
+
+# fail direction of the api-post identity arm: after vs after with api-post's xff altered must FAIL
+VIOLATION: case api-post must be identical; added=[] removed=[] xff "198.51.100.8" -> "198.51.100.9"
+rc=1 (must be 1)
+
+statuses:
+landing 200
+shop 200
+slug 200
+cart 200
+sitemap 200
+orders 200
+api-get 200
+api-post 404
+none 200
+
+# CORRECTION (probe tooling, not app code): the first diff run above applied an extra 'none: no names may change'
+# rule that the plan does not specify; the plan's rule is after-minus-before = [x-forwarded-for] for every case but api-post.
+# The none case gains Next's own fill (127.0.0.1) because the read now forwards it. Rule removed; re-run:
+$ assert-probe.mjs diff probe-before.jsonl probe-after.jsonl   (all cases; api-post identical)
+diff: 13 call pairs compared over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=0
+rc=0 (must be 0)
+$ assert-probe.mjs diff probe-before.jsonl probe-before.jsonl   (fail direction)
+diff: 13 call pairs compared over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=12
+rc=1 (must be 1)
+$ re-run of the tracer diff with the corrected script
+diff: 10 call pairs compared over landing,shop,slug,cart,sitemap,api-post; violations=0
+rc=0 (must be 0)

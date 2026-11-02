@@ -26,9 +26,10 @@ import {
 } from "@/lib/search-interpretation"
 import { PublicShop } from "@/types/storefront"
 import { PageResponse } from "@/types/api"
+import { SHOPS_PAGE_SIZE } from "@/lib/shop-discovery-page-size"
 
-/** How many shops a page of the directory holds. Shared with the server seed. */
-export const SHOPS_PAGE_SIZE = 12
+/** How many shops a page of the directory holds: lib/shop-discovery-page-size, shared with the server seed (app/shop/page.tsx imports it from there, never from this client module). */
+export { SHOPS_PAGE_SIZE }
 
 /**
  * How long the box must be still before what it says becomes a search.

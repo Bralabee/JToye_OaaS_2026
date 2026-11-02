@@ -1,0 +1,19 @@
+# Task 3 step 3 — full frontend Jest
+Test Suites: 294 passed, 294 total
+Tests:       3502 passed, 3502 total
+Snapshots:   2 passed, 2 total
+Time:        25.393 s
+jest-full rc=0
+
+
+# second full run with --json (per-suite status), rc=0
+suites 294/294 passed, tests 3502/3502 passed, failed 0
+  PASSED app/__tests__/landing.test.tsx (37 tests)
+  PASSED app/shop/account/__tests__/account-page.test.tsx (17 tests)
+  PASSED app/shop/[slug]/checkout/__tests__/checkout-seller-block.test.tsx (6 tests)
+  PASSED app/shop/__tests__/shop-promotions-hidden.test.tsx (5 tests)
+  PASSED components/storefront/__tests__/seller-block.test.tsx (17 tests)
+  PASSED lib/__tests__/storefront-server.test.ts (25 tests)
+  PASSED app/api/customer-orders/__tests__/route.test.ts (17 tests)
+  PASSED lib/__tests__/forwarded-for.test.ts (2 tests)
+named degrade-path + touched suites found: 8

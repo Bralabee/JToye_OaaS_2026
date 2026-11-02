@@ -1,0 +1,15 @@
+# Task 3 step 2 — route-mode parity
+routes-before rows: 58; routes-after rows: 58
+$ diff routes-before.txt routes-after.txt -> rc=0
+$ diff prerender-before.txt prerender-after.txt -> rc=0
+$ diff routes-before.txt <copy with /shop flipped ƒ->○> -> rc=1 (must be 1)
+47c47
+< ƒ /shop
+---
+> ○ /shop
+
+symbol counts after:
+     58 ƒ
+○ (static) rows: 0 — none exist, so no static route can import storefront-server, customer-orders-server or forwarded-for
+prerender-manifest routes (both builds): /_global-error /favicon.ico  — neither imports the three modules:
+  frontend/app/favicon.ico: rg rc=1 (1 = no import)

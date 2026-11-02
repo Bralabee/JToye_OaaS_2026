@@ -1,0 +1,42 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'next' start -p 3310 -H 127.0.0.1
+▲ Next.js 16.4.3
+- Local:         http://127.0.0.1:3310
+- Network:       http://127.0.0.1:3310
+✓ Ready in 116ms
+✓ Running next.config.mjs took 13ms
+⚠ "next start" does not work with "output: standalone" configuration. Use "node .next/standalone/server.js" instead.
+[ERROR] Missing required environment variables in production: KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET, KEYCLOAK_ISSUER, NEXT_PUBLIC_KEYCLOAK_URL
+[WARN] Missing optional onboarding config (UI uses graceful fallbacks): NEXT_PUBLIC_SUPPORT_EMAIL, NEXT_PUBLIC_SUPPORT_URL, NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS, NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE, NEXT_PUBLIC_DATA_PROTECTION_EMAIL, NEXT_PUBLIC_CONTACT_EMAIL, NEXT_PUBLIC_CONTACT_PHONE
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[31m[auth][error][0m InvalidEndpoints: Provider "keycloak" is missing both `issuer` and `authorization` endpoint config. At least one of them is required. Read more at https://errors.authjs.dev#invalidendpoints
+    at /home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:52398
+    at ch (/home/sanmi/IdeaProjects/JToye_OaaS_2026-ssr-xff/frontend/.next/server/edge/chunks/[root-of-the-server]__1e5ael15vt5ik._.js:412:54362)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
