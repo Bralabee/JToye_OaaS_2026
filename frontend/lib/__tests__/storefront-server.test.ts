@@ -20,6 +20,7 @@ import {
   loadShopDetail,
   loadShopList,
   loadAllShopSlugs,
+  loadFeaturedShops,
   allProducts,
 } from "@/lib/storefront-server"
 import type { PublicProduct, PublicShop } from "@/types/storefront"
@@ -351,5 +352,36 @@ describe("allProducts", () => {
     expect(
       allProducts({ Mains: [product], Sides: [{ ...product, id: "p2" }] })
     ).toHaveLength(2)
+  })
+})
+
+/**
+ * loadFeaturedShops (quick 261102-r6u, D-02/D-03). Featured kitchens are
+ * decoration on top of the real listing: any failure degrades to [] (today's
+ * row) and never throws or defers the landing page.
+ */
+describe("loadFeaturedShops", () => {
+  it("requests /public/featured-shops uncached and returns the array on 200", async () => {
+    const fetchMock = mockFetch([[/\/public\/featured-shops$/, 200, [shop]]])
+    global.fetch = fetchMock as unknown as typeof fetch
+    const featured = await loadFeaturedShops()
+    expect(featured.map((s) => s.slug)).toEqual(["brixton-village-grill"])
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/public\/featured-shops$/)
+    expect(init.cache).toBe("no-store")
+  })
+
+  it("returns [] on a 500 and on a 429, never throwing", async () => {
+    for (const status of [500, 429]) {
+      global.fetch = mockFetch([[/\/public\/featured-shops$/, status, { title: "x" }]]) as unknown as typeof fetch
+      await expect(loadFeaturedShops()).resolves.toEqual([])
+    }
+  })
+
+  it("returns [] on a network failure, never throwing", async () => {
+    global.fetch = jest.fn(async () => {
+      throw new TypeError("fetch failed")
+    }) as unknown as typeof fetch
+    await expect(loadFeaturedShops()).resolves.toEqual([])
   })
 })

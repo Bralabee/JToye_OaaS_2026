@@ -727,6 +727,7 @@ data:
   storefront.cash-caps.per-ip: "5"
   storefront.cash-caps.per-phone: "3"
   storefront.client-ip-digest.retention-hours: "72"
+  storefront.featured-shop-slugs: mama-ades-kitchen,peckham-jollof-co,brixton-village-grill
   stripe.connect.refresh-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh
   stripe.connect.return-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/return
   stripe.environment-tag: staging
@@ -4306,6 +4307,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: storefront.client-ip-digest.retention-hours
+              name: app-config
+        - name: JTOYE_FEATURED_SHOP_SLUGS
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.featured-shop-slugs
               name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent

@@ -1,0 +1,46 @@
+> Task :core-java:compileJava UP-TO-DATE
+> Task :core-java:processResources UP-TO-DATE
+> Task :core-java:classes UP-TO-DATE
+> Task :core-java:compileTestJava UP-TO-DATE
+> Task :core-java:processTestResources UP-TO-DATE
+> Task :core-java:testClasses UP-TO-DATE
+
+> Task :core-java:integrationTest
+integrationTest: availableProcessors=16, maxParallelForks=4, forkEvery=16
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::loadLibrary has been called by io.netty.util.internal.NativeLibraryUtil in an unnamed module (file:/home/sanmi/.gradle/caches/modules-2/files-2.1/io.netty/netty-common/4.2.17.Final/57fa9e9af0bf70530e2fe1c8c8d6138f9167cf7a/netty-common-4.2.17.Final.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-11-02 20:10:40 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopping...
+2026-11-02 20:10:40 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - BrokerAvailabilityEvent[available=false, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@5ffbf1be]]
+2026-11-02 20:10:40 [core-java,,] INFO  o.s.m.s.b.SimpleBrokerMessageHandler - Stopped.
+
+> Task :core-java:integrationTest
+
+OpenApiSnapshotTest > apiDocsMatchCommittedSnapshot() FAILED
+    org.opentest4j.AssertionFailedError at OpenApiSnapshotTest.java:139
+
+2026-11-02 20:10:43 [core-java,,] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-11-02 20:10:43 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown initiated...
+2026-11-02 20:10:43 [core-java,,] INFO  com.zaxxer.hikari.HikariDataSource - JToyeHikariPool - Shutdown completed.
+
+> Task :core-java:integrationTest
+
+1 test completed, 1 failed
+
+> Task :core-java:integrationTest FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':core-java:integrationTest'.
+> There were failing tests. See the report at: file:///home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/build-local/reports/tests/integrationTest/index.html
+
+* Try:
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 27s
+5 actionable tasks: 1 executed, 4 up-to-date

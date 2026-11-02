@@ -1,0 +1,15 @@
+== Java (unit, from first run; IT run at 2026-11-02T20:13:15Z) ==
+/tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/f980f964-ca21-4b68-9a76-c2b7dfea5388/scratchpad/t1v-it.txt:48:BUILD SUCCESSFUL in 42s
+/tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/f980f964-ca21-4b68-9a76-c2b7dfea5388/scratchpad/t1v-unit.txt:9:BUILD SUCCESSFUL in 1s
+uk.jtoye.core.integration.OpenApiSnapshotTest tests=1 skipped=0 failures=0 errors=0
+uk.jtoye.core.storefront.FeaturedShopsIntegrationTest tests=1 skipped=0 failures=0 errors=0
+uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=7 skipped=0 failures=0 errors=0
+uk.jtoye.core.storefront.FeaturedShopsPropertiesTest tests=8 skipped=0 failures=0 errors=0
+uk.jtoye.core.storefront.FeaturedShopsServiceTest tests=3 skipped=0 failures=0 errors=0
+uk.jtoye.core.integration.OpenApiSnapshotTest tests=1 skipped=0 failures=0 errors=0
+== Jest ==
+Test Suites: 4 passed, 4 total
+Tests:       75 passed, 75 total
+jest rc=0
+== build ==
+build rc=0

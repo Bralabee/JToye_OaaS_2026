@@ -408,6 +408,29 @@ public class PublicStorefrontService {
     }
 
     /**
+     * The published shops among {@code slugs}, in the order of {@code slugs} (quick 261102-r6u, D-02):
+     * the featured kitchens of this environment. Only published shops are ever returned (the predicate is
+     * in the query, {@link ShopRepository#findByPublishedTrueAndSlugIn}); a slug that names no published
+     * shop is simply absent, and the CALLER owns the order. One query, then each shop mapped through the
+     * same {@link #toPublicShopDto} the list, near and search endpoints use, so no seller is attached.
+     */
+    public List<PublicShopDto> listPublishedShopsBySlugs(List<String> slugs) {
+        if (slugs == null || slugs.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Shop> bySlug = shopRepository.findByPublishedTrueAndSlugIn(slugs).stream()
+                .collect(Collectors.toMap(Shop::getSlug, shop -> shop, (first, second) -> first));
+        List<PublicShopDto> ordered = new ArrayList<>(bySlug.size());
+        for (String slug : slugs) {
+            Shop shop = bySlug.get(slug);
+            if (shop != null) {
+                ordered.add(toPublicShopDto(shop));
+            }
+        }
+        return ordered;
+    }
+
+    /**
      * List published shops ordered by real distance from a caller-supplied coordinate, filtered to
      * a radius (33-06 / #460 link 5).
      *

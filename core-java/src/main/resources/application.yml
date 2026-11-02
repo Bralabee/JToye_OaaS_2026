@@ -262,6 +262,16 @@ jtoye:
     client-ip-digest:
       retention-hours: ${CLIENT_IP_DIGEST_RETENTION_HOURS:72}
       sweep-cron: "0 20 3 * * *"
+    # Quick 261102-r6u (owner decision D-02, design D17): the FEATURED kitchens of this environment, an
+    # ordered, comma-separated list of shop slugs (e.g. "mama-ades-kitchen,peckham-jollof-co"). They lead
+    # the landing kitchen row before a visitor shares a location (GET /api/v1/public/featured-shops). An
+    # editorial ordering hint, never paid placement. PUBLISHED shops only: a slug that is unknown or
+    # unpublished is skipped, with one WARN per distinct skipped set. Validated at startup by
+    # FeaturedShopsProperties (slug shape, no blanks or duplicates, at most 12; a bad value refuses to
+    # start, naming this key). The EMPTY default is the inert state: the landing row is exactly what it
+    # was before featuring existed. Production ships empty and the owner fills it as vendors onboard;
+    # staging lists its demo kitchens (k8s app-config storefront.featured-shop-slugs).
+    featured-shop-slugs: ${JTOYE_FEATURED_SHOP_SLUGS:}
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:

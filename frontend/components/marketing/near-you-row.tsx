@@ -191,6 +191,11 @@ export function NearYouRow({
    * as possibly truncated and the arithmetic is suppressed.
    */
   serverTotal?: number
+  /**
+   * The featured kitchens' slugs, in configured order (quick 261102-r6u, D-03).
+   * `serverShops` already leads with them (page.tsx merges server-side).
+   */
+  featuredSlugs?: readonly string[]
 }) {
   const [phase, setPhase] = useState<Phase>("idle")
   const [nearby, setNearby] = useState<PublicShop[] | null>(null)
