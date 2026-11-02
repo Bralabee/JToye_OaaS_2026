@@ -7,7 +7,8 @@ import {
 } from "@/lib/search-interpretation"
 import { resolvePublicOrigin } from "@/lib/public-origin"
 import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
-import { ShopDiscoveryClient, SHOPS_PAGE_SIZE } from "./shop-discovery-client"
+import { ShopDiscoveryClient } from "./shop-discovery-client"
+import { SHOPS_PAGE_SIZE } from "@/lib/shop-discovery-page-size"
 
 /**
  * The storefront directory — SERVER component (issues #507, #447).
