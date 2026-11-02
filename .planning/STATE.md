@@ -6,7 +6,7 @@ current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
 stopped_at: "Phase 30 executing at 30/32 (30-01..30-30). 30-30 COMPLETE 2026-11-02 10:41Z on docs/30-phase-close: PR 8 #1089 merged 0ffad575 and deployed; the staging loop REFUSED [connect-status] as planned; connect-onboard hit Stripe refusing the legacy type=express create (issue #1090, closed), owner RULED Managed Risk, fix PRs #1091 (40d91e0e) and #1092 (de5d86f4) merged and deployed with parity; third run created acct_1UXIfkDK5xypxMXe (PENDING); onboarding link in $HOME/.local/state/jtoye/connect-onboard.url (mode 600). Next: 30-31, the owner in Stripe hosted onboarding from that link; then 30-32."
-last_updated: "2026-11-02T10:45:00.000Z"
+last_updated: "2026-11-02T10:49:52.000Z"
 last_activity: 2026-11-02
 last_activity_desc: "30-30 complete: PR 8 merged and deployed, Stripe Connect refusal fixed (Managed Risk, #1091; body-fingerprinted idempotency key, #1092), staging connected account acct_1UXIfkDK5xypxMXe PENDING, onboarding link in the owner's mode-600 file"
 state_head: da30359dd013e5e687fb9be90a8e7ba2c448d3dd
@@ -1453,7 +1453,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 29]: 29-28: the Keycloak in-cluster forwarded-header residual is accepted, not fixed here: a public spoofed X-Forwarded-Host left token_endpoint unchanged (Traefik overwrites it) while the same header sent direct to keycloak:8080 moved it to evil.example; trusted proxies are tracked in their own PR
 - [Phase 30]: 30-12: one webhook route and one secret per Stripe scope; the Connect route is /api/v1/public/payments/webhook/connect (stripe.connect-webhook-secret), and the platform route refuses events carrying account
 - [Phase 30]: 30-12: stripe.environment-tag (empty fallback, written as 'unset') tags every PaymentIntent, Refund and Express Account; foreign-environment events are acknowledged before the dedup row, unknown-order PI events are acknowledged, BL-04 kept for same-environment refunds
-- [Phase 30]: 30-12: Express accounts request card_payments + transfers under idempotency key connect-account-create-<tenantId> (since #1092: -<16 hex of the body>); reused accounts missing either get both requested before the onboarding link
+- [Phase 30]: 30-12: connected accounts (Express at the time; Managed Risk since #1091) request card_payments + transfers under idempotency key connect-account-create-<tenantId> (since #1092: -<16 hex of the body>); reused accounts missing either get both requested before the onboarding link
 - [Phase 30]: 30-13: stripe-credentials--connect-webhook-secret is external whsec_, mounted by core-java-kv and synced as stripe-credentials/connect-webhook-secret; STRIPE_CONNECT_WEBHOOK_SECRET is an optional ref. The object must exist in jtoye-stg-kv before PR 4 merges (a missing SPC object fails the CSI mount)
 - [Phase 30]: 30-13: stripe.environment-tag is declared per overlay (local, staging, production) and never in base; STRIPE_ENVIRONMENT_TAG reads it through a configMapKeyRef that is NOT optional, so a forgotten overlay fails the pod at start
 - [Phase 30]: 30-13: no CI gate checks the tag VALUE per overlay (static suite stays rc 0 with an overlay tag deleted); recorded in deferred-items.md with a render-invariant route for 30-14 or 30-20
@@ -1555,7 +1555,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-11-02T10:45:00.000Z
+Last session: 2026-11-02T10:49:52.000Z
 Stopped at: Phase 30 — 30-30 done (30/32) on docs/30-phase-close; next is 30-31, the owner completing Stripe's hosted Connect onboarding from the link in $HOME/.local/state/jtoye/connect-onboard.url (mode 600), then the Connect positive arm and the live destination loop
 Resume file: `.planning/STATE.md` (Current Position), `HANDOFF.md` (RESUME HERE) and `.planning/phases/30-live-stripe-test-mode-execution/30-30-SUMMARY.md`
 

@@ -171,5 +171,11 @@ Run: 2026-11-02T10:40:56Z .. 10:41:08Z   rc=0   (URLs redacted; the link itself 
   | CONNECT-ONBOARD tenant=1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 account=acct_1UXIfkDK5xypxMXe status=PENDING
 Reading: Stripe CREATED the connected account under the body-fingerprinted key: acct_1UXIfkDK5xypxMXe, tenant
   1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 now PENDING. The single-use onboarding link is in $HOME/.local/state/jtoye/connect-onboard.url
-  (mode 600, 70 bytes, one https://...stripe.com/ line; outside the repo; the owner is told the PATH, never the URL).
+  (mode 600, 70 bytes, one line, a stripe-dot-com https URL; outside the repo; the owner is told the PATH, never the URL).
   The transient operator was deleted (HTTP 204). Issue #1090 is closed by this run; 30-31 is the owner in Stripe's hosted flow.
+Verdict line (unindented, the form 30-30-PLAN.md's <automated> verify anchors on):
+CONNECT-ONBOARD tenant=1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 account=acct_1UXIfkDK5xypxMXe status=PENDING
+Plan <automated> verify, run VERBATIM on this file after the record PR's round 1 (#1093 findings 1-3: an earlier run used a
+  grep -F of the real URL and an indented anchor, and the placeholder text above matched the plan's URL regex):
+  pass direction: mode=600 url_lines=1 url_in_evidence=0 onboard_line=1, rc 0
+  fail direction: the same expression with ev pointed at a scratch copy holding the real URL appended: url_in_evidence=1, rc 1

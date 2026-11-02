@@ -81,7 +81,9 @@ completed: 2026-11-02
 
 **3. [Gate] HANDOFF.md's capitalised "#1089 OPEN" redded docs-freshness on #1091.** Fixed in #1091 (`fc233866`); the gate was shown to fail on the old file and pass on the new one.
 
-**4. [Record] `.planning/STATE.md` quick-task row for the `/gsd-fast` task has the tool's fallback shape** (ordinal id, no directory). Recorded on #1092; left as the tool writes it.
+**4. [Proof] The plan's `<automated>` verify was first run as a variant, not verbatim.** #1093 round 1 showed the verbatim expression returned rc 1 on the committed evidence (placeholder `https://...stripe.com/` matched the URL-absence regex; the verdict line was indented past the `^CONNECT-ONBOARD` anchor). Fixed in the record: neutral placeholder wording, an unindented verdict line, the verbatim expression run both ways and recorded.
+
+**5. [Record] `.planning/STATE.md` quick-task row for the `/gsd-fast` task has the tool's fallback shape** (ordinal id, no directory). Recorded on #1092; left as the tool writes it.
 
 ## Carried to 30-31 / 30-32 (recorded on #1091 and #1092, not filed)
 
@@ -100,5 +102,5 @@ completed: 2026-11-02
 ## Self-Check: PASSED
 
 - Evidence file present, URL-free, with the three attempts and both parity reads: yes.
-- Plan `<automated>` verify: mode 600, one Stripe URL line, URL absent from evidence, CONNECT-ONBOARD line present: PASS; fail arm counted 1.
+- Plan `<automated>` verify, run VERBATIM (after #1093 round 1): mode=600 url_lines=1 url_in_evidence=0 onboard_line=1, rc 0; fail direction (the real URL appended to a scratch copy of the evidence): url_in_evidence=1, rc 1. The first run of this check used a variant expression (grep -F of the real URL, an indented anchor) and the evidence's placeholder text matched the plan's URL regex; both are corrected and the verbatim result is in the evidence file.
 - Issue #1090 CLOSED by the run; PRs #1089, #1091, #1092 MERGED.
