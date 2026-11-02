@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Landing: The Owner's Own BeesLens Photographs Lead — 2026-11-02 (#PR-PENDING)
+### Landing: The Owner's Own BeesLens Photographs Lead — 2026-11-02 (#1103)
 
 The owner supplied seven of his own BeesLens photographs and approved where each goes; recorded as D16 in `design/decisions.md` (amends D10), run record `design/runs/2026-11-02-landing-beeslens/`.
 
