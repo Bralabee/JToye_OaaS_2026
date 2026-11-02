@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Landing: Featured Kitchens Lead the Row; Staging Gets Three Demo Kitchens That Take Orders — 2026-11-02 (#PR-PENDING)
+### Landing: Featured Kitchens Lead the Row; Staging Gets Three Demo Kitchens That Take Orders — 2026-11-02 (#1104)
 
 Owner decisions D-01..D-05 (2026-11-02), recorded as D17 in `design/decisions.md`.
 
