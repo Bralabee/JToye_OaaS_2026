@@ -1,0 +1,17 @@
+check-keycloak-wordmark-home  (root: /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a8b6b99dd32f19319)
+  ok    infra/keycloak/realm-export.template.json: <a href=\"${PUBLIC_APP_ORIGIN}\" style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em;text-decoration:none\">J'Toye</a>
+  ok    infra/keycloak/realm-export-customers.template.json: <a href=\"${PUBLIC_APP_ORIGIN}\" style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em;text-decoration:none\">J'Toye</a>
+  ok    docker-compose.full-stack.yml: 2 realm envsubst line(s) list $$PUBLIC_APP_ORIGIN
+  ok    infra/docker-compose.yml: 1 realm envsubst line(s) list $$PUBLIC_APP_ORIGIN
+  ok    infra/docker-compose.hostnet.yml: 1 realm envsubst line(s) list $$PUBLIC_APP_ORIGIN
+PASS: both realm templates link the wordmark home and every compose render site substitutes the origin.
+rc=0
+PASS clean rc=0
+PASS span-not-anchor rc=1
+PASS literal-host rc=1
+PASS second-href rc=1
+PASS envsubst-omits-origin rc=1
+PASS no-env-entry rc=1
+PASS no-render-site-void rc=2
+PASS missing-template-void rc=2
+selftest rc=0

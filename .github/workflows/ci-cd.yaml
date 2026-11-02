@@ -1517,6 +1517,19 @@ jobs:
           chmod +x ./scripts/check-no-create-extension.sh
           ./scripts/check-no-create-extension.sh
 
+      # Owner ruling 2026-11-02: the J'Toye wordmark on every Keycloak page (sign-in,
+      # register, reset, email verification) links home. The header is each realm's
+      # displayNameHtml (the jtoye theme is CSS-only), so both templates must hold an
+      # anchor whose href is the PUBLIC_APP_ORIGIN placeholder, and every compose
+      # envsubst that renders a realm must list it, or the realm ships the literal token
+      # as its href. The staging render is asserted by staging-realm-import.sh --selftest.
+      #
+      # Static by construction: reads files only, no stack, no network.
+      - name: Assert the Keycloak wordmark links home in both realms (owner ruling 2026-11-02)
+        run: |
+          bash scripts/check-keycloak-wordmark-home.sh --selftest
+          bash scripts/check-keycloak-wordmark-home.sh
+
       # Phase 37-04 (D-06, threat T-37-07). Strict scoping is ON by default: ungranted means no
       # access. D-06 says compose and the k8s overlays must never override it back to false,
       # because that silently makes every ungranted staff login a tenant-wide admin again and

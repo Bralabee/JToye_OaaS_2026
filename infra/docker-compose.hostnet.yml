@@ -10,6 +10,9 @@ services:
       KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set}
       INTEGRATION_CATALOG_RO_SECRET: ${INTEGRATION_CATALOG_RO_SECRET:?INTEGRATION_CATALOG_RO_SECRET must be set}
       INTEGRATION_ORDERS_RW_SECRET: ${INTEGRATION_ORDERS_RW_SECRET:?INTEGRATION_ORDERS_RW_SECRET must be set}
+      # Header wordmark link target for the realm (owner ruling 2026-11-02); see the
+      # keycloak-realm-render service in docker-compose.full-stack.yml.
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:-http://localhost:3000}
     volumes:
       - ./keycloak:/keycloak
     entrypoint:
@@ -18,7 +21,7 @@ services:
       - |
         set -e
         apk add --no-cache gettext >/dev/null
-        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET $$PUBLIC_APP_ORIGIN' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
 

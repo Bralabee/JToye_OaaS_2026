@@ -2,7 +2,7 @@
   "id" : "43efb2d8-e8db-453a-a7fb-34e46f93e2bf",
   "realm" : "jtoye-dev",
   "displayName" : "J'Toye",
-  "displayNameHtml" : "<span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>",
+  "displayNameHtml" : "<a href=\"${PUBLIC_APP_ORIGIN}\" style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em;text-decoration:none\">J'Toye</a>",
   "loginTheme" : "jtoye",
   "notBefore" : 0,
   "defaultSignatureAlgorithm" : "RS256",
