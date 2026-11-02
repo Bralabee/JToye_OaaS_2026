@@ -105,6 +105,13 @@ data:
   # /8 and any public range once a value is given. Fill it per 37-24's user_setup
   # (kubectl get pods -n ingress-nginx -o wide against the production context) and
   # declare that pod range, a private /16 or narrower, never 0.0.0.0/0.
+  # It must ALSO cover the FRONTEND pods (#1106): the storefront's server-side reads
+  # reach core from the frontend pod and forward the visitor's X-Forwarded-For, which
+  # core reads only from a trusted peer. Declaring only the ingress controller's
+  # pods leaves every server-rendered read on ONE shared bucket per frontend pod
+  # (the 429 that hides the landing kitchen row). Normally both sit in the cluster
+  # pod CIDR, which is what staging declares (10.244.0.0/16): check with
+  # kubectl get pods -A -o wide | grep -E 'ingress|frontend' on the production context.
   security.trusted-proxies: ""
 
   # --- Featured kitchens (quick 261102-r6u, owner decision D-02, design D17) -----
