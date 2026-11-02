@@ -1,0 +1,9 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest'
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 292 passed, 292 total
+Tests:       3458 passed, 3458 total
+Snapshots:   2 passed, 2 total
+Time:        30.65 s
+Ran all test suites.

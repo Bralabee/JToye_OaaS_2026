@@ -245,7 +245,7 @@
       "id": "postgres",
       "type": "database",
       "label": "PostgreSQL",
-      "sublabel": "RLS · schema at V88",
+      "sublabel": "RLS · schema at V89",
       "brand": "postgresql",
       "sources": [
         {
@@ -444,7 +444,7 @@
       "title": "Counted, not estimated",
       "items": [
         "33 controllers",
-        "Schema at V88; V2 installs the RLS policies"
+        "Schema at V89; V2 installs the RLS policies"
       ]
     }
   ]

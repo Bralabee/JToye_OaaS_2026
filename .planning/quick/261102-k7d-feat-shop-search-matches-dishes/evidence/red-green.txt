@@ -229,3 +229,4 @@ SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 fa
 #      FAIL: AGENTS.md [java_test_files]: doc says 435, docs/metrics.json says 437
 #    after the prose edits: rc=0, PASS: all 37 prose metric claim(s) across 3 doc(s); docs-freshness.sh check rc=0
 #    check-branch-behind-base.sh: rc=0, 0 behind origin/main 9b737e61
+#    after merging origin/main 888084b1 (#1094, +4 Jest blocks): metrics regenerated, prose claims now 7018 / 3181 / 437 / V89, check-doc-metrics 37/37 PASS; the pre-push claims gate (P-4) flagged 3 architecture-doc 'schema at V88' claims, fixed, check-claims.sh 56/56 PASS

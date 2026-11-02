@@ -28,7 +28,7 @@ import path from "path"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useSearchParams } from "next/navigation"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
-import { ShopDiscoveryClient } from "@/app/shop/shop-discovery-client"
+import { SEARCH_DEBOUNCE_MS, ShopDiscoveryClient } from "@/app/shop/shop-discovery-client"
 import StorefrontLayout from "@/app/shop/layout"
 import ShopBrowseLoading from "@/app/shop/loading"
 import publicApiClient from "@/lib/public-api-client"
@@ -523,6 +523,170 @@ describe("ShopDiscoveryClient — clearing the search is sticky (R-02)", () => {
 })
 
 /**
+ * 2026-11-02 external tester on /shop: "two X buttons in the search box" and "a
+ * glitch when I backspace the search to empty instead of using the X".
+ *
+ * THE X. `type="search"` makes Chrome and Safari paint a native cancel button
+ * inside the box, beside the island's own "Clear search" button. jsdom paints
+ * no pseudo-elements, so the arm asserts the one thing that decides what a
+ * browser paints: the class that hides `::-webkit-search-cancel-button`, plus
+ * exactly one named clear button. The browser proof (computed `appearance`
+ * auto -> none, and the box screenshots) is in the quick task's evidence/.
+ *
+ * THE BACKSPACE. Measured in Chrome before the fix: no re-seed (the R-02 fix
+ * holds), but every keystroke fetched, so backspacing "pounded yam" fired a
+ * request per fragment and the grid strobed between cards and the full "No
+ * kitchens found" empty state ("pounded ya", "poun", "pou", "po"); with 250 ms
+ * of latency it sat on the skeleton for the whole run. The mock below answers
+ * a FRAGMENT with zero rows, exactly as the live API did, so a fragment fetch
+ * is visible as the empty state and as a call. The URL and re-seed checks from
+ * R-02 are repeated through the same backspace, because the fix moves the
+ * effect the R-02 fix lives beside.
+ */
+describe("ShopDiscoveryClient — the search box clears cleanly (2026-11-02 tester)", () => {
+  const mockUseSearchParams = useSearchParams as jest.Mock
+  const ALL = [NEAR, UNPLACED]
+
+  /** The live API's shape: whole words match, a fragment matches nothing. */
+  function answerLikeTheApi(matches: Record<string, PublicShop[]>) {
+    mockGet.mockImplementation((_url: string, cfg?: { params?: { q?: string } }) => {
+      const q = cfg?.params?.q
+      const rows = q === undefined ? ALL : (matches[q] ?? [])
+      return Promise.resolve({ data: page(rows), headers: {} })
+    })
+  }
+
+  /** Every `q` the island asked the API for, in order (undefined = no q). */
+  const askedFor = (fromCall = 0) =>
+    mockGet.mock.calls.slice(fromCall).map((c) => (c[1] as { params?: { q?: string } } | undefined)?.params?.q)
+
+  beforeEach(() => {
+    mockUseSearchParams.mockImplementation(() => new URLSearchParams(window.location.search))
+    jest.useFakeTimers()
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      jest.runOnlyPendingTimers()
+    })
+    jest.useRealTimers()
+    mockUseSearchParams.mockImplementation(() => new URLSearchParams(""))
+    window.history.replaceState(null, "", "/shop")
+  })
+
+  const input = () =>
+    screen.getByLabelText(/Search kitchens, dishes or a postcode/i) as HTMLInputElement
+
+  function mount(initialQuery: string, rows: PublicShop[]) {
+    const el = () => (
+      <ShopDiscoveryClient initial={page(rows)} initialQuery={initialQuery} initialInterpretation={TEXT} />
+    )
+    const view = render(el())
+    // Re-render after every step: the router notification a real Next app
+    // delivers after the island's replaceState (see the R-02 block above).
+    return () => view.rerender(el())
+  }
+
+  async function key(value: string, rerender: () => void, gapMs: number) {
+    fireEvent.change(input(), { target: { value } })
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(gapMs)
+    })
+    rerender()
+  }
+
+  /** Backspace one character at a time, at a brisk human cadence. */
+  async function backspaceToEmpty(rerender: () => void, seen: string[]) {
+    let v = input().value
+    while (v.length > 0) {
+      v = v.slice(0, -1)
+      await key(v, rerender, 120)
+      seen.push(screen.queryByText("No kitchens found") ? `EMPTY-STATE@${JSON.stringify(v)}` : "ok")
+    }
+  }
+
+  it("renders exactly one clear affordance, and hides the browser's own cancel button", () => {
+    window.history.replaceState(null, "", "/shop?q=jollof")
+    mount("jollof", [NEAR])
+
+    expect(input().value).toBe("jollof")
+    // Kept: a phone keyboard shows a Search key for type="search".
+    expect(input()).toHaveAttribute("type", "search")
+    expect(screen.getAllByRole("button", { name: /clear search/i })).toHaveLength(1)
+    // What decides whether Chrome/Safari paint a SECOND X inside the box.
+    expect(input().className).toContain("[&::-webkit-search-cancel-button]:appearance-none")
+  })
+
+  it("backspacing a typed query to empty fetches no fragment, flashes no empty state, and stays empty", async () => {
+    answerLikeTheApi({ "pounded yam": [NEAR] })
+    const rerender = mount("", ALL)
+
+    for (let i = 1; i <= "pounded yam".length; i++) await key("pounded yam".slice(0, i), rerender, 110)
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1200)
+    })
+    rerender()
+    expect(new URLSearchParams(window.location.search).get("q")).toBe("pounded yam")
+    expect(screen.getByText("Dulwich Near Kitchen")).toBeInTheDocument()
+
+    const before = mockGet.mock.calls.length
+    const seen: string[] = []
+    await backspaceToEmpty(rerender, seen)
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000)
+    })
+    rerender()
+
+    // Nothing between "pounded yam" and "" was a search, so nothing rendered "No kitchens found".
+    expect(seen.filter((s) => s !== "ok")).toEqual([])
+    expect(askedFor(before)).toEqual([undefined])
+    // R-02 through a backspace: empty box, no q, no re-seed, the whole catalogue back.
+    expect(input().value).toBe("")
+    expect(new URLSearchParams(window.location.search).get("q")).toBeNull()
+    expect(screen.getByText("Dulwich Near Kitchen")).toBeInTheDocument()
+    expect(screen.getByText("Mama Ade's Kitchen")).toBeInTheDocument()
+  })
+
+  it("backspacing a deep-linked ?q= to empty fetches no fragment and is not re-seeded", async () => {
+    window.history.replaceState(null, "", "/shop?q=jollof")
+    answerLikeTheApi({ jollof: [NEAR] })
+    const rerender = mount("jollof", [NEAR])
+    expect(input().value).toBe("jollof")
+
+    const seen: string[] = []
+    await backspaceToEmpty(rerender, seen)
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000)
+    })
+    rerender()
+
+    expect(seen.filter((s) => s !== "ok")).toEqual([])
+    expect(askedFor()).toEqual([undefined])
+    expect(input().value).toBe("")
+    expect(new URLSearchParams(window.location.search).get("q")).toBeNull()
+    expect(screen.getByText("Mama Ade's Kitchen")).toBeInTheDocument()
+  })
+
+  it("POSITIVE ARM: a query the customer pauses on IS searched, once, after the debounce", async () => {
+    answerLikeTheApi({ jollof: [NEAR] })
+    const rerender = mount("", ALL)
+
+    await key("jollof", rerender, SEARCH_DEBOUNCE_MS - 50)
+    // Still inside the debounce window: no request yet, and the summary does
+    // not claim a count for a term it has not searched.
+    expect(askedFor()).toEqual([])
+    expect(screen.queryByText(/kitchens? for/)).toBeNull()
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(100)
+    })
+    rerender()
+    expect(askedFor()).toEqual(["jollof"])
+    expect(screen.getByText(/1 kitchen for/)).toBeInTheDocument()
+  })
+})
+
+/**
  * R-09 (2026-08-31 customer-surface audit) — a slow keystroke response can
  * never overwrite a newer result set or its count.
  *
@@ -554,7 +718,8 @@ describe("ShopDiscoveryClient — a stale response never wins (R-09)", () => {
     fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
       target: { value: "stale" },
     })
-    expect(queue).toHaveLength(1)
+    // A keystroke becomes a request after SEARCH_DEBOUNCE_MS (2026-11-02).
+    await waitFor(() => expect(queue).toHaveLength(1))
 
     await act(async () => {
       queue[0].resolve({ data: page([STALE], 1), headers: {} })
@@ -574,10 +739,13 @@ describe("ShopDiscoveryClient — a stale response never wins (R-09)", () => {
     fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
       target: { value: "s" },
     })
+    // The customer pauses on "s" past the debounce, so it IS a request...
+    await waitFor(() => expect(queue).toHaveLength(1))
     fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
       target: { value: "su" },
     })
-    expect(queue).toHaveLength(2)
+    // ...and "su" is a second one while the first is still in flight.
+    await waitFor(() => expect(queue).toHaveLength(2))
 
     // B answers first…
     await act(async () => {

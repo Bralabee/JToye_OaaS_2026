@@ -1,0 +1,857 @@
+{
+  "label": "before-bs700",
+  "base": "http://localhost:3100",
+  "at": "2026-11-02T14:32:15.679Z",
+  "runs": [
+    {
+      "name": "typed",
+      "startUrl": "/shop",
+      "typeText": "pounded yam",
+      "samples": [
+        {
+          "step": "typed+1.2s",
+          "t": 3548,
+          "value": "pounded yam",
+          "search": "?q=pounded+yam",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “pounded yam”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs1",
+          "t": 4262,
+          "value": "pounded ya",
+          "search": "?q=pounded+ya",
+          "skeletonCards": 0,
+          "cards": 0,
+          "summary": "No kitchens match “pounded ya”",
+          "noKitchens": true,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs2",
+          "t": 4969,
+          "value": "pounded y",
+          "search": "?q=pounded+y",
+          "skeletonCards": 0,
+          "cards": 0,
+          "summary": "No kitchens match “pounded y”",
+          "noKitchens": true,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs3",
+          "t": 5676,
+          "value": "pounded ",
+          "search": "?q=pounded",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “pounded”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs4",
+          "t": 6385,
+          "value": "pounded",
+          "search": "?q=pounded",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “pounded”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs5",
+          "t": 7094,
+          "value": "pounde",
+          "search": "?q=pounde",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “pounde”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs6",
+          "t": 7803,
+          "value": "pound",
+          "search": "?q=pound",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “pound”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs7",
+          "t": 8513,
+          "value": "poun",
+          "search": "?q=poun",
+          "skeletonCards": 0,
+          "cards": 0,
+          "summary": "No kitchens match “poun”",
+          "noKitchens": true,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs8",
+          "t": 9220,
+          "value": "pou",
+          "search": "?q=pou",
+          "skeletonCards": 0,
+          "cards": 0,
+          "summary": "No kitchens match “pou”",
+          "noKitchens": true,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs9",
+          "t": 9928,
+          "value": "po",
+          "search": "?q=po",
+          "skeletonCards": 0,
+          "cards": 0,
+          "summary": "No kitchens match “po”",
+          "noKitchens": true,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs10",
+          "t": 10636,
+          "value": "p",
+          "search": "?q=p",
+          "skeletonCards": 0,
+          "cards": 2,
+          "summary": "2 kitchens for “p”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs11",
+          "t": 11345,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+200ms",
+          "t": 11547,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+500ms",
+          "t": 11849,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+1000ms",
+          "t": 12352,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+2000ms",
+          "t": 13353,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        }
+      ],
+      "valueTimeline": [
+        {
+          "t": 1067,
+          "value": "p",
+          "search": ""
+        },
+        {
+          "t": 1189,
+          "value": "po",
+          "search": ""
+        },
+        {
+          "t": 1305,
+          "value": "pou",
+          "search": ""
+        },
+        {
+          "t": 1420,
+          "value": "poun",
+          "search": ""
+        },
+        {
+          "t": 1535,
+          "value": "pound",
+          "search": ""
+        },
+        {
+          "t": 1652,
+          "value": "pounde",
+          "search": ""
+        },
+        {
+          "t": 1769,
+          "value": "pounded",
+          "search": ""
+        },
+        {
+          "t": 1887,
+          "value": "pounded ",
+          "search": ""
+        },
+        {
+          "t": 2005,
+          "value": "pounded y",
+          "search": ""
+        },
+        {
+          "t": 2120,
+          "value": "pounded ya",
+          "search": ""
+        },
+        {
+          "t": 2235,
+          "value": "pounded yam",
+          "search": ""
+        },
+        {
+          "t": 2638,
+          "value": "pounded yam",
+          "search": "?q=pounded+yam"
+        },
+        {
+          "t": 3568,
+          "value": "pounded ya",
+          "search": "?q=pounded+yam"
+        },
+        {
+          "t": 3970,
+          "value": "pounded ya",
+          "search": "?q=pounded+ya"
+        },
+        {
+          "t": 4268,
+          "value": "pounded y",
+          "search": "?q=pounded+ya"
+        },
+        {
+          "t": 4668,
+          "value": "pounded y",
+          "search": "?q=pounded+y"
+        },
+        {
+          "t": 4985,
+          "value": "pounded ",
+          "search": "?q=pounded+y"
+        },
+        {
+          "t": 5387,
+          "value": "pounded ",
+          "search": "?q=pounded"
+        },
+        {
+          "t": 5685,
+          "value": "pounded",
+          "search": "?q=pounded"
+        },
+        {
+          "t": 6402,
+          "value": "pounde",
+          "search": "?q=pounded"
+        },
+        {
+          "t": 6803,
+          "value": "pounde",
+          "search": "?q=pounde"
+        },
+        {
+          "t": 7101,
+          "value": "pound",
+          "search": "?q=pounde"
+        },
+        {
+          "t": 7507,
+          "value": "pound",
+          "search": "?q=pound"
+        },
+        {
+          "t": 7818,
+          "value": "poun",
+          "search": "?q=pound"
+        },
+        {
+          "t": 8220,
+          "value": "poun",
+          "search": "?q=poun"
+        },
+        {
+          "t": 8518,
+          "value": "pou",
+          "search": "?q=poun"
+        },
+        {
+          "t": 8919,
+          "value": "pou",
+          "search": "?q=pou"
+        },
+        {
+          "t": 9235,
+          "value": "po",
+          "search": "?q=pou"
+        },
+        {
+          "t": 9637,
+          "value": "po",
+          "search": "?q=po"
+        },
+        {
+          "t": 9935,
+          "value": "p",
+          "search": "?q=po"
+        },
+        {
+          "t": 10340,
+          "value": "p",
+          "search": "?q=p"
+        },
+        {
+          "t": 10652,
+          "value": "",
+          "search": "?q=p"
+        },
+        {
+          "t": 11055,
+          "value": "",
+          "search": ""
+        }
+      ],
+      "requests": [
+        {
+          "t": 1793629936174,
+          "url": "/public/shops?page=0&size=12",
+          "status": 200
+        },
+        {
+          "t": 1793629936814,
+          "url": "/public/shops?page=0&size=12&q=p",
+          "status": 200
+        },
+        {
+          "t": 1793629936934,
+          "url": "/public/shops?page=0&size=12&q=po",
+          "status": 200
+        },
+        {
+          "t": 1793629937046,
+          "url": "/public/shops?page=0&size=12&q=pou",
+          "status": 200
+        },
+        {
+          "t": 1793629937162,
+          "url": "/public/shops?page=0&size=12&q=poun",
+          "status": 200
+        },
+        {
+          "t": 1793629937278,
+          "url": "/public/shops?page=0&size=12&q=pound",
+          "status": 200
+        },
+        {
+          "t": 1793629937393,
+          "url": "/public/shops?page=0&size=12&q=pounde",
+          "status": 200
+        },
+        {
+          "t": 1793629937512,
+          "url": "/public/shops?page=0&size=12&q=pounded",
+          "status": 200
+        },
+        {
+          "t": 1793629937629,
+          "url": "/public/shops?page=0&size=12&q=pounded",
+          "status": 200
+        },
+        {
+          "t": 1793629937747,
+          "url": "/public/shops?page=0&size=12&q=pounded+y",
+          "status": 200
+        },
+        {
+          "t": 1793629937861,
+          "url": "/public/shops?page=0&size=12&q=pounded+ya",
+          "status": 200
+        },
+        {
+          "t": 1793629937976,
+          "url": "/public/shops?page=0&size=12&q=pounded+yam",
+          "status": 200
+        },
+        {
+          "t": 1793629939310,
+          "url": "/public/shops?page=0&size=12&q=pounded+ya",
+          "status": 200
+        },
+        {
+          "t": 1793629940009,
+          "url": "/public/shops?page=0&size=12&q=pounded+y",
+          "status": 200
+        },
+        {
+          "t": 1793629940726,
+          "url": "/public/shops?page=0&size=12&q=pounded",
+          "status": 200
+        },
+        {
+          "t": 1793629941426,
+          "url": "/public/shops?page=0&size=12&q=pounded",
+          "status": 200
+        },
+        {
+          "t": 1793629942143,
+          "url": "/public/shops?page=0&size=12&q=pounde",
+          "status": 200
+        },
+        {
+          "t": 1793629942843,
+          "url": "/public/shops?page=0&size=12&q=pound",
+          "status": 200
+        },
+        {
+          "t": 1793629943559,
+          "url": "/public/shops?page=0&size=12&q=poun",
+          "status": 200
+        },
+        {
+          "t": 1793629944275,
+          "url": "/public/shops?page=0&size=12&q=pou",
+          "status": 200
+        },
+        {
+          "t": 1793629944976,
+          "url": "/public/shops?page=0&size=12&q=po",
+          "status": 200
+        },
+        {
+          "t": 1793629945676,
+          "url": "/public/shops?page=0&size=12&q=p",
+          "status": 200
+        },
+        {
+          "t": 1793629946393,
+          "url": "/public/shops?page=0&size=12",
+          "status": 200
+        },
+        {
+          "t": 1793629949170,
+          "url": "/public/shops?page=0&size=12&q=pounded+yam",
+          "status": 200
+        }
+      ],
+      "nativeCancel": {
+        "appearance": "auto",
+        "webkitAppearance": "auto",
+        "display": "inline-block"
+      }
+    },
+    {
+      "name": "deeplink",
+      "startUrl": "/shop?q=jollof",
+      "typeText": null,
+      "samples": [
+        {
+          "step": "deeplink-loaded",
+          "t": 999,
+          "value": "jollof",
+          "search": "?q=jollof",
+          "skeletonCards": 0,
+          "cards": 2,
+          "summary": "2 kitchens for “jollof”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs1",
+          "t": 1716,
+          "value": "jollo",
+          "search": "?q=jollo",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “jollo”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs2",
+          "t": 2424,
+          "value": "joll",
+          "search": "?q=joll",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “joll”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs3",
+          "t": 3133,
+          "value": "jol",
+          "search": "?q=jol",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “jol”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs4",
+          "t": 3841,
+          "value": "jo",
+          "search": "?q=jo",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “jo”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs5",
+          "t": 4550,
+          "value": "j",
+          "search": "?q=j",
+          "skeletonCards": 0,
+          "cards": 1,
+          "summary": "1 kitchen for “j”",
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 1
+        },
+        {
+          "step": "bs6",
+          "t": 5260,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+200ms",
+          "t": 5462,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+500ms",
+          "t": 5767,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+1000ms",
+          "t": 6272,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        },
+        {
+          "step": "quiet+2000ms",
+          "t": 7275,
+          "value": "",
+          "search": "",
+          "skeletonCards": 0,
+          "cards": 3,
+          "summary": null,
+          "noKitchens": false,
+          "busy": false,
+          "loadError": false,
+          "customClearButtons": 0
+        }
+      ],
+      "valueTimeline": [
+        {
+          "t": 1013,
+          "value": "jollo",
+          "search": "?q=jollof"
+        },
+        {
+          "t": 1425,
+          "value": "jollo",
+          "search": "?q=jollo"
+        },
+        {
+          "t": 1724,
+          "value": "joll",
+          "search": "?q=jollo"
+        },
+        {
+          "t": 2125,
+          "value": "joll",
+          "search": "?q=joll"
+        },
+        {
+          "t": 2440,
+          "value": "jol",
+          "search": "?q=joll"
+        },
+        {
+          "t": 2843,
+          "value": "jol",
+          "search": "?q=jol"
+        },
+        {
+          "t": 3140,
+          "value": "jo",
+          "search": "?q=jol"
+        },
+        {
+          "t": 3540,
+          "value": "jo",
+          "search": "?q=jo"
+        },
+        {
+          "t": 3857,
+          "value": "j",
+          "search": "?q=jo"
+        },
+        {
+          "t": 4260,
+          "value": "j",
+          "search": "?q=j"
+        },
+        {
+          "t": 4557,
+          "value": "",
+          "search": "?q=j"
+        },
+        {
+          "t": 4958,
+          "value": "",
+          "search": ""
+        }
+      ],
+      "requests": [
+        {
+          "t": 1793629949952,
+          "url": "/public/shops?page=0&size=12&q=jollof",
+          "status": 200
+        },
+        {
+          "t": 1793629950576,
+          "url": "/public/shops?page=0&size=12&q=jollo",
+          "status": 200
+        },
+        {
+          "t": 1793629951276,
+          "url": "/public/shops?page=0&size=12&q=joll",
+          "status": 200
+        },
+        {
+          "t": 1793629951993,
+          "url": "/public/shops?page=0&size=12&q=jol",
+          "status": 200
+        },
+        {
+          "t": 1793629952693,
+          "url": "/public/shops?page=0&size=12&q=jo",
+          "status": 200
+        },
+        {
+          "t": 1793629953411,
+          "url": "/public/shops?page=0&size=12&q=j",
+          "status": 200
+        },
+        {
+          "t": 1793629954125,
+          "url": "/public/shops?page=0&size=12",
+          "status": 200
+        },
+        {
+          "t": 1793629956903,
+          "url": "/public/shops?page=0&size=12&q=pounded+yam",
+          "status": 200
+        }
+      ],
+      "nativeCancel": {
+        "appearance": "auto",
+        "webkitAppearance": "auto",
+        "display": "inline-block"
+      }
+    }
+  ],
+  "console": [
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "typed",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    },
+    {
+      "run": "deeplink",
+      "type": "error",
+      "text": "ClientFetchError: There was a problem with the server configuration. Check the server logs for more information.. Read more at https://errors.authjs.dev#autherror\n    at fetchData (http://localhost:3100/_next/static/chunks/node_modules_0ryxgzjzd4c1c._.js:9277:22)\n    at async getSession (http://loca"
+    }
+  ]
+}
