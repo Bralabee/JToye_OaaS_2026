@@ -2,6 +2,7 @@
  {
   "file": "frontend/public/marketing/landing/jollof-rice-with-vegetable.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:36268611",
   "title": "Jollof rice with vegetable",
   "creator": "Segun Famisa",
@@ -30,6 +31,7 @@
  {
   "file": "frontend/public/marketing/landing/jollof-rice-and-dodo.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:54951940",
   "title": "Jollof rice and Dodo",
   "creator": "Skarfmacaronne",
@@ -58,6 +60,7 @@
  {
   "file": "frontend/public/marketing/landing/suya-with-pepper-sauce.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:101954281",
   "title": "Suya with pepper sauce",
   "creator": "Bukky658",
@@ -86,6 +89,7 @@
  {
   "file": "frontend/public/marketing/landing/egusi-soup-with-pounded-yam.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:124179481",
   "title": "Egusi soup with pounded yam and assorted meats",
   "creator": "Onyenachi64",
@@ -114,6 +118,7 @@
  {
   "file": "frontend/public/marketing/landing/puff-puff.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:162765151",
   "title": "Puff Puff",
   "creator": "Halima Waziri",
@@ -142,6 +147,7 @@
  {
   "file": "frontend/public/marketing/landing/jamaican-rice-and-peas.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:157623620",
   "title": "Jamaican rice and peas 1",
   "creator": "Xaymacan",
@@ -170,6 +176,7 @@
  {
   "file": "frontend/public/marketing/landing/chana-masala.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:148797097",
   "title": "Chana Masala - Mohammed - Spice Of Life 2024-05-27",
   "creator": "Andy Li",
@@ -195,6 +202,7 @@
  {
   "file": "frontend/public/marketing/landing/mutton-biryani.webp",
   "media": "image",
+  "kind": "open-collection",
   "ref": "commons:89561740",
   "title": "A home made plate of mutton biryani served with chicken kassa cooked in the bengali style",
   "creator": "Subhrajyoti07",
@@ -218,5 +226,25 @@
   "derivation": "downloaded with taste-skill assets.mjs at 1280px, resized to 800px wide and re-encoded as WebP (no crop, recolour or combination)",
   "copiedFrom": "design/runs/2026-11-01-landing-elevate/sketch/img/mutton-biryani.webp",
   "src": "/marketing/landing/mutton-biryani.webp"
+ },
+ {
+  "file": "frontend/public/marketing/landing/beeslens-spaghetti-chicken-plantain.webp",
+  "media": "image",
+  "kind": "own",
+  "title": "Spaghetti with chicken and fried plantain on a tray",
+  "creator": "BeesLens",
+  "creatorUrl": null,
+  "license": "© BeesLens Photography, used with permission",
+  "licenseUrl": null,
+  "creditRequired": true,
+  "page": null,
+  "via": "supplied by the owner, 2026-11-02",
+  "sourceFile": "_03A9210.jpg",
+  "width": 5812,
+  "height": 3874,
+  "bytes": 17092235,
+  "saved": "2026-11-02T19:15:52.162Z",
+  "derivation": "bottom 6% cropped to remove the photographer's watermark, resized to 1000px on the long edge, re-encoded as WebP, all metadata stripped",
+  "src": "/marketing/landing/beeslens-spaghetti-chicken-plantain.webp"
  }
 ]

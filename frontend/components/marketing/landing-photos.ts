@@ -1,13 +1,16 @@
 import type { PublicShop } from "@/types/storefront"
 
 /**
- * The landing's dish photographs (design D10, D13, D14).
+ * The landing's dish photographs (design D10, D13, D14, D16).
  *
- * Eight credited open-collection pictures, copied from the approved elevate
- * sketch (design/runs/2026-11-01-landing-elevate/sketch/) into
- * public/marketing/landing/, whose credits.json records each one's title,
- * creator, licence and source page. Width and height are the files' real
- * pixel sizes, so next/image reserves the right box (CLS).
+ * D16 (2026-11-02): the owner's own BeesLens photographs lead. Credited
+ * open-collection pictures (copied from the approved elevate sketch,
+ * design/runs/2026-11-01-landing-elevate/sketch/) remain only where no own
+ * photograph exists yet. Every file sits in public/marketing/landing/, whose
+ * credits.json records each one with its `kind` ("own" or "open-collection"):
+ * title, creator, licence and, for an open-collection picture, its source page.
+ * Width and height are the files' real pixel sizes, so next/image reserves the
+ * right box (CLS).
  *
  * A found picture shows the world around a kitchen and is never presented as a
  * kitchen's own dish (D10): on a kitchen card it is captioned
@@ -32,6 +35,8 @@ export const PHOTOS = {
   riceAndPeas: { src: `${DIR}/jamaican-rice-and-peas.webp`, width: 800, height: 843, alt: "Jamaican rice and peas" },
   biryani: { src: `${DIR}/mutton-biryani.webp`, width: 800, height: 596, alt: "A plate of mutton biryani" },
   chana: { src: `${DIR}/chana-masala.webp`, width: 800, height: 600, alt: "Chana masala" },
+  // D16: the owner's own BeesLens photographs.
+  spaghetti: { src: `${DIR}/beeslens-spaghetti-chicken-plantain.webp`, width: 1000, height: 627, alt: "Spaghetti with chicken and fried plantain on a tray" },
 } satisfies Record<string, LandingPhoto>
 
 export interface PhotoCredit {
@@ -45,7 +50,7 @@ export interface PhotoCredit {
 }
 
 /**
- * The visible credits, one record per picture, mirrored from credits.json
+ * The visible CC credits, one record per open-collection picture, mirrored from credits.json
  * (landing-photos.test.ts holds the two byte-for-byte). CC BY-SA 4.0 §3(a)(1)
  * asks for the creator, the title, a link to the licence and a note that the
  * work was modified; a bare list of names is not that (review 1085).
@@ -60,6 +65,24 @@ export const PHOTO_CREDITS: PhotoCredit[] = [
   { src: "/marketing/landing/chana-masala.webp", title: "Chana Masala - Mohammed - Spice Of Life 2024-05-27", creator: "Andy Li", page: "https://commons.wikimedia.org/wiki/File:Chana_Masala_-_Mohammed_-_Spice_Of_Life_2024-05-27.jpg", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.en" },
   { src: "/marketing/landing/mutton-biryani.webp", title: "A home made plate of mutton biryani served with chicken kassa cooked in the bengali style", creator: "Subhrajyoti07", page: "https://commons.wikimedia.org/wiki/File:A_home_made_plate_of_mutton_biryani_served_with_chicken_kassa_cooked_in_the_bengali_style.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
 ]
+
+export interface OwnPhotoCredit {
+  src: string
+  title: string
+  creator: string
+}
+
+/**
+ * The owner's own photographs (D16), mirrored from credits.json's "own"
+ * records (landing-photos.test.ts holds the two equal). They are credited in
+ * one line, OWN_PHOTO_CREDIT, apart from the CC paragraph: they are not a CC
+ * work and have no source page or licence link.
+ */
+export const OWN_PHOTOS: OwnPhotoCredit[] = [
+  { src: "/marketing/landing/beeslens-spaghetti-chicken-plantain.webp", title: "Spaghetti with chicken and fried plantain on a tray", creator: "BeesLens" },
+]
+
+export const OWN_PHOTO_CREDIT = "Photography: BeesLens"
 
 /** Every file was resized and re-encoded (credits.json `derivation`); the chip thumbnails are also centre-cropped. */
 export const PHOTO_DERIVATION_NOTE = "resized, re-encoded and in places cropped for the web"
