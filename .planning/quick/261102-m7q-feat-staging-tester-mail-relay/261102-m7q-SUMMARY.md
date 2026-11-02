@@ -5,7 +5,7 @@ subsystem: staging mail / Mailpit
 tags: [staging, mailpit, smtp-relay, D-20, D-35, networkpolicy, keyvault-chain]
 status: complete
 issue: none
-pr: __PR__
+pr: 1096
 requires: []
 provides:
   - "Mailpit tester relay: MP_SMTP_RELAY_MATCHING + ALLOWED_RECIPIENTS from the optional Secret mailpit-relay, off when absent"

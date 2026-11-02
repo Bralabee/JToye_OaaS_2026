@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Staging Mail: Allow-Listed Outside Testers Receive Their Mail, Everyone Else Stays Trapped (D-20 Amended) — 2026-11-02 (#1096)
+
+On 2026-10-30 an outside tester registered on staging, Keycloak said a verification email had been sent, and nothing arrived: Phase 29 D-13/D-20 trap every staging email in the in-cluster Mailpit. The owner amended D-20 narrowly on 2026-11-02, recorded as D-35.
+
+- **Selective relay:** Mailpit still captures every message, and relays a copy only to envelope recipients matching an owner-maintained allow-list (`MP_SMTP_RELAY_MATCHING`, never `MP_SMTP_RELAY_ALL`), through Zoho on 587 with STARTTLS and PLAIN auth. `MP_SMTP_RELAY_ALLOWED_RECIPIENTS` reads the same list, so a manual release from the mail UI is bounded too.
+- **Optional, off by default:** every value comes from the optional Secret `mailpit-relay`, which nothing in git creates. The allow-list names real people, so it lives only there. With the Secret absent or incomplete, a start-script gate unsets every relay variable and Mailpit traps everything exactly as before.
+- **Egress:** `mailpit-allow` gains kube-dns on 53 and the public range on 587, and nothing else.
+- **Gates:** INV-18(c) pins the relay's exact shape, INV-7 the egress, `keyvault-chain.py` the out-of-band optional Secret, and `staging-mail-ui.sh` UI-7 the live state. Each was shown failing first, and the new selftest arms are each caught.
+- **Owner steps:** `docs/runbooks/staging-tester-mail.md` covers the Secret, applying it, verifying a relay, removing a tester and turning the relay off. It also gives a zero-code `kcadm.sh` path that marks a stuck tester's `jtoye-customers` account verified.
+- **Not done:** no Secret was created and nothing was deployed.
+
 ### Stripe Connect: The Account-Create Idempotency Key Follows the Request Body — 2026-11-02 (#1092)
 
 Issue #1090, second observation. With #1091 deployed to staging (`40d91e0e`, parity rc 0), `--stage connect-onboard` still answered 502: Stripe had saved the 05:29Z `type=express` refusal under `connect-account-create-<tenantId>` and rejected the Managed Risk body under the same key (`idempotency_error`, 09:21Z). Stripe keeps such a key for 24 hours, and any tenant whose first create was ever refused would have been stuck the same way.
