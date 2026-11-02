@@ -132,12 +132,18 @@ on 2026-11-02 and Sanmi approved these resolutions. The measurements, before and
 `.planning/quick/261102-q7c-feat-landing-fold-order-footer-chips/evidence/` (Playwright, the local
 dev server against the Compose stack's API; the BEFORE figures equal the ones measured on staging).
 1. **"The buttons are below the fold."** At 1366x768 the gold door started at 622px and ended at
-   937px, so a laptop saw 146px of it. Now it ends at **759px**, "Browse shops" included: the door's
-   120px photo strip is hidden from `lg` up (the collage carries the food there; the strip stays on
-   phones, where it is the first food picture, and from `lg` its `sizes` asks for 1px so the hidden
-   image costs no bandwidth), the doors sit one step closer (`mt-7` to `mt-6`), and at `lg` the door
-   padding and the hero's top padding are one step tighter. The gold door is 217px, not the 195px
-   its own content needs: the doors share a row and the operator door's longer copy sets it.
+   937px, so a laptop saw 146px of it. **From 1280 wide up** (1280x800, 1366x768, 1440x900) it now
+   ends at **759px**, "Browse shops" included, inside a 768px-tall viewport. **At 1024x768 it does
+   not:** the door ends at **836px** there (was 1014), because the half-width column is narrower and
+   the copy above it wraps to more lines. The door's 120px photo strip is hidden from `lg` up (the
+   collage carries the food there; the strip stays on phones, where it is the first food picture),
+   the doors sit one step closer (`mt-7` to `mt-6`), and at `lg` the door padding and the hero's top
+   padding are one step tighter. The hidden strip is NOT free on a desktop: its `sizes` gives `lg` a
+   1px slot, but next/image drops every srcset candidate under the smallest vw share (45vw of 640),
+   so a 1366 desktop still selects and fetches the 384w strip at high priority (measured in the PR
+   #1097 review; it is not the LCP element, see `evidence/review-r1/lcp-*.json`). The gold door is
+   217px, not the 195px its own content needs: the doors share a row and the operator door's longer
+   copy sets it.
    **The recorded fallback (h1 56px to 48px at `lg`) was NOT used:** measured, 48px sets the
    headline on TWO lines from 1280 up, which D14 item 2 ruled against, and its 3-line CLS
    reservation would then leave an empty line under it.
