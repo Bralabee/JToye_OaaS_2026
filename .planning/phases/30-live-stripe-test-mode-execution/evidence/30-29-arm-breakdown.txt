@@ -1,0 +1,22 @@
+# 30-29 selftest arm total, per plan. Each version's selftest was RUN (git archive <sha> scripts, then bash staging-seed.sh --selftest);
+# counting _st_result lines in the source undercounts (85 at HEAD: some arms build the PASS line from a variable).
+bffd2f74 rc=0 pass=20 fail=0 total=20
+7b117162 rc=0 pass=41 fail=0 total=41
+b728254e rc=0 pass=47 fail=0 total=47
+bff82097 rc=0 pass=51 fail=0 total=51
+2fe0837b rc=0 pass=60 fail=0 total=60
+2624be15 rc=0 pass=75 fail=0 total=75
+HEAD rc=0 pass=88 fail=0 total=88
+pre-phase-Phase-29 (bffd2f74): 20
+30-07-PR-2-#1030 (7b117162): 41  (+21 new, -0 removed)
+    new: cancel-already-canceled cancel-empty-list cancel-live cancel-not-draft cancel-one cancel-only-listed cancel-paid cancel-stripe-fails dry-run-tools list-drafts-no-pii list-drafts-ok list-drafts-readonly stripe-get-account-header stripe-get-live stripe-get-livemode-absent stripe-get-path-refused stripe-get-sanitized transition-event-refused transition-refused vendor-order-not-none vendor-order-ok 
+30-09-#1041 (b728254e): 47  (+6 new, -0 removed)
+    new: orphan-cancel-already-canceled orphan-cancel-args orphan-cancel-one orphan-cancel-refusals orphan-list orphan-list-blind 
+30-19-PR-5-#1064 (bff82097): 51  (+4 new, -0 removed)
+    new: pay-link-no-out pay-link-ok pay-link-otp-hidden pay-link-unverified 
+30-26-PR-7-#1087 (2fe0837b): 60  (+9 new, -0 removed)
+    new: billing-amount-mismatch billing-live billing-no-secret billing-ok billing-quantity-mismatch billing-replay sync-cleanup-on-fail sync-no-subscription sync-ok 
+30-28 (2624be15): 75  (+15 new, -0 removed)
+    new: loop-destination-ok loop-evidence-clean loop-intent-fields loop-live loop-mode-mismatch loop-not-enabled loop-plain-charge loop-refund-full loop-refund-mismatch mode-read mode-set mode-set-invalid onboard-enabled onboard-new onboard-no-out 
+30-29 (HEAD): 88  (+13 new, -0 removed)
+    new: direct-local-refund-lag direct-missing-header direct-mode-mismatch direct-ok evidence-order payout-all-available payout-args payout-no-balance payout-ok payout-other-account payout-pending payout-read replay-run-id 
