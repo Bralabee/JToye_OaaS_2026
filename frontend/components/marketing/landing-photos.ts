@@ -100,7 +100,7 @@ export const PHOTO_DERIVATION_NOTE = "resized, re-encoded and in places cropped 
 const CUISINES: Array<{ words: string[]; photos: LandingPhoto[] }> = [
   { words: ["nigerian"], photos: [PHOTOS.jollofBox, PHOTOS.riceBeansStew, PHOTOS.spaghetti] },
   { words: ["west african", "ghanaian"], photos: [PHOTOS.plantainYam, PHOTOS.jollofBox] },
-  { words: ["jollof"], photos: [PHOTOS.jollofBox, PHOTOS.spaghetti] },
+  { words: ["jollof"], photos: [PHOTOS.jollofBox] },
   { words: ["grill", "suya", "bbq"], photos: [PHOTOS.suya] },
   { words: ["caribbean", "jamaican"], photos: [PHOTOS.riceAndPeas] },
   { words: ["south asian", "indian", "pakistani", "bangladeshi", "biryani"], photos: [PHOTOS.biryani] },

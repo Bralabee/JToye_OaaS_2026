@@ -149,6 +149,13 @@ describe("assignExamplePhotos", () => {
     expect(m.get("peckham-jollof-co")!.cuisine).toBe("Nigerian")
   })
 
+  it("never captions a dish as \"Jollof\" unless the picture is jollof (review 1103 round 1)", () => {
+    const m = assignExamplePhotos([shop("j-a", "Jollof"), shop("j-b", "Jollof"), shop("j-c", "Jollof")])
+    for (const slug of ["j-a", "j-b", "j-c"]) {
+      expect(`${slug} ${m.get(slug)!.photo.src}`).toBe(`${slug} ${PHOTOS.jollofBox.src}`)
+    }
+  })
+
   it("assigns by slug, so re-ordering the row never moves a picture", () => {
     const a = [shop("b-kitchen", "Nigerian"), shop("a-kitchen", "Nigerian"), shop("c-grill", "Grill")]
     const forward = assignExamplePhotos(a)
