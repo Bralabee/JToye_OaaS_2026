@@ -17,6 +17,15 @@ An external tester's four points about the landing (2026-10-30), measured on sta
 - **Footer:** 377px on desktop (was 497) and 732px at 390 (was 955), every column and link kept. The three OGL statements run on as one paragraph, worded verbatim; both 1px rules are gone. The photo credits (160px, 260px on a phone) sit behind a native "Photo credits" disclosure and stay in the DOM.
 - **Proof:** five new `landing.test.tsx` cases were RED against origin/main's page and footer and are GREEN here. Before/after measurements, fold screenshots and gate output are in `.planning/quick/261102-q7c-feat-landing-fold-order-footer-chips/evidence/`.
 
+### Kitchen Directory Search: One Clear Button, and Backspacing No Longer Searches Every Fragment — 2026-11-02 (#1094)
+
+An external tester on `/shop` reported two X buttons in the search box and "a glitch" when backspacing the query to empty instead of using the X. Both are fixed in `frontend/app/shop/shop-discovery-client.tsx`.
+
+- **One X:** the box stays `type="search"` (a phone keyboard shows a Search key), and Chrome/Safari's own cancel button is hidden with `[&::-webkit-search-cancel-button]:appearance-none` (plus the `::-webkit-search-decoration` rule). Only the island's "Clear search" button remains.
+- **The backspace glitch, measured:** not a re-seed (the R-02 fix holds; box, URL and results agreed in every run). Every keystroke fetched at once, so backspacing "pounded yam" searched each fragment: on the local API the grid strobed between cards and the full "No kitchens found" empty state ("pounded ya", "poun", "pou", "po"), and with 250 ms of latency it sat on the skeleton for the whole run. 23 requests for one type-and-backspace.
+- **The fix:** the fetch is debounced (`SEARCH_DEBOUNCE_MS`, 300 ms) through a separate `resultsQuery`, and the summary line and empty-state copy name the query the results are for, never a fragment the box is passing through. A cleared box, the X, a suggestion chip, "Browse all kitchens" and a URL change apply at once. The same run now makes 4 requests and never shows the empty state on the way down.
+- **Proof:** four Jest cases (one clear affordance; backspace to empty from a typed query and from a `/shop?q=jollof` deep link with no fragment fetched, no empty state, value `""`, no `q`, no re-seed; a paused term is still searched once). All four were RED on the unfixed component and are GREEN on the fix. The R-02 cases pass unmodified; the R-09 cases wait for the debounce and keep their claim. Before/after browser recordings are in `.planning/quick/261102-dsq-fix-discovery-search-clear/evidence/`.
+
 ### Stripe Connect: The Account-Create Idempotency Key Follows the Request Body — 2026-11-02 (#1092)
 
 Issue #1090, second observation. With #1091 deployed to staging (`40d91e0e`, parity rc 0), `--stage connect-onboard` still answered 502: Stripe had saved the 05:29Z `type=express` refusal under `connect-account-create-<tenantId>` and rejected the Managed Risk body under the same key (`idempotency_error`, 09:21Z). Stripe keeps such a key for 24 hours, and any tenant whose first create was ever refused would have been stuck the same way.

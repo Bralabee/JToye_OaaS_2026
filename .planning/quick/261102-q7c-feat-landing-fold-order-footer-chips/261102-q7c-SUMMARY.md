@@ -79,7 +79,7 @@ figures measured on staging (door 622/315, footer 497, credits 160/260, footer 9
 | taste-skill `lint.mjs` (2 files) | origin/main: 2 FAIL (footer hairlines), rc 1 | 0 FAIL, 1 WARN (em-dash count), rc 0 |
 | taste-skill `inspect.mjs` (`--allow still-page`) | origin/main: 6 FAIL, 6 WARN | 5 FAIL, 8 WARN; see below |
 | `scripts/check-geo-attribution.sh` | — | PASS, rc 0 |
-| `scripts/docs-freshness.sh` / `check-doc-metrics.sh` | rc 1 / 7 FAIL before the update | rc 0 / 37 claims PASS (jest 3454 -> 3459, total 6997 -> 7002) |
+| `scripts/docs-freshness.sh` / `check-doc-metrics.sh` | rc 1 / 7 FAIL before the update | rc 0 / 37 claims PASS (this branch adds 5 Jest blocks: 3454 -> 3459 on 9b737e61; after merging #1094, 3463 and 7006) |
 | Keyboard: Tab from the search box to the sixth chip | — | reached at 390, 1024, 1366; chip fully inside the rail, ring painted, page overflow 0 (`evidence/after/keyboard-probe.json`) |
 
 **inspect, after.** FAILs: `headline-lines` at 1366 and 390 and `focal-point` (accepted by the owner

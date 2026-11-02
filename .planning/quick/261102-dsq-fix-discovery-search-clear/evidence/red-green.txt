@@ -1,0 +1,97 @@
+Quick 261102-dsq — /shop search box: two X buttons, and the backspace glitch
+Base: origin/main 9b737e61. Recorded 2026-11-02.
+
+=====================================================================
+1. BROWSER, BEFORE THE FIX (unfixed shop-discovery-client.tsx)
+=====================================================================
+Runtime: `next dev -p 3100` from this worktree, NEXT_PUBLIC_API_URL=http://localhost:9090
+(the RUNNING local Compose core-java, read over HTTP only; :3100 is in its CORS allowlist).
+Driver: evidence/playwright-record.js (Chromium, 390x844). Each run types "pounded yam" on
+/shop (110 ms/key), waits 1.2 s, then backspaces to empty; a second run deep-links
+/shop?q=jollof and backspaces to empty. Sampled after every key and at +200/500/1000/2000 ms
+of quiet; input value + location.search are also logged on every animation frame.
+
+Two X buttons:
+  evidence/before-typed-box.png  -> Chrome's native blue cancel X AND the island's own
+                                    "Clear search" X, side by side.
+  evidence/after-typed-box.png   -> one X.
+  (The computed-style probe in the samples, getComputedStyle(el,'::-webkit-search-cancel-button')
+   .appearance, reads "auto" in BOTH directions: Chrome does not resolve computed style for that
+   pseudo-element, so that probe CANNOT FAIL and is not used as evidence. The generated CSS rule
+   `.[&::-webkit-search-cancel-button]:appearance-none::-webkit-search-cancel-button{appearance:none}`
+   was confirmed in the dev server's stylesheet, and the screenshots are the proof.)
+
+Backspace (evidence/before-summary.txt, 120 ms per backspace, local API):
+  bs1 "pounded ya"  -> "No kitchens found" empty state, "No kitchens match “pounded ya”"
+  bs2 "pounded y"   -> empty state
+  bs3 "pounded "    -> 1 card
+  ...
+  bs7 "poun", bs8 "pou", bs9 "po" -> empty state each
+  bs10 "p"          -> 2 cards
+  bs11 ""           -> 3 cards
+  23 requests for one type-and-backspace of an 11-character query (one per keystroke).
+  Value never re-seeded; URL `q` cleared ~400 ms after reaching empty, in every run.
+Same at 450 ms and 700 ms per backspace (before-bs450-summary.txt, before-bs700-summary.txt):
+  no re-seed, URL and box agree after every debounce, grid strobes the same way.
+With 250 ms simulated API latency (before-latency250-summary.txt, render-state timeline):
+  typed:    cards:3 > skeleton@"p" > cards:1@"pounded yam" > skeleton@"pounded ya" > cards:3@""
+  deeplink: cards:2@"jollof" > skeleton@"jollo" > cards:3@""
+  i.e. the grid sits on the skeleton for the WHOLE backspace run (each key starts a request
+  before the previous one settles) and the summary line disappears with it.
+Console: only Auth.js ClientFetchError from the dev server's missing auth config (no Keycloak
+client secret in this worktree's dev env); none from the discovery island.
+
+MEASURED CAUSE: not an R-02 re-seed. Every keystroke fetched immediately
+(`fetchShops` depended on the raw box value), so backspacing searched every fragment of the
+query: the grid strobed between cards and the "No kitchens found" empty state on a fast API,
+and sat on the skeleton on a slow one. The URL write was debounced; the fetch was not.
+
+=====================================================================
+2. JEST, RED ON THE UNFIXED COMPONENT (evidence/jest-red-unfixed.txt)
+=====================================================================
+New describe "the search box clears cleanly (2026-11-02 tester)", 4 cases, run with the new
+tests and the UNFIXED component:
+  Tests: 4 failed, 38 passed, 42 total   (rc=1)
+  - one clear affordance: Expected substring "[&::-webkit-search-cancel-button]:appearance-none",
+    received the old class list.
+  - typed backspace: seen = [EMPTY-STATE@"pounded ya", ... EMPTY-STATE@"p"] (10 entries)
+  - deep-link backspace: seen = [EMPTY-STATE@"jollo", ... EMPTY-STATE@"j"] (5 entries)
+  - POSITIVE ARM (debounce still searches a paused term): askedFor() was ["jollof"] inside
+    the debounce window, expected [].
+
+=====================================================================
+3. JEST, GREEN ON THE FIX (evidence/jest-green-fixed.txt)
+=====================================================================
+  Tests: 42 passed, 42 total (rc=0). No act() / console.error lines in either run.
+R-02 block (3 cases) green before and after, unmodified.
+R-09 block (2 cases): harness changed, claim unchanged — `expect(queue).toHaveLength(n)`
+read synchronously after a keystroke is now `await waitFor(...)`, because a keystroke is a
+request only after SEARCH_DEBOUNCE_MS; the out-of-order arm still has two requests in flight.
+Full suite (evidence/jest-full.txt): Test Suites 292 passed; Tests 3458 passed (was 3454).
+
+=====================================================================
+4. BROWSER, AFTER THE FIX
+=====================================================================
+after-summary.txt (120 ms/backspace): every intermediate sample shows the "pounded yam" result
+(1 card, "1 kitchen for “pounded yam”"); "" -> 3 cards at once; URL q cleared at +500 ms;
+no re-seed. Deep link: "2 kitchens for “jollof”" held until "", then 3 cards.
+  render timeline typed:    cards:3 > skeleton@"pounded yam" > cards:1 > cards:3@""
+  render timeline deeplink: cards:2@"jollof" > cards:3@""
+  requests: typed 4, deeplink 2 (before: 23 and 8). Each count includes one request from the
+  recorder's own post-run fill("pounded yam") for the box screenshot, and dev-mode Strict Mode
+  can add a mount fetch (seen before the fix too, e.g. before deeplink's first q=jollof).
+after-latency250-summary.txt: typed cards:1@"pounded yam" > skeleton@"" > cards:3@"";
+  deeplink cards:2@"jollof" > skeleton@"" > cards:3@"" (one skeleton, for the final answer).
+after-bs450-summary.txt (450 ms per backspace, slower than the 300 ms debounce): fragments ARE
+  searched, by design: a customer who pauses 450 ms on "poun" has asked for "poun". Recorded,
+  not hidden.
+
+=====================================================================
+5. OTHER GATES
+=====================================================================
+npm run lint: rc 0, 0 errors, 26 warnings, none in the two changed files (lint-tail.txt).
+npm run build: rc 0, "Compiled successfully", TypeScript finished (build.txt).
+scripts/docs-freshness.sh: rc 1 before --write (jest_blocks 3454 -> 3458, total 6997 -> 7001),
+  rc 0 after.
+scripts/check-doc-metrics.sh: FAIL x7 (README x3, CLAUDE.md x2, AGENTS.md x2) on the old prose,
+  PASS 37/37 after the counts were updated.
