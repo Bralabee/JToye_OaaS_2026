@@ -43,10 +43,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * per-environment list of shop slugs, read anonymously from {@code GET /api/v1/public/featured-shops}
  * (and the legacy {@code /public/featured-shops}).
  *
- * <p>Every read here runs the way production runs it: as a {@code NOSUPERUSER NOBYPASSRLS} role with
- * NO tenant pinned. The Testcontainers default user is a SUPERUSER and bypasses FORCE RLS, so a read
- * proven only as that user would also see the unpublished shop, and this test would prove nothing
- * about what an anonymous visitor is shown (T-r6u-01).
+ * <p>The reads that matter run the way production runs them: as a {@code NOSUPERUSER NOBYPASSRLS} role
+ * with NO tenant pinned. The Testcontainers default user is a SUPERUSER and bypasses FORCE RLS, so a
+ * read proven only as that user would prove nothing about what an anonymous visitor is shown. One read
+ * DOES run as the superuser first, on purpose: it sees the unpublished shop, so only the published
+ * predicate in the query can keep it out, which is the half RLS would otherwise mask (T-r6u-01).
  *
  * <p>The configured list is deliberately hostile: a published shop of tenant B FIRST, then an
  * unpublished shop, a slug that names no shop at all, and a published shop of tenant A. The answer
@@ -131,6 +132,17 @@ class FeaturedShopsIntegrationTest {
     @Test
     @DisplayName("anonymous NOSUPERUSER read: published only, configured order, two tenants, both prefixes, ONE warn")
     void featuredShopsArePublishedOnlyInConfiguredOrderWithOneWarn() throws Exception {
+        // FIRST as the Testcontainers SUPERUSER, which bypasses RLS and sees the unpublished shop:
+        // here the published predicate in the QUERY is the only thing that can keep it out. Under the
+        // anonymous runtime role below, shops_public_read alone would hide it, so that half could not
+        // tell a query with the predicate from one without (T-r6u-01: not only in RLS).
+        Integer seenBySuperuser = jdbc.queryForObject(
+                "SELECT count(*) FROM shops WHERE slug = ?", Integer.class, SLUG_U);
+        assertThat(seenBySuperuser).as("control: the superuser DOES see the unpublished shop").isEqualTo(1);
+        assertThat(featuredShopsService.featuredShops()).extracting(PublicShopDto::getSlug)
+                .as("superuser read: the query itself excludes the unpublished shop")
+                .containsExactly(SLUG_B, SLUG_A);
+
         downgradeToAnonymousRuntimeRole();
 
         // Positive control first: the role CAN see a published shop at all, so an empty answer
