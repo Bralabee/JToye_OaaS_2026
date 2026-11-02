@@ -1,0 +1,39 @@
+# break arms, bracketed clean -> arm -> clean; HEAD c126388f; file sha256 at HEAD 6b45fd54d413baf515a9c1af6a0e4dcfb96da6ec99c88c24e0d4ab2e28b6959f
+CLEAN-1 rc=0 pass=88 fail=0
+ARM: request N even when N > available (the plan's arm: the payout amount is the requested N, not min(N, available))
+  diff: <     PO_AMOUNT="$PO_AVAILABLE"; PO_WHOLE=true
+  diff: >     PO_AMOUNT="$PO_REQUESTED"; PO_WHOLE=true
+ARM rc=1 pass=87 fail=1
+  arm: FAIL payout-all-available 2000: rc=1 (want 0): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-credentials--admin-username --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak
+  red arms: payout-all-available 
+RESTORE sha256 6b45fd54d413baf515a9c1af6a0e4dcfb96da6ec99c88c24e0d4ab2e28b6959f MATCHES-HEAD
+ARM: omit the payout Idempotency-Key (the plan's arm)
+  diff: <   STRIPE_EXTRA_HEADER="Idempotency-Key: $PO_RUN-payout-$acct"
+  diff: >   STRIPE_EXTRA_HEADER=""
+ARM rc=1 pass=86 fail=2
+  arm: FAIL payout-ok the payout POST does not carry Stripe-Account and Idempotency-Key <run id>-payout-<acct>: POST /v1/payouts acct=acct_loop1 key=none|
+  arm: FAIL replay-run-id payout run 1: not one payout POST with Idempotency-Key po-replay-1-payout-acct_loop1: POST /v1/payouts acct=acct_loop1 key=none|
+  red arms: payout-ok replay-run-id 
+RESTORE sha256 6b45fd54d413baf515a9c1af6a0e4dcfb96da6ec99c88c24e0d4ab2e28b6959f MATCHES-HEAD
+ARM: never find this run's refund row on a re-run (the replay pre-read made blind)
+  diff: <   if [ -n "$row" ]; then
+  diff: >   if false; then
+ARM rc=1 pass=87 fail=1
+  arm: FAIL replay-run-id run 2 wrote again: confirms=0 accepts=0 refunds=1 (want 0 each)
+  red arms: replay-run-id 
+RESTORE sha256 6b45fd54d413baf515a9c1af6a0e4dcfb96da6ec99c88c24e0d4ab2e28b6959f MATCHES-HEAD
+ARM: report every payout as paid (PAYOUT prints status=paid, not Stripe's status)
+  diff: <   echo "PAYOUT account=$STRIPE_ACCOUNT payout=$PO_ID amount=$PO_AMOUNT status=$PO_STATUS livemode=false"
+  diff: >   echo "PAYOUT account=$STRIPE_ACCOUNT payout=$PO_ID amount=$PO_AMOUNT status=paid livemode=false"
+ARM rc=1 pass=87 fail=1
+  arm: FAIL payout-pending the last line is 'PAYOUT account=acct_loop1 payout=po_loop1 amount=500 status=paid livemode=false'
+  red arms: payout-pending 
+RESTORE sha256 6b45fd54d413baf515a9c1af6a0e4dcfb96da6ec99c88c24e0d4ab2e28b6959f MATCHES-HEAD
+ARM: accept any --account (the T-30-114 tenant-account check made always-true)
+  diff: <   [ "$STRIPE_ACCOUNT" = "$AT_ACCOUNT" ] \
+  diff: >   true \
+ARM rc=1 pass=87 fail=1
+  arm: FAIL payout-other-account payout: stderr lacks 'REFUSED [other-account]': DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-credentials--admin-username --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret sh
+  red arms: payout-other-account 
+RESTORE sha256 6b45fd54d413baf515a9c1af6a0e4dcfb96da6ec99c88c24e0d4ab2e28b6959f MATCHES-HEAD
+CLEAN-2 rc=0 pass=88 fail=0

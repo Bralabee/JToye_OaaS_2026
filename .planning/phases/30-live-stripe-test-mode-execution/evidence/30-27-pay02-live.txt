@@ -1,0 +1,185 @@
+Phase 30 plan 30-27 — PAY-02 / D-04, PR 7 part 2 of 3: live evidence log
+Task 1 (PR open) recorded at: 2026-11-01T23:49:59Z
+Branch: feat/30-billing-per-location   Repo: Bralabee/JToye_OaaS_2026
+
+== Base ==
+git fetch origin main: d622dd28..60424b8c (main moved: #1086 Dependabot roll-up)
+Pre-merge head 70de703e was 1 behind origin/main.
+git merge --no-edit origin/main -> 3ff1822b (merge rc 0, no conflicts)
+
+== Diff scope (proof the Java and Jest suites are unaffected) ==
+git diff --stat origin/main HEAD at 3ff1822b (rc 0): 11 files, +1093/-21
+  .planning/ROADMAP.md, .planning/STATE.md, 30-26-SUMMARY.md, evidence/30-26-{red-task1,red-task2}.{txt,json},
+  evidence/30-26-task{1,2}-arms.txt, evidence/30-26-verify.txt, scripts/staging-seed.sh
+paths under core-java/|frontend/|edge-go/|mcp-server/ : 0   (control: same grep over a sample holding core-java/src/X.java -> 1)
+=> ./gradlew :core-java:test :core-java:integrationTest, full Jest and frontend lint: UNAFFECTED BY DIFF, not run locally; CI runs them on the PR.
+
+== Per-PR suite at 3ff1822b (before the PR opened) ==
+bash scripts/staging-seed.sh --selftest        rc=0  (60 PASS / 0 FAIL)
+bash k8s/scripts/check-env-contract.sh         rc=0
+bash scripts/check-gate-enforcement.sh         rc=0
+bash scripts/docs-freshness.sh                 rc=0  (no drift, 6996 logical invocations; no --write needed)
+bash scripts/check-doc-metrics.sh              rc=0  (37/37 claims)
+bash scripts/check-branch-behind-base.sh       rc=0  (7 ahead, 0 behind 60424b8c)
+
+== PR ==
+git push -u origin feat/30-billing-per-location   rc=0 (new branch at 3ff1822b)
+Body: scratch file via quoted heredoc; pre-create scan attribution=0 closing=0;
+  controls on a scratch string "Co-Authored-By: x" + "Closes #957": attribution=1 closing=1
+gh pr create --draft                               rc=0
+PR=1087
+URL=https://github.com/Bralabee/JToye_OaaS_2026/pull/1087
+Title: feat(staging): billing evidence stages read the per-location subscription and invoice from Stripe by id (Phase 30 30-26, PAY-02, D-04)
+
+== CHANGELOG + HANDOFF ==
+docs/CHANGELOG.md entry "### Staging Billing Evidence: ... (#1087) — 2026-11-01" under [Unreleased] (cites_1087=1)
+HANDOFF.md: new RESUME HERE bullet; the earlier 2026-11-01 bullet marked superseded, text kept
+commit 2f61ff06 docs(30-27): CHANGELOG entry for PR 7 part 2 (#1087) and HANDOFF records it open for review (deletions: none)
+Gates at 2f61ff06:
+bash scripts/check-branch-behind-base.sh       rc=0  (8 ahead, 0 behind)
+  fail direction: same script on 70de703e in a scratch worktree -> rc=1 "HEAD is 1 commit(s) behind origin/main"
+bash scripts/docs-freshness.sh                 rc=0
+bash scripts/check-doc-metrics.sh              rc=0
+bash scripts/check-handoff-contract.sh         rc=0  (36 state claims hold, 0 behind)
+bash scripts/check-changelog-contract.sh       rc=0  (96 cited; reads merged history, so #1087 is checked after merge)
+git push                                       rc=0  3ff1822b..2f61ff06; local == remote 2f61ff06
+gh pr edit 1087 --body-file (final gate rows)  rc=0  (pre-edit scan attribution=0 closing=0)
+gh pr ready 1087                               rc=0
+
+== Read-back (plan <verify>, verbatim, PR=1087) ==
+attribution=0 closing=0  verify rc=0
+stored body == scratch file (diff rc 0), 47 lines; D-04 x3, PAY-02 x2, "issue #102" x3
+state=OPEN draft=false head=2f61ff06 base=main closingIssuesReferences=0
+
+== CI at 2026-11-01T23:49:59Z (gh pr checks rc=1 measured separately: rc 1 = a check failed or is unreachable; the listing was taken through a pipeline; review-record is expected red until the review series posts its Review-Record) ==
+review-record	fail
+Branch Not Behind Base	pass
+Classify Changes (doc-only skip)	pass
+Frontend E2E (public surfaces)	pass
+Operational Contracts	pending
+docs-freshness	pass
+gitleaks	pass
+MCP Server Tests	pass
+GitGuardian Security Checks	pass
+Integration Tests (Testcontainers RLS)	pass
+K8s Kustomize Secret Guard	pending
+OpenAPI Breaking-Change Gate	pending
+Trivy	skipping
+verdict	pass
+Lint	pending
+pii-guard	pass
+Run Tests	pending
+Security Scan	pending
+
+== Next: Task 2 (owner) ==
+D3 review series on #1087 (round 1 /code-review 1087 --comment; tenancy reviewer on the after-commit tenant pinning) to a
+zero-admissible round, then squash-merge per plan 30-04 Task 1 steps 1-4. Nothing is pushed to #1087 after the review starts.
+This file stays UNTRACKED here; it is committed on feat/30-pay03-staging-loop in Task 3.
+
+======================================================================
+Task 2 (owner) outcome, recorded by the Task 3 continuation agent
+======================================================================
+Round 1 /code-review 1087 --comment: admissible 0, recorded 8 (Review-Record on 2f61ff065d28).
+Two merges from the base followed: 9765baef (origin/main at 2cb0046c, #1070) and 07de3c4f (origin/main at 2fcb0ea0, #1088
+horizon hotfix; the one conflict, docs/CHANGELOG.md, resolved by keeping both entries). A head-scoped WAIVED record was
+posted for 07de3c4f.
+gh pr view 1087 --json state,mergeCommit (rc 0): state=MERGED mergeCommit=2fe0837b0565edf97738184e0ede02f9ea513278
+  mergedAt=2026-11-02T01:57:30Z. git merge-base --is-ancestor 2fe0837b HEAD -> rc 0 (on origin/main).
+
+======================================================================
+Task 3: the staging tenant is billed per location, read from Stripe by id, and the sync is seen live
+======================================================================
+Started 2026-11-02T02:42:21Z.  Branch: git fetch origin main (rc 0) && git switch -c feat/30-pay03-staging-loop origin/main
+(rc 0), HEAD = origin/main = 2fe0837b; upstream unset so a bare push cannot target main.
+Every live call: conda jtoye-ops, JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94, --context jtoye-stg-aks.
+
+== Deploy watch and parity (run 41375140960, head 2fe0837b) ==
+run conclusion=success; Deploy to Staging success (job 125063986372); Staging Edge Probe success; Deploy to Production skipped.
+The deploy log's "Digest parity" step ran scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 2fe0837b… at
+2026-11-02T02:38:19Z:
+  core-java    sha256:33e66ab2ea7bc569ac6419fa80659c9810241c66924ba6815b598760c73ad2ef  MATCH
+  edge-go      sha256:2ed2db6be6ce58d39928763bb7dfc2688fa653eba60590ddf1d689f9e675d5a5  MATCH
+  frontend     sha256:a959e8f8e1dca92760a5a9aea5ff6a8b1609cac4c61d632096d3a273692183d1  MATCH
+  PASS (set form: index digest plus each platform manifest digest)
+Re-read live from the operator host at 2026-11-02T02:42:59Z: the same three digests MATCH, rc 0.
+Fail direction: the same script with --tag 2fcb0ea0f0d88f36d62a2637403ad4554ece162b (the previous main commit) -> rc 1,
+  "FAIL: 3 running container image digest(s) across 3 service(s) are NOT the images built for 2fcb0ea0…".
+No rollback needed.
+
+== --stage billing, first run (started 02:43:29Z) ==
+rc=0
+OK: subscription status NONE; subscribing the tenant to SAAS_HYBRID_STANDARD
+OK: TEST payment method pm_… created from tok_visa (only its id is kept; id not carried into the evidence JSON)
+OK: subscribed through POST /api/v1/billing/subscription: subscription sub_1UXBDhDpS9ICNeRthdSjxKoZ
+BILLING sub=sub_1UXBDhDpS9ICNeRthdSjxKoZ quantity=1 locations=1 invoice=in_1UXBDhDpS9ICNeRtw8DKqYXs amount_paid=3900 status=paid livemode=false at=2026-11-02T02:43:40Z
+=> The tenant held NO subscription; this run SUBSCRIBED (it did not read back).
+
+== Independent reads by id (--stage stripe-get) ==
+--path /v1/subscriptions/sub_1UXBDhDpS9ICNeRthdSjxKoZ   rc=0
+  status=active livemode=false items=1 quantity=1 unit_amount=3900 latest_invoice=in_1UXBDhDpS9ICNeRtw8DKqYXs
+--path /v1/invoices/in_1UXBDhDpS9ICNeRtw8DKqYXs           rc=0
+  status=paid livemode=false amount_paid=3900 amount_due=3900 currency=gbp billing_reason=subscription_create
+  subscription=sub_1UXBDhDpS9ICNeRthdSjxKoZ lines=[{quantity:1, amount:3900}]
+=> Equal to the BILLING line: quantity 1 == 1, amount_paid 3900 == 3900, status paid == paid, livemode false == false.
+
+== --stage billing-sync-check (02:44:15Z to 02:44:21Z) ==
+rc=0
+BILLING-SYNC-READ phase=before quantity=1 at=2026-11-02T02:44:18Z
+OK: probe shop 02e46895-68a2-4570-a29e-5e5a9ef321fa created ('Staging Billing Probe 20261102T024418Z'); deleted on every exit path
+BILLING-SYNC-READ phase=after-add quantity=2 want=2 elapsed=0s
+PROBE-SHOP-DELETED: 02e46895-68a2-4570-a29e-5e5a9ef321fa HTTP 204
+BILLING-SYNC-READ phase=after-remove quantity=1 want=1 elapsed=0s
+BILLING-SYNC before=1 after-add=2 after-remove=1 livemode=false
+The probe is gone, shown two ways: the stage's own DELETE returned 204, and the replay below counted locations=1 from
+GET /api/v1/shops.
+--path '/v1/invoices?subscription=sub_1UXBDhDpS9ICNeRthdSjxKoZ'   rc=0: list n=1
+  [in_1UXBDhDpS9ICNeRtw8DKqYXs paid 3900 subscription_create livemode=false]
+  => the 1 -> 2 -> 1 cycle created no new invoice. Default proration leaves pending items for the next invoice.
+
+== --stage billing, replay (plan <verify> 1, verbatim) ==
+rc=0 [BILLING sub=sub_1UXBDhDpS9ICNeRthdSjxKoZ quantity=1 locations=1 invoice=in_1UXBDhDpS9ICNeRtw8DKqYXs amount_paid=3900 status=paid livemode=false at=2026-11-02T02:44:34Z]
+verify1 rc=0
+OK: an ACTIVE SAAS_HYBRID_STANDARD subscription sub_1UXBDhDpS9ICNeRthdSjxKoZ is in place; reading it back (no payment method, no subscribe)
+=> Replay: same sub_ id and same in_ id; no payment method was made and no subscription was created.
+Fail direction of verify 1: the same parse, run on deliberately wrong lines:
+  real line rc=0 | stage rc 1 -> rc=1 | locations=2 (qty!=locations) -> rc=1 | amount_paid=3901 -> rc=1
+  livemode=true -> rc=1 | status=open -> rc=1 | no BILLING line -> rc=1
+
+== Observations against the round-1 findings recorded on #1087 (none patched here) ==
+Finding 8 (the 90 s poll models an asynchrony that does not exist): OBSERVED. Both polls hit their target at elapsed=0s,
+  so the after-commit sync had finished before the 201/204 reached the client.
+Finding 2 (amount/status asserted on the moving latest_invoice): consistent with its premise. After the sync cycle the
+  subscription still has exactly 1 invoice and the replay read the first one. The latent false-FAIL was not triggered.
+Finding 1 (non-ACTIVE fallthrough): not observed. The start state was NONE, which is the subscribe path.
+Finding 3 (stale starting quantity): not observed. before=1 equals locations=1.
+Findings 4, 5, 6, 7: not exercised (no create failure, no deadline FAIL, rule is all-shops, vendor stage not run).
+
+== Evidence JSON: evidence/30-pay02-billing.json (jq -S) ==
+Built from the BILLING / BILLING-SYNC lines and the stripe-get reads; the livemode fields are DERIVED from the reads.
+  (One construction defect, caught on reading the output before any check: the first build wrote sync.livemode=true,
+  because the expression evaluated "is the string 'false'". It was rebuilt so that a non-false read yields "MISMATCH" or
+  "unparsed:…".)
+Plan <verify> 2, verbatim: jq_rc=0 fields_ok=true suspicious=0, rc=0
+Fail direction (copies in scratch): livemode=true -> rc 1 | quantity=2 -> rc 1 | subscription "cus_x" -> rc 1 |
+  an email added -> suspicious=1, rc 1 | sk_test_ added -> suspicious=1, rc 1 | unparseable -> rc 1 | missing -> VOID rc 2
+Suspicious-string grep control: here-string "x@y.z" -> count=1
+
+== Leak scans ==
+staging-secrets.sh --leak-scan evidence/30-pay02-billing.json   rc=0  "32 objects checked, 0 found (12 estate identifiers not secret, skipped)"
+  control 1: a mode-600 scratch copy with the real stripe-credentials--connect-webhook-secret value appended (az read
+  straight into the file, never printed) -> rc=1 "LEAK stripe-credentials--connect-webhook-secret", "1 found"; shredded.
+gitleaks 8.30.1 detect --no-git --source evidence/30-pay02-billing.json   rc=0 "no leaks found"
+  control: a scratch copy with a FABRICATED sk_test_ + 32 random alphanumerics -> rc=1 "leaks found: 1"; removed.
+  (The planted whsec_ value above is NOT a gitleaks control: gitleaks rc 0 on it. With no key context it matches no
+  rule, so a different control was used.)
+
+== issue #102 comment ==
+https://github.com/Bralabee/JToye_OaaS_2026/issues/102#issuecomment-6567846593   gh issue comment rc=0
+Pre-post scan: attribution=0 closing=0 suspicious(sk_/whsec_/client_secret/@/cus_/pm_)=0; controls "Closes #102" +
+  "Co-Authored-By: x" -> attribution=1 closing=1.
+Read-back: gh api …/issues/comments/6567846593 rc=0; the stored body diffs clean against the posted file (diff rc 0). #102 state=OPEN.
+The comment lists what is still open: UXT-033 billing UI (no billing page exists under frontend/app), no scheduled
+reconcile, and UXT-034 / PAY-03 (30-28..30-32).
+
+Staging state left: one TEST subscription sub_1UXBDhDpS9ICNeRthdSjxKoZ (active, quantity 1, SAAS_HYBRID_STANDARD), kept
+as billing evidence and cancellable through the billing API. No probe shop remains.

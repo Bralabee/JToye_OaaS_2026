@@ -24,6 +24,14 @@
 #                           [--account acct_…] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage pay-link --link-out FILE [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage billing|billing-sync-check [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage connect-onboard --link-out FILE [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage settlement-mode [--set MODE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage money-loop --mode destination|direct
+#                           [--refund-pennies N] [--run-id ID] [--evidence FILE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage payout --account acct_…
+#                           [--amount-pennies N] [--run-id ID] [--evidence FILE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage payout-read --account acct_… --payout po_…
+#                           [--evidence FILE] [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -122,6 +130,67 @@
 #                        read printed, deadline 90 s each). Ends on BILLING-SYNC
 #                        before=n after-add=n+1 after-remove=n livemode=false; the
 #                        probe is deleted on EVERY exit path.
+#   PAY-03, the staging money loop (plan 30-28; D-06 TEST mode only):
+#     --stage connect-onboard --link-out FILE
+#                        start or resume the staging tenant's Stripe Express
+#                        onboarding through POST /api/v1/admin/tenants/{id}/stripe/
+#                        connect (a per-run realm-admin operator, deleted on every
+#                        exit path). An ENABLED account is printed and nothing is
+#                        called. The single-use onboarding URL goes ONLY to FILE,
+#                        mode 600. Ends CONNECT-ONBOARD tenant=… account=acct_…
+#                        status=PENDING|ENABLED.
+#     --stage settlement-mode [--set DESTINATION_CHARGE_PLATFORM_MOR|DIRECT_CHARGE_VENDOR_MOR]
+#                        read (or set, then read back) staging-test-kitchen's
+#                        settlementPolicyMode: GET, then PUT of the same body with
+#                        that one field changed. Ends SETTLEMENT-MODE shop=… mode=…
+#                        [previous=…].
+#     --stage money-loop --mode destination [--refund-pennies N] [--evidence FILE]
+#                        the loop, destination mode, every Stripe object read by id:
+#                        preflight (an ENABLED account and a destination-routed shop,
+#                        else REFUSED [connect-status] / [mode-mismatch] before any
+#                        write), one storefront order, pm_card_bypassPending,
+#                        CAPTURED, then LOOP-ORDER, LOOP-CAPTURE and LOOP-TRANSFER. A
+#                        platform charge with no destination is REFUSED [plain-charge].
+#                        Then the vendor accepts (LOOP-ACCEPT) and refunds N pennies
+#                        (default 100; a usage error unless 0 < N < the total, checked
+#                        before any write): the refund read by id with its
+#                        transfer_reversal, its charge for livemode, the local row
+#                        polled to Stripe's status (LOOP-REFUND). --evidence FILE adds
+#                        .modes.destination (ids, amounts, statuses, livemode false;
+#                        jq -S, mode 600) and keeps the rest of the file.
+#     --stage money-loop --mode direct [--refund-pennies N] [--evidence FILE]
+#                        plan 30-29: the same loop for DIRECT_CHARGE_VENDOR_MOR, where
+#                        the intent, its charge and its refund live on the connected
+#                        account and EVERY Stripe call carries Stripe-Account. REFUSED
+#                        [mode-mismatch] unless the shop is DIRECT and the order's 201
+#                        names the tenant's account; the intent must carry no
+#                        transfer_data, an application_fee_amount > 0 and
+#                        metadata.settlement_mode DIRECT_CHARGE_VENDOR_MOR. Verdicts
+#                        LOOP-ORDER/-CAPTURE/-ACCEPT/-REFUND mode=direct; no transfer
+#                        and no reversal exist to read. --evidence adds .modes.direct
+#                        (modes sort destination, direct; each entry's steps array is
+#                        in the order the loop ran).
+#     --run-id ID        money-loop and payout: the run every Idempotency-Key derives
+#                        from (default loop-<UTC stamp>). A run interrupted and re-run
+#                        with the same ID writes nothing twice: the order POST replays
+#                        its key, a refund row carrying <ID>-refund and a payout
+#                        carrying metadata.loop_run_id ID are found and read, not made.
+#     --stage payout --account acct_… [--amount-pennies N]
+#                        plan 30-29: money from the connected account's balance to its
+#                        bank. The account must be the staging tenant's ENABLED one
+#                        (else REFUSED [other-account] / [connect-status], no Stripe
+#                        call). Sets the payout schedule to manual (platform-level),
+#                        reads the available GBP balance (REFUSED [no-available-balance]
+#                        at 0), pays out min(N, available) (default: all of it; never
+#                        more) with Stripe-Account and <run id>-payout-<acct>, and reads
+#                        it until paid (deadline 180 s, every state printed). Ends
+#                        PAYOUT account=… payout=po_… amount=… status=… livemode=false
+#                        with Stripe's status verbatim: in_transit or pending at the
+#                        deadline is rc 0 with a payout-read hint. --evidence adds
+#                        .payouts[] (ids, amounts, statuses; no bank detail).
+#     --stage payout-read --account acct_… --payout po_…
+#                        one read of the payout on the account; PAYOUT line with its
+#                        current status; --evidence updates that entry's status only.
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -303,7 +372,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -313,6 +382,34 @@ print_tool_plan() {
     echo "  02 GET        ${STRIPE_API}${STRIPE_PATH}${STRIPE_ACCOUNT:+   Stripe-Account ${STRIPE_ACCOUNT} (in a per-call copy of the mode-600 config)}"
     echo "  03 check      livemode false (refund and account objects carry no livemode field: printed with LIVEMODE n/a)"
     echo "  04 print      the object without client_secret, secret, billing_details, receipt_email, email, name, phone, address, shipping"
+    return 0
+  fi
+  if [ "$STAGE" = payout ] || [ "$STAGE" = payout-read ]; then
+    echo "  target        Stripe ${STRIPE_API} (TEST only); connected account ${STRIPE_ACCOUNT}; tenant \"${TENANT_NAME}\""
+    echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: keycloak-credentials--admin-username keycloak-credentials--admin-password keycloak-credentials--frontend-client-secret (values never printed)"
+    echo "  02 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [other-account] unless ${STRIPE_ACCOUNT} is the tenant's ENABLED account; the operator is deleted HERE"
+    echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+    if [ "$STAGE" = payout-read ]; then
+      echo "  04 GET        ${STRIPE_API}/v1/payouts/${PAYOUT_ID}   Stripe-Account ${STRIPE_ACCOUNT}; livemode false"
+      echo "  05 print      PAYOUT account=${STRIPE_ACCOUNT} payout=${PAYOUT_ID} amount=… status=<Stripe's>${LOOP_EVIDENCE:+; the status of its .payouts entry updated in ${LOOP_EVIDENCE}}"
+      return 0
+    fi
+    echo "  04 GET        ${STRIPE_API}/v1/payouts?limit=100   Stripe-Account; this run's payout (metadata.loop_run_id ${RUN_ID:-loop-<UTC>}): found = steps 05-07 skipped"
+    echo "  05 POST       ${STRIPE_API}/v1/accounts/${STRIPE_ACCOUNT}   platform-level (no Stripe-Account): settings[payouts][schedule][interval]=manual, Idempotency-Key ${RUN_ID:-loop-<UTC>}-schedule-${STRIPE_ACCOUNT}"
+    echo "  06 GET        ${STRIPE_API}/v1/balance   Stripe-Account; available gbp; REFUSED [no-available-balance] at 0"
+    echo "  07 POST       ${STRIPE_API}/v1/payouts   Stripe-Account; amount=min(${PAYOUT_PENNIES:-available}, available) currency=gbp metadata[loop_run_id], Idempotency-Key ${RUN_ID:-loop-<UTC>}-payout-${STRIPE_ACCOUNT}"
+    echo "  08 GET        ${STRIPE_API}/v1/payouts/{id}   Stripe-Account; every ${POLL_SECONDS}s until paid (deadline ${PAYOUT_DEADLINE_SECONDS}s), each state printed"
+    echo "  09 print      PAYOUT account=${STRIPE_ACCOUNT} payout=po_… amount=… status=<paid|in_transit|pending> livemode=false${LOOP_EVIDENCE:+; .payouts[] in ${LOOP_EVIDENCE} (jq -S, mode 600)}"
+    return 0
+  fi
+  if [ "$STAGE" = connect-onboard ]; then
+    echo "  target        api ${API_BASE}; tenant \"${TENANT_NAME}\"; a per-run realm-admin operator"
+    echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: keycloak-credentials--admin-username keycloak-credentials--admin-password keycloak-credentials--frontend-client-secret (values never printed)"
+    echo "  02 operator   port-forward svc/keycloak ${PF_PORTS[*]}; POST /admin/realms/${REALM}/users seed-operator-<UTC> + realm role admin (deleted on EVERY exit path)"
+    echo "  03 GET        /api/v1/admin/tenants   the tenant named \"${TENANT_NAME}\": stripeConnectStatus, stripeAccountId; ENABLED: steps 04-05 are skipped"
+    echo "  04 POST       /api/v1/admin/tenants/{id}/stripe/connect   start or resume Express onboarding; the operator is deleted next"
+    echo "  05 write      the onboardingUrl to ${LINK_OUT} (mode 600; single-use; never printed)"
+    echo "  06 print      CONNECT-ONBOARD tenant=… account=acct_… status=…"
     return 0
   fi
   echo "  target        api ${API_BASE}; shop ${SHOP_SLUG}; signed in as ${VENDOR_USERNAME}"
@@ -351,6 +448,50 @@ print_tool_plan() {
       echo "  07 GET        ${STRIPE_API}/v1/subscriptions/{id}   every ${POLL_SECONDS}s until quantity n+1 (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s), each read printed"
       echo "  08 DELETE     /api/v1/shops/{probe}   then poll until quantity n (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s)"
       echo "  09 print      BILLING-SYNC before=n after-add=n+1 after-remove=n livemode=false" ;;
+    settlement-mode)
+      echo "  03 GET        /api/v1/shops?size=100 (the ${SHOP_SLUG} id), /api/v1/shops/{id}   settlementPolicyMode"
+      if [ -n "$SET_MODE" ]; then
+        echo "  04 PUT        /api/v1/shops/{id}   the GET body with settlementPolicyMode ${SET_MODE}, no other field changed"
+        echo "  05 GET        /api/v1/shops/{id}   read back; FAIL unless ${SET_MODE}"
+        echo "  06 print      SETTLEMENT-MODE shop=${SHOP_SLUG} mode=${SET_MODE} previous=…"
+      else
+        echo "  04 print      SETTLEMENT-MODE shop=${SHOP_SLUG} mode=…   READ-ONLY, nothing is written"
+      fi ;;
+    money-loop)
+      if [ "$LOOP_MODE" = direct ]; then
+        echo "  mode          direct (DIRECT_CHARGE_VENDOR_MOR): the intent, its charge and its refund live on the tenant's connected account; EVERY Stripe call below carries Stripe-Account <the tenant's acct_> (per-call copy of the mode-600 config, never argv)"
+        echo "  00 GET        /api/v1/public/shops/${SHOP_SLUG}{,/products}   anonymous, FIRST: the first available dish; USAGE rc 2 unless --refund-pennies ${LOOP_REFUND_PENNIES} < the total (nothing written)"
+        echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_), keycloak-credentials--admin-username/-password (values never printed)"
+        echo "  04 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [connect-status] unless ENABLED with an acct_; the operator is deleted HERE"
+        echo "  05 GET        /api/v1/shops/{id}   REFUSED [mode-mismatch] unless settlementPolicyMode is DIRECT_CHARGE_VENDOR_MOR"
+        echo "  06 POST       /api/v1/public/shops/${SHOP_SLUG}/orders   Idempotency-Key loop-<UTC>-order; REFUSED [mode-mismatch] unless the 201 names the tenant's account"
+        echo "  07 POST       ${STRIPE_API}/v1/payment_intents/{id}/confirm   Stripe-Account; payment_method=pm_card_bypassPending, Idempotency-Key loop-<UTC>-confirm"
+        echo "  08 GET        /api/v1/public/orders/{orderNumber}?email=…   until CAPTURED (deadline ${PAID_DEADLINE_SECONDS}s; the direct payment_intent.succeeded arrives only through the Connect endpoint)"
+        echo "  09 GET        ${STRIPE_API}/v1/payment_intents/{id}   Stripe-Account; succeeded, livemode false, no transfer_data, application_fee_amount > 0, metadata.settlement_mode DIRECT_CHARGE_VENDOR_MOR"
+        echo "  10 GET        ${STRIPE_API}/v1/charges/{id}   Stripe-Account; captured, livemode false"
+        echo "  11 POST       /api/v1/orders/{id}/confirm   the vendor accepts the paid order"
+        echo "  12 POST       /api/v1/orders/{id}/refund   {amountPennies: ${LOOP_REFUND_PENNIES}, reason: ${LOOP_REFUND_REASON}}, Idempotency-Key loop-<UTC>-refund"
+        echo "  13 GET        ${STRIPE_API}/v1/refunds?payment_intent=…, ${STRIPE_API}/v1/refunds/{id}   Stripe-Account; exactly one for this run; succeeded (deadline ${REFUND_DEADLINE_SECONDS}s)"
+        echo "  14 GET        ${STRIPE_API}/v1/charges/{refund.charge}   Stripe-Account; livemode false (a Refund has no livemode field)"
+        echo "  15 GET        /api/v1/orders/{id}/detail   until the local refund status equals Stripe's (deadline ${REFUND_DEADLINE_SECONDS}s; Connect-scope refund.* events)"
+        echo "  16 print      LOOP-ORDER, LOOP-CAPTURE, LOOP-ACCEPT, LOOP-REFUND (each mode=direct)${LOOP_EVIDENCE:+; .modes.direct written to ${LOOP_EVIDENCE} (jq -S, mode 600)}"
+        return 0
+      fi
+      echo "  00 GET        /api/v1/public/shops/${SHOP_SLUG}{,/products}   anonymous, FIRST: the first available dish; USAGE rc 2 unless --refund-pennies ${LOOP_REFUND_PENNIES} < the total (nothing written)"
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_), keycloak-credentials--admin-username/-password (values never printed)"
+      echo "  04 operator   port-forward + seed-operator-<UTC>: GET /api/v1/admin/tenants; REFUSED [connect-status] unless ENABLED with an acct_; the operator is deleted HERE"
+      echo "  05 GET        /api/v1/shops/{id}   REFUSED [mode-mismatch] unless settlementPolicyMode is null or DESTINATION_CHARGE_PLATFORM_MOR"
+      echo "  06 POST       /api/v1/public/shops/${SHOP_SLUG}/orders   Idempotency-Key loop-<UTC>-order"
+      echo "  07 POST       ${STRIPE_API}/v1/payment_intents/{id}/confirm   payment_method=pm_card_bypassPending, Idempotency-Key loop-<UTC>-confirm"
+      echo "  08 GET        /api/v1/public/orders/{orderNumber}?email=…   until CAPTURED (deadline ${PAID_DEADLINE_SECONDS}s), every read printed"
+      echo "  09 GET        ${STRIPE_API}/v1/payment_intents/{id}   succeeded, livemode false, transfer_data.destination = the account (else REFUSED [plain-charge]), application_fee_amount > 0, metadata.settlement_mode"
+      echo "  10 GET        ${STRIPE_API}/v1/charges/{id}, ${STRIPE_API}/v1/transfers/{id}   captured; the transfer to the account for amount minus fee"
+      echo "  11 POST       /api/v1/orders/{id}/confirm   the vendor accepts the paid order"
+      echo "  12 POST       /api/v1/orders/{id}/refund   {amountPennies: ${LOOP_REFUND_PENNIES}, reason: ${LOOP_REFUND_REASON}}, Idempotency-Key loop-<UTC>-refund"
+      echo "  13 GET        ${STRIPE_API}/v1/refunds?payment_intent=…, ${STRIPE_API}/v1/refunds/{id}   exactly one for this run; succeeded (deadline ${REFUND_DEADLINE_SECONDS}s); a transfer_reversal"
+      echo "  14 GET        ${STRIPE_API}/v1/charges/{refund.charge} (livemode false: a Refund has no livemode field), ${STRIPE_API}/v1/transfers/{id} (the reversal)"
+      echo "  15 GET        /api/v1/orders/{id}/detail   until the local refund status equals Stripe's (deadline ${REFUND_DEADLINE_SECONDS}s)"
+      echo "  16 print      LOOP-ORDER, LOOP-CAPTURE, LOOP-TRANSFER, LOOP-ACCEPT, LOOP-REFUND${LOOP_EVIDENCE:+; .modes.destination written to ${LOOP_EVIDENCE} (jq -S, mode 600)}" ;;
     order-transition)
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
@@ -579,6 +720,112 @@ delete_operator() {
   esac
 }
 
+# operator_up — the Keycloak port-forward (PID captured at start, never killed by a
+# pattern) and the per-run realm-admin operator seed-operator-<UTC>, with a random
+# in-memory password, then its token. Needs kv-admin-username, kv-admin-password and
+# kv-client-secret in WORKDIR. The EXIT trap deletes the operator (OP_CREATED=1 is set
+# before the create is sent, so a create whose answer is lost is still looked up).
+operator_up() {
+  local code t0
+  # The port-forward.
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" port-forward svc/keycloak "${PF_PORTS[@]}" > "$WORKDIR/port-forward.log" 2>&1 &
+  PF_PID=$!
+  t0=$(date +%s)
+  while :; do
+    if ! kill -0 "$PF_PID" 2>/dev/null; then
+      PF_PID=""
+      echo "FAIL: the port-forward exited before Keycloak answered: $(head -c 300 "$WORKDIR/port-forward.log" | tr '\n' ' ')" >&2
+      exit 1
+    fi
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${MGMT_BASE}/health/ready" 2>/dev/null || true)
+    [ "$code" = 200 ] && break
+    if [ $(( $(date +%s) - t0 )) -ge "$READY_DEADLINE_SECONDS" ]; then
+      echo "FAIL: Keycloak was not ready within ${READY_DEADLINE_SECONDS}s (last ${MGMT_BASE}/health/ready status ${code:-none})" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  echo "OK: Keycloak ready through the port-forward (pid $PF_PID)"
+
+  # The operator.
+  admin_token || exit 1
+  OP_USERNAME="seed-operator-$(date -u +%Y%m%dt%H%M%Sz)"
+  (umask 077 && printf '%s' "$OP_USERNAME" > "$WORKDIR/operator-username")
+  (umask 077 && openssl rand -base64 32 | tr -d '\n' > "$WORKDIR/operator-password") \
+    || void "openssl rand failed"
+  [ -s "$WORKDIR/operator-password" ] || void "openssl rand produced no password"
+  jq -n --arg u "$OP_USERNAME" --rawfile p "$WORKDIR/operator-password" '{
+      username: $u, enabled: true, emailVerified: true, firstName: "Seed", lastName: "Operator",
+      email: ($u + "@seed.invalid"), requiredActions: [],
+      credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/op-create.json"
+  OP_CREATED=1
+  code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/op-created.json" "$WORKDIR/op-create.json")
+  rm -f "$WORKDIR/op-create.json"
+  [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($OP_USERNAME)" "$code" "$WORKDIR/op-created.json"
+  OP_ID=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
+  [ -n "$OP_ID" ] || { echo "FAIL: the operator create returned no Location" >&2; exit 1; }
+  code=$(kc_api GET "/admin/realms/$REALM/roles/admin" "$WORKDIR/role-admin.json")
+  [ "$code" = 200 ] || fail_http "GET /admin/realms/$REALM/roles/admin" "$code" "$WORKDIR/role-admin.json"
+  jq '[.]' "$WORKDIR/role-admin.json" | body "$WORKDIR/role-map.json"
+  code=$(kc_api POST "/admin/realms/$REALM/users/$OP_ID/role-mappings/realm" "$WORKDIR/role-mapped.json" "$WORKDIR/role-map.json")
+  [ "$code" = 204 ] || fail_http "POST role-mappings/realm admin for $OP_USERNAME" "$code" "$WORKDIR/role-mapped.json"
+  echo "OK: created the per-run operator $OP_USERNAME ($OP_ID) with realm role admin; it is deleted on exit"
+  user_token operator || exit 1
+}
+
+# operator_down — the operator deleted now and the port-forward stopped, for a stage
+# whose admin read is done before it writes anything (plan 30-28): no realm admin
+# stands while an order, a refund or a link exists. Returns 1 when the operator may
+# still exist (the EXIT trap then tries again and fails the run).
+operator_down() {
+  if [ "$OP_CREATED" -eq 1 ]; then delete_operator || return 1; fi
+  if [ -n "${PF_PID:-}" ]; then kill "$PF_PID" 2>/dev/null || true; wait "$PF_PID" 2>/dev/null || true; PF_PID=""; fi
+  return 0
+}
+
+# read_kv NAME... — the named KV_MAP rows from Key Vault into their mode-600 files in
+# WORKDIR (the same files vendor_stage and vendor_login write). A file already present
+# is not read again. A value is never printed and never in argv.
+read_kv() {
+  local want row name obj v rc file n=0 found
+  set +x
+  for want in "$@"; do
+    found=0
+    for row in "${KV_MAP[@]}"; do
+      name="${row%%=*}"; obj="${row#*=}"
+      [ "$name" = "$want" ] || continue
+      found=1
+      case "$name" in
+        VENDOR_PASSWORD)        file=vendor-password ;;
+        KC_ADMIN_USERNAME)      file=kv-admin-username ;;
+        KC_ADMIN_PASSWORD)      file=kv-admin-password ;;
+        CORE_API_CLIENT_SECRET) file=kv-client-secret ;;
+        *) void "read_kv: no file for $name" ;;
+      esac
+      [ ! -s "$WORKDIR/$file" ] || continue
+      rc=0; v=$(az_read keyvault secret show --vault-name "$KEY_VAULT_NAME" -n "$obj" --query value -o tsv) || rc=$?
+      if [ "$rc" -ne 0 ] || [ -z "$v" ]; then
+        refuse key-vault "could not read $obj from $KEY_VAULT_NAME (az rc=$rc); plan 29-13 generates it"
+      fi
+      (umask 077 && printf '%s' "$v" > "$WORKDIR/$file")
+      n=$((n + 1))
+    done
+    [ "$found" -eq 1 ] || void "read_kv: $want is not a KV_MAP name"
+  done
+  v=""
+  echo "OK: read $n more Key Vault object(s) from $KEY_VAULT_NAME (values not shown)"
+}
+
+# operator_login — the subscription guard, the operator's Key Vault objects, then
+# operator_up (plan 30-28: connect-onboard and the money loop's preflight).
+operator_login() {
+  azure_guard_once
+  need_tool curl; need_tool openssl; need_tool base64
+  ensure_workdir
+  read_kv KC_ADMIN_USERNAME KC_ADMIN_PASSWORD CORE_API_CLIENT_SECRET
+  operator_up
+}
+
 vendor_stage() {
   local row name obj v rc code t0
 
@@ -607,50 +854,8 @@ vendor_stage() {
   (umask 077 && printf '%s' "$VENDOR_USERNAME" > "$WORKDIR/vendor-username")
   echo "OK: read ${#KV_MAP[@]} Key Vault objects from $KEY_VAULT_NAME (values not shown)"
 
-  # 3. The port-forward, PID captured at start (never killed by a pattern).
-  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" port-forward svc/keycloak "${PF_PORTS[@]}" > "$WORKDIR/port-forward.log" 2>&1 &
-  PF_PID=$!
-  t0=$(date +%s)
-  while :; do
-    if ! kill -0 "$PF_PID" 2>/dev/null; then
-      PF_PID=""
-      echo "FAIL: the port-forward exited before Keycloak answered: $(head -c 300 "$WORKDIR/port-forward.log" | tr '\n' ' ')" >&2
-      exit 1
-    fi
-    code=$(curl -sS -o /dev/null -w '%{http_code}' "${MGMT_BASE}/health/ready" 2>/dev/null || true)
-    [ "$code" = 200 ] && break
-    if [ $(( $(date +%s) - t0 )) -ge "$READY_DEADLINE_SECONDS" ]; then
-      echo "FAIL: Keycloak was not ready within ${READY_DEADLINE_SECONDS}s (last ${MGMT_BASE}/health/ready status ${code:-none})" >&2
-      exit 1
-    fi
-    sleep "$POLL_SECONDS"
-  done
-  echo "OK: Keycloak ready through the port-forward (pid $PF_PID)"
-
-  # 4. The per-run realm-admin operator.
-  admin_token || exit 1
-  OP_USERNAME="seed-operator-$(date -u +%Y%m%dt%H%M%Sz)"
-  (umask 077 && printf '%s' "$OP_USERNAME" > "$WORKDIR/operator-username")
-  (umask 077 && openssl rand -base64 32 | tr -d '\n' > "$WORKDIR/operator-password") \
-    || void "openssl rand failed"
-  [ -s "$WORKDIR/operator-password" ] || void "openssl rand produced no password"
-  jq -n --arg u "$OP_USERNAME" --rawfile p "$WORKDIR/operator-password" '{
-      username: $u, enabled: true, emailVerified: true, firstName: "Seed", lastName: "Operator",
-      email: ($u + "@seed.invalid"), requiredActions: [],
-      credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/op-create.json"
-  OP_CREATED=1
-  code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/op-created.json" "$WORKDIR/op-create.json")
-  rm -f "$WORKDIR/op-create.json"
-  [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($OP_USERNAME)" "$code" "$WORKDIR/op-created.json"
-  OP_ID=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
-  [ -n "$OP_ID" ] || { echo "FAIL: the operator create returned no Location" >&2; exit 1; }
-  code=$(kc_api GET "/admin/realms/$REALM/roles/admin" "$WORKDIR/role-admin.json")
-  [ "$code" = 200 ] || fail_http "GET /admin/realms/$REALM/roles/admin" "$code" "$WORKDIR/role-admin.json"
-  jq '[.]' "$WORKDIR/role-admin.json" | body "$WORKDIR/role-map.json"
-  code=$(kc_api POST "/admin/realms/$REALM/users/$OP_ID/role-mappings/realm" "$WORKDIR/role-mapped.json" "$WORKDIR/role-map.json")
-  [ "$code" = 204 ] || fail_http "POST role-mappings/realm admin for $OP_USERNAME" "$code" "$WORKDIR/role-mapped.json"
-  echo "OK: created the per-run operator $OP_USERNAME ($OP_ID) with realm role admin; it is deleted on exit"
-  user_token operator || exit 1
+  # 3-4. The port-forward and the per-run realm-admin operator (operator_up).
+  operator_up
 
   # 5. The tenant, by name.
   local tenant_id n
@@ -1013,6 +1218,20 @@ stripe_api() {
     -o "$out" -w '%{http_code}' "${STRIPE_API}${path}") || rc=$?
   if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
   echo "$code"
+}
+
+# stripe_acct ACCT METHOD PATH OUT [FORM-FIELD...] — stripe_api on the connected
+# account ACCT (plan 30-29): the Stripe-Account header rides in a per-account copy of
+# the mode-600 config (the plan 30-07 mechanism), never in argv. The caller has
+# validated ACCT as acct_… before the first call.
+stripe_acct() {
+  local acct="$1" rcf
+  shift
+  rcf="$WORKDIR/stripe-acct-$acct.curlrc"
+  if [ ! -s "$rcf" ]; then
+    (umask 077 && { cat "$WORKDIR/stripe.curlrc"; printf 'header = "Stripe-Account: %s"\n' "$acct"; } > "$rcf")
+  fi
+  STRIPE_CURLRC="$rcf" stripe_api "$@"
 }
 
 # stripe_fail WHAT CODE OUT — Stripe's error type and message (never a secret).
@@ -1981,6 +2200,914 @@ billing_sync_check_stage() {
   echo "BILLING-SYNC before=$n after-add=$((n + 1)) after-remove=$n livemode=false"
 }
 
+# ===========================================================================
+# PAY-03 (plan 30-28; D-06 TEST mode only; T-30-107..T-30-111): the staging money
+# loop, destination mode, and the two stages that set it up. PAY-03 needs the loop
+# onboard -> order -> capture -> money to the connected account -> refund, each
+# step read from Stripe's API by id. Both modes run on ONE tenant and ONE shop in
+# sequence (onboarding publishes one shop per tenant), so the shop's mode is
+# switched between runs with --stage settlement-mode, and each mode's order is
+# refunded before the switch: refund routing is resolved from the shop's CURRENT
+# mode at refund time (RefundService -> resolveSettlementRouting).
+#   --stage connect-onboard --link-out FILE
+#       a per-run realm-admin operator reads the tenant from GET /api/v1/admin/tenants;
+#       an ENABLED account is printed and nothing else is called; otherwise POST
+#       /api/v1/admin/tenants/{id}/stripe/connect starts or resumes Express
+#       onboarding, the operator is deleted, and the single-use onboarding URL (a
+#       bearer link to the vendor's Stripe onboarding, T-30-108) goes ONLY to FILE,
+#       mode 600. Prints CONNECT-ONBOARD tenant=… account=acct_… status=….
+#   --stage settlement-mode [--set DESTINATION_CHARGE_PLATFORM_MOR|DIRECT_CHARGE_VENDOR_MOR]
+#       the vendor reads staging-test-kitchen (GET /api/v1/shops/{id}); with --set,
+#       the SAME body goes back through PUT with settlementPolicyMode alone changed
+#       (absent fields keep their stored values) and is read back. Prints
+#       SETTLEMENT-MODE shop=… mode=…[ previous=…].
+#   --stage money-loop --mode destination
+#       REFUSED [connect-status] unless the tenant's account is ENABLED, REFUSED
+#       [mode-mismatch] unless the shop routes as a destination charge, both before
+#       any write and with the operator already deleted; then one storefront order,
+#       its intent confirmed with pm_card_bypassPending (funds straight to the
+#       available balance), the tracking read until CAPTURED (every read printed),
+#       and the intent, its charge and its transfer read by id. A platform charge
+#       with no transfer_data is REFUSED [plain-charge] (Pitfall 6): it is never
+#       recorded as a destination-charge proof. Then the vendor accepts the order, a
+#       PARTIAL refund (--refund-pennies, 0 < N < the total, checked against the
+#       public menu before anything is read from Key Vault or written) goes through
+#       the vendor API, Stripe's refund is read by id (succeeded, a
+#       transfer_reversal), its charge for livemode (a Refund has none), the
+#       transfer's reversal, and the local row is polled to Stripe's status.
+#       --evidence FILE adds .modes.destination. Every Idempotency-Key derives from
+#       the run id loop-<UTC stamp>.
+# ===========================================================================
+
+# admin_tenant_row — the operator's GET /api/v1/admin/tenants: the one tenant named
+# TENANT_NAME. Sets AT_ID AT_STATUS (stripeConnectStatus, NONE when absent) and
+# AT_ACCOUNT (stripeAccountId). Called directly, never inside $(…).
+AT_ID=""; AT_STATUS=""; AT_ACCOUNT=""
+admin_tenant_row() {
+  local code n row
+  code=$(api operator GET /api/v1/admin/tenants "$WORKDIR/at-tenants.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/admin/tenants" "$code" "$WORKDIR/at-tenants.json"
+  n=$(jq -r --arg n "$TENANT_NAME" 'if type == "array" then ([.[] | select(.name == $n)] | length | tostring) else "not-a-list" end' \
+        "$WORKDIR/at-tenants.json" 2>/dev/null || echo unparseable)
+  if [ "$n" != 1 ]; then
+    rm -f "$WORKDIR/at-tenants.json"
+    echo "FAIL: GET /api/v1/admin/tenants lists $n tenant(s) named \"$TENANT_NAME\" (want exactly 1)" >&2; exit 1
+  fi
+  row=$(jq -r --arg n "$TENANT_NAME" '.[] | select(.name == $n) | [.id // "", .stripeConnectStatus // "NONE", .stripeAccountId // ""] | join("\u001f")' \
+          "$WORKDIR/at-tenants.json")
+  rm -f "$WORKDIR/at-tenants.json"
+  IFS=$'\x1f' read -r AT_ID AT_STATUS AT_ACCOUNT <<<"$row" || true
+  [[ "$AT_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the admin tenant row carries no tenant id" >&2; exit 1; }
+}
+
+# shop_by_slug — SHOP_ID of staging-test-kitchen from the vendor's shop list.
+# read_shop OUT — GET /api/v1/shops/SHOP_ID into OUT; SHOP_MODE is its
+# settlementPolicyMode ("" when null). Both called directly, never inside $(…).
+SHOP_ID=""; SHOP_MODE=""
+shop_by_slug() {
+  local code
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/sb-shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/sb-shops.json"
+  SHOP_ID=$(jq -r --arg s "$SHOP_SLUG" '[.content[]? | select(.slug == $s)] | if length == 1 then .[0].id else "" end' \
+              "$WORKDIR/sb-shops.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/sb-shops.json"
+  [[ "$SHOP_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the vendor does not hold exactly one shop $SHOP_SLUG" >&2; exit 1; }
+}
+read_shop() {
+  local code
+  code=$(api vendor GET "/api/v1/shops/$SHOP_ID" "$1")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops/$SHOP_ID" "$code" "$1"
+  jq -e --arg id "$SHOP_ID" 'type == "object" and .id == $id' "$1" >/dev/null 2>&1 \
+    || { echo "FAIL: GET /api/v1/shops/$SHOP_ID did not return that shop" >&2; exit 1; }
+  SHOP_MODE=$(jq -r '.settlementPolicyMode // empty' "$1")
+}
+
+# --stage connect-onboard --link-out FILE
+connect_onboard_stage() {
+  local code acct cst url
+  operator_login
+  admin_tenant_row
+  echo "OK: tenant \"$TENANT_NAME\" ($AT_ID): connect status $AT_STATUS, account ${AT_ACCOUNT:-none}"
+  if [ "$AT_STATUS" = ENABLED ] && [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+    operator_down || exit 1
+    echo "SKIP: the connected account is ENABLED; no onboarding link was requested and $LINK_OUT was not written"
+    echo "CONNECT-ONBOARD tenant=$AT_ID account=$AT_ACCOUNT status=ENABLED"
+    return 0
+  fi
+  code=$(api operator POST "/api/v1/admin/tenants/$AT_ID/stripe/connect" "$WORKDIR/connect-out.json")
+  if [ "$code" != 200 ]; then
+    jq '{type, title, detail}' "$WORKDIR/connect-out.json" > "$WORKDIR/connect-problem.json" 2>/dev/null || printf '{}' > "$WORKDIR/connect-problem.json"
+    rm -f "$WORKDIR/connect-out.json"
+    fail_http "POST /api/v1/admin/tenants/$AT_ID/stripe/connect" "$code" "$WORKDIR/connect-problem.json"
+  fi
+  url=$(jq -r '.onboardingUrl // empty' "$WORKDIR/connect-out.json" 2>/dev/null || true)
+  acct=$(jq -r '.stripeAccountId // empty' "$WORKDIR/connect-out.json" 2>/dev/null || true)
+  cst=$(jq -r '.connectStatus // empty' "$WORKDIR/connect-out.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/connect-out.json"
+  # No realm admin stands while the link exists.
+  operator_down || { url=""; exit 1; }
+  [[ "$acct" =~ ^acct_[A-Za-z0-9]+$ ]] || { url=""; echo "FAIL: the connect answer names no acct_ account" >&2; exit 1; }
+  [ -z "$AT_ACCOUNT" ] || [ "$AT_ACCOUNT" = "$acct" ] \
+    || { url=""; echo "FAIL: the tenant was linked to $AT_ACCOUNT but the connect answer names $acct" >&2; exit 1; }
+  case "$cst" in PENDING|ENABLED|DISABLED) ;; *) url=""; echo "FAIL: the connect answer carries status '$cst'" >&2; exit 1 ;; esac
+  case "$url" in
+    https://?*) ;;
+    *) url=""; echo "FAIL: the onboarding link is not an https URL (shape only; not shown)" >&2; exit 1 ;;
+  esac
+  (umask 077 && : > "$LINK_OUT") || { url=""; echo "FAIL: could not create --link-out $LINK_OUT" >&2; exit 1; }
+  chmod 600 "$LINK_OUT" || { url=""; echo "FAIL: could not chmod 600 $LINK_OUT" >&2; exit 1; }
+  printf '%s\n' "$url" > "$LINK_OUT"
+  url=""
+  echo "OK: the single-use onboarding link is in $LINK_OUT (mode 600; not shown)"
+  echo "CONNECT-ONBOARD tenant=$AT_ID account=$acct status=$cst"
+}
+
+# --stage settlement-mode [--set MODE]
+settlement_mode_stage() {
+  local code before after
+  vendor_login
+  shop_by_slug
+  read_shop "$WORKDIR/sm-shop.json"
+  before="$SHOP_MODE"
+  if [ -z "$SET_MODE" ]; then
+    rm -f "$WORKDIR/sm-shop.json"
+    echo "SETTLEMENT-MODE shop=$SHOP_SLUG mode=${before:-null}"
+    return 0
+  fi
+  if [ "$before" = "$SET_MODE" ]; then
+    rm -f "$WORKDIR/sm-shop.json"
+    echo "SKIP: $SHOP_SLUG is already $SET_MODE; nothing was written"
+    echo "SETTLEMENT-MODE shop=$SHOP_SLUG mode=$SET_MODE previous=$before"
+    return 0
+  fi
+  # The GET body with one field changed: CreateShopRequest keeps every absent field,
+  # and every present one is the value just read.
+  jq --arg m "$SET_MODE" '.settlementPolicyMode = $m' "$WORKDIR/sm-shop.json" | body "$WORKDIR/sm-put.json"
+  rm -f "$WORKDIR/sm-shop.json"
+  code=$(api vendor PUT "/api/v1/shops/$SHOP_ID" "$WORKDIR/sm-put-out.json" "$WORKDIR/sm-put.json")
+  rm -f "$WORKDIR/sm-put.json"
+  [ "$code" = 200 ] || fail_http "PUT /api/v1/shops/$SHOP_ID (settlementPolicyMode $SET_MODE)" "$code" "$WORKDIR/sm-put-out.json"
+  rm -f "$WORKDIR/sm-put-out.json"
+  read_shop "$WORKDIR/sm-shop-after.json"
+  rm -f "$WORKDIR/sm-shop-after.json"
+  after="$SHOP_MODE"
+  [ "$after" = "$SET_MODE" ] || { echo "FAIL: $SHOP_SLUG's settlementPolicyMode read back as '${after:-null}' after the PUT, not $SET_MODE" >&2; exit 1; }
+  echo "SETTLEMENT-MODE shop=$SHOP_SLUG mode=$after previous=${before:-null}"
+}
+
+# --stage money-loop --mode destination. The steps share these globals; every
+# helper is called directly, never inside $(…), so a refusal exits the script.
+LP_RUN=""; LP_ACCOUNT=""; LP_ORDER=""; LP_INTENT=""; LP_TOTAL=""; LP_AMOUNT=""; LP_FEE=""
+LP_CHARGE=""; LP_CAPTURED=""; LP_TRANSFER=""; LP_TRANSFER_AMOUNT=""
+# Plan 30-29: --mode direct puts the intent, its charge and its refund on the connected
+# account, so every loop Stripe call carries Stripe-Account LP_STRIPE_ACCT (empty in
+# destination mode: those objects are the platform's). LP_STEPS records the steps in
+# the order they ran, for the evidence entry. LP_VM prefixes a direct verdict.
+LP_STRIPE_ACCT=""; LP_STEPS=(); LP_VM=""
+
+# loop_stripe METHOD PATH OUT [FORM-FIELD...] — a loop Stripe call on the account the
+# mode's objects live on. lp_on is the " on acct_…" suffix for failure lines.
+loop_stripe() {
+  if [ -n "$LP_STRIPE_ACCT" ]; then stripe_acct "$LP_STRIPE_ACCT" "$@"; else stripe_api "$@"; fi
+}
+lp_on() { [ -z "$LP_STRIPE_ACCT" ] || printf ' on %s (Stripe-Account)' "$LP_STRIPE_ACCT"; }
+
+# loop_preflight — the tenant's connected account (read by a per-run operator that
+# is deleted before anything is written) and the shop's mode. Refusals write nothing.
+loop_preflight() {
+  vendor_login
+  vendor_tenant
+  read_stripe_key
+  need_tool openssl; need_tool base64
+  read_kv KC_ADMIN_USERNAME KC_ADMIN_PASSWORD
+  operator_up
+  admin_tenant_row
+  operator_down || exit 1
+  [ "$AT_ID" = "$VENDOR_TENANT" ] \
+    || { echo "FAIL: the vendor's tenant $VENDOR_TENANT is not \"$TENANT_NAME\" ($AT_ID)" >&2; exit 1; }
+  if [ "$AT_STATUS" != ENABLED ] || ! [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+    refuse connect-status "tenant $AT_ID's connected account is ${AT_ACCOUNT:-none} with status $AT_STATUS, not ENABLED: an order now would be a plain platform charge, never a settlement-mode proof (finish --stage connect-onboard first). Nothing was written"
+  fi
+  LP_ACCOUNT="$AT_ACCOUNT"
+  shop_by_slug
+  read_shop "$WORKDIR/ml-shop.json"
+  rm -f "$WORKDIR/ml-shop.json"
+  case "$LOOP_MODE:${SHOP_MODE:-null}" in
+    destination:null|destination:DESTINATION_CHARGE_PLATFORM_MOR) ;;
+    direct:DIRECT_CHARGE_VENDOR_MOR) ;;
+    destination:*) refuse mode-mismatch "$SHOP_SLUG routes as ${SHOP_MODE:-null}, but --mode $LOOP_MODE needs DESTINATION_CHARGE_PLATFORM_MOR (or null under the MARKETPLACE onboarding); set it with --stage settlement-mode first. Nothing was written" ;;
+    *) refuse mode-mismatch "$SHOP_SLUG routes as ${SHOP_MODE:-null}, but --mode direct needs DIRECT_CHARGE_VENDOR_MOR (null routes as a destination charge under the MARKETPLACE onboarding); set it with --stage settlement-mode --set DIRECT_CHARGE_VENDOR_MOR first. Nothing was written" ;;
+  esac
+  if [ "$LOOP_MODE" = direct ]; then
+    LP_STRIPE_ACCT="$LP_ACCOUNT"; LP_VM="mode=direct "
+    echo "OK: preflight: tenant $AT_ID account $LP_ACCOUNT is ENABLED; $SHOP_SLUG mode $SHOP_MODE routes as a direct charge on $LP_ACCOUNT (every Stripe call carries Stripe-Account)"
+  else
+    echo "OK: preflight: tenant $AT_ID account $LP_ACCOUNT is ENABLED; $SHOP_SLUG mode ${SHOP_MODE:-null} routes as a destination charge"
+  fi
+}
+
+# loop_evidence_check — a non-empty --evidence file must already be a JSON object; it
+# is checked before anything is read or written, and again when it is written.
+loop_evidence_check() {
+  [ -n "$LOOP_EVIDENCE" ] && [ -s "$LOOP_EVIDENCE" ] || return 0
+  jq -e 'type == "object"' "$LOOP_EVIDENCE" >/dev/null 2>&1 \
+    || { echo "FAIL: --evidence $LOOP_EVIDENCE is not a JSON object; it was left untouched and nothing was written" >&2; exit 1; }
+}
+
+# loop_menu — the public menu, read anonymously FIRST (no Key Vault read, no write):
+# the first available dish and the order total, which --refund-pennies must stay
+# strictly below (PAY-03 adjacency edge: a full refund is never the loop's proof).
+LP_FULFILMENT=""; LP_PID=""; LP_PRICE=""; LP_MASK=""
+loop_menu() {
+  local code fulfilment fee pick pid price mask title
+  need_tool curl
+  ensure_workdir
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG" "$WORKDIR/ml-pub-shop.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG" "$code" "$WORKDIR/ml-pub-shop.json"
+  if [ "$(jq -r '.offersCollection' "$WORKDIR/ml-pub-shop.json")" = true ]; then
+    fulfilment=COLLECTION; fee=0
+  elif [ "$(jq -r '.offersDelivery' "$WORKDIR/ml-pub-shop.json")" = true ]; then
+    fulfilment=DELIVERY; fee=$(jq -r '.deliveryFeePennies // 0' "$WORKDIR/ml-pub-shop.json")
+  else
+    echo "FAIL: $SHOP_SLUG offers neither collection nor delivery" >&2; exit 1
+  fi
+  rm -f "$WORKDIR/ml-pub-shop.json"
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG/products" "$WORKDIR/ml-pub-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG/products" "$code" "$WORKDIR/ml-pub-products.json"
+  pick=$(jq -c '[(if type == "object" and has("content") then .content[] elif type == "object" then .[][] else .[] end)
+                 | select(.inStock == true)][0] // empty' "$WORKDIR/ml-pub-products.json")
+  rm -f "$WORKDIR/ml-pub-products.json"
+  [ -n "$pick" ] || { echo "FAIL: $SHOP_SLUG has no available product on its public menu" >&2; exit 1; }
+  pid=$(jq -r '.id' <<<"$pick"); price=$(jq -r '.pricePennies' <<<"$pick")
+  mask=$(jq -r '.allergenMask // 0' <<<"$pick"); title=$(jq -r '.title // .name // "?"' <<<"$pick")
+  [[ "$price" =~ ^[0-9]+$ ]] && [[ "$mask" =~ ^[0-9]+$ ]] || { echo "FAIL: the menu entry for $pid has no integer price or allergen mask" >&2; exit 1; }
+  LP_TOTAL=$((price + fee))
+  echo "OK: basket = 1 x \"$title\" ($pid) at ${price}p, allergen mask $mask, $fulfilment, expected total ${LP_TOTAL}p"
+  LP_FULFILMENT="$fulfilment"; LP_PID="$pid"; LP_PRICE="$price"; LP_MASK="$mask"
+  if [ "$LOOP_REFUND_PENNIES" -ge "$LP_TOTAL" ]; then
+    usage_error "--refund-pennies $LOOP_REFUND_PENNIES is not less than the order total ${LP_TOTAL}p: the loop proves a PARTIAL refund only. Nothing was read from Key Vault or written"
+  fi
+}
+
+# loop_order — one storefront order for the basket loop_menu chose.
+loop_order() {
+  local code cs ost acct_cs fulfilment="$LP_FULFILMENT" pid="$LP_PID" price="$LP_PRICE" mask="$LP_MASK"
+  jq -n --arg n "$GUEST_NAME" --arg e "$GUEST_EMAIL" --arg ph "$GUEST_PHONE" --arg f "$fulfilment" \
+        --arg p "$pid" --argjson pr "$price" --argjson m "$mask" --argjson t "$LP_TOTAL" '
+      {customerName: $n, customerEmail: $e, customerPhone: $ph, fulfilmentType: $f,
+       items: [{productId: $p, quantity: 1, expectedUnitPricePennies: $pr}],
+       acknowledgedAllergenMask: $m, expectedTotalPennies: $t}
+      + (if $f == "DELIVERY" then {addressLine1: "1 Staging Test Street", addressCity: "Birmingham", addressPostcode: "B1 1AA"} else {} end)' \
+    | body "$WORKDIR/ml-order.json"
+  code=$(pub_api POST "/api/v1/public/shops/$SHOP_SLUG/orders" "$WORKDIR/ml-order-out.json" "$WORKDIR/ml-order.json" \
+    "Idempotency-Key: $LP_RUN-order")
+  rm -f "$WORKDIR/ml-order.json"
+  [ "$code" = 201 ] || fail_http "POST /api/v1/public/shops/$SHOP_SLUG/orders" "$code" "$WORKDIR/ml-order-out.json"
+  LP_ORDER=$(jq -r '.orderNumber // empty' "$WORKDIR/ml-order-out.json")
+  ost=$(jq -r '.status // empty' "$WORKDIR/ml-order-out.json")
+  cs=$(jq -r '.clientSecret // empty' "$WORKDIR/ml-order-out.json")
+  acct_cs=$(jq -r '.stripeAccountId // empty' "$WORKDIR/ml-order-out.json")
+  rm -f "$WORKDIR/ml-order-out.json"
+  [ -n "$LP_ORDER" ] || { cs=""; echo "FAIL: the 201 carried no orderNumber" >&2; exit 1; }
+  if [ "$LOOP_MODE" = direct ]; then
+    # A direct charge's intent lives on the connected account, and the 201 names it.
+    if [ -z "$acct_cs" ]; then
+      cs=""; refuse mode-mismatch "order $LP_ORDER's intent was created on the platform account (the 201 names no connected account), not as a direct charge on $LP_ACCOUNT; it is not confirmed or refunded by the loop"
+    fi
+    [ "$acct_cs" = "$LP_ACCOUNT" ] \
+      || { cs=""; echo "FAIL: order $LP_ORDER's intent is on connected account $acct_cs, not the tenant's account $LP_ACCOUNT" >&2; exit 1; }
+  elif [ -n "$acct_cs" ]; then
+    cs=""; refuse mode-mismatch "order $LP_ORDER's intent was created on connected account $acct_cs (a direct charge), not as a destination charge on the platform"
+  fi
+  [ -n "$cs" ] || { echo "FAIL: order $LP_ORDER came back with no client secret: a cash order, which the loop must never place (is the Stripe key configured on core-java?)" >&2; exit 1; }
+  LP_INTENT="${cs%%_secret_*}"
+  cs=""
+  [[ "$LP_INTENT" =~ ^pi_[A-Za-z0-9]+$ ]] || { echo "FAIL: the client secret does not carry a PaymentIntent id" >&2; exit 1; }
+  echo "OK: order $LP_ORDER status $ost (Idempotency-Key $LP_RUN-order; client secret not shown)"
+  LP_STEPS+=(order)
+}
+
+# loop_confirm — the intent confirmed with pm_card_bypassPending, unless it succeeded.
+loop_confirm() {
+  local code pstatus
+  code=$(loop_stripe GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT$(lp_on)" "$code" "$WORKDIR/ml-pi.json"
+  assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
+  if [ "$(jq -r '.metadata.order_number // empty' "$WORKDIR/ml-pi.json")" != "$LP_ORDER" ]; then
+    echo "FAIL: PaymentIntent $LP_INTENT names order '$(jq -r '.metadata.order_number // ""' "$WORKDIR/ml-pi.json")', not $LP_ORDER" >&2; exit 1
+  fi
+  pstatus=$(jq -r '.status' "$WORKDIR/ml-pi.json")
+  rm -f "$WORKDIR/ml-pi.json"
+  case "$pstatus" in
+    succeeded)
+      echo "SKIP: PaymentIntent $LP_INTENT already succeeded; not confirmed again" ;;
+    requires_payment_method|requires_confirmation)
+      STRIPE_EXTRA_HEADER="Idempotency-Key: $LP_RUN-confirm"
+      code=$(loop_stripe POST "/v1/payment_intents/$LP_INTENT/confirm" "$WORKDIR/ml-pi-confirm.json" \
+        "payment_method=pm_card_bypassPending" "return_url=$ORDER_RETURN_URL")
+      STRIPE_EXTRA_HEADER=""
+      [ "$code" = 200 ] || stripe_fail "POST /v1/payment_intents/$LP_INTENT/confirm$(lp_on)" "$code" "$WORKDIR/ml-pi-confirm.json"
+      assert_test_mode "$WORKDIR/ml-pi-confirm.json" "the confirmed PaymentIntent $LP_INTENT"
+      echo "CONFIRMED: PaymentIntent $LP_INTENT with pm_card_bypassPending (status $(jq -r '.status' "$WORKDIR/ml-pi-confirm.json"); Idempotency-Key $LP_RUN-confirm)"
+      rm -f "$WORKDIR/ml-pi-confirm.json" ;;
+    *)
+      echo "FAIL: PaymentIntent $LP_INTENT is $pstatus, which the loop cannot settle" >&2; exit 1 ;;
+  esac
+  LP_STEPS+=(confirm)
+}
+
+# loop_wait_captured — the public tracking read until paymentStatus CAPTURED (the
+# D-28 webhook settled it); every read printed; deadline PAID_DEADLINE_SECONDS.
+loop_wait_captured() {
+  local code q t0 track tstatus tpay
+  q=$(jq -rn --arg e "$GUEST_EMAIL" '$e | @uri')
+  t0=$(date +%s)
+  while :; do
+    tpay=""
+    code=$(pub_api GET "/api/v1/public/orders/$LP_ORDER?email=$q" "$WORKDIR/ml-track.json")
+    if [ "$code" = 200 ]; then
+      tstatus=$(jq -r '.status // ""' "$WORKDIR/ml-track.json"); tpay=$(jq -r '.paymentStatus // ""' "$WORKDIR/ml-track.json")
+      track="status=$tstatus payment_status=$tpay"
+    else
+      track="http=$code"
+    fi
+    rm -f "$WORKDIR/ml-track.json"
+    echo "LOOP-WAIT order=$LP_ORDER $track elapsed=$(( $(date +%s) - t0 ))s"
+    [ "$tpay" != CAPTURED ] || break
+    if [ $(( $(date +%s) - t0 )) -ge "$PAID_DEADLINE_SECONDS" ]; then
+      echo "FAIL: order $LP_ORDER did not read CAPTURED within ${PAID_DEADLINE_SECONDS}s (deadline); last tracking read: $track" >&2
+      # A direct charge's payment_intent.succeeded is an event on the connected account:
+      # it reaches core-java only through the Connect webhook endpoint (plan 30-12).
+      [ "$LOOP_MODE" != direct ] || echo "HINT: a direct charge settles through the Connect-scope webhook endpoint; check it is registered and delivering for $LP_ACCOUNT" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  LP_STEPS+=(captured)
+}
+
+# loop_read_destination — the intent, its charge and its transfer, each by id. The
+# intent must be a destination charge to the tenant's account (Pitfall 6).
+loop_read_destination() {
+  local code row st tdtype dest fee smode on amt ch cap cpi ctr tdest tamt tsrc
+  code=$(stripe_api GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT" "$code" "$WORKDIR/ml-pi.json"
+  assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
+  row=$(jq -r '[.status // "", (.transfer_data | type), (.transfer_data.destination // ""), (.application_fee_amount // "" | tostring),
+                .metadata.settlement_mode // "", .metadata.order_number // "", (.amount // "" | tostring),
+                (if (.latest_charge | type) == "object" then .latest_charge.id else (.latest_charge // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-pi.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-pi.json"
+  [ -n "$row" ] || { echo "FAIL: PaymentIntent $LP_INTENT could not be read" >&2; exit 1; }
+  IFS=$'\x1f' read -r st tdtype dest fee smode on amt ch <<<"$row" || true
+  [ "$on" = "$LP_ORDER" ] || { echo "FAIL: PaymentIntent $LP_INTENT names order '$on', not $LP_ORDER" >&2; exit 1; }
+  [ "$st" = succeeded ] || { echo "FAIL: PaymentIntent $LP_INTENT is '$st' after CAPTURED, not succeeded" >&2; exit 1; }
+  if [ "$tdtype" != object ] || [ -z "$dest" ]; then
+    refuse plain-charge "PaymentIntent $LP_INTENT has no transfer_data.destination: a plain platform charge, never recorded as a destination-charge proof (Pitfall 6); the order is not accepted or refunded by the loop"
+  fi
+  [ "$dest" = "$LP_ACCOUNT" ] || { echo "FAIL: PaymentIntent $LP_INTENT transfer_data.destination is $dest, not the tenant's account $LP_ACCOUNT" >&2; exit 1; }
+  [[ "$fee" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT application_fee_amount is '${fee:-absent}' (want > 0 on a destination charge)" >&2; exit 1; }
+  [ "$smode" = DESTINATION_CHARGE_PLATFORM_MOR ] \
+    || { echo "FAIL: PaymentIntent $LP_INTENT metadata.settlement_mode is '${smode:-absent}', not DESTINATION_CHARGE_PLATFORM_MOR" >&2; exit 1; }
+  [ "$amt" = "$LP_TOTAL" ] || { echo "FAIL: PaymentIntent $LP_INTENT amount is $amt, not the order total $LP_TOTAL" >&2; exit 1; }
+  [[ "$ch" =~ ^ch_[A-Za-z0-9]+$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT names no ch_ latest_charge ('$ch')" >&2; exit 1; }
+  LP_AMOUNT="$amt"; LP_FEE="$fee"; LP_CHARGE="$ch"
+  echo "LOOP-ORDER mode=destination order=$LP_ORDER intent=$LP_INTENT amount=$amt application_fee=$fee"
+  LP_STEPS+=(intent)
+
+  code=$(stripe_api GET "/v1/charges/$ch" "$WORKDIR/ml-ch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$ch" "$code" "$WORKDIR/ml-ch.json"
+  assert_test_mode "$WORKDIR/ml-ch.json" "Charge $ch"
+  row=$(jq -r '[(.captured | tostring), (.amount_captured // "" | tostring), (.payment_intent // ""),
+                (if (.transfer | type) == "object" then .transfer.id else (.transfer // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-ch.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-ch.json"
+  IFS=$'\x1f' read -r cap LP_CAPTURED cpi ctr <<<"$row" || true
+  [ "$cap" = true ] || { echo "FAIL: Charge $ch reads captured '$cap', not true" >&2; exit 1; }
+  [ "$cpi" = "$LP_INTENT" ] || { echo "FAIL: Charge $ch belongs to '$cpi', not $LP_INTENT" >&2; exit 1; }
+  [ "$LP_CAPTURED" = "$amt" ] || { echo "FAIL: Charge $ch amount_captured is '$LP_CAPTURED', not $amt" >&2; exit 1; }
+  [[ "$ctr" =~ ^tr_[A-Za-z0-9]+$ ]] || { echo "FAIL: Charge $ch carries no tr_ transfer ('$ctr'); a destination charge creates one" >&2; exit 1; }
+  echo "LOOP-CAPTURE charge=$ch captured=true amount=$LP_CAPTURED"
+  LP_STEPS+=(charge)
+
+  code=$(stripe_api GET "/v1/transfers/$ctr" "$WORKDIR/ml-tr.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/transfers/$ctr" "$code" "$WORKDIR/ml-tr.json"
+  assert_test_mode "$WORKDIR/ml-tr.json" "Transfer $ctr"
+  row=$(jq -r '[(if (.destination | type) == "object" then .destination.id else (.destination // "") end), (.amount // "" | tostring),
+                (if (.source_transaction | type) == "object" then .source_transaction.id else (.source_transaction // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-tr.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-tr.json"
+  IFS=$'\x1f' read -r tdest tamt tsrc <<<"$row" || true
+  [ "$tdest" = "$LP_ACCOUNT" ] || { echo "FAIL: Transfer $ctr destination is '$tdest', not the tenant's account $LP_ACCOUNT" >&2; exit 1; }
+  [ "$tamt" = "$((amt - fee))" ] || { echo "FAIL: Transfer $ctr amount is '$tamt', not amount $amt minus application_fee_amount $fee" >&2; exit 1; }
+  [ -z "$tsrc" ] || [ "$tsrc" = "$ch" ] || { echo "FAIL: Transfer $ctr source_transaction is $tsrc, not $ch" >&2; exit 1; }
+  LP_TRANSFER="$ctr"; LP_TRANSFER_AMOUNT="$tamt"
+  echo "LOOP-TRANSFER transfer=$ctr destination=$tdest amount=$tamt"
+  LP_STEPS+=(transfer)
+}
+
+# loop_read_direct — plan 30-29: the intent and its charge, each by id ON THE CONNECTED
+# ACCOUNT (Stripe-Account). A direct charge carries no transfer_data (the money is the
+# vendor's from the start): the platform's share is application_fee_amount, and the
+# routing is named by metadata.settlement_mode. There is no transfer to read.
+loop_read_direct() {
+  local code row st tdtype fee smode on amt ch cap cpi cfee
+  code=$(loop_stripe GET "/v1/payment_intents/$LP_INTENT" "$WORKDIR/ml-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$LP_INTENT$(lp_on)" "$code" "$WORKDIR/ml-pi.json"
+  assert_test_mode "$WORKDIR/ml-pi.json" "PaymentIntent $LP_INTENT"
+  row=$(jq -r '[.status // "", (.transfer_data | type), (.application_fee_amount // "" | tostring),
+                .metadata.settlement_mode // "", .metadata.order_number // "", (.amount // "" | tostring),
+                (if (.latest_charge | type) == "object" then .latest_charge.id else (.latest_charge // "") end)] | join("\u001f")' \
+          "$WORKDIR/ml-pi.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-pi.json"
+  [ -n "$row" ] || { echo "FAIL: PaymentIntent $LP_INTENT could not be read" >&2; exit 1; }
+  IFS=$'\x1f' read -r st tdtype fee smode on amt ch <<<"$row" || true
+  [ "$on" = "$LP_ORDER" ] || { echo "FAIL: PaymentIntent $LP_INTENT names order '$on', not $LP_ORDER" >&2; exit 1; }
+  [ "$st" = succeeded ] || { echo "FAIL: PaymentIntent $LP_INTENT is '$st' after CAPTURED, not succeeded" >&2; exit 1; }
+  [ "$tdtype" = null ] \
+    || { echo "FAIL: PaymentIntent $LP_INTENT on $LP_ACCOUNT carries transfer_data: a destination charge, not a direct charge" >&2; exit 1; }
+  [[ "$fee" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT application_fee_amount is '${fee:-absent}' (want > 0 on a direct charge)" >&2; exit 1; }
+  [ "$smode" = DIRECT_CHARGE_VENDOR_MOR ] \
+    || { echo "FAIL: PaymentIntent $LP_INTENT metadata.settlement_mode is '${smode:-absent}', not DIRECT_CHARGE_VENDOR_MOR" >&2; exit 1; }
+  [ "$amt" = "$LP_TOTAL" ] || { echo "FAIL: PaymentIntent $LP_INTENT amount is $amt, not the order total $LP_TOTAL" >&2; exit 1; }
+  [[ "$ch" =~ ^ch_[A-Za-z0-9]+$ ]] || { echo "FAIL: PaymentIntent $LP_INTENT names no ch_ latest_charge ('$ch')" >&2; exit 1; }
+  LP_AMOUNT="$amt"; LP_FEE="$fee"; LP_CHARGE="$ch"
+  echo "LOOP-ORDER mode=direct order=$LP_ORDER intent=$LP_INTENT amount=$amt application_fee=$fee account=$LP_ACCOUNT"
+  LP_STEPS+=(intent)
+
+  code=$(loop_stripe GET "/v1/charges/$ch" "$WORKDIR/ml-ch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$ch$(lp_on)" "$code" "$WORKDIR/ml-ch.json"
+  assert_test_mode "$WORKDIR/ml-ch.json" "Charge $ch"
+  row=$(jq -r '[(.captured | tostring), (.amount_captured // "" | tostring), (.payment_intent // ""),
+                (.application_fee_amount // "" | tostring)] | join("\u001f")' "$WORKDIR/ml-ch.json" 2>/dev/null) || row=""
+  rm -f "$WORKDIR/ml-ch.json"
+  IFS=$'\x1f' read -r cap LP_CAPTURED cpi cfee <<<"$row" || true
+  [ "$cap" = true ] || { echo "FAIL: Charge $ch reads captured '$cap', not true" >&2; exit 1; }
+  [ "$cpi" = "$LP_INTENT" ] || { echo "FAIL: Charge $ch belongs to '$cpi', not $LP_INTENT" >&2; exit 1; }
+  [ "$LP_CAPTURED" = "$amt" ] || { echo "FAIL: Charge $ch amount_captured is '$LP_CAPTURED', not $amt" >&2; exit 1; }
+  [ -z "$cfee" ] || [ "$cfee" = "$fee" ] || { echo "FAIL: Charge $ch application_fee_amount is $cfee, not the intent's $fee" >&2; exit 1; }
+  echo "LOOP-CAPTURE mode=direct charge=$ch captured=true amount=$LP_CAPTURED account=$LP_ACCOUNT"
+  LP_STEPS+=(charge)
+}
+
+# The refund half (Task 2). REFUND_DEADLINE_SECONDS bounds both the Stripe refund read
+# and the local refund row's catch-up.
+REFUND_DEADLINE_SECONDS="${STAGING_SEED_REFUND_DEADLINE_SECONDS:-60}"
+LOOP_REFUND_REASON="REQUESTED_BY_CUSTOMER"
+LP_ORDER_ID=""; LP_LOCAL_REFUND=""; LP_REFUND=""; LP_REFUND_AMOUNT=""; LP_REFUND_STATUS=""; LP_LOCAL_STATUS=""
+LP_REVERSAL=""; LP_REVERSAL_AMOUNT=""
+
+# loop_accept — the vendor accepts the paid order (a refund needs CONFIRMED or later).
+loop_accept() {
+  local code st
+  find_order_id "$LP_ORDER" PENDING CONFIRMED \
+    || { echo "FAIL: order $LP_ORDER is neither PENDING nor CONFIRMED in the vendor's view" >&2; exit 1; }
+  LP_ORDER_ID="$FOUND_ID"
+  if [ "$FOUND_STATUS" = CONFIRMED ]; then
+    echo "SKIP: $LP_ORDER is already CONFIRMED; not accepted again"
+  else
+    code=$(api vendor POST "/api/v1/orders/$LP_ORDER_ID/confirm" "$WORKDIR/ml-accept.json")
+    [ "$code" = 200 ] || fail_http "POST /api/v1/orders/{id}/confirm ($LP_ORDER)" "$code" "$WORKDIR/ml-accept.json"
+    st=$(jq -r '.status // empty' "$WORKDIR/ml-accept.json" 2>/dev/null || true)
+    rm -f "$WORKDIR/ml-accept.json"
+    [ "$st" = CONFIRMED ] || { echo "FAIL: the accept of $LP_ORDER answered status '$st', not CONFIRMED" >&2; exit 1; }
+  fi
+  echo "LOOP-ACCEPT ${LP_VM}order=$LP_ORDER status=CONFIRMED"
+  LP_STEPS+=(accept)
+}
+
+# loop_refund — a PARTIAL refund through the vendor API, then Stripe's refund read by
+# id (status succeeded, a transfer_reversal: RefundService sets reverse_transfer on a
+# destination charge), its charge read for livemode (a Refund object carries no
+# livemode field, docs.stripe.com/api/refunds/object), the transfer's reversal, and
+# the local refund row polled until it equals Stripe's status.
+loop_refund() {
+  local code row n lamt sre k sst ramt rch rpi trr t0 lst rvamt
+  [ "$LOOP_REFUND_PENNIES" -lt "$LP_CAPTURED" ] \
+    || { echo "FAIL: --refund-pennies $LOOP_REFUND_PENNIES is not less than the captured ${LP_CAPTURED}p; no refund was issued (partial only)" >&2; exit 1; }
+  # Plan 30-29 (T-30-112): a re-run with the same --run-id finds the refund it already
+  # issued (RefundService stores the client's Idempotency-Key on the row, and the order
+  # detail lists it) and requests nothing again.
+  code=$(api vendor GET "/api/v1/orders/$LP_ORDER_ID/detail" "$WORKDIR/ml-detail0.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($LP_ORDER)" "$code" "$WORKDIR/ml-detail0.json"
+  row=$(jq -r --arg k "$LP_RUN-refund" '[.refunds[]? | select(.idempotencyKey == $k)]
+          | if length == 0 then "" elif length == 1 then ([.[0].id // "", (.[0].amountPennies // "" | tostring), .[0].stripeRefundId // ""] | join("\u001f"))
+            else "many" end' "$WORKDIR/ml-detail0.json" 2>/dev/null) || row="unparseable"
+  rm -f "$WORKDIR/ml-detail0.json"
+  case "$row" in
+    many|unparseable) echo "FAIL: order $LP_ORDER's refunds could not be matched to run $LP_RUN ($row)" >&2; exit 1 ;;
+  esac
+  if [ -n "$row" ]; then
+    IFS=$'\x1f' read -r LP_LOCAL_REFUND lamt sre <<<"$row" || true
+    [[ "$LP_LOCAL_REFUND" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: run $LP_RUN's refund row carries no refund id" >&2; exit 1; }
+    [ "$lamt" = "$LOOP_REFUND_PENNIES" ] \
+      || { echo "FAIL: run $LP_RUN already refunded ${lamt}p of $LP_ORDER, not ${LOOP_REFUND_PENNIES}p; re-run it with the same --refund-pennies" >&2; exit 1; }
+    echo "SKIP: run $LP_RUN already requested refund $LP_LOCAL_REFUND (${lamt}p, Idempotency-Key $LP_RUN-refund); not requested again"
+    LP_STEPS+=(refund-found)
+  else
+    jq -n --argjson a "$LOOP_REFUND_PENNIES" --arg r "$LOOP_REFUND_REASON" --arg n "PAY-03 staging money loop $LP_RUN: a partial refund" \
+      '{amountPennies: $a, reason: $r, note: $n}' | body "$WORKDIR/ml-refund.json"
+    API_EXTRA_HEADER="Idempotency-Key: $LP_RUN-refund"
+    code=$(api vendor POST "/api/v1/orders/$LP_ORDER_ID/refund" "$WORKDIR/ml-refund-out.json" "$WORKDIR/ml-refund.json")
+    API_EXTRA_HEADER=""
+    rm -f "$WORKDIR/ml-refund.json"
+    [ "$code" = 201 ] || fail_http "POST /api/v1/orders/{id}/refund ($LP_ORDER, ${LOOP_REFUND_PENNIES}p)" "$code" "$WORKDIR/ml-refund-out.json"
+    row=$(jq -r '[.id // "", (.amountPennies // "" | tostring), .stripeRefundId // ""] | join("\u001f")' "$WORKDIR/ml-refund-out.json" 2>/dev/null) || row=""
+    rm -f "$WORKDIR/ml-refund-out.json"
+    IFS=$'\x1f' read -r LP_LOCAL_REFUND lamt sre <<<"$row" || true
+    [[ "$LP_LOCAL_REFUND" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the refund 201 carried no refund id" >&2; exit 1; }
+    [ "$lamt" = "$LOOP_REFUND_PENNIES" ] || { echo "FAIL: the refund row is for '$lamt'p, not ${LOOP_REFUND_PENNIES}p" >&2; exit 1; }
+    echo "OK: refund $LP_LOCAL_REFUND requested through the vendor API for ${lamt}p (Idempotency-Key $LP_RUN-refund)"
+    LP_STEPS+=(refund)
+  fi
+
+  # This run's refund among the intent's: RefundService stamps metadata.refund_id. In
+  # direct mode the refund is the connected account's (RefundService sends Stripe-Account),
+  # so it is listed and read there.
+  code=$(loop_stripe GET "/v1/refunds?payment_intent=$LP_INTENT&limit=100" "$WORKDIR/ml-refunds.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/refunds?payment_intent=$LP_INTENT$(lp_on)" "$code" "$WORKDIR/ml-refunds.json"
+  n=$(jq -r --arg r "$LP_LOCAL_REFUND" 'if .object == "list" then ([.data[]? | select(.metadata.refund_id == $r)] | length | tostring) else "not-a-list" end' \
+        "$WORKDIR/ml-refunds.json" 2>/dev/null || echo unparseable)
+  k=$(jq -r --arg r "$LP_LOCAL_REFUND" '[.data[]? | select(.metadata.refund_id == $r) | .id][0] // ""' "$WORKDIR/ml-refunds.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/ml-refunds.json"
+  [ "$n" = 1 ] || { echo "FAIL: $n refunds of $LP_INTENT carry metadata.refund_id $LP_LOCAL_REFUND (want exactly 1 for this run)" >&2; exit 1; }
+  [[ "$k" =~ ^re_[A-Za-z0-9]+$ ]] || { echo "FAIL: this run's refund carries no re_ id" >&2; exit 1; }
+  [ -z "$sre" ] || [ "$sre" = "$k" ] || { echo "FAIL: the local refund row names $sre but Stripe's refund for it is $k" >&2; exit 1; }
+  LP_REFUND="$k"
+
+  t0=$(date +%s)
+  while :; do
+    code=$(loop_stripe GET "/v1/refunds/$LP_REFUND" "$WORKDIR/ml-re.json")
+    [ "$code" = 200 ] || stripe_fail "GET /v1/refunds/$LP_REFUND$(lp_on)" "$code" "$WORKDIR/ml-re.json"
+    row=$(jq -r 'def id: if type == "object" then .id else (. // "") end;
+                 [.status // "", (.amount // "" | tostring), (.charge | id), (.payment_intent | id), (.transfer_reversal | id)] | join("\u001f")' \
+            "$WORKDIR/ml-re.json" 2>/dev/null) || row=""
+    rm -f "$WORKDIR/ml-re.json"
+    IFS=$'\x1f' read -r sst ramt rch rpi trr <<<"$row" || true
+    echo "LOOP-REFUND-READ refund=$LP_REFUND status=${sst:-unreadable} elapsed=$(( $(date +%s) - t0 ))s"
+    case "$sst" in
+      succeeded) break ;;
+      failed|canceled) echo "FAIL: Refund $LP_REFUND is $sst" >&2; exit 1 ;;
+    esac
+    if [ $(( $(date +%s) - t0 )) -ge "$REFUND_DEADLINE_SECONDS" ]; then
+      echo "FAIL: Refund $LP_REFUND did not read succeeded within ${REFUND_DEADLINE_SECONDS}s (deadline; last '$sst')" >&2; exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  [ "$rpi" = "$LP_INTENT" ] || { echo "FAIL: Refund $LP_REFUND belongs to '$rpi', not $LP_INTENT" >&2; exit 1; }
+  [ "$ramt" = "$LOOP_REFUND_PENNIES" ] || { echo "FAIL: Refund $LP_REFUND is for '$ramt', not $LOOP_REFUND_PENNIES" >&2; exit 1; }
+  [ "$ramt" -lt "$LP_CAPTURED" ] || { echo "FAIL: Refund $LP_REFUND ($ramt) is not less than the captured $LP_CAPTURED: not a partial refund" >&2; exit 1; }
+  if [ "$LOOP_MODE" = destination ]; then
+    [[ "$trr" =~ ^trr_[A-Za-z0-9]+$ ]] \
+      || { echo "FAIL: Refund $LP_REFUND carries no transfer_reversal ('$trr'): a destination-charge refund must reverse the connected account's transfer (reverse_transfer)" >&2; exit 1; }
+  fi
+  [ "$rch" = "$LP_CHARGE" ] || { echo "FAIL: Refund $LP_REFUND is on charge '$rch', not $LP_CHARGE" >&2; exit 1; }
+  LP_REFUND_STATUS="$sst"; LP_REFUND_AMOUNT="$ramt"; LP_REVERSAL="$trr"
+  LP_STEPS+=(refund-read)
+
+  code=$(loop_stripe GET "/v1/charges/$rch" "$WORKDIR/ml-rch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$rch$(lp_on)" "$code" "$WORKDIR/ml-rch.json"
+  assert_test_mode "$WORKDIR/ml-rch.json" "Charge $rch (refund $LP_REFUND's: a Refund carries no livemode field)"
+  rm -f "$WORKDIR/ml-rch.json"
+  LP_STEPS+=(refund-charge)
+
+  # A direct charge has no transfer, so there is no reversal to read.
+  [ "$LOOP_MODE" = destination ] || { loop_refund_local; return 0; }
+  code=$(stripe_api GET "/v1/transfers/$LP_TRANSFER" "$WORKDIR/ml-tr2.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/transfers/$LP_TRANSFER" "$code" "$WORKDIR/ml-tr2.json"
+  assert_test_mode "$WORKDIR/ml-tr2.json" "Transfer $LP_TRANSFER"
+  rvamt=$(jq -r --arg v "$trr" '[.reversals.data[]? | select(.id == $v) | .amount] | if length == 1 then (.[0] | tostring) else "" end' \
+            "$WORKDIR/ml-tr2.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/ml-tr2.json"
+  [[ "$rvamt" =~ ^[1-9][0-9]*$ ]] && [ "$rvamt" -le "$ramt" ] \
+    || { echo "FAIL: Transfer $LP_TRANSFER lists no reversal $trr of 1..${ramt}p (read '$rvamt')" >&2; exit 1; }
+  LP_REVERSAL_AMOUNT="$rvamt"
+  echo "OK: transfer $LP_TRANSFER carries reversal $trr of ${rvamt}p (proportional to the refund)"
+  LP_STEPS+=(transfer-reversal)
+  loop_refund_local
+}
+
+# loop_refund_local — the local refund row polled until it equals Stripe's status (the
+# refund.* events reached the app: Connect-scope ones in direct mode), then LOOP-REFUND.
+loop_refund_local() {
+  local code t0 lst
+  t0=$(date +%s)
+  while :; do
+    lst=""
+    code=$(api vendor GET "/api/v1/orders/$LP_ORDER_ID/detail" "$WORKDIR/ml-detail.json")
+    if [ "$code" = 200 ]; then
+      lst=$(jq -r --arg r "$LP_LOCAL_REFUND" '[.refunds[]? | select(.id == $r) | .status][0] // ""' "$WORKDIR/ml-detail.json" 2>/dev/null || true)
+    fi
+    rm -f "$WORKDIR/ml-detail.json"
+    echo "LOOP-REFUND-LOCAL refund=$LP_LOCAL_REFUND local_status=${lst:-none} http=$code elapsed=$(( $(date +%s) - t0 ))s"
+    [ "$lst" != "$LP_REFUND_STATUS" ] || break
+    if [ $(( $(date +%s) - t0 )) -ge "$REFUND_DEADLINE_SECONDS" ]; then
+      echo "FAIL: the local refund row $LP_LOCAL_REFUND reads '${lst:-none}' after ${REFUND_DEADLINE_SECONDS}s while Stripe's refund $LP_REFUND reads '$LP_REFUND_STATUS' (deadline)" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  LP_LOCAL_STATUS="$lst"
+  LP_STEPS+=(refund-local)
+  if [ "$LOOP_MODE" = direct ]; then
+    echo "LOOP-REFUND mode=direct refund=$LP_REFUND amount=$LP_REFUND_AMOUNT status=$LP_REFUND_STATUS account=$LP_ACCOUNT local_status=$LP_LOCAL_STATUS"
+  else
+    echo "LOOP-REFUND refund=$LP_REFUND amount=$LP_REFUND_AMOUNT status=$LP_REFUND_STATUS transfer_reversal=$LP_REVERSAL local_status=$LP_LOCAL_STATUS"
+  fi
+}
+
+# loop_evidence — with --evidence, .modes.destination = ids, amounts and statuses only
+# (T-30-111): built with jq from named values, refused if it carries a key, secret, URL
+# or e-mail shape, written jq -S, mode 600; the file's other content is kept.
+loop_evidence() {
+  local src entry tmp steps at
+  [ -n "$LOOP_EVIDENCE" ] || return 0
+  loop_evidence_check
+  if [ -s "$LOOP_EVIDENCE" ]; then src="$LOOP_EVIDENCE"; else src="$WORKDIR/ml-evidence-empty.json"; printf '{}' > "$src"; fi
+  # The steps in the order they ran (an array: jq -S sorts keys, never array items).
+  steps=$(printf '%s\n' "${LP_STEPS[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ "$LOOP_MODE" = direct ]; then
+    entry=$(jq -cn --arg run "$LP_RUN" --arg o "$LP_ORDER" --arg pi "$LP_INTENT" --arg ch "$LP_CHARGE" \
+              --arg re "$LP_REFUND" --arg a "$LP_ACCOUNT" --argjson cap "$LP_CAPTURED" --argjson fee "$LP_FEE" \
+              --argjson ramt "$LP_REFUND_AMOUNT" --arg rs "$LP_REFUND_STATUS" --arg ls "$LP_LOCAL_STATUS" \
+              --argjson steps "$steps" --arg at "$at" '
+        {run_id: $run, order: $o, intent: $pi, charge: $ch, refund: $re, account: $a, settlement_mode: "DIRECT_CHARGE_VENDOR_MOR",
+         amounts: {captured: $cap, application_fee: $fee, refund: $ramt},
+         statuses: {intent: "succeeded", charge_captured: true, order: "CONFIRMED", refund: $rs, local_refund: $ls},
+         steps: $steps, livemode: false, at: $at}')
+  else
+    entry=$(jq -cn --arg run "$LP_RUN" --arg o "$LP_ORDER" --arg pi "$LP_INTENT" --arg ch "$LP_CHARGE" --arg tr "$LP_TRANSFER" \
+              --arg re "$LP_REFUND" --arg trr "$LP_REVERSAL" --arg a "$LP_ACCOUNT" \
+              --argjson cap "$LP_CAPTURED" --argjson fee "$LP_FEE" --argjson tamt "$LP_TRANSFER_AMOUNT" \
+              --argjson ramt "$LP_REFUND_AMOUNT" --argjson rvamt "$LP_REVERSAL_AMOUNT" \
+              --arg rs "$LP_REFUND_STATUS" --arg ls "$LP_LOCAL_STATUS" --argjson steps "$steps" --arg at "$at" '
+        {run_id: $run, order: $o, intent: $pi, charge: $ch, transfer: $tr, refund: $re, transfer_reversal: $trr, account: $a,
+         amounts: {captured: $cap, application_fee: $fee, transfer: $tamt, refund: $ramt, transfer_reversal: $rvamt},
+         statuses: {intent: "succeeded", charge_captured: true, order: "CONFIRMED", refund: $rs, local_refund: $ls},
+         steps: $steps, livemode: false, at: $at}')
+  fi
+  if command grep -qiE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@' <<<"$entry"; then
+    echo "FAIL: the evidence entry carries a key, secret, URL or e-mail shape; $LOOP_EVIDENCE was not written" >&2; exit 1
+  fi
+  tmp="$WORKDIR/ml-evidence.next.json"
+  (umask 077 && jq -S --arg m "$LOOP_MODE" --argjson e "$entry" '.modes = ((.modes // {}) + {($m): $e})' "$src" > "$tmp") \
+    || { echo "FAIL: the evidence could not be composed; $LOOP_EVIDENCE was not written" >&2; exit 1; }
+  if [ -e "$LOOP_EVIDENCE" ]; then chmod 600 "$LOOP_EVIDENCE" || { echo "FAIL: could not chmod 600 $LOOP_EVIDENCE" >&2; exit 1; }; fi
+  (umask 077 && cp "$tmp" "$LOOP_EVIDENCE") || { echo "FAIL: could not write $LOOP_EVIDENCE" >&2; exit 1; }
+  chmod 600 "$LOOP_EVIDENCE"
+  rm -f "$tmp"
+  echo "LOOP-EVIDENCE file=$LOOP_EVIDENCE mode=$LOOP_MODE"
+}
+
+money_loop_stage() {
+  LP_RUN="${RUN_ID:-loop-$(date -u +%Y%m%dT%H%M%SZ)}"
+  echo "OK: money loop --mode $LOOP_MODE, run id $LP_RUN (every Idempotency-Key derives from it); refund ${LOOP_REFUND_PENNIES}p"
+  loop_evidence_check
+  loop_menu
+  loop_preflight
+  loop_order
+  loop_confirm
+  loop_wait_captured
+  case "$LOOP_MODE" in
+    destination) loop_read_destination ;;
+    direct)      loop_read_direct ;;
+  esac
+  loop_accept
+  loop_refund
+  loop_evidence
+}
+
+# ===========================================================================
+# PAY-03, the payout (plan 30-29; D-06 TEST mode only; T-30-112..T-30-115). Money
+# leaves the platform for the vendor's bank as a payout FROM THE CONNECTED ACCOUNT's
+# balance. 30-RESEARCH A4: a platform may set a manual payout schedule and create
+# payouts for an Express account it controls; the stage verifies that by doing it.
+#   --stage payout --account acct_… [--amount-pennies N] [--run-id ID] [--evidence FILE]
+#       the account must be the staging tenant's own, ENABLED (read by a per-run
+#       operator that is deleted before any Stripe call, else REFUSED [other-account] /
+#       [connect-status]). This run's payout is looked up first (metadata.loop_run_id):
+#       a re-run with the same --run-id reads it again and writes nothing. Otherwise:
+#       POST /v1/accounts/{acct} settings[payouts][schedule][interval]=manual
+#       (platform-level, no Stripe-Account; Idempotency-Key <run id>-schedule-<acct>),
+#       GET /v1/balance on the account (REFUSED [no-available-balance] at 0), POST
+#       /v1/payouts amount=min(N, available) (default N = available; a payout above the
+#       available balance is never requested) currency=gbp with Stripe-Account and
+#       Idempotency-Key <run id>-payout-<acct>, then GET /v1/payouts/{id} every
+#       POLL_SECONDS until paid or the deadline (PAYOUT_DEADLINE_SECONDS, 180), every
+#       state printed. Stripe's status is printed VERBATIM: a payout still in_transit or
+#       pending at the deadline is rc 0 with that status and a payout-read hint, never
+#       "paid". Ends PAYOUT account=… payout=po_… amount=… status=… livemode=false.
+#   --stage payout-read --account acct_… --payout po_… [--evidence FILE]
+#       one read of the payout by id on the account; PAYOUT line with Stripe's current
+#       status; with --evidence, that payout's .payouts[] entry gets the status (the
+#       only way a deferred payout becomes paid in the evidence).
+# Only ids, amounts, statuses and the destination object's id are ever extracted: the
+# account and payout objects carry bank details, which are never printed (T-30-115).
+# ===========================================================================
+PAYOUT_DEADLINE_SECONDS="${STAGING_SEED_PAYOUT_DEADLINE_SECONDS:-180}"
+PO_RUN=""; PO_ID=""; PO_AMOUNT=""; PO_STATUS=""; PO_DEST=""; PO_REQUESTED=""; PO_AVAILABLE=""; PO_WHOLE=""; PO_INTERVAL=""
+
+# payout_account_check — T-30-114: --account must be the staging tenant's connected
+# account, ENABLED. The operator is deleted before the Stripe key is read.
+payout_account_check() {
+  operator_login
+  admin_tenant_row
+  operator_down || exit 1
+  if [ "$AT_STATUS" != ENABLED ] || ! [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+    refuse connect-status "tenant $AT_ID's connected account is ${AT_ACCOUNT:-none} with status $AT_STATUS, not ENABLED; no Stripe call was made"
+  fi
+  [ "$STRIPE_ACCOUNT" = "$AT_ACCOUNT" ] \
+    || refuse other-account "--account $STRIPE_ACCOUNT is not the staging tenant's connected account ($AT_ACCOUNT); no Stripe call was made on it"
+  echo "OK: $STRIPE_ACCOUNT is tenant $AT_ID's connected account (ENABLED)"
+  read_stripe_key
+}
+
+# payout_fields FILE — PO_ID PO_AMOUNT PO_STATUS PO_DEST from a payout object, after its
+# livemode is asserted false. Only ids, the amount and the status are extracted.
+payout_fields() {
+  local row cur
+  assert_test_mode "$1" "Payout"
+  row=$(jq -r '[.id // "", (.amount // "" | tostring), .status // "", (.currency // ""),
+                (if (.destination | type) == "object" then .destination.id else (.destination // "") end)] | join("\u001f")' \
+          "$1" 2>/dev/null) || row=""
+  IFS=$'\x1f' read -r PO_ID PO_AMOUNT PO_STATUS cur PO_DEST <<<"$row" || true
+  [[ "$PO_ID" =~ ^po_[A-Za-z0-9]+$ ]] || { echo "FAIL: the payout object carries no po_ id" >&2; exit 1; }
+  [[ "$PO_AMOUNT" =~ ^[0-9]+$ ]] || { echo "FAIL: payout $PO_ID carries no integer amount" >&2; exit 1; }
+  [ "$cur" = gbp ] || { echo "FAIL: payout $PO_ID is in '$cur', not gbp" >&2; exit 1; }
+  [[ "$PO_DEST" =~ ^(ba|card)_[A-Za-z0-9]+$ ]] || PO_DEST=""
+}
+
+# payout_read_once ID — one GET /v1/payouts/ID on the account; the id must match.
+payout_read_once() {
+  local code
+  code=$(stripe_acct "$STRIPE_ACCOUNT" GET "/v1/payouts/$1" "$WORKDIR/po-get.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payouts/$1 on $STRIPE_ACCOUNT (Stripe-Account)" "$code" "$WORKDIR/po-get.json"
+  payout_fields "$WORKDIR/po-get.json"
+  rm -f "$WORKDIR/po-get.json"
+  [ "$PO_ID" = "$1" ] || { echo "FAIL: GET /v1/payouts/$1 returned payout $PO_ID" >&2; exit 1; }
+}
+
+# payout_poll — the payout read by id until paid or the deadline; every state printed.
+# failed or canceled is a failure, printed as Stripe states it.
+payout_poll() {
+  local t0
+  t0=$(date +%s)
+  while :; do
+    payout_read_once "$PO_ID"
+    echo "PAYOUT-WAIT payout=$PO_ID status=$PO_STATUS elapsed=$(( $(date +%s) - t0 ))s"
+    case "$PO_STATUS" in
+      paid) return 0 ;;
+      failed|canceled) echo "FAIL: payout $PO_ID is $PO_STATUS (Stripe's status)" >&2; exit 1 ;;
+    esac
+    [ $(( $(date +%s) - t0 )) -lt "$PAYOUT_DEADLINE_SECONDS" ] || return 0
+    sleep "$POLL_SECONDS"
+  done
+}
+
+# payout_evidence MODE — with --evidence: MODE upsert adds (or replaces, by payout id) this
+# payout's .payouts[] entry; MODE status changes only the status (and read_at) of the
+# entry already there, else fails leaving the file untouched. jq -S, mode 600.
+payout_evidence() {
+  local src entry tmp at
+  [ -n "$LOOP_EVIDENCE" ] || return 0
+  loop_evidence_check
+  if [ -s "$LOOP_EVIDENCE" ]; then src="$LOOP_EVIDENCE"; else src="$WORKDIR/po-evidence-empty.json"; printf '{}' > "$src"; fi
+  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  tmp="$WORKDIR/po-evidence.next.json"
+  if [ "$1" = status ]; then
+    jq -e --arg p "$PO_ID" --arg a "$STRIPE_ACCOUNT" '[.payouts[]? | select(.payout == $p and .account == $a)] | length == 1' "$src" >/dev/null 2>&1 \
+      || { echo "FAIL: $LOOP_EVIDENCE has no .payouts entry for $PO_ID on $STRIPE_ACCOUNT; it was left untouched" >&2; exit 1; }
+    (umask 077 && jq -S --arg p "$PO_ID" --arg s "$PO_STATUS" --arg at "$at" \
+        '.payouts |= map(if .payout == $p then (.status = $s | .read_at = $at) else . end)' "$src" > "$tmp") \
+      || { echo "FAIL: the evidence could not be composed; $LOOP_EVIDENCE was not written" >&2; exit 1; }
+  else
+    entry=$(jq -cn --arg run "$PO_RUN" --arg a "$STRIPE_ACCOUNT" --arg p "$PO_ID" --argjson amt "$PO_AMOUNT" \
+              --argjson req "${PO_REQUESTED:-null}" --argjson av "${PO_AVAILABLE:-null}" --argjson whole "${PO_WHOLE:-null}" \
+              --arg iv "$PO_INTERVAL" --arg s "$PO_STATUS" --arg d "$PO_DEST" --arg at "$at" '
+        {run_id: $run, account: $a, payout: $p, amount: $amt, requested: $req, available: $av, whole_balance: $whole,
+         schedule_interval: (if $iv == "" then null else $iv end), status: $s, destination: (if $d == "" then null else $d end),
+         livemode: false, at: $at}')
+    if command grep -qiE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@' <<<"$entry"; then
+      echo "FAIL: the payout evidence entry carries a key, secret, URL or e-mail shape; $LOOP_EVIDENCE was not written" >&2; exit 1
+    fi
+    (umask 077 && jq -S --argjson e "$entry" '
+        if any(.payouts[]?; .payout == $e.payout) then .payouts |= map(if .payout == $e.payout then $e else . end)
+        else .payouts = ((.payouts // []) + [$e]) end' "$src" > "$tmp") \
+      || { echo "FAIL: the evidence could not be composed; $LOOP_EVIDENCE was not written" >&2; exit 1; }
+  fi
+  if [ -e "$LOOP_EVIDENCE" ]; then chmod 600 "$LOOP_EVIDENCE" || { echo "FAIL: could not chmod 600 $LOOP_EVIDENCE" >&2; exit 1; }; fi
+  (umask 077 && cp "$tmp" "$LOOP_EVIDENCE") || { echo "FAIL: could not write $LOOP_EVIDENCE" >&2; exit 1; }
+  chmod 600 "$LOOP_EVIDENCE"
+  rm -f "$tmp"
+  echo "PAYOUT-EVIDENCE file=$LOOP_EVIDENCE payout=$PO_ID status=$PO_STATUS"
+}
+
+# payout_verdict — the hint for a payout Stripe has not reported paid, then the line.
+payout_verdict() {
+  if [ "$PO_STATUS" != paid ]; then
+    echo "HINT: payout $PO_ID is $PO_STATUS, as Stripe reports it; read it again later with --stage payout-read --account $STRIPE_ACCOUNT --payout $PO_ID${LOOP_EVIDENCE:+ --evidence $LOOP_EVIDENCE}"
+  fi
+  echo "PAYOUT account=$STRIPE_ACCOUNT payout=$PO_ID amount=$PO_AMOUNT status=$PO_STATUS livemode=false"
+}
+
+# --stage payout
+payout_stage() {
+  local code n verdict acct="$STRIPE_ACCOUNT" pend
+  PO_RUN="${RUN_ID:-loop-$(date -u +%Y%m%dT%H%M%SZ)}"
+  echo "OK: payout on $acct, run id $PO_RUN (every Idempotency-Key derives from it)"
+  loop_evidence_check
+  payout_account_check
+
+  # This run's payout, if a run with the same id already made it (T-30-112).
+  code=$(stripe_acct "$acct" GET "/v1/payouts?limit=100" "$WORKDIR/po-list.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payouts on $acct (Stripe-Account)" "$code" "$WORKDIR/po-list.json"
+  assert_test_mode "$WORKDIR/po-list.json" "GET /v1/payouts on $acct"
+  n=$(jq -r --arg r "$PO_RUN" 'if .object == "list" then ([.data[]? | select(.metadata.loop_run_id == $r)] | length | tostring) else "not-a-list" end' \
+        "$WORKDIR/po-list.json" 2>/dev/null || echo unparseable)
+  case "$n" in
+    0) ;;
+    1)
+      PO_ID=$(jq -r --arg r "$PO_RUN" '[.data[] | select(.metadata.loop_run_id == $r)][0].id // ""' "$WORKDIR/po-list.json")
+      rm -f "$WORKDIR/po-list.json"
+      echo "SKIP: run $PO_RUN already made payout $PO_ID on $acct; nothing is written again (it is read by id)"
+      payout_poll
+      if [ -n "$LOOP_EVIDENCE" ] && [ -s "$LOOP_EVIDENCE" ] \
+         && jq -e --arg p "$PO_ID" '[.payouts[]? | select(.payout == $p)] | length == 1' "$LOOP_EVIDENCE" >/dev/null 2>&1; then
+        payout_evidence status
+      else
+        payout_evidence upsert
+      fi
+      payout_verdict
+      return 0 ;;
+    *) rm -f "$WORKDIR/po-list.json"; echo "FAIL: $n payouts on $acct carry metadata.loop_run_id $PO_RUN (want 0 or 1)" >&2; exit 1 ;;
+  esac
+  rm -f "$WORKDIR/po-list.json"
+
+  # The schedule: platform-level, so NO Stripe-Account header.
+  STRIPE_EXTRA_HEADER="Idempotency-Key: $PO_RUN-schedule-$acct"
+  code=$(stripe_api POST "/v1/accounts/$acct" "$WORKDIR/po-acct.json" "settings[payouts][schedule][interval]=manual")
+  STRIPE_EXTRA_HEADER=""
+  [ "$code" = 200 ] || stripe_fail "POST /v1/accounts/$acct (platform-level, settings[payouts][schedule][interval]=manual)" "$code" "$WORKDIR/po-acct.json"
+  verdict=$(jq -r 'if type != "object" then "unparseable" elif has("livemode") then (if .livemode == false then "false" else "live" end) else "absent" end' \
+              "$WORKDIR/po-acct.json" 2>/dev/null || echo unparseable)
+  case "$verdict" in
+    false) ;;
+    absent) echo "LIVEMODE n/a object=account (Stripe defines no livemode field on an Account; TEST mode rests on the sk_test_ key)" ;;
+    live) rm -f "$WORKDIR/po-acct.json"; refuse stripe-mode "POST /v1/accounts/$acct returned a live account (D-28)" ;;
+    *) rm -f "$WORKDIR/po-acct.json"; echo "FAIL: POST /v1/accounts/$acct returned no account object" >&2; exit 1 ;;
+  esac
+  [ "$(jq -r '.id // ""' "$WORKDIR/po-acct.json")" = "$acct" ] \
+    || { rm -f "$WORKDIR/po-acct.json"; echo "FAIL: POST /v1/accounts/$acct returned another account" >&2; exit 1; }
+  PO_INTERVAL=$(jq -r '.settings.payouts.schedule.interval // ""' "$WORKDIR/po-acct.json")
+  rm -f "$WORKDIR/po-acct.json"
+  [ "$PO_INTERVAL" = manual ] || { echo "FAIL: $acct's payout schedule reads '$PO_INTERVAL' after the update, not manual" >&2; exit 1; }
+  echo "OK: $acct payout schedule interval=manual (platform-level update; Idempotency-Key $PO_RUN-schedule-$acct)"
+
+  # The available GBP balance on the account.
+  code=$(stripe_acct "$acct" GET "/v1/balance" "$WORKDIR/po-bal.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/balance on $acct (Stripe-Account)" "$code" "$WORKDIR/po-bal.json"
+  assert_test_mode "$WORKDIR/po-bal.json" "Balance of $acct"
+  PO_AVAILABLE=$(jq -r '[.available[]? | select(.currency == "gbp") | .amount] | add // 0 | tostring' "$WORKDIR/po-bal.json" 2>/dev/null || echo "")
+  pend=$(jq -r '[.pending[]? | select(.currency == "gbp") | .amount] | add // 0 | tostring' "$WORKDIR/po-bal.json" 2>/dev/null || echo "?")
+  rm -f "$WORKDIR/po-bal.json"
+  [[ "$PO_AVAILABLE" =~ ^-?[0-9]+$ ]] || { echo "FAIL: the balance of $acct carries no integer available gbp amount" >&2; exit 1; }
+  echo "PAYOUT-BALANCE account=$acct available=${PO_AVAILABLE}p pending=${pend}p currency=gbp"
+  [ "$PO_AVAILABLE" -gt 0 ] \
+    || refuse no-available-balance "$acct has ${PO_AVAILABLE}p available in gbp (pending ${pend}p): there is nothing to pay out; no payout was requested"
+
+  # min(requested, available): a payout above the available balance is never requested.
+  PO_REQUESTED="${PAYOUT_PENNIES:-$PO_AVAILABLE}"
+  if [ "$PO_REQUESTED" -ge "$PO_AVAILABLE" ]; then
+    PO_AMOUNT="$PO_AVAILABLE"; PO_WHOLE=true
+    echo "OK: the payout is the whole available balance, ${PO_AVAILABLE}p (requested ${PO_REQUESTED}p; never more than is available)"
+  else
+    PO_AMOUNT="$PO_REQUESTED"; PO_WHOLE=false
+  fi
+  local want="$PO_AMOUNT"
+  STRIPE_EXTRA_HEADER="Idempotency-Key: $PO_RUN-payout-$acct"
+  code=$(stripe_acct "$acct" POST "/v1/payouts" "$WORKDIR/po-create.json" "amount=$want" "currency=gbp" "metadata[loop_run_id]=$PO_RUN")
+  STRIPE_EXTRA_HEADER=""
+  [ "$code" = 200 ] || stripe_fail "POST /v1/payouts on $acct (Stripe-Account, ${want}p)" "$code" "$WORKDIR/po-create.json"
+  payout_fields "$WORKDIR/po-create.json"
+  rm -f "$WORKDIR/po-create.json"
+  [ "$PO_AMOUNT" = "$want" ] || { echo "FAIL: payout $PO_ID is for ${PO_AMOUNT}p, not the ${want}p requested" >&2; exit 1; }
+  echo "OK: payout $PO_ID of ${want}p created on $acct (status $PO_STATUS; Idempotency-Key $PO_RUN-payout-$acct)"
+  payout_poll
+  [ "$PO_AMOUNT" = "$want" ] || { echo "FAIL: payout $PO_ID reads ${PO_AMOUNT}p, not the ${want}p requested" >&2; exit 1; }
+  payout_evidence upsert
+  payout_verdict
+}
+
+# --stage payout-read
+payout_read_stage() {
+  loop_evidence_check
+  payout_account_check
+  payout_read_once "$PAYOUT_ID"
+  payout_evidence status
+  payout_verdict
+}
+
 # --selftest
 # ===========================================================================
 _ST_RESULTS=()
@@ -2056,17 +3183,19 @@ STUB
   cat > "$ast/stub/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STUB_LOG_DIR/curl.log"
-out=""; wfmt=""; hdr=""; method=""; url=""; data=0
+out=""; wfmt=""; hdr=""; method=""; url=""; data=0; bodyfile=""; acct_hdr=""; idem=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
     -w) wfmt="$2"; shift 2 ;;
     -D) hdr="$2"; shift 2 ;;
     -X) method="$2"; shift 2 ;;
-    --data-binary) data=1; case "$2" in @*) jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
+    --data-binary) data=1; case "$2" in @*) bodyfile="${2#@}"; jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
     --data-urlencode|-d) data=1; shift 2 ;;
-    -K) command grep -ho 'Stripe-Account: [^"]*' "$2" >> "$STUB_LOG_DIR/stripe-account.log" 2>/dev/null || true; shift 2 ;;
-    -H) shift 2 ;;
+    -K) acct_hdr=$(command grep -ho 'Stripe-Account: [^"]*' "$2" 2>/dev/null || true)
+        [ -z "$acct_hdr" ] || printf '%s\n' "$acct_hdr" >> "$STUB_LOG_DIR/stripe-account.log"
+        acct_hdr="${acct_hdr##*Stripe-Account: }"; shift 2 ;;
+    -H) case "$2" in "Idempotency-Key: "*) idem="${2#Idempotency-Key: }" ;; esac; shift 2 ;;
     http://*|https://*) url="$1"; shift ;;
     *) shift ;;
   esac
@@ -2074,8 +3203,35 @@ done
 [ -n "$method" ] || { if [ "$data" -eq 1 ]; then method=POST; else method=GET; fi; }
 rest="${url#*://}"; path="/${rest#*/}"; base="${path%%\?*}"; query=""
 case "$path" in *\?*) query="${path#*\?}" ;; esac
-key=""; code=404; location=""
-case "$method $base" in
+key=""; code=404; location=""; respfile=""
+# PAY-03 (plan 30-29): every Stripe call is logged with the Stripe-Account header it
+# carried and its Idempotency-Key ("METHOD PATH acct=… key=…"). With STUB_CONNECT_ACCOUNT
+# set, the objects live on that connected account: a call without its header is answered
+# 404 resource_missing, as Stripe answers it, and the one platform-level call (POST
+# /v1/accounts/{id}) must carry no header. STUB_STRIP_ACCOUNT_ON plants a call that lost
+# its header. A refused call has no side effect (no route runs).
+denied=0
+case "$url" in
+  https://api.stripe.com/*)
+    if [ -n "${STUB_STRIP_ACCOUNT_ON:-}" ] && [[ "$method $base" =~ $STUB_STRIP_ACCOUNT_ON ]]; then acct_hdr=""; fi
+    printf '%s %s acct=%s key=%s\n' "$method" "$base" "${acct_hdr:-none}" "${idem:-none}" >> "$STUB_LOG_DIR/stripe-acct-flow.log"
+    if [ -n "${STUB_CONNECT_ACCOUNT:-}" ]; then
+      case "$method $base" in
+        "POST /v1/accounts/"*)
+          if [ -n "$acct_hdr" ]; then
+            denied=1; code=400; respfile="$STUB_LOG_DIR/stripe-error.json"
+            jq -n '{error: {type: "invalid_request_error", message: "a platform-level account update was sent with Stripe-Account"}}' > "$respfile"
+          fi ;;
+        *)
+          if [ "$acct_hdr" != "$STUB_CONNECT_ACCOUNT" ]; then
+            denied=1; code=404; respfile="$STUB_LOG_DIR/stripe-error.json"
+            jq -n --arg p "$base" '{error: {type: "invalid_request_error", code: "resource_missing",
+                message: ("No such object on the account this request was made on: " + $p)}}' > "$respfile"
+          fi ;;
+      esac
+    fi ;;
+esac
+[ "$denied" -eq 1 ] || case "$method $base" in
   "GET /health/ready") key=empty; code=200 ;;
   "POST /realms/master/protocol/openid-connect/token") key=admin-token; code=200 ;;
   "POST /realms/jtoye-staging/protocol/openid-connect/token") key=user-token; code=200 ;;
@@ -2094,7 +3250,11 @@ case "$method $base" in
   "GET /api/v1/products") key=products; code=200 ;;
   "GET /api/v1/products/culinary-packs") key=packs; code=200 ;;
   "POST /api/v1/products/culinary-packs/seed") key=seed; code=200 ;;
-  "GET /api/v1/shops/"*) key=shop; code=200 ;;
+  # A PUT of the shop is echoed back by the next GET (plan 30-28's read-back), unless
+  # STUB_SHOP_PUT_IGNORED says the server dropped it.
+  "GET /api/v1/shops/"*)
+    key=shop; code=200
+    if [ -z "${STUB_SHOP_PUT_IGNORED:-}" ] && [ -f "$STUB_LOG_DIR/shop-put-body.json" ]; then respfile="$STUB_LOG_DIR/shop-put-body.json"; fi ;;
   "GET /api/v1/trader-identity") key=identity; code=200 ;;
   "GET /api/v1/onboarding/me") key=onboarding; code=200 ;;
   # The order stage (plan 29-18): the anonymous storefront, then Stripe TEST.
@@ -2141,15 +3301,47 @@ case "$method $base" in
   "POST /api/v1/shops") key=shop-create-out; code=201; : > "$STUB_LOG_DIR/shop-created" ;;
   "DELETE /api/v1/shops/"*) key=empty; code=204; : > "$STUB_LOG_DIR/shop-deleted" ;;
   "GET /v1/invoices/"*) key="inv-${base#/v1/invoices/}"; code=200 ;;
+  # PAY-03 (plan 30-28): Connect onboarding, the shop's settlement mode, and the
+  # destination-charge loop's charge and transfer, each read by id.
+  "POST /api/v1/admin/tenants/"*"/stripe/connect") key=connect-out; code=200 ;;
+  "PUT /api/v1/shops/"*)
+    key=empty; code=200
+    if [ -n "$bodyfile" ]; then cp "$bodyfile" "$STUB_LOG_DIR/shop-put-body.json"; respfile="$STUB_LOG_DIR/shop-put-body.json"; fi ;;
+  # Each by-id read answers its own fixture when the loop arms wrote one, else the
+  # generic stripe-get fixture (the stripe-get arms read refunds by id too).
+  "GET /v1/charges/"*)
+    key="ch-${base#/v1/charges/}"; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  "GET /v1/transfers/"*)
+    trid="${base#/v1/transfers/}"; key="tr-$trid"
+    if [ -f "$STUB_LOG_DIR/refunded" ] && [ -f "$STUB_RESP_DIR/tr-$trid-after.json" ]; then key="tr-$trid-after"; fi
+    [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  # The vendor refund (it marks the transfer reversed), then the refund read from Stripe.
+  "POST /api/v1/orders/"*"/refund") key=refund-out; code=201; : > "$STUB_LOG_DIR/refunded" ;;
+  "GET /v1/refunds")
+    key=refund-list; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  "GET /v1/refunds/"*)
+    key="re-${base#/v1/refunds/}"; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  # The payout stages (plan 30-29): the platform-level schedule update, then the connected
+  # account's balance and payouts. A by-id payout read walks po-<id>-<n> fixtures in order
+  # when an arm wrote them, then po-<id>, else the generic fixture.
+  "POST /v1/accounts/"*) key=po-account; code=200 ;;
+  "GET /v1/balance") key=po-balance; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  "GET /v1/payouts") key=po-list; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  "POST /v1/payouts") key=po-create; code=200; : > "$STUB_LOG_DIR/payout-created" ;;
+  "GET /v1/payouts/"*)
+    poid="${base#/v1/payouts/}"; pon=$(( $(cat "$STUB_LOG_DIR/po-reads-$poid" 2>/dev/null || echo 0) + 1 ))
+    echo "$pon" > "$STUB_LOG_DIR/po-reads-$poid"; key="po-$poid-$pon"
+    [ -f "$STUB_RESP_DIR/$key.json" ] || key="po-$poid"; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
   # stripe-get: any other Stripe read answers the one generic fixture.
   "GET /v1/"*) key=stripe-get; code=200 ;;
 esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then
-  key=problem; code=500; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
+  key=problem; code=500; respfile=""; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
 fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
 if [ -n "$out" ]; then
-  if [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$key.json" ]; then cat "$STUB_RESP_DIR/$key.json" > "$out"; else printf '{}' > "$out"; fi
+  if [ -n "$respfile" ] && [ -f "$respfile" ]; then cat "$respfile" > "$out"
+  elif [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$key.json" ]; then cat "$STUB_RESP_DIR/$key.json" > "$out"; else printf '{}' > "$out"; fi
 fi
 if [ -n "$hdr" ]; then
   { printf 'HTTP/1.1 %s\r\n' "$code"; [ -z "$location" ] || printf 'Location: %s\r\n' "$location"; printf '\r\n'; } > "$hdr"
@@ -2221,7 +3413,8 @@ IDF
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
     rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
-    rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted"
+    rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted" "$ast/logs/shop-put-body.json" "$ast/logs/refunded"
+    : > "$ast/logs/stripe-acct-flow.log"; rm -f "$ast/logs/stripe-error.json" "$ast/logs/"po-reads-* "$ast/logs/payout-created"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -3337,15 +4530,912 @@ IDF
   rm -f "$ast/resp/sub-sub_bl1-added.json"
   cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
 
+  # ===== PAY-03 (plan 30-28): Connect onboarding, the shop's settlement mode, and the
+  # destination-charge money loop, every Stripe object read by id. The onboarding URL
+  # (STUBOBlp1), the client secret (STUBCSlp1) and the customer fields (piizq7) carry
+  # markers, so a print of any of them is detectable. The URL and the client secret
+  # are composed at run time (the 29-18 rule): no key-shaped literal sits here.
+  local lp_acct="acct_loop1" lp_oid="eeeeeeee-1111-4111-8111-000000000001" lp_cs lp_url lp_f
+  local lp_leak_re='STUBOBlp1|STUBCSlp1|piizq7|PIIZQ7|connect\.stripe\.com'
+  local ob_dir="$ast/onboard-out" ob_args=("${tool_args[@]}" --stage connect-onboard)
+  local sm_args=("${tool_args[@]}" --stage settlement-mode) ml_args=("${tool_args[@]}" --stage money-loop --mode destination)
+  local lp_env=(STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5)
+  lp_cs="pi_loop1"; lp_cs="${lp_cs}_secret_STUBCSlp1"
+  lp_url="https://connect.stripe.com/setup/e/${lp_acct}/STUBOBlp1"
+  mkdir -p "$ob_dir"
+  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING orders-status-CONFIRMED transition "detail-$lp_oid"; do
+    rm -f "$ast/resp/$lp_f.pre-loop"; [ ! -f "$ast/resp/$lp_f.json" ] || cp "$ast/resp/$lp_f.json" "$ast/resp/$lp_f.pre-loop"
+  done
+  # _st_loop_pi STATUS KIND LIVEMODE — the order's intent; KIND dest (a destination
+  # charge), plain (no transfer_data, no fee, no settlement_mode: Pitfall 6), wrongdest,
+  # nofee or wrongmeta (one destination field wrong each).
+  _st_loop_pi() {
+    jq -n --arg st "$1" --arg k "$2" --argjson lm "$3" --arg t "$tid" '{id: "pi_loop1", object: "payment_intent", status: $st,
+        livemode: $lm, amount: 950, currency: "gbp", latest_charge: (if $st == "succeeded" then "ch_loop1" else null end),
+        application_fee_amount: (if $k == "plain" then null elif $k == "nofee" then 0 else 48 end),
+        transfer_data: (if $k == "plain" then null elif $k == "wrongdest" then {destination: "acct_other9"} else {destination: "acct_loop1"} end),
+        metadata: ({order_number: "ORD-STUB-L001", tenant_id: $t}
+          + (if $k == "plain" then {} elif $k == "wrongmeta" then {settlement_mode: "SPLIT_DEPOSIT_VENDOR_MOR"}
+             else {settlement_mode: "DESTINATION_CHARGE_PLATFORM_MOR"} end)),
+        receipt_email: "piizq7@example.invalid"}'
+  }
+  # _st_loop_refund_fx LOCAL_STATUS REVERSAL(yes|no) — the vendor refund's 201, the
+  # intent's refund list (this run's refund and another run's), the refund by id, the
+  # transfer after the reversal, and the order detail whose refund row the loop polls.
+  local lp_rid="ffffffff-1111-4111-8111-000000000001"
+  _st_loop_refund_fx() {
+    jq -n --arg r "$lp_rid" --arg o "$lp_oid" '{id: $r, orderId: $o, stripeRefundId: "re_loop1", amountPennies: 100,
+        currency: "gbp", reason: "REQUESTED_BY_CUSTOMER", status: "pending"}' > "$ast/resp/refund-out.json"
+    jq -n --arg r "$lp_rid" --arg rv "$2" '{object: "list", has_more: false, data: [
+        {id: "re_other1", object: "refund", amount: 50, status: "succeeded", charge: "ch_loop1", payment_intent: "pi_loop1",
+         metadata: {refund_id: "00000000-0000-4000-8000-000000000000"}},
+        {id: "re_loop1", object: "refund", amount: 100, status: "succeeded", charge: "ch_loop1", payment_intent: "pi_loop1",
+         transfer_reversal: (if $rv == "yes" then "trr_loop1" else null end), metadata: {refund_id: $r}}]}' > "$ast/resp/refund-list.json"
+    jq -n --arg r "$lp_rid" --arg rv "$2" '{id: "re_loop1", object: "refund", amount: 100, currency: "gbp", status: "succeeded",
+        charge: "ch_loop1", payment_intent: "pi_loop1", transfer_reversal: (if $rv == "yes" then "trr_loop1" else null end),
+        metadata: {refund_id: $r}}' > "$ast/resp/re-re_loop1.json"
+    jq '.amount_reversed = 95 | .reversals.data = [{id: "trr_loop1", object: "transfer_reversal", amount: 95,
+        source_refund: "re_loop1", transfer: "tr_loop1"}]' "$ast/resp/tr-tr_loop1.json" > "$ast/resp/tr-tr_loop1-after.json"
+    jq -n --arg o "$lp_oid" --arg r "$lp_rid" --arg ls "$1" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED",
+        paymentStatus: "CAPTURED", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid", customerName: "Pii PIIZQ7",
+        refunds: [{id: $r, orderId: $o, stripeRefundId: "re_loop1", amountPennies: 100, status: $ls}]}' > "$ast/resp/detail-$lp_oid.json"
+  }
+  # _st_loop_fx CONNECT_STATUS SHOP_MODE(or null) KIND LIVE(none|pi|charge|transfer)
+  _st_loop_fx() {
+    local lm_pi=false lm_ch=false lm_tr=false
+    case "$4" in pi) lm_pi=true ;; charge) lm_ch=true ;; transfer) lm_tr=true ;; esac
+    jq -n --arg t "$tid" --arg n "$TENANT_NAME" --arg c "$1" --arg a "$lp_acct" '[{id: $t, name: $n, status: "ACTIVE",
+        contactEmail: "piizq7@example.invalid", stripeConnectStatus: $c, stripeAccountId: (if $c == "NONE" then null else $a end)}]' \
+      > "$ast/resp/tenants.json"
+    jq -n --arg s "$sid" --arg t "$tid" --arg slug "$SHOP_SLUG" --arg m "$2" '{id: $s, tenantId: $t, name: "Staging Test Kitchen",
+        slug: $slug, email: "piizq7@example.invalid", published: true, offersDelivery: true, offersCollection: true,
+        deliveryFeePennies: 250, freeDeliveryThresholdPennies: null, fulfilmentTimingMode: "IMMEDIATE_ON_DEMAND", depositBps: 10000,
+        settlementPolicyMode: (if $m == "null" then null else $m end), openingSchedule: {mon: [{open: "00:00", close: "23:59"}]}}' \
+      > "$ast/resp/shop.json"
+    jq -n --arg a "$lp_acct" --arg u "$lp_url" '{stripeAccountId: $a, connectStatus: "PENDING", onboardingUrl: $u}' > "$ast/resp/connect-out.json"
+    jq -n --arg slug "$SHOP_SLUG" '{slug: $slug, offersCollection: true, offersDelivery: true, deliveryFeePennies: 250, openNow: true}' \
+      > "$ast/resp/pub-shop.json"
+    jq -n --arg b "$p1" '{Mains: [{id: "aaaaaaaa-0000-4000-8000-000000000000", title: "Sold Out Stew", pricePennies: 700, inStock: false, allergenMask: 4},
+        {id: $b, title: "Pelau", pricePennies: 950, inStock: true, allergenMask: 9}]}' > "$ast/resp/pub-products.json"
+    jq -n --arg cs "$lp_cs" '{orderNumber: "ORD-STUB-L001", status: "PENDING", totalAmountPennies: 950, clientSecret: $cs,
+        stripeAccountId: null}' > "$ast/resp/guest-order.json"
+    jq -n '{orderNumber: "ORD-STUB-L001", status: "PENDING", paymentStatus: "CAPTURED"}' > "$ast/resp/tracking.json"
+    _st_loop_pi requires_payment_method "$3" "$lm_pi" > "$ast/resp/pi-before.json"
+    _st_loop_pi succeeded "$3" "$lm_pi" > "$ast/resp/pi-after.json"
+    cp "$ast/resp/pi-after.json" "$ast/resp/pi-confirm.json"
+    jq -n --argjson lm "$lm_ch" --arg k "$3" '{id: "ch_loop1", object: "charge", livemode: $lm, captured: true, paid: true,
+        status: "succeeded", amount: 950, amount_captured: 950, amount_refunded: 0, payment_intent: "pi_loop1",
+        transfer: (if $k == "plain" then null else "tr_loop1" end),
+        transfer_data: (if $k == "plain" then null else {destination: "acct_loop1"} end),
+        billing_details: {email: "piizq7@example.invalid", name: "Pii PIIZQ7"}, receipt_email: "piizq7@example.invalid"}' \
+      > "$ast/resp/ch-ch_loop1.json"
+    jq -n --argjson lm "$lm_tr" '{id: "tr_loop1", object: "transfer", livemode: $lm, amount: 902, currency: "gbp",
+        destination: "acct_loop1", source_transaction: "ch_loop1", amount_reversed: 0, reversed: false,
+        reversals: {object: "list", data: [], has_more: false}}' > "$ast/resp/tr-tr_loop1.json"
+    jq -n --arg o "$lp_oid" --arg s "$sid" '{content: [{id: $o, shopId: $s, orderNumber: "ORD-STUB-L001", status: "PENDING",
+        paymentStatus: "CAPTURED", paymentReference: "pi_loop1", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid"}],
+        totalElements: 1, totalPages: 1, number: 0, last: true}' > "$ast/resp/orders-status-PENDING.json"
+    jq -n --arg o "$lp_oid" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED", paymentStatus: "CAPTURED"}' > "$ast/resp/transition.json"
+    _st_loop_refund_fx succeeded yes
+  }
+  _st_lp_leaks() { command grep -cE "$lp_leak_re" <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
+  _st_order_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders '; }
+  _st_refund_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/[^ ]+/refund '; }
+  _st_accept_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/[^ ]+/confirm '; }
+  _st_stripe_writes() { _st_flow '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/'; }
+  local re_opdel='^DELETE http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users/op-0001 -> 204$'
+  local re_loop_any='^LOOP-(ORDER|CAPTURE|TRANSFER|REFUND) '
+
+  # --- onboard-new: no account yet -> POST connect; the URL reaches only the mode-600 file
+  _st_loop_fx NONE DESTINATION_CHARGE_PLATFORM_MOR dest none
+  rm -f "$ob_dir/new.url"
+  _st_run "${lp_env[@]}" -- "${ob_args[@]}" --link-out "$ob_dir/new.url"
+  why=""
+  local ob_post ob_del ob_mode
+  ob_post=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants/$tid/stripe/connect -> 200$")
+  ob_del=$(_st_line "$re_opdel")
+  ob_mode=$(stat -c %a "$ob_dir/new.url" 2>/dev/null || echo none)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CONNECT-ONBOARD tenant=$tid account=$lp_acct status=PENDING" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '/stripe/connect -> ')" -ne 1 ] || [ -z "$ob_post" ]; then why="the connect POST was not made exactly once to this tenant: $(command grep -F '/stripe/connect' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ -z "$ob_del" ] || [ "$ob_del" -le "$ob_post" ]; then why="the operator was not deleted after the connect POST (post=$ob_post delete=$ob_del)"
+  elif ! command grep -qF 'OPERATOR-DELETED: seed-operator-' <<<"$ST_OUT"; then why="the operator deletion was not printed"
+  elif [ "$ob_mode" != 600 ]; then why="the --link-out file is mode $ob_mode (want 600)"
+  elif [ "$(cat "$ob_dir/new.url")" != "$lp_url" ]; then why="the --link-out file does not hold exactly the onboarding URL"
+  elif [ "$(_st_lp_leaks)" -ne 0 ]; then why="the onboarding URL or a customer field was printed or put in argv ($(_st_lp_leaks) hit(s))"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS onboard-new rc=0 connect_posts=1 operator_deleted_after=1 file_mode=600 printed_url=0"
+  else _st_result "FAIL onboard-new $why"; fails=$((fails + 1)); fi
+
+  # --- onboard-enabled: the account is ENABLED -> no POST, no link, status printed ---
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  rm -f "$ob_dir/enabled.url"
+  _st_run "${lp_env[@]}" -- "${ob_args[@]}" --link-out "$ob_dir/enabled.url"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CONNECT-ONBOARD tenant=$tid account=$lp_acct status=ENABLED" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 200$')" -ne 1 ]; then why="the status was not read from the admin tenant list (non-vacuity)"
+  elif [ "$(_st_flow '/stripe/connect -> ')" -ne 0 ]; then why="a connect POST was made for an ENABLED account"
+  elif [ -e "$ob_dir/enabled.url" ]; then why="the --link-out file was created"
+  elif [ "$(_st_flow "$re_opdel")" -ne 1 ]; then why="the operator was not deleted exactly once"
+  elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="a marker was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS onboard-enabled rc=0 connect_posts=0 link_file=absent status=ENABLED"
+  else _st_result "FAIL onboard-enabled $why"; fails=$((fails + 1)); fi
+
+  # --- onboard-no-out: no --link-out -> usage error before any guard or call ------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ob_args[@]}"
+  if why=$(_st_refusal 2 "USAGE ERROR: --stage connect-onboard needs --link-out" 0 0); then _st_result "PASS onboard-no-out rc=2 az_calls=0 curl_calls=0"
+  else _st_result "FAIL onboard-no-out $why"; fails=$((fails + 1)); fi
+
+  # --- mode-read: no --set -> one shop read, nothing written, the mode printed ------
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${sm_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "SETTLEMENT-MODE shop=staging-test-kitchen mode=DESTINATION_CHARGE_PLATFORM_MOR" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")" -ne 1 ]; then why="the shop was not read exactly once by id"
+  elif [ "$(_st_non_get)" -ne 0 ]; then why="a write was made: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  else
+    _st_loop_fx ENABLED null dest none
+    _st_run "${lp_env[@]}" -- "${sm_args[@]}"
+    if [ "$ST_RC" -ne 0 ]; then why="null mode: rc=$ST_RC (want 0)"
+    elif [ "$(tail -n 1 <<<"$ST_OUT")" != "SETTLEMENT-MODE shop=staging-test-kitchen mode=null" ]; then why="null mode: the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+    elif [ "$(_st_non_get)" -ne 0 ]; then why="null mode: a write was made"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS mode-read rc=0 shop_gets=1 writes=0 modes=DESTINATION,null"
+  else _st_result "FAIL mode-read $why"; fails=$((fails + 1)); fi
+
+  # --- mode-set: GET the shop, PUT the same body with ONLY settlementPolicyMode changed,
+  #     read it back; a server that drops the change is a failure, not a pass
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${sm_args[@]}" --set DIRECT_CHARGE_VENDOR_MOR
+  why=""
+  local sm_put sm_g1 sm_p sm_g2
+  sm_put=$(command grep -F '"settlementPolicyMode"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  sm_g1=$(_st_line "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")
+  sm_p=$(_st_line "^PUT https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")
+  sm_g2=$(command grep -nE "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$" "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "SETTLEMENT-MODE shop=staging-test-kitchen mode=DIRECT_CHARGE_VENDOR_MOR previous=DESTINATION_CHARGE_PLATFORM_MOR" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '^PUT ')" -ne 1 ] || [ "$(_st_non_get)" -ne 1 ]; then why="want exactly one write, the shop PUT: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ -z "$sm_g1" ] || [ -z "$sm_p" ] || ! { [ "$sm_g1" -lt "$sm_p" ] && [ "$sm_p" -lt "$sm_g2" ]; }; then why="call order is not GET<PUT<GET (read-back): $sm_g1 $sm_p $sm_g2"
+  elif [ "$(jq -r '.settlementPolicyMode' <<<"${sm_put:-null}" 2>/dev/null)" != DIRECT_CHARGE_VENDOR_MOR ]; then why="the PUT does not set DIRECT_CHARGE_VENDOR_MOR: ${sm_put:-<none>}"
+  elif [ "$(jq -cS 'del(.settlementPolicyMode)' <<<"$sm_put")" != "$(jq -cS 'del(.settlementPolicyMode)' "$ast/resp/shop.json")" ]; then why="the PUT body is not the GET body with one field changed"
+  else
+    _st_run "${lp_env[@]}" STUB_SHOP_PUT_IGNORED=1 -- "${sm_args[@]}" --set DIRECT_CHARGE_VENDOR_MOR
+    if [ "$ST_RC" -ne 1 ]; then why="dropped PUT: rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'read back' <<<"$ST_ERR"; then why="dropped PUT: the failure does not name the read-back: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif command grep -q '^SETTLEMENT-MODE ' <<<"$ST_OUT"; then why="dropped PUT: a SETTLEMENT-MODE line was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS mode-set rc=0 order=GET<PUT<GET put_body=get_body+mode dropped_put=rc1"
+  else _st_result "FAIL mode-set $why"; fails=$((fails + 1)); fi
+
+  # --- mode-set-invalid: a third mode, or --set on another stage -> usage error ------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sm_args[@]}" --set SPLIT_DEPOSIT_VENDOR_MOR
+  if why=$(_st_refusal 2 "USAGE ERROR: --set must be DESTINATION_CHARGE_PLATFORM_MOR or DIRECT_CHARGE_VENDOR_MOR" 0 0); then
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ml_args[@]}" --set DIRECT_CHARGE_VENDOR_MOR
+    why=$(_st_refusal 2 "USAGE ERROR: --set is taken by --stage settlement-mode only" 0 0) || true
+  fi
+  if [ -z "$why" ]; then _st_result "PASS mode-set-invalid rc=2 split_deposit=refused set_elsewhere=refused curl_calls=0"
+  else _st_result "FAIL mode-set-invalid $why"; fails=$((fails + 1)); fi
+
+  # --- loop-not-enabled: the tenant's account is PENDING -> refused before any write ---
+  _st_loop_fx PENDING DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [connect-status]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [connect-status]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 200$')" -ne 1 ]; then why="the refusal was not reached through the admin tenant read"
+  elif [ "$(_st_order_posts)" -ne 0 ]; then why="an order was placed: $(_st_order_posts)"
+  elif [ "$(_st_stripe_writes)" -ne 0 ]; then why="a Stripe write was made"
+  elif [ "$(_st_flow "$re_opdel")" -ne 1 ]; then why="the operator was not deleted exactly once"
+  elif command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="a LOOP verdict was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-not-enabled rc=1 tag=connect-status order_posts=0 stripe_writes=0"
+  else _st_result "FAIL loop-not-enabled $why"; fails=$((fails + 1)); fi
+
+  # --- loop-mode-mismatch: the shop is DIRECT, the loop asked for destination -> refused
+  _st_loop_fx ENABLED DIRECT_CHARGE_VENDOR_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [mode-mismatch]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [mode-mismatch]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")" -lt 1 ]; then why="the refusal was not reached through the shop read"
+  elif [ "$(_st_order_posts)" -ne 0 ]; then why="an order was placed"
+  elif [ "$(_st_stripe_writes)" -ne 0 ]; then why="a Stripe write was made"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-mode-mismatch rc=1 tag=mode-mismatch order_posts=0"
+  else _st_result "FAIL loop-mode-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- loop-plain-charge: the intent has no transfer_data -> refused, nothing accepted
+  #     or refunded, no verdict claims a destination charge (Pitfall 6)
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR plain none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [plain-charge]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [plain-charge]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_order_posts)" -ne 1 ]; then why="order posts=$(_st_order_posts) (want 1: the refusal must come from the paid intent)"
+  elif [ "$(_st_refund_posts)" -ne 0 ] || [ "$(_st_accept_posts)" -ne 0 ]; then why="the order was accepted or refunded after a plain charge"
+  elif command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="a LOOP verdict was printed: $(command grep -E "$re_loop_any" <<<"$ST_OUT" | head -n 1)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-plain-charge rc=1 tag=plain-charge refund_posts=0 verdicts=0"
+  else _st_result "FAIL loop-plain-charge $why"; fails=$((fails + 1)); fi
+
+  # --- loop-intent-fields: a wrong destination, no fee, the wrong settlement_mode ------
+  why=""
+  local lk lk_want
+  for lk in wrongdest nofee wrongmeta; do
+    case "$lk" in wrongdest) lk_want='transfer_data.destination' ;; nofee) lk_want='application_fee_amount' ;; wrongmeta) lk_want='metadata.settlement_mode' ;; esac
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR "$lk" none
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$lk: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF "$lk_want" <<<"$ST_ERR"; then why="$lk: the failure does not name $lk_want: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_refund_posts)" -ne 0 ] || command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="$lk: the loop went on"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS loop-intent-fields rc=1 named=transfer_data.destination,application_fee_amount,metadata.settlement_mode"
+  else _st_result "FAIL loop-intent-fields $why"; fails=$((fails + 1)); fi
+
+  # --- loop-live: the intent, the charge or the transfer reads livemode true -> refused
+  why=""
+  local lo
+  for lo in pi charge transfer; do
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest "$lo"
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$lo: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="$lo: stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_refund_posts)" -ne 0 ] || command grep -q '^LOOP-TRANSFER ' <<<"$ST_OUT"; then why="$lo: the loop went on past a live object"
+    elif [ "$lo" = pi ] && [ "$(_st_confirms)" -ne 0 ]; then why="pi: a live intent was confirmed"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS loop-live rc=1 tag=stripe-mode objects=intent,charge,transfer"
+  else _st_result "FAIL loop-live $why"; fails=$((fails + 1)); fi
+
+  # --- loop-destination-ok: preflight, order, bypassPending confirm, CAPTURED, then the
+  #     intent, its charge and its transfer read by id; every key from one run id
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  local ml_body ml_keys ml_stamp l_opdel l_order l_conf l_pi l_ch l_tr
+  ml_body=$(command grep -F '"customerEmail"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  ml_keys=$(command grep -oE 'Idempotency-Key: loop-[0-9]{8}T[0-9]{6}Z-[a-z]+' "$ast/logs/curl.log" | LC_ALL=C sort -u || true)
+  ml_stamp=$(head -n 1 <<<"$ml_keys" | command sed -E 's/^Idempotency-Key: (loop-[0-9]{8}T[0-9]{6}Z)-.*/\1/')
+  l_opdel=$(_st_line "$re_opdel")
+  l_order=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders -> 201$')
+  l_conf=$(_st_line '^POST https://api\.stripe\.com/v1/payment_intents/pi_loop1/confirm -> 200$')
+  l_pi=$(command grep -nE '^GET https://api\.stripe\.com/v1/payment_intents/pi_loop1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_ch=$(_st_line '^GET https://api\.stripe\.com/v1/charges/ch_loop1 -> 200$')
+  l_tr=$(_st_line '^GET https://api\.stripe\.com/v1/transfers/tr_loop1 -> 200$')
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qxF 'LOOP-ORDER mode=destination order=ORD-STUB-L001 intent=pi_loop1 amount=950 application_fee=48' <<<"$ST_OUT"; then why="no LOOP-ORDER verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF 'LOOP-CAPTURE charge=ch_loop1 captured=true amount=950' <<<"$ST_OUT"; then why="no LOOP-CAPTURE verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF "LOOP-TRANSFER transfer=tr_loop1 destination=$lp_acct amount=902" <<<"$ST_OUT"; then why="no LOOP-TRANSFER verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif [ -z "$l_opdel" ] || [ -z "$l_order" ] || [ "$l_opdel" -ge "$l_order" ]; then why="the operator was not deleted before the order (delete=$l_opdel order=$l_order)"
+  elif [ -z "$l_conf" ] || [ -z "$l_pi" ] || [ -z "$l_ch" ] || [ -z "$l_tr" ] \
+       || ! { [ "$l_order" -lt "$l_conf" ] && [ "$l_conf" -lt "$l_pi" ] && [ "$l_pi" -lt "$l_ch" ] && [ "$l_ch" -lt "$l_tr" ]; }; then
+    why="call order is not order<confirm<intent<charge<transfer: $l_order $l_conf $l_pi $l_ch $l_tr"
+  elif [ "$(_st_confirms)" -ne 1 ] || ! command grep -qF 'payment_method=pm_card_bypassPending' "$ast/logs/curl.log" \
+       || ! command grep -qF 'return_url=https://app-staging.olajay.co.uk/order-complete' "$ast/logs/curl.log"; then
+    why="the confirm is not one call with payment_method=pm_card_bypassPending and the return_url"
+  elif [ "$(_st_stripe_writes)" -ne 1 ]; then why="Stripe writes=$(_st_stripe_writes) (want 1, the confirm)"
+  elif [ "$(command grep -cxE "Idempotency-Key: ${ml_stamp:-none}-(order|confirm)" <<<"$ml_keys" || true)" -ne 2 ]; then why="the order and the confirm do not carry <run id>-order and <run id>-confirm of one run id: $(tr '\n' '|' <<<"$ml_keys")"
+  elif [ "$(jq -c '{f: .fulfilmentType, i: .items, a: .acknowledgedAllergenMask, t: .expectedTotalPennies}' <<<"${ml_body:-null}" 2>/dev/null)" \
+       != "$(jq -cn --arg p "$p1" '{f: "COLLECTION", i: [{productId: $p, quantity: 1, expectedUnitPricePennies: 950}], a: 9, t: 950}')" ]; then
+    why="the order body is not the first available dish at its shown price: ${ml_body:-<none>}"
+  elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="the client secret, a key or a customer field was printed or put in argv"
+  fi
+  # The refund half (Task 2): the order accepted, a PARTIAL refund through the vendor
+  # API with <run id>-refund, Stripe's refund read by id with its transfer_reversal, its
+  # charge read for livemode, the transfer's reversal, and the local row equal to Stripe's.
+  local ml_rbody l_acc l_rf l_rl l_rid l_ch2 l_tr2 l_det
+  ml_rbody=$(command grep -F '"amountPennies"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  l_acc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/confirm -> 200$")
+  l_rf=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/refund -> 201$")
+  l_rl=$(_st_line '^GET https://api\.stripe\.com/v1/refunds\?payment_intent=pi_loop1(&[^ ]*)? -> 200$')
+  l_rid=$(_st_line '^GET https://api\.stripe\.com/v1/refunds/re_loop1 -> 200$')
+  l_ch2=$(command grep -nE '^GET https://api\.stripe\.com/v1/charges/ch_loop1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_tr2=$(command grep -nE '^GET https://api\.stripe\.com/v1/transfers/tr_loop1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_det=$(command grep -nE "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$" "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  if [ -n "$why" ]; then :
+  elif ! command grep -qxF 'LOOP-ACCEPT order=ORD-STUB-L001 status=CONFIRMED' <<<"$ST_OUT"; then why="no LOOP-ACCEPT verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF 'LOOP-REFUND refund=re_loop1 amount=100 status=succeeded transfer_reversal=trr_loop1 local_status=succeeded' <<<"$ST_OUT"; then
+    why="no LOOP-REFUND verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif [ "$(_st_accept_posts)" -ne 1 ] || [ "$(_st_refund_posts)" -ne 1 ]; then why="want one accept and one refund: accept=$(_st_accept_posts) refund=$(_st_refund_posts)"
+  elif [ -z "$l_acc" ] || [ -z "$l_rf" ] || [ -z "$l_rl" ] || [ -z "$l_rid" ] || [ -z "$l_det" ] \
+       || ! { [ "$l_tr" -lt "$l_acc" ] && [ "$l_acc" -lt "$l_rf" ] && [ "$l_rf" -lt "$l_rl" ] && [ "$l_rl" -lt "$l_rid" ] \
+              && [ "$l_rid" -lt "$l_ch2" ] && [ "$l_ch2" -lt "$l_tr2" ] && [ "$l_tr2" -lt "$l_det" ]; }; then
+    why="call order is not transfer<accept<refund<list<refund-by-id<charge<transfer<detail: $l_tr $l_acc $l_rf $l_rl $l_rid $l_ch2 $l_tr2 $l_det"
+  elif [ "$(jq -cS . <<<"${ml_rbody:-null}" 2>/dev/null | jq -c '{amountPennies, reason}' 2>/dev/null)" != '{"amountPennies":100,"reason":"REQUESTED_BY_CUSTOMER"}' ]; then
+    why="the refund body is not {amountPennies: 100, reason: REQUESTED_BY_CUSTOMER}: ${ml_rbody:-<none>}"
+  elif [ "$(command grep -cxE "Idempotency-Key: ${ml_stamp:-none}-(order|confirm|refund)" <<<"$ml_keys" || true)" -ne 3 ]; then
+    why="the order, confirm and refund do not carry one run id's keys: $(tr '\n' '|' <<<"$ml_keys")"
+  elif [ "$(_st_stripe_writes)" -ne 1 ]; then why="Stripe writes=$(_st_stripe_writes) (want 1, the confirm: the refund goes through the vendor API)"
+  else
+    # A refund that did not reverse the transfer is a failure, never a pass.
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+    _st_loop_refund_fx succeeded no
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="no reversal: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'transfer_reversal' <<<"$ST_ERR"; then why="no reversal: the failure does not name transfer_reversal: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif command grep -q '^LOOP-REFUND ' <<<"$ST_OUT"; then why="no reversal: a LOOP-REFUND verdict was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-destination-ok rc=0 order=preflight<order<confirm<intent<charge<transfer<accept<refund<reversal<local run_id=one no_reversal=rc1"
+  else _st_result "FAIL loop-destination-ok $why"; fails=$((fails + 1)); fi
+
+  # --- loop-refund-full: a refund that is not strictly partial -> usage error before
+  #     any write (the full-refund edge case can never pass for the loop's proof)
+  why=""
+  local rfa
+  for rfa in 950 2000; do
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}" --refund-pennies "$rfa"
+    if [ "$ST_RC" -ne 2 ]; then why="$rfa: rc=$ST_RC (want 2): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF "USAGE ERROR: --refund-pennies $rfa is not less than the order total 950p" <<<"$ST_ERR"; then why="$rfa: stderr does not name the bound: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_flow '/api/v1/public/shops/staging-test-kitchen/products -> 200$')" -ne 1 ]; then why="$rfa: the bound was not taken from the menu read (non-vacuity)"
+    elif [ "$(_st_non_get)" -ne 0 ] || [ "$(_st_lines az)" -ne 0 ]; then why="$rfa: something was written or read from Key Vault before the refusal: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ml_args[@]}" --refund-pennies 0
+    why=$(_st_refusal 2 "USAGE ERROR: --refund-pennies must be a positive whole number of pennies" 0 0) || true
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-refund-full rc=2 equal=refused above=refused zero=refused writes=0"
+  else _st_result "FAIL loop-refund-full $why"; fails=$((fails + 1)); fi
+
+  # --- loop-refund-mismatch: Stripe says succeeded, the local row stays pending past the
+  #     deadline -> rc 1 naming both statuses, no LOOP-REFUND verdict
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_loop_refund_fx pending yes
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=1 STAGING_SEED_READY_DEADLINE_SECONDS=5 \
+    STAGING_SEED_REFUND_DEADLINE_SECONDS=2 -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF "'pending'" <<<"$ST_ERR" || ! command grep -qF "'succeeded'" <<<"$ST_ERR"; then why="the failure does not name both statuses: $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")" -lt 2 ]; then why="the local row was not polled (detail reads=$(_st_flow "/orders/$lp_oid/detail -> "))"
+  elif command grep -q '^LOOP-REFUND ' <<<"$ST_OUT"; then why="a LOOP-REFUND verdict was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-refund-mismatch rc=1 local=pending stripe=succeeded verdict=none"
+  else _st_result "FAIL loop-refund-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- loop-evidence-clean: --evidence keeps what the file held, adds .modes.destination
+  #     (ids, amounts, statuses, livemode false; jq -S, mode 600) and nothing secret or
+  #     personal; a file that is not a JSON object is refused and left untouched
+  local ev_f="$ob_dir/evidence.json" ev_bad="$ob_dir/evidence-bad.json" ev_hits ev_mode
+  jq -n '{kept: {note: "an earlier entry"}}' > "$ev_f"
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$ev_f"
+  why=""
+  ev_hits=$(command grep -ciE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@|STUBCS|STUBOB|piizq7' "$ev_f" || true)
+  ev_mode=$(stat -c %a "$ev_f" 2>/dev/null || echo none)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! jq -e '.modes.destination' "$ev_f" >/dev/null 2>&1; then why="no .modes.destination entry was written (the arm would pass vacuously)"
+  elif [ "$(jq -c '.kept' "$ev_f")" != '{"note":"an earlier entry"}' ]; then why="the file's earlier content was not kept"
+  elif [ "$(jq -c '.modes.destination | {order, intent, charge, transfer, refund, transfer_reversal, account, livemode}' "$ev_f")" \
+       != '{"order":"ORD-STUB-L001","intent":"pi_loop1","charge":"ch_loop1","transfer":"tr_loop1","refund":"re_loop1","transfer_reversal":"trr_loop1","account":"acct_loop1","livemode":false}' ]; then
+    why="the entry's ids are not the loop's: $(jq -c '.modes.destination' "$ev_f" | head -c 300)"
+  elif [ "$(jq -c '.modes.destination.amounts' "$ev_f")" != "$(jq -cS -n '{captured: 950, application_fee: 48, transfer: 902, refund: 100, transfer_reversal: 95}')" ] \
+       || [ "$(jq -r '.modes.destination.statuses.refund + "/" + .modes.destination.statuses.local_refund' "$ev_f")" != succeeded/succeeded ]; then
+    why="the amounts or statuses are not the loop's: $(jq -c '.modes.destination | {amounts, statuses}' "$ev_f")"
+  elif [ "$ev_hits" -ne 0 ]; then why="the evidence holds $ev_hits key, secret, URL, e-mail or marker line(s)"
+  elif [ "$(jq -S . "$ev_f")" != "$(cat "$ev_f")" ]; then why="the file is not written with jq -S"
+  elif [ "$ev_mode" != 600 ]; then why="the evidence file is mode $ev_mode (want 600)"
+  elif ! command grep -qxF "LOOP-EVIDENCE file=$ev_f mode=destination" <<<"$ST_OUT"; then why="no LOOP-EVIDENCE line"
+  else
+    printf '[1, 2]\n' > "$ev_bad"
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$ev_bad"
+    if [ "$ST_RC" -ne 1 ]; then why="non-object evidence: rc=$ST_RC (want 1)"
+    elif [ "$(cat "$ev_bad")" != '[1, 2]' ]; then why="non-object evidence: the file was overwritten"
+    elif ! command grep -qF 'not a JSON object' <<<"$ST_ERR"; then why="non-object evidence: the failure does not say why: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-evidence-clean rc=0 entry=modes.destination kept=1 secret_url_email_hits=0 sorted=1 mode=600 non_object=refused"
+  else _st_result "FAIL loop-evidence-clean $why"; fails=$((fails + 1)); fi
+
+  # PAY-03 direct mode (plan 30-29): the order's intent, its charge and its refund live
+  # on the connected account, so every Stripe call must carry Stripe-Account. With
+  # STUB_CONNECT_ACCOUNT the stub answers resource_missing (Stripe's own answer) to any
+  # call without it and logs each call's header in stripe-acct-flow.log. The direct
+  # client secret is composed at run time and carries the STUBCSlp1 marker.
+  local md_args=("${tool_args[@]}" --stage money-loop --mode direct) md_cs
+  local md_env=("${lp_env[@]}" STUB_CONNECT_ACCOUNT="$lp_acct")
+  md_cs="pi_loopd1"; md_cs="${md_cs}_secret_STUBCSlp1d"
+  # _st_loopd_pi STATUS — the direct-charge intent: no transfer_data, the fee and the
+  # settlement mode on the intent itself.
+  _st_loopd_pi() {
+    jq -n --arg st "$1" --arg t "$tid" '{id: "pi_loopd1", object: "payment_intent", status: $st, livemode: false,
+        amount: 950, currency: "gbp", latest_charge: (if $st == "succeeded" then "ch_loopd1" else null end),
+        application_fee_amount: 48, transfer_data: null,
+        metadata: {order_number: "ORD-STUB-L001", tenant_id: $t, settlement_mode: "DIRECT_CHARGE_VENDOR_MOR"},
+        receipt_email: "piizq7@example.invalid"}'
+  }
+  # _st_loopd_fx LOCAL_STATUS [SHOP_MODE] [ORDER_ACCOUNT] — the direct loop's fixtures
+  # (ORDER_ACCOUNT "" = the 201 names no connected account: a platform intent).
+  _st_loopd_fx() {
+    _st_loop_fx ENABLED "${2:-DIRECT_CHARGE_VENDOR_MOR}" dest none
+    jq -n --arg cs "$md_cs" --arg a "${3-$lp_acct}" '{orderNumber: "ORD-STUB-L001", status: "PENDING", totalAmountPennies: 950,
+        clientSecret: $cs, stripeAccountId: (if $a == "" then null else $a end)}' > "$ast/resp/guest-order.json"
+    _st_loopd_pi requires_payment_method > "$ast/resp/pi-before.json"
+    _st_loopd_pi succeeded > "$ast/resp/pi-after.json"
+    cp "$ast/resp/pi-after.json" "$ast/resp/pi-confirm.json"
+    jq -n '{id: "ch_loopd1", object: "charge", livemode: false, captured: true, paid: true, status: "succeeded", amount: 950,
+        amount_captured: 950, amount_refunded: 0, payment_intent: "pi_loopd1", application_fee_amount: 48, transfer: null,
+        billing_details: {email: "piizq7@example.invalid", name: "Pii PIIZQ7"}, receipt_email: "piizq7@example.invalid"}' \
+      > "$ast/resp/ch-ch_loopd1.json"
+    jq '.content[0].paymentReference = "pi_loopd1"' "$ast/resp/orders-status-PENDING.json" > "$ast/resp/orders-status-PENDING.next"
+    mv "$ast/resp/orders-status-PENDING.next" "$ast/resp/orders-status-PENDING.json"
+    jq -n --arg r "$lp_rid" --arg o "$lp_oid" '{id: $r, orderId: $o, stripeRefundId: "re_loopd1", amountPennies: 100,
+        currency: "gbp", reason: "REQUESTED_BY_CUSTOMER", status: "pending"}' > "$ast/resp/refund-out.json"
+    jq -n --arg r "$lp_rid" '{object: "list", has_more: false, data: [
+        {id: "re_otherd1", object: "refund", amount: 50, status: "succeeded", charge: "ch_loopd1", payment_intent: "pi_loopd1",
+         metadata: {refund_id: "00000000-0000-4000-8000-000000000000"}},
+        {id: "re_loopd1", object: "refund", amount: 100, status: "succeeded", charge: "ch_loopd1", payment_intent: "pi_loopd1",
+         transfer_reversal: null, metadata: {refund_id: $r}}]}' > "$ast/resp/refund-list.json"
+    jq -n --arg r "$lp_rid" '{id: "re_loopd1", object: "refund", amount: 100, currency: "gbp", status: "succeeded",
+        charge: "ch_loopd1", payment_intent: "pi_loopd1", transfer_reversal: null, metadata: {refund_id: $r}}' > "$ast/resp/re-re_loopd1.json"
+    jq -n --arg o "$lp_oid" --arg r "$lp_rid" --arg ls "$1" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED",
+        paymentStatus: "CAPTURED", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid", customerName: "Pii PIIZQ7",
+        refunds: [{id: $r, orderId: $o, stripeRefundId: "re_loopd1", amountPennies: 100, status: $ls}]}' > "$ast/resp/detail-$lp_oid.json"
+  }
+  _st_acct_flow() { if [ -s "$ast/logs/stripe-acct-flow.log" ]; then command grep -c '' "$ast/logs/stripe-acct-flow.log"; else echo 0; fi; }
+  _st_acct_bad() { if [ -s "$ast/logs/stripe-acct-flow.log" ]; then command grep -vcE " acct=$lp_acct key=" "$ast/logs/stripe-acct-flow.log" || true; else echo 0; fi; }
+  _st_last() { command grep -nE "$1" "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true; }
+  local lp_steps_dest='["order","confirm","captured","intent","charge","transfer","accept","refund","refund-read","refund-charge","transfer-reversal","refund-local"]'
+  local lp_steps_direct='["order","confirm","captured","intent","charge","accept","refund","refund-read","refund-charge","refund-local"]'
+
+  # --- direct-mode-mismatch: --mode direct on a DESTINATION or null shop -> refused before
+  #     any write or Stripe call; a direct shop whose order comes back as a platform intent
+  #     -> refused after the one order, never confirmed
+  why=""
+  local mm
+  for mm in DESTINATION_CHARGE_PLATFORM_MOR null; do
+    _st_loopd_fx succeeded "$mm"
+    _st_run "${md_env[@]}" -- "${md_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$mm: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [mode-mismatch]' <<<"$ST_ERR"; then why="$mm: stderr lacks 'REFUSED [mode-mismatch]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'needs DIRECT_CHARGE_VENDOR_MOR' <<<"$ST_ERR"; then why="$mm: the refusal does not name the mode --mode direct needs"
+    elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")" -lt 1 ]; then why="$mm: the refusal was not reached through the shop read"
+    elif [ "$(_st_order_posts)" -ne 0 ]; then why="$mm: an order was placed"
+    elif [ "$(_st_acct_flow)" -ne 0 ]; then why="$mm: a Stripe call was made: $(tr '\n' '|' < "$ast/logs/stripe-acct-flow.log")"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then
+    _st_loopd_fx succeeded DIRECT_CHARGE_VENDOR_MOR ""
+    _st_run "${md_env[@]}" -- "${md_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="platform intent: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [mode-mismatch]' <<<"$ST_ERR"; then why="platform intent: stderr lacks 'REFUSED [mode-mismatch]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_order_posts)" -ne 1 ]; then why="platform intent: order posts=$(_st_order_posts) (want 1)"
+    elif [ "$(_st_confirms)" -ne 0 ] || [ "$(_st_refund_posts)" -ne 0 ]; then why="platform intent: the intent was confirmed or refunded"
+    elif command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="platform intent: a LOOP verdict was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS direct-mode-mismatch rc=1 tag=mode-mismatch shop_modes=DESTINATION,null order_posts=0 platform_intent=refused"
+  else _st_result "FAIL direct-mode-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- direct-ok: preflight (ENABLED, DIRECT), the order on the account, bypassPending
+  #     confirm, CAPTURED, the intent and its charge read by id, accept, a partial refund,
+  #     the refund and its charge read by id, the local row: EVERY Stripe call carries
+  #     Stripe-Account (the stub refuses one that does not); .modes.direct is added to an
+  #     evidence file that already holds .modes.destination, which is kept as it was
+  local evd="$ob_dir/evidence-direct.json" evd_dest="" evd_hits
+  rm -f "$evd"
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$evd"
+  [ "$ST_RC" -ne 0 ] || evd_dest=$(jq -c '.modes.destination' "$evd" 2>/dev/null || true)
+  _st_loopd_fx succeeded
+  _st_run "${md_env[@]}" -- "${md_args[@]}" --evidence "$evd"
+  why=""
+  local md_keys md_stamp d_order d_conf d_pi d_ch d_acc d_rf d_rl d_rid d_ch2 d_det
+  md_keys=$(command grep -oE 'Idempotency-Key: loop-[0-9]{8}T[0-9]{6}Z-[a-z]+' "$ast/logs/curl.log" | LC_ALL=C sort -u || true)
+  md_stamp=$(head -n 1 <<<"$md_keys" | command sed -E 's/^Idempotency-Key: (loop-[0-9]{8}T[0-9]{6}Z)-.*/\1/')
+  d_order=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders -> 201$')
+  d_conf=$(_st_line '^POST https://api\.stripe\.com/v1/payment_intents/pi_loopd1/confirm -> 200$')
+  d_pi=$(_st_last '^GET https://api\.stripe\.com/v1/payment_intents/pi_loopd1 -> 200$')
+  d_ch=$(_st_line '^GET https://api\.stripe\.com/v1/charges/ch_loopd1 -> 200$')
+  d_acc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/confirm -> 200$")
+  d_rf=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/refund -> 201$")
+  d_rl=$(_st_line '^GET https://api\.stripe\.com/v1/refunds\?payment_intent=pi_loopd1(&[^ ]*)? -> 200$')
+  d_rid=$(_st_line '^GET https://api\.stripe\.com/v1/refunds/re_loopd1 -> 200$')
+  d_ch2=$(_st_last '^GET https://api\.stripe\.com/v1/charges/ch_loopd1 -> 200$')
+  d_det=$(_st_last "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")
+  evd_hits=$(command grep -ciE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@|STUBCS|STUBOB|piizq7' "$evd" 2>/dev/null || true)
+  if [ -z "$evd_dest" ] || [ "$evd_dest" = null ]; then why="the destination run wrote no .modes.destination first (the kept-entry check would be vacuous)"
+  elif [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qxF "LOOP-ORDER mode=direct order=ORD-STUB-L001 intent=pi_loopd1 amount=950 application_fee=48 account=$lp_acct" <<<"$ST_OUT"; then
+    why="no direct LOOP-ORDER verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF "LOOP-CAPTURE mode=direct charge=ch_loopd1 captured=true amount=950 account=$lp_acct" <<<"$ST_OUT"; then
+    why="no direct LOOP-CAPTURE verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF 'LOOP-ACCEPT mode=direct order=ORD-STUB-L001 status=CONFIRMED' <<<"$ST_OUT"; then
+    why="no direct LOOP-ACCEPT verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF "LOOP-REFUND mode=direct refund=re_loopd1 amount=100 status=succeeded account=$lp_acct local_status=succeeded" <<<"$ST_OUT"; then
+    why="no direct LOOP-REFUND verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif command grep -q '^LOOP-TRANSFER ' <<<"$ST_OUT"; then why="a direct charge printed a LOOP-TRANSFER verdict"
+  elif [ "$(_st_acct_flow)" -lt 7 ]; then why="only $(_st_acct_flow) Stripe call(s) logged (want >= 7: intent, confirm, intent, charge, refund list, refund, charge)"
+  elif [ "$(_st_acct_bad)" -ne 0 ]; then why="Stripe call(s) without Stripe-Account $lp_acct: $(command grep -vE " acct=$lp_acct key=" "$ast/logs/stripe-acct-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_flow ' -> 404$')" -ne 0 ]; then why="a call was answered 404: $(command grep -E ' -> 404$' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/transfers/')" -ne 0 ]; then why="a transfer was read for a direct charge"
+  elif command grep -qF 'Stripe-Account' "$ast/logs/curl.log"; then why="the Stripe-Account header travelled in argv, not the config file"
+  elif [ -z "$d_order" ] || [ -z "$d_conf" ] || [ -z "$d_pi" ] || [ -z "$d_ch" ] || [ -z "$d_acc" ] || [ -z "$d_rf" ] || [ -z "$d_rl" ] \
+       || [ -z "$d_rid" ] || [ -z "$d_det" ] \
+       || ! { [ "$d_order" -lt "$d_conf" ] && [ "$d_conf" -lt "$d_pi" ] && [ "$d_pi" -lt "$d_ch" ] && [ "$d_ch" -lt "$d_acc" ] \
+              && [ "$d_acc" -lt "$d_rf" ] && [ "$d_rf" -lt "$d_rl" ] && [ "$d_rl" -lt "$d_rid" ] && [ "$d_rid" -lt "$d_ch2" ] && [ "$d_ch2" -lt "$d_det" ]; }; then
+    why="call order is not order<confirm<intent<charge<accept<refund<list<refund-by-id<charge<detail: $d_order $d_conf $d_pi $d_ch $d_acc $d_rf $d_rl $d_rid $d_ch2 $d_det"
+  elif [ "$(command grep -cxE "Idempotency-Key: ${md_stamp:-none}-(order|confirm|refund)" <<<"$md_keys" || true)" -ne 3 ]; then
+    why="the order, confirm and refund do not carry one run id's keys: $(tr '\n' '|' <<<"$md_keys")"
+  elif [ "$(_st_stripe_writes)" -ne 1 ]; then why="Stripe writes=$(_st_stripe_writes) (want 1, the confirm)"
+  elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="the client secret, a key or a customer field was printed or put in argv"
+  elif ! command grep -qxF "LOOP-EVIDENCE file=$evd mode=direct" <<<"$ST_OUT"; then why="no LOOP-EVIDENCE line for mode=direct"
+  elif [ "$(jq -c '.modes.direct | {order, intent, charge, refund, account, settlement_mode, livemode}' "$evd" 2>/dev/null)" \
+       != '{"order":"ORD-STUB-L001","intent":"pi_loopd1","charge":"ch_loopd1","refund":"re_loopd1","account":"acct_loop1","settlement_mode":"DIRECT_CHARGE_VENDOR_MOR","livemode":false}' ]; then
+    why="the direct entry's ids are not the loop's: $(jq -c '.modes.direct' "$evd" 2>/dev/null | head -c 300)"
+  elif [ "$(jq -c '.modes.direct.amounts' "$evd")" != "$(jq -cS -n '{captured: 950, application_fee: 48, refund: 100}')" ] \
+       || [ "$(jq -r '.modes.direct.statuses.refund + "/" + .modes.direct.statuses.local_refund' "$evd")" != succeeded/succeeded ]; then
+    why="the direct amounts or statuses are not the loop's: $(jq -c '.modes.direct | {amounts, statuses}' "$evd")"
+  elif [ "$(jq -c '.modes.destination' "$evd")" != "$evd_dest" ]; then why="the .modes.destination entry was changed by the direct run"
+  elif [ "$(jq -c '.modes | keys_unsorted' "$evd")" != '["destination","direct"]' ]; then why="modes are not listed destination, direct: $(jq -c '.modes | keys_unsorted' "$evd")"
+  elif [ "$evd_hits" -ne 0 ]; then why="the evidence holds $evd_hits key, secret, URL, e-mail or marker line(s)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS direct-ok rc=0 stripe_calls=$(_st_acct_flow) without_header=0 order=order<confirm<intent<charge<accept<refund<refund-by-id<charge<local evidence=destination,direct"
+  else _st_result "FAIL direct-ok $why"; fails=$((fails + 1)); fi
+
+  # --- direct-missing-header: a planted call without Stripe-Account (the charge read, then
+  #     the first intent read) is answered resource_missing -> FAIL rc 1 naming the call;
+  #     nothing is accepted, refunded or confirmed after it
+  why=""
+  local mh mh_re mh_call
+  for mh in charge intent; do
+    case "$mh" in
+      charge) mh_re='^GET /v1/charges/'; mh_call='GET /v1/charges/ch_loopd1' ;;
+      intent) mh_re='^GET /v1/payment_intents/'; mh_call='GET /v1/payment_intents/pi_loopd1' ;;
+    esac
+    _st_loopd_fx succeeded
+    _st_run "${md_env[@]}" STUB_STRIP_ACCOUNT_ON="$mh_re" -- "${md_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$mh: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(command grep -cxF "$mh_call acct=none key=none" "$ast/logs/stripe-acct-flow.log" || true)" -lt 1 ]; then
+      why="$mh: the planted header-less call was never made, so the guard could not fire (non-vacuity): $(tr '\n' '|' < "$ast/logs/stripe-acct-flow.log")"
+    elif ! command grep -qF "$mh_call" <<<"$ST_ERR"; then why="$mh: the failure does not name the call '$mh_call': $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'resource_missing' <<<"$ST_ERR"; then why="$mh: the failure does not carry Stripe's resource_missing: $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_accept_posts)" -ne 0 ] || [ "$(_st_refund_posts)" -ne 0 ]; then why="$mh: the order was accepted or refunded after the failed read"
+    elif command grep -q '^LOOP-CAPTURE ' <<<"$ST_OUT"; then why="$mh: a LOOP-CAPTURE verdict was printed"
+    elif [ "$mh" = intent ] && [ "$(_st_confirms)" -ne 0 ]; then why="intent: the intent was confirmed after its read failed"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS direct-missing-header rc=1 planted=charge,intent answer=resource_missing named=1 accept_posts=0 refund_posts=0"
+  else _st_result "FAIL direct-missing-header $why"; fails=$((fails + 1)); fi
+
+  # --- direct-local-refund-lag: Stripe's refund on the account succeeded, the local row
+  #     stays pending past the deadline -> rc 1 naming both, no LOOP-REFUND verdict
+  _st_loopd_fx pending
+  _st_run "${md_env[@]}" STAGING_SEED_POLL_SECONDS=1 STAGING_SEED_REFUND_DEADLINE_SECONDS=2 -- "${md_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF "'pending'" <<<"$ST_ERR" || ! command grep -qF "'succeeded'" <<<"$ST_ERR"; then why="the failure does not name both statuses: $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/refunds/re_loopd1 -> 200$')" -lt 1 ]; then why="Stripe's refund was not read on the account first (non-vacuity)"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")" -lt 2 ]; then why="the local row was not polled (detail reads=$(_st_flow "/orders/$lp_oid/detail -> "))"
+  elif command grep -q '^LOOP-REFUND ' <<<"$ST_OUT"; then why="a LOOP-REFUND verdict was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS direct-local-refund-lag rc=1 local=pending stripe=succeeded verdict=none"
+  else _st_result "FAIL direct-local-refund-lag $why"; fails=$((fails + 1)); fi
+
+  # --- evidence-order: the DIRECT run first, then the destination run, into one file: the
+  #     file is jq -S (sorted keys), modes read destination then direct, each entry's steps
+  #     are in loop order, and the first run's entry is not touched by the second
+  local evo="$ob_dir/evidence-order.json" evo_rc1 evo_direct=""
+  rm -f "$evo"
+  _st_loopd_fx succeeded
+  _st_run "${md_env[@]}" -- "${md_args[@]}" --evidence "$evo"
+  evo_rc1="$ST_RC"
+  [ "$evo_rc1" -ne 0 ] || evo_direct=$(jq -c '.modes.direct' "$evo" 2>/dev/null || true)
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$evo"
+  why=""
+  if [ "$evo_rc1" -ne 0 ]; then why="the direct run: rc=$evo_rc1 (want 0)"
+  elif [ -z "$evo_direct" ] || [ "$evo_direct" = null ]; then why="the direct run wrote no .modes.direct"
+  elif [ "$ST_RC" -ne 0 ]; then why="the destination run: rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(jq -c '.modes | keys_unsorted' "$evo")" != '["destination","direct"]' ]; then why="modes are listed $(jq -c '.modes | keys_unsorted' "$evo"), not destination then direct"
+  elif [ "$(jq -S . "$evo")" != "$(cat "$evo")" ]; then why="the file is not written with jq -S"
+  elif [ "$(jq -c '.modes.direct.steps' "$evo")" != "$lp_steps_direct" ]; then why="the direct steps are not in loop order: $(jq -c '.modes.direct.steps' "$evo")"
+  elif [ "$(jq -c '.modes.destination.steps' "$evo")" != "$lp_steps_dest" ]; then why="the destination steps are not in loop order: $(jq -c '.modes.destination.steps' "$evo")"
+  elif [ "$(jq -c '.modes.direct' "$evo")" != "$evo_direct" ]; then why="the destination run changed the direct entry"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS evidence-order rc=0 sorted=1 modes=destination,direct steps=loop-order earlier_entry=kept"
+  else _st_result "FAIL evidence-order $why"; fails=$((fails + 1)); fi
+
+  # PAY-03 payout (plan 30-29): the platform sets the connected account's payout
+  # schedule to manual (platform-level: no Stripe-Account), reads its available GBP
+  # balance, pays out min(requested, available) with Stripe-Account and
+  # <run id>-payout-<acct>, and reads the payout by id until paid or the deadline.
+  # The account object carries bank details and a name (STUBBANKpo1, piizq7), which
+  # must never be printed. STUB_CONNECT_ACCOUNT stays on: every balance and payout
+  # call must carry the header, and the account update must not.
+  local po_args=("${tool_args[@]}" --stage payout --account "$lp_acct") pr_args=("${tool_args[@]}" --stage payout-read --account "$lp_acct")
+  local po_leak_re='STUBBANKpo1|piizq7|PIIZQ7'
+  # _st_po_obj STATUS AMOUNT RUN_ID [ID] — one payout object.
+  _st_po_obj() {
+    jq -n --arg st "$1" --argjson a "$2" --arg r "$3" --arg id "${4:-po_loop1}" '{id: $id, object: "payout", livemode: false, amount: $a,
+        currency: "gbp", status: $st, destination: "ba_po1", method: "standard", arrival_date: 1793577600,
+        metadata: (if $r == "" then {} else {loop_run_id: $r} end)}'
+  }
+  # _st_po_fx RUN_ID AVAILABLE CREATE_AMOUNT [READ_STATUS...] — the account update's
+  # answer, the balance, the payout list (another run's payout only), the create answer,
+  # and the by-id reads in order (the last one repeats).
+  _st_po_fx() {
+    local run="$1" avail="$2" camt="$3" i=0 st
+    shift 3
+    _st_loop_fx ENABLED DIRECT_CHARGE_VENDOR_MOR dest none
+    rm -f "$ast/resp/"po-po_*.json "$ast/resp/po-list.json"
+    jq -n --arg a "$lp_acct" '{id: $a, object: "account", type: "express", payouts_enabled: true, email: "piizq7@example.invalid",
+        settings: {payouts: {schedule: {interval: "manual", delay_days: 7}}},
+        external_accounts: {object: "list", data: [{id: "ba_po1", object: "bank_account", bank_name: "STUBBANKpo1", last4: "STUBBANKpo1",
+          routing_number: "STUBBANKpo1", account_holder_name: "Pii PIIZQ7"}]}}' > "$ast/resp/po-account.json"
+    jq -n --argjson av "$avail" '{object: "balance", livemode: false, available: [{amount: $av, currency: "gbp"}, {amount: 777, currency: "eur"}],
+        pending: [{amount: 120, currency: "gbp"}]}' > "$ast/resp/po-balance.json"
+    jq -n '{object: "list", has_more: false, url: "/v1/payouts", data: [{id: "po_other1", object: "payout", livemode: false, amount: 300,
+        currency: "gbp", status: "paid", metadata: {loop_run_id: "someone-elses-run"}}]}' > "$ast/resp/po-list.json"
+    _st_po_obj pending "$camt" "$run" > "$ast/resp/po-create.json"
+    for st in "$@"; do i=$((i + 1)); _st_po_obj "$st" "$camt" "$run" > "$ast/resp/po-po_loop1-$i.json"; done
+    [ "$i" -eq 0 ] || cp "$ast/resp/po-po_loop1-$i.json" "$ast/resp/po-po_loop1.json"
+  }
+  _st_po_posts() { _st_flow '^POST https://api\.stripe\.com/v1/payouts -> '; }
+  _st_po_leaks() { command grep -cE "$po_leak_re" <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
+  _st_af() { if [ -s "$ast/logs/stripe-acct-flow.log" ]; then command grep -cxF "$1" "$ast/logs/stripe-acct-flow.log" || true; else echo 0; fi; }
+
+  # --- payout-ok: 950 available, 500 requested -> one payout of 500, polled in_transit
+  #     then paid, every state printed; the schedule update is platform-level, the
+  #     balance, the payout and its reads carry Stripe-Account; .payouts[] written
+  local pev="$ob_dir/evidence-payout.json" pev_hits
+  rm -f "$pev"
+  _st_po_fx po-run-1 950 500 in_transit paid
+  _st_run "${md_env[@]}" -- "${po_args[@]}" --amount-pennies 500 --run-id po-run-1 --evidence "$pev"
+  why=""
+  local p_del p_list p_acc p_bal p_post p_get
+  p_del=$(_st_line "$re_opdel")
+  p_list=$(_st_line '^GET https://api\.stripe\.com/v1/payouts\?limit=100 -> 200$')
+  p_acc=$(_st_line "^POST https://api\.stripe\.com/v1/accounts/$lp_acct -> 200$")
+  p_bal=$(_st_line '^GET https://api\.stripe\.com/v1/balance -> 200$')
+  p_post=$(_st_line '^POST https://api\.stripe\.com/v1/payouts -> 200$')
+  p_get=$(_st_last '^GET https://api\.stripe\.com/v1/payouts/po_loop1 -> 200$')
+  pev_hits=$(command grep -ciE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@|STUBBANK|piizq7' "$pev" 2>/dev/null || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "PAYOUT account=$lp_acct payout=po_loop1 amount=500 status=paid livemode=false" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif ! command grep -qE '^PAYOUT-WAIT payout=po_loop1 status=in_transit ' <<<"$ST_OUT" || ! command grep -qE '^PAYOUT-WAIT payout=po_loop1 status=paid ' <<<"$ST_OUT"; then
+    why="every state was not printed: $(command grep '^PAYOUT' <<<"$ST_OUT" | tr '\n' '|')"
+  elif [ "$(_st_po_posts)" -ne 1 ]; then why="payout posts=$(_st_po_posts) (want 1)"
+  elif [ "$(_st_af "POST /v1/payouts acct=$lp_acct key=po-run-1-payout-$lp_acct")" -ne 1 ]; then
+    why="the payout POST does not carry Stripe-Account and Idempotency-Key <run id>-payout-<acct>: $(command grep -F 'POST /v1/payouts' "$ast/logs/stripe-acct-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_af "POST /v1/accounts/$lp_acct acct=none key=po-run-1-schedule-$lp_acct")" -ne 1 ]; then
+    why="the schedule update is not one platform-level call with <run id>-schedule-<acct>: $(command grep -F '/v1/accounts' "$ast/logs/stripe-acct-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_acct_bad)" -ne 1 ]; then why="Stripe calls without Stripe-Account $lp_acct other than the account update: $(command grep -vE " acct=$lp_acct key=" "$ast/logs/stripe-acct-flow.log" | tr '\n' '|')"
+  elif ! command grep -qF 'settings[payouts][schedule][interval]=manual' "$ast/logs/curl.log"; then why="the schedule update does not set interval=manual"
+  elif ! command grep -qE 'amount=500( |$)' "$ast/logs/curl.log" || ! command grep -qE 'currency=gbp( |$)' "$ast/logs/curl.log" \
+       || ! command grep -qF 'metadata[loop_run_id]=po-run-1' "$ast/logs/curl.log"; then why="the payout POST is not amount=500 currency=gbp metadata[loop_run_id]=po-run-1"
+  elif [ -z "$p_del" ] || [ -z "$p_list" ] || [ -z "$p_acc" ] || [ -z "$p_bal" ] || [ -z "$p_post" ] || [ -z "$p_get" ] \
+       || ! { [ "$p_del" -lt "$p_list" ] && [ "$p_list" -lt "$p_acc" ] && [ "$p_acc" -lt "$p_bal" ] && [ "$p_bal" -lt "$p_post" ] && [ "$p_post" -lt "$p_get" ]; }; then
+    why="call order is not operator-deleted<payout list<schedule<balance<payout<read: $p_del $p_list $p_acc $p_bal $p_post $p_get"
+  elif [ "$(_st_flow ' -> 404$')" -ne 0 ]; then why="a call was answered 404: $(command grep -E ' -> 404$' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_po_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="a bank detail, a name, an e-mail or a key was printed or put in argv ($(_st_po_leaks) hit(s))"
+  elif [ "$(jq -c '.payouts | length' "$pev" 2>/dev/null)" != 1 ]; then why="the evidence does not hold exactly one payout: $(head -c 300 "$pev" 2>/dev/null)"
+  elif [ "$(jq -c '.payouts[0] | {account, payout, amount, requested, available, whole_balance, schedule_interval, status, destination, run_id, livemode}' "$pev")" \
+       != '{"account":"acct_loop1","payout":"po_loop1","amount":500,"requested":500,"available":950,"whole_balance":false,"schedule_interval":"manual","status":"paid","destination":"ba_po1","run_id":"po-run-1","livemode":false}' ]; then
+    why="the payout entry is not the run's: $(jq -c '.payouts[0]' "$pev")"
+  elif [ "$pev_hits" -ne 0 ]; then why="the evidence holds $pev_hits key, secret, URL, e-mail or bank-detail line(s)"
+  elif [ "$(jq -S . "$pev")" != "$(cat "$pev")" ] || [ "$(stat -c %a "$pev")" != 600 ]; then why="the evidence is not jq -S, mode 600"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS payout-ok rc=0 payout=500 of 950 states=in_transit,paid schedule=manual,platform-level header=balance,payout,reads key=<run>-payout-<acct>"
+  else _st_result "FAIL payout-ok $why"; fails=$((fails + 1)); fi
+
+  # --- payout-all-available: 2000 requested (and none), 950 available -> a payout of the
+  #     whole 950, recorded as the whole balance; 2000 is never requested
+  why=""
+  local paa pav="$ob_dir/evidence-payout-all.json"
+  for paa in 2000 default; do
+    rm -f "$pav"
+    _st_po_fx po-run-2 950 950 paid
+    if [ "$paa" = default ]; then _st_run "${md_env[@]}" -- "${po_args[@]}" --run-id po-run-2 --evidence "$pav"
+    else _st_run "${md_env[@]}" -- "${po_args[@]}" --amount-pennies 2000 --run-id po-run-2 --evidence "$pav"; fi
+    if [ "$ST_RC" -ne 0 ]; then why="$paa: rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(tail -n 1 <<<"$ST_OUT")" != "PAYOUT account=$lp_acct payout=po_loop1 amount=950 status=paid livemode=false" ]; then why="$paa: the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+    elif ! command grep -qE 'amount=950( |$)' "$ast/logs/curl.log"; then why="$paa: no payout of amount=950 was requested"
+    elif command grep -qE 'amount=2000( |$)' "$ast/logs/curl.log"; then why="$paa: a payout above the available balance (2000) was requested"
+    elif ! command grep -qF 'the whole available balance' <<<"$ST_OUT"; then why="$paa: the payout is not said to be the whole available balance"
+    elif [ "$(jq -c '.payouts[0] | {amount, available, whole_balance}' "$pav" 2>/dev/null)" != '{"amount":950,"available":950,"whole_balance":true}' ] \
+         || [ "$(jq -r '.payouts[0].requested' "$pav")" != "$([ "$paa" = default ] && echo 950 || echo 2000)" ]; then
+      why="$paa: the entry does not record the whole balance: $(jq -c '.payouts[0]' "$pav" 2>/dev/null)"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS payout-all-available rc=0 requested=2000,default available=950 payout=950 whole_balance=true above_available_requested=0"
+  else _st_result "FAIL payout-all-available $why"; fails=$((fails + 1)); fi
+
+  # --- payout-no-balance: 0 available -> REFUSED [no-available-balance], no payout POST
+  _st_po_fx po-run-3 0 0
+  _st_run "${md_env[@]}" -- "${po_args[@]}" --run-id po-run-3
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [no-available-balance]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [no-available-balance]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_af "GET /v1/balance acct=$lp_acct key=none")" -ne 1 ]; then why="the refusal was not reached through the account's balance read (non-vacuity)"
+  elif [ "$(_st_po_posts)" -ne 0 ]; then why="a payout was requested: $(_st_po_posts)"
+  elif command grep -q '^PAYOUT ' <<<"$ST_OUT"; then why="a PAYOUT line was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS payout-no-balance rc=1 tag=no-available-balance balance_reads=1 payout_posts=0"
+  else _st_result "FAIL payout-no-balance $why"; fails=$((fails + 1)); fi
+
+  # --- payout-pending: the payout stays in_transit past the deadline -> rc 0, Stripe's
+  #     status verbatim (in_transit, never paid), a payout-read hint, the entry in_transit
+  local ppe="$ob_dir/evidence-payout-pending.json"
+  rm -f "$ppe"
+  _st_po_fx po-run-4 950 500 in_transit
+  _st_run "${md_env[@]}" STAGING_SEED_POLL_SECONDS=1 STAGING_SEED_PAYOUT_DEADLINE_SECONDS=2 -- "${po_args[@]}" --amount-pennies 500 --run-id po-run-4 --evidence "$ppe"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "PAYOUT account=$lp_acct payout=po_loop1 amount=500 status=in_transit livemode=false" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif command grep -qF 'status=paid' <<<"$ST_OUT"; then why="a payout Stripe never reported paid was printed as paid"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/payouts/po_loop1 -> 200$')" -lt 2 ]; then why="the payout was not polled (reads=$(_st_flow '/v1/payouts/po_loop1 -> '))"
+  elif ! command grep -qF -- "--stage payout-read --account $lp_acct --payout po_loop1" <<<"$ST_OUT"; then why="no payout-read hint: $(command grep -E '^(HINT|PAYOUT)' <<<"$ST_OUT" | tr '\n' '|')"
+  elif [ "$(jq -r '.payouts[0].status' "$ppe" 2>/dev/null)" != in_transit ]; then why="the entry's status is '$(jq -r '.payouts[0].status' "$ppe" 2>/dev/null)', not in_transit"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS payout-pending rc=0 status=in_transit printed_paid=0 hint=payout-read entry=in_transit"
+  else _st_result "FAIL payout-pending $why"; fails=$((fails + 1)); fi
+
+  # --- payout-read: the pending payout read again by id after Stripe reports it paid ->
+  #     PAYOUT status=paid, the entry's status updated (nothing else), no write to
+  #     Stripe; a payout the evidence does not hold leaves the file untouched
+  _st_po_fx po-run-4 950 500 paid
+  _st_run "${md_env[@]}" -- "${pr_args[@]}" --payout po_loop1 --evidence "$ppe"
+  why=""
+  local ppe_sum
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "PAYOUT account=$lp_acct payout=po_loop1 amount=500 status=paid livemode=false" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_af "GET /v1/payouts/po_loop1 acct=$lp_acct key=none")" -ne 1 ]; then why="the payout was not read exactly once by id with Stripe-Account"
+  elif [ "$(_st_stripe_writes)" -ne 0 ]; then why="payout-read wrote to Stripe: $(_st_stripe_writes)"
+  elif [ "$(jq -c '.payouts | length' "$ppe")" != 1 ] \
+       || [ "$(jq -c '.payouts[0] | {payout, amount, requested, status}' "$ppe")" != '{"payout":"po_loop1","amount":500,"requested":500,"status":"paid"}' ] \
+       || ! jq -e '.payouts[0].read_at | type == "string"' "$ppe" >/dev/null 2>&1; then
+    why="the entry was not updated to paid in place: $(jq -c '.payouts' "$ppe")"
+  else
+    ppe_sum=$(sha256sum "$ppe" | cut -d' ' -f1)
+    _st_po_obj paid 400 "" po_unknown9 > "$ast/resp/po-po_unknown9.json"
+    _st_run "${md_env[@]}" -- "${pr_args[@]}" --payout po_unknown9 --evidence "$ppe"
+    if [ "$ST_RC" -ne 1 ]; then why="unknown payout: rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'no .payouts entry for po_unknown9' <<<"$ST_ERR"; then why="unknown payout: the failure does not say why: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(sha256sum "$ppe" | cut -d' ' -f1)" != "$ppe_sum" ]; then why="unknown payout: the evidence file was changed"
+    else
+      _st_run "${md_env[@]}" -- "${pr_args[@]}" --payout po_loop1
+      [ "$ST_RC" -eq 0 ] && [ "$(tail -n 1 <<<"$ST_OUT")" = "PAYOUT account=$lp_acct payout=po_loop1 amount=500 status=paid livemode=false" ] \
+        || why="without --evidence: rc=$ST_RC, last line '$(tail -n 1 <<<"$ST_OUT")'"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS payout-read rc=0 status=in_transit->paid entry=updated stripe_writes=0 unknown_payout=refused,file_untouched"
+  else _st_result "FAIL payout-read $why"; fails=$((fails + 1)); fi
+
+  # --- payout-other-account: an account that is not the staging tenant's (T-30-114) ->
+  #     REFUSED [other-account] before any Stripe call, for payout and payout-read
+  why=""
+  local poa
+  for poa in payout payout-read; do
+    _st_po_fx po-run-5 950 500 paid
+    if [ "$poa" = payout ]; then _st_run "${md_env[@]}" -- "${tool_args[@]}" --stage payout --account acct_other9 --run-id po-run-5
+    else _st_run "${md_env[@]}" -- "${tool_args[@]}" --stage payout-read --account acct_other9 --payout po_loop1; fi
+    if [ "$ST_RC" -ne 1 ]; then why="$poa: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [other-account]' <<<"$ST_ERR"; then why="$poa: stderr lacks 'REFUSED [other-account]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 200$')" -ne 1 ]; then why="$poa: the refusal was not reached through the admin tenant read"
+    elif [ "$(_st_acct_flow)" -ne 0 ]; then why="$poa: a Stripe call was made: $(tr '\n' '|' < "$ast/logs/stripe-acct-flow.log")"
+    elif [ "$(_st_flow "$re_opdel")" -ne 1 ]; then why="$poa: the operator was not deleted exactly once"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS payout-other-account rc=1 tag=other-account stages=payout,payout-read stripe_calls=0"
+  else _st_result "FAIL payout-other-account $why"; fails=$((fails + 1)); fi
+
+  # --- payout-args: every payout flag is checked before any guard or call ------------
+  why=""
+  local pa_n pa_want
+  for pa_n in 1 2 3 4 5 6 7; do
+    case "$pa_n" in
+      1) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage payout; pa_want="USAGE ERROR: --stage payout needs --account" ;;
+      2) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${po_args[@]}" --amount-pennies 0; pa_want="USAGE ERROR: --amount-pennies must be a positive whole number" ;;
+      3) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${po_args[@]}" --payout po_loop1; pa_want="USAGE ERROR: --payout is taken by --stage payout-read only" ;;
+      4) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${pr_args[@]}"; pa_want="USAGE ERROR: --stage payout-read needs --payout" ;;
+      5) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${po_args[@]}" --run-id 'bad id!'; pa_want="USAGE ERROR: --run-id must be" ;;
+      6) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ml_args[@]}" --amount-pennies 500; pa_want="USAGE ERROR: --amount-pennies is taken by --stage payout only" ;;
+      7) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${pr_args[@]}" --payout po_loop1 --run-id po-run-6; pa_want="USAGE ERROR: --run-id is taken by --stage money-loop and payout only" ;;
+    esac
+    why=$(_st_refusal 2 "$pa_want" 0 0) || { why="case $pa_n: $why"; break; }
+  done
+  if [ -z "$why" ]; then _st_result "PASS payout-args rc=2 cases=7 az_calls=0 curl_calls=0"
+  else _st_result "FAIL payout-args $why"; fails=$((fails + 1)); fi
+
+  # --- replay-run-id (T-30-112): the same --run-id twice -> the order POST replays its
+  #     key, nothing else is written again (no confirm, accept, refund or payout POST);
+  #     another run id -> its own order key and its own refund
+  why=""
+  local rr_ev="$ob_dir/evidence-replay.json" rr_key1
+  rm -f "$rr_ev"
+  _st_loopd_fx succeeded
+  _st_run "${md_env[@]}" -- "${md_args[@]}" --run-id loop-replay-1 --evidence "$rr_ev"
+  rr_key1=$(command grep -oE 'Idempotency-Key: loop-replay-1-order' "$ast/logs/curl.log" | head -n 1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="run 1: rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ -z "$rr_key1" ] || ! command grep -qF 'Idempotency-Key: loop-replay-1-confirm' "$ast/logs/curl.log" \
+       || ! command grep -qF 'Idempotency-Key: loop-replay-1-refund' "$ast/logs/curl.log"; then why="run 1: the keys do not derive from --run-id loop-replay-1"
+  elif [ "$(_st_refund_posts)" -ne 1 ]; then why="run 1: refund posts=$(_st_refund_posts) (want 1)"
+  else
+    # What run 1 left behind: the intent succeeded, the order CONFIRMED, its refund row
+    # carrying this run's key (RefundService stores the client's Idempotency-Key).
+    cp "$ast/resp/pi-after.json" "$ast/resp/pi-before.json"
+    jq -n '{content: [], totalElements: 0, totalPages: 1, number: 0, last: true}' > "$ast/resp/orders-status-PENDING.json"
+    jq -n --arg o "$lp_oid" --arg s "$sid" '{content: [{id: $o, shopId: $s, orderNumber: "ORD-STUB-L001", status: "CONFIRMED",
+        paymentStatus: "CAPTURED", paymentReference: "pi_loopd1", totalAmountPennies: 950}], totalElements: 1, totalPages: 1, number: 0, last: true}' \
+      > "$ast/resp/orders-status-CONFIRMED.json"
+    jq --arg k "loop-replay-1-refund" '.refunds[0].idempotencyKey = $k | .refunds[0].status = "succeeded"' "$ast/resp/detail-$lp_oid.json" \
+      > "$ast/resp/detail-$lp_oid.next" && mv "$ast/resp/detail-$lp_oid.next" "$ast/resp/detail-$lp_oid.json"
+    _st_run "${md_env[@]}" -- "${md_args[@]}" --run-id loop-replay-1 --evidence "$rr_ev"
+    if [ "$ST_RC" -ne 0 ]; then why="run 2: rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_order_posts)" -ne 1 ] || [ "$(command grep -oE 'Idempotency-Key: [^ ]+-order' "$ast/logs/curl.log" | head -n 1)" != "$rr_key1" ]; then
+      why="run 2: the order POST did not replay run 1's key ($rr_key1): $(command grep -oE 'Idempotency-Key: [^ ]+' "$ast/logs/curl.log" | tr '\n' '|')"
+    elif [ "$(_st_confirms)" -ne 0 ] || [ "$(_st_accept_posts)" -ne 0 ] || [ "$(_st_refund_posts)" -ne 0 ]; then
+      why="run 2 wrote again: confirms=$(_st_confirms) accepts=$(_st_accept_posts) refunds=$(_st_refund_posts) (want 0 each)"
+    elif ! command grep -qxF "LOOP-REFUND mode=direct refund=re_loopd1 amount=100 status=succeeded account=$lp_acct local_status=succeeded" <<<"$ST_OUT"; then
+      why="run 2: the replay is not fully evidenced: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+    elif [ "$(jq -r '.modes.direct.run_id' "$rr_ev" 2>/dev/null)" != loop-replay-1 ]; then why="run 2: the evidence does not name run loop-replay-1"
+    else
+      _st_run "${md_env[@]}" -- "${md_args[@]}" --run-id loop-replay-2 --evidence "$rr_ev"
+      if [ "$ST_RC" -ne 0 ]; then why="other run: rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+      elif ! command grep -qF 'Idempotency-Key: loop-replay-2-order' "$ast/logs/curl.log"; then why="other run: its order does not carry its own key"
+      elif [ "$(_st_refund_posts)" -ne 1 ] || ! command grep -qF 'Idempotency-Key: loop-replay-2-refund' "$ast/logs/curl.log"; then
+        why="other run: it did not issue its own refund with loop-replay-2-refund (refund posts=$(_st_refund_posts))"
+      elif [ "$(jq -r '.modes.direct.run_id' "$rr_ev" 2>/dev/null)" != loop-replay-2 ]; then why="other run: the evidence does not name run loop-replay-2"
+      fi
+    fi
+  fi
+  if [ -z "$why" ]; then
+    _st_po_fx po-replay-1 950 500 paid
+    _st_run "${md_env[@]}" -- "${po_args[@]}" --amount-pennies 500 --run-id po-replay-1
+    if [ "$ST_RC" -ne 0 ]; then why="payout run 1: rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_po_posts)" -ne 1 ] || [ "$(_st_af "POST /v1/payouts acct=$lp_acct key=po-replay-1-payout-$lp_acct")" -ne 1 ]; then
+      why="payout run 1: not one payout POST with Idempotency-Key po-replay-1-payout-$lp_acct: $(command grep -F 'POST /v1/payouts' "$ast/logs/stripe-acct-flow.log" | tr '\n' '|')"
+    else
+      # Stripe now lists run 1's payout, stamped with its run id.
+      jq --argjson p "$(_st_po_obj paid 500 po-replay-1)" '.data += [$p]' "$ast/resp/po-list.json" > "$ast/resp/po-list.next" \
+        && mv "$ast/resp/po-list.next" "$ast/resp/po-list.json"
+      _st_run "${md_env[@]}" -- "${po_args[@]}" --amount-pennies 500 --run-id po-replay-1
+      if [ "$ST_RC" -ne 0 ]; then why="payout run 2: rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+      elif [ "$(_st_stripe_writes)" -ne 0 ]; then why="payout run 2 wrote again: $(command grep -E '^(POST|DELETE) https://api\.stripe\.com/' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+      elif [ "$(tail -n 1 <<<"$ST_OUT")" != "PAYOUT account=$lp_acct payout=po_loop1 amount=500 status=paid livemode=false" ]; then why="payout run 2: the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+      fi
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS replay-run-id rc=0 order_key=replayed confirm_posts=0 accept_posts=0 refund_posts=0 payout_posts=0 other_run=own_keys,own_refund"
+  else _st_result "FAIL replay-run-id $why"; fails=$((fails + 1)); fi
+  rm -f "$ast/resp/"po-*.json
+  rm -f "$ast/resp/ch-ch_loopd1.json" "$ast/resp/re-re_loopd1.json"
+
+  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING orders-status-CONFIRMED transition "detail-$lp_oid"; do
+    if [ -f "$ast/resp/$lp_f.pre-loop" ]; then mv "$ast/resp/$lp_f.pre-loop" "$ast/resp/$lp_f.json"; else rm -f "$ast/resp/$lp_f.json"; fi
+  done
+
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
-  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing billing-sync-check; do
+  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing billing-sync-check connect-onboard settlement-mode money-loop payout payout-read; do
     case "$sub" in
       order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
       cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
       cancel-orphan-intents) set -- --intents pi_orphana,pi_orphanb ;;
       stripe-get)       set -- --path /v1/balance ;;
       pay-link)         set -- --link-out "$ast/link-out/dry.url" ;;
+      connect-onboard)  set -- --link-out "$ast/link-out/dry-onboard.url" ;;
+      money-loop)       set -- --mode destination ;;
+      payout)           set -- --account acct_STUB1 --amount-pennies 500 --run-id dry-run-1 ;;
+      payout-read)      set -- --account acct_STUB1 --payout po_STUB1 ;;
       *)                set -- ;;
     esac
     _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage "$sub" "$@" --dry-run
@@ -3357,7 +5447,15 @@ IDF
     [ -z "$why" ] || break
   done
   set --
-  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=10 az_calls=0 curl_calls=0"
+  # --mode direct prints its own plan: every Stripe call on the connected account.
+  if [ -z "$why" ]; then
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage money-loop --mode direct --dry-run
+    if [ "$ST_RC" -ne 0 ] || [ "$(_st_lines az)" -ne 0 ] || [ "$(_st_lines curl)" -ne 0 ]; then why="money-loop direct: rc=$ST_RC az=$(_st_lines az) curl=$(_st_lines curl)"
+    elif ! command grep -qF 'mode          direct (DIRECT_CHARGE_VENDOR_MOR)' <<<"$ST_OUT" \
+         || [ "$(command grep -cF 'Stripe-Account' <<<"$ST_OUT")" -lt 5 ]; then why="money-loop direct: the plan does not show Stripe-Account on the Stripe calls"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=15 direct_plan=1 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
@@ -3379,6 +5477,13 @@ EVENT=""
 STRIPE_PATH=""
 STRIPE_ACCOUNT=""
 LINK_OUT=""
+SET_MODE=""
+LOOP_MODE=""
+LOOP_EVIDENCE=""
+LOOP_REFUND_PENNIES=""
+RUN_ID=""
+PAYOUT_PENNIES=""
+PAYOUT_ID=""
 STRIPE_PATH_RE='^/v1/(webhook_endpoints|payment_intents|charges|refunds|transfers|payouts|accounts|subscriptions|invoices|events|balance)(/[A-Za-z0-9_]+)*(\?[]A-Za-z0-9_.=&[-]*)?$'
 
 while [ "$#" -gt 0 ]; do
@@ -3393,6 +5498,13 @@ while [ "$#" -gt 0 ]; do
     --path)            shift; [ "$#" -gt 0 ] || usage_error "--path needs a Stripe path (/v1/…)"; STRIPE_PATH="$1" ;;
     --account)         shift; [ "$#" -gt 0 ] || usage_error "--account needs a connected account id (acct_…)"; STRIPE_ACCOUNT="$1" ;;
     --link-out)        shift; [ "$#" -gt 0 ] || usage_error "--link-out needs a file path"; LINK_OUT="$1" ;;
+    --set)             shift; [ "$#" -gt 0 ] || usage_error "--set needs a settlement mode"; SET_MODE="$1" ;;
+    --mode)            shift; [ "$#" -gt 0 ] || usage_error "--mode needs destination or direct"; LOOP_MODE="$1" ;;
+    --evidence)        shift; [ "$#" -gt 0 ] || usage_error "--evidence needs a file path"; LOOP_EVIDENCE="$1" ;;
+    --refund-pennies)  shift; [ "$#" -gt 0 ] || usage_error "--refund-pennies needs a whole number of pennies"; LOOP_REFUND_PENNIES="$1" ;;
+    --run-id)          shift; [ "$#" -gt 0 ] || usage_error "--run-id needs an id"; RUN_ID="$1" ;;
+    --amount-pennies)  shift; [ "$#" -gt 0 ] || usage_error "--amount-pennies needs a whole number of pennies"; PAYOUT_PENNIES="$1" ;;
+    --payout)          shift; [ "$#" -gt 0 ] || usage_error "--payout needs a payout id (po_…)"; PAYOUT_ID="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -3410,20 +5522,46 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing or billing-sync-check" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing, billing-sync-check, connect-onboard, settlement-mode, money-loop, payout or payout-read" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
 fi
-if [ "$STAGE" != pay-link ]; then
-  [ -z "$LINK_OUT" ] || usage_error "--link-out is taken by --stage pay-link only"
+case "$STAGE" in
+  pay-link|connect-onboard) ;;
+  *) [ -z "$LINK_OUT" ] || usage_error "--link-out is taken by --stage pay-link and --stage connect-onboard only" ;;
+esac
+if [ "$STAGE" != settlement-mode ]; then
+  [ -z "$SET_MODE" ] || usage_error "--set is taken by --stage settlement-mode only"
 fi
+if [ "$STAGE" != money-loop ]; then
+  [ -z "$LOOP_MODE" ] || usage_error "--mode is taken by --stage money-loop only"
+  [ -z "$LOOP_REFUND_PENNIES" ] || usage_error "--refund-pennies is taken by --stage money-loop only"
+fi
+case "$STAGE" in
+  money-loop|payout|payout-read) ;;
+  *) [ -z "$LOOP_EVIDENCE" ] || usage_error "--evidence is taken by --stage money-loop, payout and payout-read only" ;;
+esac
+# --run-id (plan 30-29) names the run every Idempotency-Key derives from, so only the
+# stages that write take it; a re-run with the same id replays instead of writing again.
+case "$STAGE" in
+  money-loop|payout) ;;
+  *) [ -z "$RUN_ID" ] || usage_error "--run-id is taken by --stage money-loop and payout only (the stages that write)" ;;
+esac
+if [ -n "$RUN_ID" ] && ! [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,63}$ ]]; then
+  usage_error "--run-id must be 1-64 letters, digits, '.' or '-', starting with a letter or digit (got '$RUN_ID'); it becomes every Idempotency-Key"
+fi
+[ "$STAGE" = payout ] || [ -z "$PAYOUT_PENNIES" ] || usage_error "--amount-pennies is taken by --stage payout only"
+[ "$STAGE" = payout-read ] || [ -z "$PAYOUT_ID" ] || usage_error "--payout is taken by --stage payout-read only"
 if [ "$STAGE" != stripe-get ]; then
   [ -z "$STRIPE_PATH" ] || usage_error "--path is taken by --stage stripe-get only"
-  [ -z "$STRIPE_ACCOUNT" ] || usage_error "--account is taken by --stage stripe-get only"
 fi
+case "$STAGE" in
+  stripe-get|payout|payout-read) ;;
+  *) [ -z "$STRIPE_ACCOUNT" ] || usage_error "--account is taken by --stage stripe-get, payout and payout-read only" ;;
+esac
 # Stage-specific flags are checked before any guard or call. A flag a stage
 # does not take is an error, never ignored: an order list must not be mistaken
 # for a filter by a stage that would not honour it.
@@ -3475,6 +5613,50 @@ case "$STAGE" in
       || refuse stripe-path "'$STRIPE_PATH' is not an allowlisted evidence path (webhook_endpoints, payment_intents, charges, refunds, transfers, payouts, accounts, subscriptions, invoices, events, balance); nothing was called"
     [ -z "$STRIPE_ACCOUNT" ] || [[ "$STRIPE_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]] \
       || usage_error "--account must be a connected account id (acct_ followed by letters and digits)" ;;
+  connect-onboard)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage connect-onboard"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    [ -n "$LINK_OUT" ] || usage_error "--stage connect-onboard needs --link-out FILE (the onboarding link is a single-use bearer URL and is written only there, mode 600)"
+    [ ! -d "$LINK_OUT" ] || usage_error "--link-out '$LINK_OUT' is a directory; name a file"
+    [ -d "$(dirname "$LINK_OUT")" ] || usage_error "--link-out: the directory of '$LINK_OUT' does not exist" ;;
+  settlement-mode)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage settlement-mode"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    case "$SET_MODE" in
+      ""|DESTINATION_CHARGE_PLATFORM_MOR|DIRECT_CHARGE_VENDOR_MOR) ;;
+      *) usage_error "--set must be DESTINATION_CHARGE_PLATFORM_MOR or DIRECT_CHARGE_VENDOR_MOR (got '$SET_MODE'); the money loop proves those two modes only" ;;
+    esac ;;
+  money-loop)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage money-loop"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    case "$LOOP_MODE" in
+      destination|direct) ;;
+      "") usage_error "--stage money-loop needs --mode destination|direct" ;;
+      *) usage_error "--mode must be destination or direct (got '$LOOP_MODE')" ;;
+    esac
+    LOOP_REFUND_PENNIES="${LOOP_REFUND_PENNIES:-100}"
+    [[ "$LOOP_REFUND_PENNIES" =~ ^[1-9][0-9]{0,8}$ ]] \
+      || usage_error "--refund-pennies must be a positive whole number of pennies (got '$LOOP_REFUND_PENNIES'): 0 < N < the captured amount, a partial refund"
+    if [ -n "$LOOP_EVIDENCE" ]; then
+      [ ! -d "$LOOP_EVIDENCE" ] || usage_error "--evidence '$LOOP_EVIDENCE' is a directory; name a file"
+      [ -d "$(dirname "$LOOP_EVIDENCE")" ] || usage_error "--evidence: the directory of '$LOOP_EVIDENCE' does not exist"
+    fi ;;
+  payout|payout-read)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage $STAGE"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    [ -n "$STRIPE_ACCOUNT" ] || usage_error "--stage $STAGE needs --account acct_… (the staging tenant's connected account)"
+    [[ "$STRIPE_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]] \
+      || usage_error "--account must be a connected account id (acct_ followed by letters and digits)"
+    if [ "$STAGE" = payout ]; then
+      [ -z "$PAYOUT_PENNIES" ] || [[ "$PAYOUT_PENNIES" =~ ^[1-9][0-9]{0,8}$ ]] \
+        || usage_error "--amount-pennies must be a positive whole number of pennies (got '$PAYOUT_PENNIES'); the payout is min(N, the available balance)"
+    else
+      [[ "$PAYOUT_ID" =~ ^po_[A-Za-z0-9]+$ ]] || usage_error "--stage payout-read needs --payout po_… (the payout id a --stage payout run printed)"
+    fi
+    if [ -n "$LOOP_EVIDENCE" ]; then
+      [ ! -d "$LOOP_EVIDENCE" ] || usage_error "--evidence '$LOOP_EVIDENCE' is a directory; name a file"
+      [ -d "$(dirname "$LOOP_EVIDENCE")" ] || usage_error "--evidence: the directory of '$LOOP_EVIDENCE' does not exist"
+    fi ;;
   pay-link)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage pay-link"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
@@ -3504,6 +5686,11 @@ case "$STAGE" in
   pay-link)         pay_link_stage ;;
   billing)          billing_stage ;;
   billing-sync-check) billing_sync_check_stage ;;
+  connect-onboard)  connect_onboard_stage ;;
+  settlement-mode)  settlement_mode_stage ;;
+  money-loop)       money_loop_stage ;;
+  payout)           payout_stage ;;
+  payout-read)      payout_read_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,

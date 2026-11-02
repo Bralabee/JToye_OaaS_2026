@@ -1,0 +1,59 @@
+{
+  "amount_paid": 3900,
+  "decision": "D-04",
+  "deploy_run": "41375140960",
+  "deployed_commit": "2fe0837b0565edf97738184e0ede02f9ea513278",
+  "first_run": {
+    "at": "2026-11-02T02:43:40Z",
+    "outcome": "subscribed (subscription status was NONE before the run)"
+  },
+  "invoice": "in_1UXBDhDpS9ICNeRtw8DKqYXs",
+  "invoice_status": "paid",
+  "livemode": false,
+  "location_rule": "all-shops",
+  "locations": 1,
+  "phase": "30",
+  "plan": "30-27",
+  "plan_mode": "SAAS_HYBRID_STANDARD",
+  "quantity": 1,
+  "replay": {
+    "amount_paid": 3900,
+    "at": "2026-11-02T02:44:34Z",
+    "invoice": "in_1UXBDhDpS9ICNeRtw8DKqYXs",
+    "locations": 1,
+    "outcome": "read back, no payment method, no subscribe",
+    "quantity": 1,
+    "same_invoice": true,
+    "same_subscription": true,
+    "subscription": "sub_1UXBDhDpS9ICNeRthdSjxKoZ"
+  },
+  "requirement": "PAY-02",
+  "stripe_get_by_id": {
+    "invoice": {
+      "amount_paid": 3900,
+      "billing_reason": "subscription_create",
+      "livemode": false,
+      "status": "paid",
+      "subscription": "sub_1UXBDhDpS9ICNeRthdSjxKoZ"
+    },
+    "invoices_on_subscription_after_sync": 1,
+    "subscription": {
+      "livemode": false,
+      "quantity": 1,
+      "status": "active",
+      "unit_amount": 3900
+    }
+  },
+  "stripe_mode": "TEST",
+  "subscription": "sub_1UXBDhDpS9ICNeRthdSjxKoZ",
+  "sync": {
+    "after_add": 2,
+    "after_remove": 1,
+    "at": "2026-11-02T02:44:18Z",
+    "before": 1,
+    "livemode": false,
+    "observed": true,
+    "probe": "PROBE-SHOP-DELETED: 02e46895-68a2-4570-a29e-5e5a9ef321fa HTTP 204"
+  },
+  "unit_amount_pennies": 3900
+}

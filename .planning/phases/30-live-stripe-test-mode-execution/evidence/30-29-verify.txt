@@ -1,0 +1,17 @@
+# 30-29 verification record (HEAD c126388f, 2026-11-02T04:12:18Z)
+## gitleaks over 8b312117..HEAD (4 commits), repo config and .gitleaksignore
+INF 4 commits scanned.
+INF scanned ~106145 bytes (106.14 KB) in 190ms
+INF no leaks found
+rc=0
+## control: a Stripe-shaped live key (composed at run time) in a throwaway directory, gitleaks dir
+WRN leaks found: 1
+rc=1
+## gitleaks dir over the HEAD script BLOB (git show HEAD:scripts/staging-seed.sh, read after the Task 2 bracket restored the file; default config)
+INF no leaks found
+rc=0
+## .gitleaksignore: unchanged over 8b312117..HEAD (no key-shaped literal was added)
+git diff --quiet rc=0
+## requirements.ready-ids 30-29-PLAN.md PAY-03
+{"ready":[],"blocked":["PAY-03"],"total":1}
+## note: an earlier control in this session committed the key in a throwaway repo with --no-verify (rc 1); it was discarded and replaced by the dir-mode control above, which needs no commit
