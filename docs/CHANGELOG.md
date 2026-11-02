@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stripe Connect: The Account-Create Idempotency Key Follows the Request Body — 2026-11-02
+
+Issue #1090, second observation. With #1091 deployed to staging (`40d91e0e`, parity rc 0), `--stage connect-onboard` still answered 502: Stripe had saved the 05:29Z `type=express` refusal under `connect-account-create-<tenantId>` and rejected the Managed Risk body under the same key (`idempotency_error`, 09:21Z). Stripe keeps such a key for 24 hours, and any tenant whose first create was ever refused would have been stuck the same way.
+
+- **The key names the body:** `StripeConnectService.accountCreateIdempotencyKey` now takes the built `AccountCreateParams` and appends 16 hex characters of SHA-256 over the form-encoded, key-sorted parameters. A changed body gets its own key by construction, and an identical SDK retry still replays under the same key. Nothing sent to Stripe changes.
+- **Proof:** `StripeConnectServiceTest` asserts the production key on the captured params, and that the legacy and Managed Risk bodies give different keys for one tenant, the same body gives the same key, and another tenant gives another key.
+
 ### Stripe Connect: Connected Accounts Created Under Managed Risk, Not the Legacy Express Type — 2026-11-02 (#1091)
 
 Issue #1090. Since 2026-11-02 05:29Z, staging answered `POST /api/v1/admin/tenants/{id}/stripe/connect` with 502. Stripe was refusing the legacy `type` field on the account create, because the platform was the losses collector. The owner ruled option A, Managed Risk, the same day. The account create in `StripeConnectService` changes; nothing else about onboarding, sync, routing or fees does.
