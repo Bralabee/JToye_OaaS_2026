@@ -1,0 +1,13 @@
+Logging into http://localhost:8080 as user admin of realm master
+{
+  "displayNameHtml" : "<a href=\"http://localhost:3000\" style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em;text-decoration:none\">J'Toye</a>"
+}
+login http fetched (7218 bytes)
+[RED-container-after-kcadm-update] login header: <div id="kc-header-wrapper"              class=""><a href="http://localhost:3000" style="color:#3a0b0d;font-weight:700;letter-spacing:0.01em;text-decoration:none" rel="nofollow">J&#39;Toye</a>
+  ANCHOR PRESENT -> http://localhost:3000
+register http fetched (6152 bytes)
+[RED-container-after-kcadm-update] register header: <div id="kc-header-wrapper"              class=""><a href="http://localhost:3000" style="color:#3a0b0d;font-weight:700;letter-spacing:0.01em;text-decoration:none" rel="nofollow">J&#39;Toye</a>
+  ANCHOR PRESENT -> http://localhost:3000
+after register POST: page title = 'Email verification'
+[RED-container-after-kcadm-update] after-register(Email_verification) header: <div id="kc-header-wrapper"              class=""><a href="http://localhost:3000" style="color:#3a0b0d;font-weight:700;letter-spacing:0.01em;text-decoration:none" rel="nofollow">J&#39;Toye</a>
+  ANCHOR PRESENT -> http://localhost:3000

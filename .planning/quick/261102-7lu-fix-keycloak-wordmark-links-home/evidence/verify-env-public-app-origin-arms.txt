@@ -1,0 +1,15 @@
+# scripts/verify-env.sh section (g) over six copies of .env.example, PUBLIC_APP_ORIGIN unset in
+# the calling shell; only the PUBLIC_APP_ORIGIN lines of each run are shown (ANSI colour stripped).
+# Pass arms: good, https. Report-only arm: unset (compose default). Fail arms: slash, quote, comment.
+== good.env: PUBLIC_APP_ORIGIN=http://localhost:3000
+✓ PASS: PUBLIC_APP_ORIGIN is a bare origin (http://localhost:3000)
+== https.env: PUBLIC_APP_ORIGIN=https://app-staging.olajay.co.uk
+✓ PASS: PUBLIC_APP_ORIGIN is a bare origin (https://app-staging.olajay.co.uk)
+== unset.env: (no line)
+ℹ INFO: PUBLIC_APP_ORIGIN is unset; compose renders the realm header link as http://localhost:3000.
+== slash.env: PUBLIC_APP_ORIGIN=http://localhost:3000/
+✗ FAIL: PUBLIC_APP_ORIGIN must be one bare origin, http(s)://host[:port] with no path, trailing slash, quote or list (it is rendered into the realm header's href); got 'http://localhost:3000/'
+== quote.env: PUBLIC_APP_ORIGIN="http://x\" onmouseover=\"y"
+✗ FAIL: PUBLIC_APP_ORIGIN must be one bare origin, http(s)://host[:port] with no path, trailing slash, quote or list (it is rendered into the realm header's href); got 'http://x" onmouseover="y'
+== comment.env: PUBLIC_APP_ORIGIN=http://localhost:3000  # note
+✗ FAIL: PUBLIC_APP_ORIGIN uses the trailing '# comment' shape; docker compose would render the comment TEXT into the realm header link. Put the note on its own line.
