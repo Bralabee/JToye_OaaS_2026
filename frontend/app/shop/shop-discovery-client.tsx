@@ -30,6 +30,19 @@ import { PageResponse } from "@/types/api"
 /** How many shops a page of the directory holds. Shared with the server seed. */
 export const SHOPS_PAGE_SIZE = 12
 
+/**
+ * How long the box must be still before what it says becomes a search.
+ *
+ * Every keystroke used to fetch at once (2026-11-02, external tester: "a glitch
+ * when I backspace"). Measured in a real browser, backspacing "pounded yam" to
+ * empty fired 11 requests for 11 throwaway fragments: on a fast API the grid
+ * strobed between cards and the full "No kitchens found" empty state for
+ * "pounded ya", "poun", "pou", "po"; at 250 ms of latency it sat on the skeleton
+ * for the whole run. A cleared box is NOT debounced (see `applyQueryNow` and the
+ * input's onChange): emptying it is a decision, not a fragment.
+ */
+export const SEARCH_DEBOUNCE_MS = 300
+
 function formatPennies(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
@@ -277,6 +290,13 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   // Seeded from ?q= so the landing search / category chips / a shared link all
   // arrive with the query already applied, not on a blank index.
   const [searchQuery, setSearchQuery] = useState(seededQuery)
+  // The term the grid, its count and its summary line are FOR: what the box
+  // said once it was still for SEARCH_DEBOUNCE_MS, already trimmed. Kept apart
+  // from `searchQuery` so a fragment the customer is backspacing through is
+  // never fetched, rendered or announced ("No kitchens match “pou”"). The
+  // summary reads THIS, never the box: during the debounce window the box is
+  // ahead of the results, and a count must name the query it counted.
+  const [resultsQuery, setResultsQuery] = useState(seededQuery.trim())
   const [totalPages, setTotalPages] = useState(initial?.totalPages ?? 0)
   const [totalElements, setTotalElements] = useState(initial?.totalElements ?? 0)
   // The server's statement about how `q` was read. Seeded from the SSR response
@@ -333,7 +353,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
     setLoading(true)
     try {
       const params: Record<string, string | number> = { page, size: SHOPS_PAGE_SIZE }
-      if (searchQuery.trim()) params.q = searchQuery.trim()
+      if (resultsQuery) params.q = resultsQuery
 
       const res = await publicApiClient.get<PageResponse<PublicShop>>(
         "/public/shops",
@@ -402,7 +422,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       // the real answer is still coming.
       if (generation === fetchGeneration.current) setLoading(false)
     }
-  }, [page, searchQuery])
+  }, [page, resultsQuery])
 
   useEffect(() => {
     fetchRef.current = fetchShops
@@ -432,7 +452,24 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setPage(0)
+  }, [resultsQuery])
+
+  // box -> results: a term becomes a search only once the box has been still
+  // for SEARCH_DEBOUNCE_MS. An empty box never waits here: it is applied in
+  // the same event that emptied it (the input's onChange, `applyQueryNow`).
+  useEffect(() => {
+    const term = searchQuery.trim()
+    if (!term) return
+    const timer = setTimeout(() => setResultsQuery(term), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
   }, [searchQuery])
+
+  // A deliberate choice (the X, a suggestion chip, "Browse all kitchens", a
+  // URL change) is not typing: the box and the results move together, now.
+  const applyQueryNow = useCallback((next: string) => {
+    setSearchQuery(next)
+    setResultsQuery(next.trim())
+  }, [])
 
   // URL -> state: a category chip clicked while already on /shop (or a back/
   // forward step) changes ?q= without remounting; adopt it.
@@ -446,9 +483,9 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
     const nextQuery = rawUrlQuery ?? (clientOwnsUrl.current ? "" : initialQuery)
     if (nextQuery !== appliedUrlQuery.current) {
       appliedUrlQuery.current = nextQuery
-      setSearchQuery(nextQuery)
+      applyQueryNow(nextQuery)
     }
-  }, [rawUrlQuery, initialQuery])
+  }, [rawUrlQuery, initialQuery, applyQueryNow])
 
   // state -> URL: typing rewrites ?q= (debounced) so the result set is
   // shareable and survives a reload. replaceState keeps it out of history so
@@ -478,7 +515,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   // DERIVED, never hardcoded — the three-state pattern `near-you-row.tsx`
   // records. `interpretation` is the only input that can turn this into a
   // proximity claim, and it can only have come from a server response.
-  const summary = searchSummary(interpretation, totalElements, searchQuery)
+  const summary = searchSummary(interpretation, totalElements, resultsQuery)
 
   return (
     /* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
@@ -543,13 +580,23 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
             autoComplete="off"
             placeholder="Try “jollof”, “vegan” or your postcode…"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-10 text-sm text-slate-900 shadow-sm placeholder:text-slate-600 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors"
+            onChange={(e) => {
+              const next = e.target.value
+              setSearchQuery(next)
+              // Backspacing to empty is the same decision as the X: the whole
+              // catalogue comes back now, not after the debounce.
+              if (!next.trim()) setResultsQuery("")
+            }}
+            // `type="search"` stays (a phone keyboard shows a Search key), but
+            // Chrome and Safari then paint their OWN cancel button inside the
+            // box, beside the "Clear search" button below: two Xs. The native
+            // one is hidden; the decoration rule drops Safari's extra inset.
+            className="[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-10 text-sm text-slate-900 shadow-sm placeholder:text-slate-600 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors"
           />
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery("")}
+              onClick={() => applyQueryNow("")}
               aria-label="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-cream hover:text-oxblood focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
             >
@@ -602,7 +649,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
             <button
               key={s.q}
               type="button"
-              onClick={() => setSearchQuery(active ? "" : s.q)}
+              onClick={() => applyQueryNow(active ? "" : s.q)}
               aria-pressed={active}
               // `shrink-0 whitespace-nowrap` is load-bearing, not tidying: a
               // flex item shrinks by default, so inside a nowrap row the chips
@@ -629,7 +676,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           stated. The element, its `aria-live="polite"` and its class list are
           unchanged, so the reserved height and the announcement behaviour are
           exactly what they were. */}
-      {!loading && !rateLimited && searchQuery.trim() && (
+      {!loading && !rateLimited && resultsQuery && (
         <p aria-live="polite" className="mb-4 text-sm text-slate-600">
           {summary.kind === "text" ? (
             <>
@@ -734,16 +781,16 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
             No kitchens found
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            {searchQuery
+            {resultsQuery
               ? "Try a different dish, cuisine or postcode — or browse everything."
               : "No kitchens are currently available."}
           </p>
-          {searchQuery && (
+          {resultsQuery && (
             // Never a dead end: a zero-result query keeps one tap back to the
             // full catalogue.
             <button
               type="button"
-              onClick={() => setSearchQuery("")}
+              onClick={() => applyQueryNow("")}
               className="mt-4 inline-flex items-center rounded-full bg-amber-500 px-5 py-2.5 text-sm font-bold text-amber-ink shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2"
             >
               Browse all kitchens
