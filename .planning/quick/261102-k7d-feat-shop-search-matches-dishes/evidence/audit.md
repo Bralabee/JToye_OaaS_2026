@@ -44,7 +44,9 @@ rows). No `@Scheduled` or `@RabbitListener` class calls `ProductRepository` dire
 | 18c | `findById` | `PublicStorefrontService` guest order | No: shop's tenant pinned by `resolvePublicShopForSlug`; also refuses a product of another shop | id + shop check | Safe |
 | 19 | `findAllById` (inherited) | `StockService` (ids taken from an order already read under its tenant), `PublicStorefrontService.getShopConfig` featured list (pinned) | ids bound to an already-scoped row | id | Safe |
 | 20 | (native) `MediaAssetRepository` reference count over `products` | media erasure | tenant passed | `tenant_id` | Safe |
-| 21 | (native) `ShopRepository.fullTextSearchPublished` products EXISTS | public search | **Yes, by design** (the search now clears the tenant) | `p.shop_id = s.id AND p.tenant_id = s.tenant_id AND p.available` | Intended consumer of V89 |
+| 1a | `findAll()` (inherited, unpaged) | `DemoDataSeeder.quarantineNonCurated` (line 938, `@Profile("dev")`) | No: `run()` sets `TenantContext(DEMO_TENANT)` before `transactionTemplate.execute(seed())`, and `seed()` calls it (line 403) | none | Safe (pinned, dev only). Row added after the tenancy review of #1098 found it missing |
+| 21 | (native) `ShopRepository.fullTextSearchPublished`: products arm of the UNION | public search | **Yes, by design** for an anonymous caller (reads through V89). A caller carrying a tenant keeps it (the clear/restore was removed after review, ruling 2026-11-02) and reads only its own tenant's products | `(p.shop_id, p.tenant_id)` must equal `(s.id, s.tenant_id)`; `p.available` | Intended consumer of V89; reads only the pair, never a product column |
+| 22 | (JPQL) `ShopRepository.searchPublished`: products EXISTS in the LIKE tier | public search, LIKE tier | **Yes, by design**, as row 21 | `p.shopId = s.id AND p.tenantId = s.tenantId AND p.available` | Intended consumer of V89; reads only existence |
 
 Findings 4, 5 and 13 are one class (the GROUP_ADMIN branches of `ProductService.listProducts` and
 `ProductService.search`) and share one fix: when `TenantContext` is empty the branch returns

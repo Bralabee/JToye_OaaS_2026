@@ -166,8 +166,10 @@ SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 fa
   PASS a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer
   PASS a kitchen whose NAME matches ranks above a kitchen matched only through a dish
 
-## 4. BREAK ARM A: products_public_read replaced by FOR ALL USING (true) WITH CHECK (true). gradle rc=1, then restored (git checkout; git diff --quiet HEAD rc 0)
-#    Every negative read criterion and every write criterion goes RED. (The two ProductService no-tenant tests stay green here: their own fail direction is section 2.)
+## 4. BREAK ARM A (WRITE arm, superseded as the READ proof by section 9): products_public_read replaced by FOR ALL USING (true) WITH CHECK (true). gradle rc=1, then restored (git checkout; git diff --quiet HEAD rc 0)
+#    CORRECTED 2026-11-02 after the tenancy review: this arm made the policy a WRITE policy, so its 8 reds include the three write tests.
+#    It is the fail direction of the WRITE criteria (INSERT/UPDATE/DELETE) only. The READ criteria's fail direction is the
+#    SELECT-only widening in section 9 (6 of 12 red), which replaces the earlier '8 of 11 red' claim for reads.
 SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=11 failures=8 errors=0 skipped=0
   FAIL anonymous sees nothing beyond those rows: the whole visible table is the one product | org.opentest4j.AssertionFailedError:  expected: 1L  but was: 3L
   PASS ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
@@ -231,3 +233,84 @@ SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 fa
 #    check-branch-behind-base.sh: rc=0, 0 behind origin/main 9b737e61
 #    after merging origin/main 888084b1 (#1094, +4 Jest blocks): metrics regenerated, prose claims now 7018 / 3181 / 437 / V89, check-doc-metrics 37/37 PASS; the pre-push claims gate (P-4) flagged 3 architecture-doc 'schema at V88' claims, fixed, check-claims.sh 56/56 PASS
 #    CHANGELOG top entry cites (#1098): check-changelog-cites-pr.sh --pr 1098 rc=0, control --pr 999999 rc=1; check-changelog-contract.sh rc=0
+
+## 9. Review round (tenancy review of PR #1098): cross-tenant shop_id finding
+#    New permanent test 'anonymous does NOT see a tenant-B product pointed at tenant A's published shop'.
+#    BEFORE (V89 without s.tenant_id = products.tenant_id, head e9dfcb4a + the new test). gradle rc=1:
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=12 failures=1 errors=0 skipped=0
+  PASS anonymous sees nothing beyond those rows: the whole visible table is the one product
+  PASS ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS ProductService list as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS anonymous DELETE of a publicly readable product matches 0 rows
+  PASS anonymous sees an AVAILABLE product of a PUBLISHED shop
+  PASS anonymous UPDATE of a publicly readable product matches 0 rows
+  PASS control: the same GROUP_ADMIN-equivalent list WITH tenant A pinned returns tenant A's products
+  PASS anonymous INSERT into products is refused by row-level security (42501)
+  PASS anonymous does NOT see an available product of an UNPUBLISHED shop
+  PASS a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard)
+  PASS anonymous does NOT see an unavailable product of a published shop
+  FAIL anonymous does NOT see a tenant-B product pointed at tenant A's published shop (cross-tenant shop_id) | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+#    AFTER (predicate added in the same V89 file): tests=12 failures=0, see the package run below.
+
+## 9a. GREEN after the fix: integrationTest for packages product.*, storefront.*, shop.* + RlsContractTest. gradle rc=0
+SUITE uk.jtoye.core.product.BulkImportShopDefaultIntegrationTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.BulkImportTenantCacheScopeIntegrationTest tests=5 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductCopyIntegrationTest tests=12 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductImageCrossTenantBlobDeleteIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductImageDeleteIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductLabelPlainProblemIntegrationTest tests=9 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductListAvailableOnlyIntegrationTest tests=6 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductMayContainIntegrationTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductPartialUpdateIntegrationTest tests=17 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductRepositoryScopingIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductSaveAllergenWarningIntegrationTest tests=4 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductSearchFtsIntegrationTest tests=17 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductShopRequiredStorefrontIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=12 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.security.RlsContractTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.MarketingMissingRowStatusIntegrationTest tests=12 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.ScheduledFulfilmentSlotRlsIntegrationTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.ShopAdminStaffRefusalIntegrationTest tests=15 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.ShopImageCrossTenantIntegrationTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.ShopOpeningScheduleMappingIntegrationTest tests=2 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.ShopSlugAliasIntegrationTest tests=6 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.shop.V80OpeningScheduleBackfillIntegrationTest tests=34 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.CashOrderCapIntegrationTest tests=13 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.ClientIpCapIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.ClientIpDigestRetentionIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.CustomerRecordedAllergenSetIntegrationTest tests=10 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.GuestCheckoutIdempotencyIntegrationTest tests=13 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.GuestCheckoutOnlinePaymentIntegrationTest tests=3 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.GuestCheckoutStockConvergenceIntegrationTest tests=2 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.GuestOrderAllergenAckIntegrationTest tests=10 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.GuestOrderBasketRevalidationIntegrationTest tests=12 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.GuestTrackingOrderLinesRlsIntegrationTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.MoneyPathExecutionIntegrationTest tests=4 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicApiVersionAliasIntegrationTest tests=4 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicOrdersPaginationIntegrationTest tests=4 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicPromotionsHiddenTest tests=4 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicSellerIdentityIntegrationTest tests=8 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicStorefrontDistanceIntegrationTest tests=14 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest tests=14 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.PublicStorefrontPostcodeSearchIntegrationTest tests=15 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.ShopPauseIntegrationTest tests=14 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=6 failures=0 errors=0 skipped=0
+#    total FAIL lines: 0
+
+## 9b. SELECT-ONLY WIDENING ARM: products_public_read replaced by FOR SELECT USING (true). gradle rc=1, then restored (git diff --quiet HEAD rc 0)
+#    6 of 12 red: unavailable, unpublished, exact-set, caller-with-tenant (the reviewer's predicted 4), PLUS the new cross-tenant
+#    shop_id test and the tenant-A control list (3 instead of 2: it now counts tenant B's row). Write tests stay green, as they should
+#    for a read-only widening; their fail direction is arm A (section 4).
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=12 failures=6 errors=0 skipped=0
+  FAIL anonymous sees nothing beyond those rows: the whole visible table is the one product | org.opentest4j.AssertionFailedError:  expected: 1L  but was: 3L
+  PASS ProductService search as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS ProductService list as a GROUP_ADMIN-equivalent caller with NO tenant returns nothing
+  PASS anonymous DELETE of a publicly readable product matches 0 rows
+  PASS anonymous sees an AVAILABLE product of a PUBLISHED shop
+  PASS anonymous UPDATE of a publicly readable product matches 0 rows
+  FAIL control: the same GROUP_ADMIN-equivalent list WITH tenant A pinned returns tenant A's products | org.opentest4j.AssertionFailedError:  expected: 2L  but was: 3L
+  PASS anonymous INSERT into products is refused by row-level security (42501)
+  FAIL anonymous does NOT see an available product of an UNPUBLISHED shop | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  FAIL a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard) | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  FAIL anonymous does NOT see an unavailable product of a published shop | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+  FAIL anonymous does NOT see a tenant-B product pointed at tenant A's published shop (cross-tenant shop_id) | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L

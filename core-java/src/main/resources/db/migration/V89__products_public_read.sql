@@ -27,11 +27,19 @@
 --
 -- WHAT AN ANONYMOUS CALLER CAN NOW SEE
 -- ------------------------------------
--- Exactly the rows GET /shops/{slug}/products already serves to anyone: a
--- product with available = true whose shop is published = true and belongs to
--- the product's own tenant. Nothing more is
--- disclosed than the public menu discloses, and the shop predicate is itself
--- evaluated under the shops policies (shops_public_read admits published shops).
+-- Per ROW, exactly the rows GET /shops/{slug}/products already serves to anyone:
+-- a product with available = true whose shop is published = true and belongs to
+-- the product's own tenant. The shop predicate is itself evaluated under the
+-- shops policies (shops_public_read admits published shops).
+--
+-- Per COLUMN it is WIDER than the menu, and that is stated, not hidden: RLS is
+-- row-level, so a no-tenant SQL reader of such a row can read every column,
+-- including ones the menu DTO never shows (sku, stock quantity, display order
+-- and the rest). No such reader exists today: the public search reads only
+-- whether a matching row exists (its id and tenant), never a product column, and
+-- the audit (quick 261102-k7d evidence/audit.md) lists every no-tenant read of
+-- products. A future no-tenant reader that SELECTs product columns must select
+-- only what the menu already shows.
 --
 -- WHAT IT CANNOT SEE OR DO
 -- ------------------------

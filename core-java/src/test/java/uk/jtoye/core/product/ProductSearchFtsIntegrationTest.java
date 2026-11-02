@@ -443,26 +443,37 @@ class ProductSearchFtsIntegrationTest {
     /**
      * Same #96 defect affected the live shops FTS
      * ({@code ShopRepository.fullTextSearchPublished}); V44 unlocks
-     * idx_shops_search under RLS too. EXPLAIN of the exact repository SQL
-     * shape, as the RLS-bound (NOSUPERUSER) role.
+     * idx_shops_search under RLS too. Since quick 261102-k7d the search also
+     * matches a shop through its available dishes, so the plan must reach BOTH
+     * GIN indexes. The EXPLAIN reads the repository's own SQL constant
+     * ({@link ShopRepository#FULL_TEXT_SEARCH_PUBLISHED_SQL}), never a hand-copied
+     * string, so the pinned plan cannot drift from the query that runs. Run as the
+     * RLS-bound (NOSUPERUSER) role, both anonymous (no tenant: the public search)
+     * and with a tenant pinned.
      */
     @Test
     void v44LeakproofMakesGinIndexServeShopsFtsUnderRls() {
         enforceRls();
         shopIdFor(TENANT_A); // shops table populated via the trigger path
-        TenantContext.set(TENANT_A);
-
         jdbcTemplate.execute("SET LOCAL enable_seqscan = off");
-        String plan = String.join("\n", jdbcTemplate.queryForList(
-                "EXPLAIN SELECT * FROM shops WHERE published = true "
-                        + "AND search_vector @@ plainto_tsquery('english', 'coffee') "
-                        + "ORDER BY ts_rank(search_vector, plainto_tsquery('english', 'coffee')) DESC",
-                String.class));
+        String sql = "EXPLAIN " + ShopRepository.FULL_TEXT_SEARCH_PUBLISHED_SQL.replace(":q", "'coffee'");
 
-        assertThat(plan)
-                .as("With ts_match_vq LEAKPROOF (V44) the shops FTS path must be served by "
-                        + "idx_shops_search even under FORCE RLS:\n" + plan)
-                .contains("idx_shops_search");
+        TenantContext.clear();
+        jdbcTemplate.execute("SELECT set_config('app.current_tenant_id', '', true)");
+        String anonymousPlan = String.join("\n", jdbcTemplate.queryForList(sql, String.class));
+        TenantContext.set(TENANT_A);
+        String tenantPlan = String.join("\n", jdbcTemplate.queryForList(sql, String.class));
+
+        // Kept in the JUnit XML system-out so the plan the assertion accepted is on record.
+        System.out.println("SHOP-SEARCH-PLAN anonymous:\n" + anonymousPlan);
+        System.out.println("SHOP-SEARCH-PLAN tenant-pinned:\n" + tenantPlan);
+        for (String plan : List.of(anonymousPlan, tenantPlan)) {
+            assertThat(plan)
+                    .as("With ts_match_vq LEAKPROOF (V44) the public shop search must be served by "
+                            + "idx_shops_search AND idx_products_search even under FORCE RLS:\n" + plan)
+                    .contains("idx_shops_search")
+                    .contains("idx_products_search");
+        }
     }
 
     @Test

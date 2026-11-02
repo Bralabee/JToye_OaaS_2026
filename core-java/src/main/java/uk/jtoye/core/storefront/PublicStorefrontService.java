@@ -631,24 +631,12 @@ public class PublicStorefrontService {
         if (query != null && query.length() >= 2) {
             // Use unsorted Pageable for native queries — ts_rank handles ordering
             Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
-            // The search matches a kitchen through its dishes (V89 products_public_read), and that
-            // policy admits rows only when NO tenant is pinned. A caller carrying a tenant (a
-            // signed-in vendor browsing the storefront) would otherwise see dish matches from its
-            // own tenant only. The shop half is unaffected (published = true is in the query and
-            // shops_public_read admits every published shop), so the search runs tenant-less and
-            // the caller's tenant is restored before anything else reads.
-            Optional<UUID> callerTenant = TenantContext.get();
-            Page<Shop> results;
-            TenantContext.clear();
-            try {
-                results = shopRepository.fullTextSearchPublished(query, unsorted);
-            } finally {
-                // Restores the ThreadLocal ONLY. The transaction-local GUC app.current_tenant_id
-                // stays reset until TenantSetLocalAspect re-pins it on the NEXT repository or
-                // JdbcTemplate call, so no non-repository database read (EntityManager, native
-                // Session work) may be added after the search inside this method.
-                callerTenant.ifPresent(TenantContext::set);
-            }
+            // Dish matches (V89) follow the caller's tenant like every other read: an anonymous
+            // caller sees every published kitchen's available dishes; a caller carrying a tenant
+            // sees dish matches from its own tenant only, the same restriction
+            // resolvePublicShopForSlug enforces (ruling 2026-11-02, review of #1098), so the
+            // search never offers a kitchen the caller could not then open.
+            Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }

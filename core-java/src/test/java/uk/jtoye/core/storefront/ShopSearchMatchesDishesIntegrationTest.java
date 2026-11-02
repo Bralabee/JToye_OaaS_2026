@@ -119,12 +119,16 @@ class ShopSearchMatchesDishesIntegrationTest {
     }
 
     @Test
-    @DisplayName("q=plantain finds nothing: the only plantain dish is not available")
+    @DisplayName("q=plantain finds the kitchen with an AVAILABLE plantain dish, never the one whose plantain is unavailable")
     void unavailableProductDoesNotMatch() {
+        // Positive control: without it, "nothing found" could equally mean "the dish search is dead".
+        UUID dodoSpot = seedShop(tenantU, "Dodo Spot", "", "", "5 Station Road", true);
+        seedProduct(tenantU, dodoSpot, "Fried plantain", true);
+
         Page<PublicShopDto> page = searchAnonymously("plantain", 20);
 
-        assertThat(page.getContent()).isEmpty();
-        assertThat(page.getTotalElements()).isZero();
+        assertThat(page.getContent()).extracting(PublicShopDto::getName).containsExactly("Dodo Spot");
+        assertThat(page.getTotalElements()).isEqualTo(1);
     }
 
     @Test
@@ -144,8 +148,24 @@ class ShopSearchMatchesDishesIntegrationTest {
     void unpublishedShopNeverAppears() {
         Page<PublicShopDto> page = searchAnonymously("pounded yam", 20);
 
+        // Exact, not doesNotContain: an empty page would also "not contain" the unpublished shop.
+        assertThat(page.getContent()).extracting(PublicShopDto::getName).containsExactly("Mama's Kitchen");
         assertThat(page.getContent()).extracting(PublicShopDto::getSlug).doesNotContain("dishes-" + unpublishedShop);
-        assertThat(page.getContent()).extracting(PublicShopDto::getName).doesNotContain("Hidden Pot");
+    }
+
+    @Test
+    @DisplayName("a partial word (q=plantai) reaches the LIKE fallback and still finds a kitchen by its available dish")
+    void partialWordFindsKitchenThroughLikeFallback() {
+        // "plantai" stems to no lexeme of "plantain", so the full-text tier returns nothing and the
+        // LIKE tier answers. Mama's only plantain dish is unavailable: first nothing...
+        assertThat(searchAnonymously("plantai", 20).getContent()).isEmpty();
+
+        // ...then an available one makes the kitchen findable by the fragment the tester typed.
+        jdbc.execute("RESET ROLE");   // seed as the superuser again; the search re-drops the role
+        seedProduct(tenantT, mamasKitchen, "Fried plantain (dodo)", true);
+        Page<PublicShopDto> page = searchAnonymously("plantai", 20);
+
+        assertThat(page.getContent()).extracting(PublicShopDto::getName).containsExactly("Mama's Kitchen");
     }
 
     @Test
@@ -167,16 +187,24 @@ class ShopSearchMatchesDishesIntegrationTest {
     }
 
     @Test
-    @DisplayName("a caller carrying a tenant (a signed-in vendor browsing) gets the same cross-tenant answer")
-    void tenantCarryingCallerGetsTheSameAnswer() {
+    @DisplayName("a caller carrying a tenant gets dish matches from its OWN tenant only")
+    void tenantCarryingCallerGetsOwnTenantDishMatchesOnly() {
+        // Ruling 2026-11-02 (review of #1098): a tenant-bearing caller on /api/v1/public/** stays
+        // restricted to its own tenant, as resolvePublicShopForSlug enforces (403 +
+        // tenant_spoof_attempt for another tenant's shop); the search must not offer it kitchens
+        // it cannot open. With a tenant pinned, products_public_read is off and the EXISTS runs
+        // under that tenant's own products_rls_policy.
+        UUID ownKitchen = seedShop(tenantU, "Ade's Buka", "", "", "40 High Street", true);
+        seedProduct(tenantU, ownKitchen, "Pounded yam and efo riro", true);
+
         TenantContext.set(tenantU);   // a different tenant from Mama's Kitchen's
         jdbc.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);
 
         Page<PublicShopDto> page = storefrontService
                 .searchPublishedShops("pounded yam", PageRequest.of(0, 20)).page();
 
-        assertThat(page.getContent()).extracting(PublicShopDto::getName).containsExactly("Mama's Kitchen");
-        assertThat(TenantContext.get()).as("the caller's tenant is restored after the search").contains(tenantU);
+        assertThat(page.getContent()).extracting(PublicShopDto::getName).containsExactly("Ade's Buka");
+        assertThat(TenantContext.get()).as("the caller's tenant is untouched").contains(tenantU);
     }
 
     // ---- helpers ----
