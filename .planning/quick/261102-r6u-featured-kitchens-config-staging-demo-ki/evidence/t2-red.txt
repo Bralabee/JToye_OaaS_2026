@@ -1,0 +1,451 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' components/marketing/__tests__/near-you-row.test.tsx components/marketing/__tests__/shop-card.test.tsx
+  Using tsconfig file: tsconfig.build.json
+FAIL components/marketing/__tests__/shop-card.test.tsx
+  ● ShopCard — the Featured label (D-04) › a featured card shows a label reading exactly 'Featured'
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      390 |   it("a featured card shows a label reading exactly 'Featured'", () => {
+      391 |     render(<FeaturedCard shop={makeShop()} featured />)
+    > 392 |     expect(label()).not.toBeNull()
+          |                         ^
+      393 |     expect(label()!.textContent).toBe("Featured")
+      394 |   })
+      395 |
+
+      at Object.toBeNull (components/marketing/__tests__/shop-card.test.tsx:392:25)
+
+  ● ShopCard — the Featured label (D-04) › announces the label with the shop name through aria-describedby
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "Featured"
+    Received array: ["Open"]
+
+      407 |     const ids = (link.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
+      408 |     const text = ids.map((id) => (document.getElementById(id)?.textContent || "").trim())
+    > 409 |     expect(text).toContain("Featured")
+          |                  ^
+      410 |     // The open badge is still described too: the label is added, nothing displaced.
+      411 |     expect(text).toContain("Open")
+      412 |   })
+
+      at Object.toContain (components/marketing/__tests__/shop-card.test.tsx:409:18)
+
+  ● ShopCard — the Featured label (D-04) › sits out of flow inside the fixed-height picture box, so the text column is unchanged (CLS)
+
+    TypeError: Cannot read properties of null (reading 'className')
+
+      415 |     const { container: featuredCard } = render(<FeaturedCard shop={makeShop()} featured />)
+      416 |     const pill = label()!
+    > 417 |     expect(pill.className.split(/\s+/)).toContain("absolute")
+          |                 ^
+      418 |     const box = pill.closest("div.h-44")
+      419 |     expect(box).not.toBeNull()
+      420 |     const textColumn = (root: HTMLElement) =>
+
+      at Object.className (components/marketing/__tests__/shop-card.test.tsx:417:17)
+
+  ● ShopCard — the Featured label (D-04) › is a word, not a star or an icon (the card removed invented ratings on purpose)
+
+    TypeError: Cannot read properties of null (reading 'querySelector')
+
+      428 |     render(<FeaturedCard shop={makeShop()} featured />)
+      429 |     const pill = label()!
+    > 430 |     expect(pill.querySelector("svg")).toBeNull()
+          |                 ^
+      431 |     expect(pill.textContent).not.toMatch(/[★☆⭐]/u)
+      432 |   })
+      433 | })
+
+      at Object.querySelector (components/marketing/__tests__/shop-card.test.tsx:430:17)
+
+FAIL components/marketing/__tests__/near-you-row.test.tsx
+  ● NearYouRow — featured kitchens (D-03, D-04) › idle: renders the merged order, labels only the featured cards, and claims no locality
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "mama-ades-kitchen",
+    -   "peckham-jollof-co",
+    - ]
+    + Array []
+
+      492 |     render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
+      493 |     expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill"])
+    > 494 |     expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
+          |                             ^
+      495 |     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens on J'Toye")
+      496 |   })
+      497 |
+
+      at Object.toEqual (components/marketing/__tests__/near-you-row.test.tsx:494:29)
+
+  ● NearYouRow — featured kitchens (D-03, D-04) › located, nothing in radius, featured non-empty: ONLY the featured kitchens, under an honest heading
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "No kitchens within 3.1 miles — featured on J'Toye"
+    Received: "No kitchens within 3.1 miles — here is everything on J'Toye"
+
+    Ignored nodes: comments, script, style
+    [36m<html>[39m
+      [36m<head />[39m
+      [36m<body>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33maria-live[39m=[32m"polite"[39m
+              [33mclass[39m=[32m"min-w-0"[39m
+            [36m>[39m
+              [36m<h2[39m
+                [33mclass[39m=[32m"text-2xl font-bold tracking-[-0.015em] text-brand-900 md:text-[28px]"[39m
+              [36m>[39m
+                [0mNo kitchens within 3.1 miles — here is everything on J'Toye[0m
+              [36m</h2>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"mt-1 min-h-[1.25rem] text-sm text-warm-700"[39m
+              [36m/>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-center gap-5"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex h-10 items-center gap-1.5 rounded-full bg-warm-100 px-4 text-sm font-semibold text-brand-900 transition-colors duration-150 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-60"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-locate-fixed h-4 w-4"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"2"[39m
+                    [33mx2[39m=[32m"5"[39m
+                    [33my1[39m=[32m"12"[39m
+                    [33my2[39m=[32m"12"[39m
+                  [36m/>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"19"[39m
+                    [33mx2[39m=[32m"22"[39m
+                    [33my1[39m=[32m"12"[39m
+                    [33my2[39m=[32m"12"[39m
+                  [36m/>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"12"[39m
+                    [33mx2[39m=[32m"12"[39m
+                    [33my1[39m=[32m"2"[39m
+                    [33my2[39m=[32m"5"[39m
+                  [36m/>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"12"[39m
+                    [33mx2[39m=[32m"12"[39m
+                    [33my1[39m=[32m"19"[39m
+                    [33my2[39m=[32m"22"[39m
+                  [36m/>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"12"[39m
+                    [33mcy[39m=[32m"12"[39m
+                    [33mr[39m=[32m"7"[39m
+                  [36m/>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"12"[39m
+                    [33mcy[39m=[32m"12"[39m
+                    [33mr[39m=[32m"3"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mUse my location[0m
+              [36m</button>[39m
+              [36m<a[39m
+                [33mclass[39m=[32m"text-sm font-bold text-brand-700 underline decoration-1 underline-offset-[3px]"[39m
+                [33mhref[39m=[32m"/shop"[39m
+              [36m>[39m
+                [0mSee all kitchens[0m
+              [36m</a>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"mt-5"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33maria-busy[39m=[32m"false"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"relative"[39m
+                [33mdata-can-left[39m=[32m"false"[39m
+                [33mdata-can-right[39m=[32m"false"[39m
+                [33mdata-fine-pointer[39m=[32m"false"[39m
+              [36m>[39m
+                [36m<div[39m
+                  [33maria-label[39m=[32m"Dishes cooking near you"[39m
+                  [33mclass[39m=[32m"flex snap-x gap-4 overflow-x-auto scroll-px-4 overscroll-x-contain pb-2 [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 [&>*]:snap-start"[39m
+                  [33mrole[39m=[32m"region"[39m
+                  [33mtabindex[39m=[32m"0"[39m
+                [36m>[39m
+                  [36m<article[39m
+                    [33mclass[39m=[32m"group relative shrink-0 basis-[80%] overflow-hidden rounded-xl bg-warm-100 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] sm:shrink sm:grow sm:basis-[260px] sm:min-w-[260px] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200"[39m
+                    [33mdata-shop-name[39m=[32m"Mama Ade's Kitchen"[39m
+                  [36m>[39m
+                    [36m<figure[39m
+                      [33mclass[39m=[32m"m-0"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"relative h-44 w-full overflow-hidden bg-warm-200"[39m
+                      [36m/>[39m
+                      [36m<div[39m
+                        [33maria-hidden[39m=[32m"true"[39m
+                        [33mclass[39m=[32m"h-7"[39m
+                        [33mdata-caption-slot[39m=[32m"true"[39m
+                      [36m/>[39m
+                    [36m</figure>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"px-4 pb-4 pt-1.5"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"font-bold text-warm-900"[39m
+                      [36m>[39m
+                        [36m<a[39m
+                          [33mclass[39m=[32m"focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-brand-700"[39m
+                          [33mhref[39m=[32m"/shop/mama-ades-kitchen"[39m
+                        [36m>[39m
+                          [0mMama Ade's Kitchen[0m
+                        [36m</a>[39m
+                      [36m</div>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"mt-2 font-semibold text-brand-900"[39m
+                      [36m>[39m
+                        [0m£2.50 delivery[0m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"font-normal text-warm-700"[39m
+                        [36m>[39m
+                          [0m · [0m
+                          [0mmin [0m
+                          [0m£10.00[0m
+                        [36m</span>[39m
+                      [36m</div>[39m
+                    [36m</div>[39m
+                  [36m</article>[39m
+                  [36m<article[39m
+                    [33mclass[39m=[32m"group relative shrink-0 basis-[80%] overflow-hidden rounded-xl bg-warm-100 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] sm:shrink sm:grow sm:basis-[260px] sm:min-w-[260px] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200"[39m
+                    [33mdata-shop-name[39m=[32m"Peckham Jollof Co."[39m
+                  [36m>[39m
+                    [36m<figure[39m
+                      [33mclass[39m=[32m"m-0"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"relative h-44 w-full overflow-hidden bg-warm-200"[39m
+                      [36m/>[39m
+                      [36m<div[39m
+                        [33maria-hidden[39m=[32m"true"[39m
+                        [33mclass[39m=[32m"h-7"[39m
+                        [33mdata-caption-slot[39m=[32m"true"[39m
+                      [36m/>[39m
+                    [36m</figure>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"px-4 pb-4 pt-1.5"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"font-bold text-warm-900"[39m
+                      [36m>[39m
+                        [36m<a[39m
+                          [33mclass[39m=[32m"focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-brand-700"[39m
+                          [33mhref[39m=[32m"/shop/peckham-jollof-co"[39m
+                        [36m>[39m
+                          [0mPeckham Jollof Co.[0m
+                        [36m</a>[39m
+                      [36m</div>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"mt-2 font-semibold text-brand-900"[39m
+                      [36m>[39m
+                        [0m£2.50 delivery[0m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"font-normal text-warm-700"[39m
+                        [36m>[39m
+                          [0m · [0m
+                          [0mmin [0m
+                          [0m£10.00[0m
+                        [36m</span>[39m
+                      [36m</div>[39m
+                    [36m</div>[39m
+                  [36m</article>[39m
+                  [36m<article[39m
+                    [33mclass[39m=[32m"group relative shrink-0 basis-[80%] overflow-hidden rounded-xl bg-warm-100 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] sm:shrink sm:grow sm:basis-[260px] sm:min-w-[260px] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200"[39m
+                    [33mdata-shop-name[39m=[32m"Brixton Village Grill"[39m
+                  [36m>[39m
+                    [36m<figure[39m
+                      [33mclass[39m=[32m"m-0"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"relative h-44 w-full overflow-hidden bg-warm-200"[39m
+                      [36m/>[39m
+                      [36m<div[39m
+                        [33maria-hidden[39m=[32m"true"[39m
+                        [33mclass[39m=[32m"h-7"[39m
+                        [33mdata-caption-slot[39m=[32m"true"[39m
+                      [36m/>[39m
+                    [36m</figure>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"px-4 pb-4 pt-1.5"[39m
+                    [36m>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"font-bold text-warm-900"[39m
+                      [36m>[39m
+                        [36m<a[39m
+                          [33mclass[39m=[32m"focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-brand-700"[39m
+                          [33mhref[39m=[32m"/shop/brixton-village-grill"[39m
+                        [36m>[39m
+                          [0mBrixton Village Grill[0m
+                        [36m</a>[39m
+                      [36m</div>[39m
+                      [36m<div[39m
+                        [33mclass[39m=[32m"mt-2 font-semibold text-brand-900"[39m
+                      [36m>[39m
+                        [0m£2.50 delivery[0m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"font-normal text-warm-700"[39m
+                        [36m>[39m
+                          [0m · [0m
+                          [0mmin [0m
+                          [0m£10.00[0m
+                        [36m</span>[39m
+                      [36m</div>[39m
+                    [36m</div>[39m
+                  [36m</article>[39m
+                [36m</div>[39m
+                [36m<button[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"absolute top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white text-brand-900 transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] left-1 [[data-fine-pointer=true][data-can-left=true]_>_&]:grid"[39m
+                  [33mdata-testid[39m=[32m"dish-scroll-left"[39m
+                  [33mtabindex[39m=[32m"-1"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-chevron-left h-5 w-5"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m15 18-6-6 6-6"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"absolute top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white text-brand-900 transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] right-1 [[data-fine-pointer=true][data-can-right=true]_>_&]:grid"[39m
+                  [33mdata-testid[39m=[32m"dish-scroll-right"[39m
+                  [33mtabindex[39m=[32m"-1"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-chevron-right h-5 w-5"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m9 18 6-6-6-6"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                [36m</button>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</body>[39m
+    [36m</html>[39m
+
+      504 |
+      505 |     await waitFor(() =>
+    > 506 |       expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+          |                                                                     ^
+      507 |         "No kitchens within 3.1 miles — featured on J'Toye"
+      508 |       )
+      509 |     )
+
+      at toBe (components/marketing/__tests__/near-you-row.test.tsx:506:69)
+      at runWithExpensiveErrorDiagnosticsDisabled (node_modules/@testing-library/dom/dist/config.js:47:12)
+      at checkCallback (node_modules/@testing-library/dom/dist/wait-for.js:124:77)
+      at checkRealTimersCallback (node_modules/@testing-library/dom/dist/wait-for.js:118:16)
+      at Timeout.task [as _onTimeout] (node_modules/jsdom/lib/jsdom/browser/Window.js:579:19)
+
+  ● NearYouRow — featured kitchens (D-03, D-04) › located with results: distance order wins, featured never jump ahead, but keep their label
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "peckham-jollof-co",
+    - ]
+    + Array []
+
+      532 |     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens near you")
+      533 |     expect(cardSlugs()).toEqual(["brixton-village-grill", "peckham-jollof-co"])
+    > 534 |     expect(labelledSlugs()).toEqual(["peckham-jollof-co"])
+          |                             ^
+      535 |   })
+      536 |
+      537 |   it("denied: the featured-first server list renders under 'Kitchens on J'Toye'", async () => {
+
+      at Object.toEqual (components/marketing/__tests__/near-you-row.test.tsx:534:29)
+
+  ● NearYouRow — featured kitchens (D-03, D-04) › denied: the featured-first server list renders under 'Kitchens on J'Toye'
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "mama-ades-kitchen",
+    -   "peckham-jollof-co",
+    - ]
+    + Array []
+
+      544 |     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens on J'Toye")
+      545 |     expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill"])
+    > 546 |     expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
+          |                             ^
+      547 |   })
+      548 |
+      549 |   it("census with a merged list: a featured shop beyond page 0 is counted once, and counted when out of radius", async () => {
+
+      at Object.toEqual (components/marketing/__tests__/near-you-row.test.tsx:546:29)
+
+Test Suites: 2 failed, 2 total
+Tests:       8 failed, 52 passed, 60 total
+Snapshots:   0 total
+Time:        2.543 s
+Ran all test suites matching components/marketing/__tests__/near-you-row.test.tsx|components/marketing/__tests__/shop-card.test.tsx.
