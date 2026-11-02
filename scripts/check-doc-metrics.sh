@@ -75,6 +75,7 @@ README.md|mcp_test_blocks|MCP server \(vitest\): \K[0-9]+(?= .it/test. blocks ac
 README.md|mcp_test_files|MCP server \(vitest\): [0-9]+ .it/test. blocks across \K[0-9]+
 README.md|schema_version|Database schema version: \*\*V\K[0-9]+
 CLAUDE.md|schema_version|Current schema version: V\K[0-9]+
+CLAUDE.md|schema_version|Flyway migrations, V1 through V\K[0-9]+
 CLAUDE.md|total_logical_invocations|project standard is \K[0-9]+(?= logical invocations)
 CLAUDE.md|java_test_methods|\K[0-9]+(?= Java .@Test. methods across)
 CLAUDE.md|java_test_files|[0-9]+ Java .@Test. methods across \K[0-9]+
@@ -87,6 +88,7 @@ CLAUDE.md|playwright_specs|Playwright .test\(\). blocks across \K[0-9]+
 CLAUDE.md|mcp_test_blocks|\K[0-9]+(?= MCP-server vitest .it/test. blocks across)
 CLAUDE.md|mcp_test_files|MCP-server vitest .it/test. blocks across \K[0-9]+
 AGENTS.md|schema_version|Current schema version: V\K[0-9]+
+AGENTS.md|schema_version|Flyway migrations, V1 through V\K[0-9]+
 AGENTS.md|total_logical_invocations|project standard is \K[0-9]+(?= logical invocations)
 AGENTS.md|java_test_methods|\K[0-9]+(?= Java .@Test. methods across)
 AGENTS.md|java_test_files|[0-9]+ Java .@Test. methods across \K[0-9]+
