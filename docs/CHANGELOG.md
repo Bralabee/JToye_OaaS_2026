@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Staging Money Loop for PAY-03: Connect Onboarding, Settlement-Mode Switch, Destination and Direct Loops, Payouts (Phase 30 30-28/30-29) (#1089) — 2026-11-02
+
+Tooling and evidence only. There is no product change: the diff touches 0 paths under `core-java/`, `frontend/`, `edge-go/` or `mcp-server/`. The branch also carries plan 30-27's PAY-02 staging evidence: the per-location subscription and invoice, read from Stripe by id.
+
+- **`scripts/staging-seed.sh --stage connect-onboard --link-out FILE`:** starts or resumes the staging tenant's Express onboarding through the admin API. The single-use URL is written only to FILE, which is mode 600 and never stdout, stderr or evidence. An ENABLED account is reported and left alone.
+- **`--stage settlement-mode [--set MODE]`:** reads the shop, PUTs the same body back with only `settlementPolicyMode` changed, and reads it back.
+- **`--stage money-loop --mode destination|direct`:** the preflight writes nothing and refuses `[connect-status]` unless the tenant's account is ENABLED, or `[mode-mismatch]` unless the shop's mode matches. The loop then places one order, confirms it, and waits for CAPTURED. It reads the intent, charge and (destination) transfer by id, then runs a strictly partial vendor refund, read by id. In destination mode the refund must carry a `transfer_reversal`. Finally the local refund row must match Stripe's status. Direct mode sends `Stripe-Account` on every connected-account call.
+- **`--stage payout` / `--stage payout-read`:** for the tenant's own account only. The stage sets a manual schedule and pays out min(requested, available balance), printing Stripe's payout status verbatim. A `--run-id` replays a re-run by looking up the state it already created before relying on Idempotency-Keys.
+- **Selftest:** 60 → 88 stubbed arms. Every break arm went red and was restored by sha256.
+- **RED on staging before this merge:** the destination loop refused `[connect-status]` (rc 1) with no order placed, because the staging tenant has no connected account yet.
+- **Finding:** refund routing follows the shop's CURRENT settlement mode. The live runs therefore refund each mode's order before switching the mode.
+
 ### Horizon Gate: RabbitMQ 4.3 Exemption Re-Opened on Both Rows, Tracked by #724 (#1088) — 2026-11-02
 
 - `infra/dependency-horizons.yaml`: a date-bounded `exemption:` (`expires: "2026-12-31"`, `tracked_by: "#724"`) on the `rabbitmq` and `rabbitmq-k8s` rows. On 2026-11-02 the vendor community-support date for RabbitMQ 4.3 (2027-01-31) entered the gate's 90-day window, and H-3 has no amber state: the Operational Contracts job went red on main (the #1070 merge run) and on every open PR with no code change. The rows' own 2026-10-16 notes predicted the date and named this remedy. No runtime change: upstream 4.4.0 (community support to 2027-07-31) is published and its Docker tag exists, and the broker bump across the compose pin and the staging `RabbitmqCluster` CR is issue #724's work under `docs/runbooks/rabbitmq-broker-upgrade.md`; the exemption expires before the vendor date so the deferral cannot outlive the horizon. Gate bracket on the committed copy: clean rc 0 (`active-exemptions=2`), expired-date arm rc 1 (`H-3 … EXPIRED`), blank-`tracked_by` arm rc 1 (`H-4 … no tracked_by`), restores sha256-verified, clean rc 0.
