@@ -202,7 +202,7 @@ class StripeConnectServiceTest {
     // --- PAY-03 (plan 30-12) Task 3: the capabilities onboarding needs, requested explicitly ---
 
     @Test
-    @DisplayName("PAY-03: a new Managed Risk connected account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId>")
+    @DisplayName("PAY-03: a new Managed Risk connected account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId>-<16 hex of the body>")
     void createExpressAccount_requestsCapabilitiesUnderTheTenantIdempotencyKey() throws Exception {
         stripeProperties.setEnvironmentTag("staging");
         when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
