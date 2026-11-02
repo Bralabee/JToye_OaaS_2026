@@ -27,16 +27,19 @@ export interface LandingPhoto {
 const DIR = "/marketing/landing"
 
 export const PHOTOS = {
-  egusi: { src: `${DIR}/egusi-soup-with-pounded-yam.webp`, width: 800, height: 784, alt: "Egusi soup with pounded yam" },
+  // Open-collection: kept where no own photograph exists yet (D16).
   suya: { src: `${DIR}/suya-with-pepper-sauce.webp`, width: 800, height: 1067, alt: "Suya with pepper sauce and sliced onion" },
-  jollofVeg: { src: `${DIR}/jollof-rice-with-vegetable.webp`, width: 1000, height: 1000, alt: "Jollof rice with greens and a boiled egg" },
-  puffPuff: { src: `${DIR}/puff-puff.webp`, width: 800, height: 1067, alt: "A plate of puff-puff" },
-  jollofDodo: { src: `${DIR}/jollof-rice-and-dodo.webp`, width: 800, height: 532, alt: "A plate of jollof rice with fried plantain" },
   riceAndPeas: { src: `${DIR}/jamaican-rice-and-peas.webp`, width: 800, height: 843, alt: "Jamaican rice and peas" },
   biryani: { src: `${DIR}/mutton-biryani.webp`, width: 800, height: 596, alt: "A plate of mutton biryani" },
   chana: { src: `${DIR}/chana-masala.webp`, width: 800, height: 600, alt: "Chana masala" },
   // D16: the owner's own BeesLens photographs.
   spaghetti: { src: `${DIR}/beeslens-spaghetti-chicken-plantain.webp`, width: 1000, height: 627, alt: "Spaghetti with chicken and fried plantain on a tray" },
+  jollofBox: { src: `${DIR}/beeslens-jollof-rice-meal-box.webp`, width: 1000, height: 667, alt: "Jollof rice with chicken and stewed meat in a takeaway meal box" },
+  riceBeansStew: { src: `${DIR}/beeslens-rice-beans-plantain-stew.webp`, width: 1000, height: 627, alt: "White rice, beans and fried plantain on a tray with a bowl of pepper stew" },
+  plantainYam: { src: `${DIR}/beeslens-plantain-yam-meal-prep.webp`, width: 1000, height: 667, alt: "Fried plantain, yam and pepper sauce in two meal-prep boxes" },
+  puffPuff: { src: `${DIR}/beeslens-puff-puff.webp`, width: 1000, height: 627, alt: "Puff-puff in a wooden bowl with cocktail sticks" },
+  cateringSoup: { src: `${DIR}/beeslens-catering-soup-buffet.webp`, width: 1000, height: 667, alt: "Soup being served into a bowl at a catering buffet" },
+  fruitPunch: { src: `${DIR}/beeslens-fruit-punch-dispenser.webp`, width: 667, height: 1000, alt: "A glass drinks dispenser of red fruit punch with cucumber and orange slices" },
 } satisfies Record<string, LandingPhoto>
 
 export interface PhotoCredit {
@@ -56,11 +59,7 @@ export interface PhotoCredit {
  * work was modified; a bare list of names is not that (review 1085).
  */
 export const PHOTO_CREDITS: PhotoCredit[] = [
-  { src: "/marketing/landing/jollof-rice-with-vegetable.webp", title: "Jollof rice with vegetable", creator: "Segun Famisa", page: "https://commons.wikimedia.org/wiki/File:Jollof_rice_with_vegetable.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
-  { src: "/marketing/landing/jollof-rice-and-dodo.webp", title: "Jollof rice and Dodo", creator: "Skarfmacaronne", page: "https://commons.wikimedia.org/wiki/File:Jollof_rice_and_Dodo.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
   { src: "/marketing/landing/suya-with-pepper-sauce.webp", title: "Suya with pepper sauce", creator: "Bukky658", page: "https://commons.wikimedia.org/wiki/File:Suya_with_pepper_sauce.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
-  { src: "/marketing/landing/egusi-soup-with-pounded-yam.webp", title: "Egusi soup with pounded yam and assorted meats", creator: "Onyenachi64", page: "https://commons.wikimedia.org/wiki/File:Egusi_soup_with_pounded_yam_and_assorted_meats.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
-  { src: "/marketing/landing/puff-puff.webp", title: "Puff Puff", creator: "Halima Waziri", page: "https://commons.wikimedia.org/wiki/File:Puff_Puff.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
   { src: "/marketing/landing/jamaican-rice-and-peas.webp", title: "Jamaican rice and peas 1", creator: "Xaymacan", page: "https://commons.wikimedia.org/wiki/File:Jamaican_rice_and_peas_1.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
   { src: "/marketing/landing/chana-masala.webp", title: "Chana Masala - Mohammed - Spice Of Life 2024-05-27", creator: "Andy Li", page: "https://commons.wikimedia.org/wiki/File:Chana_Masala_-_Mohammed_-_Spice_Of_Life_2024-05-27.jpg", license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.en" },
   { src: "/marketing/landing/mutton-biryani.webp", title: "A home made plate of mutton biryani served with chicken kassa cooked in the bengali style", creator: "Subhrajyoti07", page: "https://commons.wikimedia.org/wiki/File:A_home_made_plate_of_mutton_biryani_served_with_chicken_kassa_cooked_in_the_bengali_style.jpg", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0" },
@@ -80,6 +79,12 @@ export interface OwnPhotoCredit {
  */
 export const OWN_PHOTOS: OwnPhotoCredit[] = [
   { src: "/marketing/landing/beeslens-spaghetti-chicken-plantain.webp", title: "Spaghetti with chicken and fried plantain on a tray", creator: "BeesLens" },
+  { src: "/marketing/landing/beeslens-jollof-rice-meal-box.webp", title: "Jollof rice with chicken and stewed meat in a takeaway meal box", creator: "BeesLens" },
+  { src: "/marketing/landing/beeslens-rice-beans-plantain-stew.webp", title: "White rice, beans and fried plantain on a tray with a bowl of pepper stew", creator: "BeesLens" },
+  { src: "/marketing/landing/beeslens-plantain-yam-meal-prep.webp", title: "Fried plantain, yam and pepper sauce in two meal-prep boxes", creator: "BeesLens" },
+  { src: "/marketing/landing/beeslens-puff-puff.webp", title: "Puff-puff in a wooden bowl with cocktail sticks", creator: "BeesLens" },
+  { src: "/marketing/landing/beeslens-catering-soup-buffet.webp", title: "Soup being served into a bowl at a catering buffet", creator: "BeesLens" },
+  { src: "/marketing/landing/beeslens-fruit-punch-dispenser.webp", title: "A glass drinks dispenser of red fruit punch with cucumber and orange slices", creator: "BeesLens" },
 ]
 
 export const OWN_PHOTO_CREDIT = "Photography: BeesLens"
@@ -93,14 +98,16 @@ export const PHOTO_DERIVATION_NOTE = "resized, re-encoded and in places cropped 
  * receive them, so two Nigerian kitchens get two different dishes.
  */
 const CUISINES: Array<{ words: string[]; photos: LandingPhoto[] }> = [
-  { words: ["nigerian"], photos: [PHOTOS.egusi, PHOTOS.jollofDodo, PHOTOS.jollofVeg] },
-  { words: ["west african", "ghanaian"], photos: [PHOTOS.jollofVeg, PHOTOS.jollofDodo] },
-  { words: ["jollof"], photos: [PHOTOS.jollofDodo, PHOTOS.jollofVeg] },
+  { words: ["nigerian"], photos: [PHOTOS.jollofBox, PHOTOS.riceBeansStew, PHOTOS.spaghetti] },
+  { words: ["west african", "ghanaian"], photos: [PHOTOS.plantainYam, PHOTOS.jollofBox] },
+  { words: ["jollof"], photos: [PHOTOS.jollofBox, PHOTOS.spaghetti] },
   { words: ["grill", "suya", "bbq"], photos: [PHOTOS.suya] },
   { words: ["caribbean", "jamaican"], photos: [PHOTOS.riceAndPeas] },
   { words: ["south asian", "indian", "pakistani", "bangladeshi", "biryani"], photos: [PHOTOS.biryani] },
   { words: ["vegan", "vegetarian"], photos: [PHOTOS.chana] },
   { words: ["dessert", "desserts", "bakery"], photos: [PHOTOS.puffPuff] },
+  { words: ["catering"], photos: [PHOTOS.cateringSoup] },
+  { words: ["drinks", "juice"], photos: [PHOTOS.fruitPunch] },
 ]
 
 export interface ExamplePhoto {
