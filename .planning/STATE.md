@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing at 27/32 (30-01..30-27). 30-27 COMPLETE 2026-11-02 on feat/30-pay03-staging-loop (cut from origin/main 2fe0837b, not pushed): PR 7 #1087 MERGED squash 2fe0837b, deployed by run 41375140960 with digest parity MATCH (core-java, edge-go, frontend); PAY-02 on staging: sub_1UXBDhDpS9ICNeRthdSjxKoZ quantity 1 = 1 location (all-shops), invoice in_1UXBDhDpS9ICNeRtw8DKqYXs paid 3900 livemode false read by id, live sync 1 -> 2 -> 1, replay same ids; evidence/30-pay02-billing.json leak-scanned with controls; issue #102 comment posted and read back (30-27-SUMMARY.md). Next: 30-28 — PAY-03 PR 8 (connect-onboard, settlement-mode, destination money loop) on this branch."
-last_updated: "2026-11-02T02:57:14.009Z"
+stopped_at: "Phase 30 executing at 28/32 (30-01..30-28). 30-28 COMPLETE 2026-11-02 on feat/30-pay03-staging-loop (not pushed; no upstream): scripts/staging-seed.sh --stage connect-onboard (the onboarding URL only in a mode-600 --link-out file; operator deleted after the call), --stage settlement-mode (GET, one-field PUT, read-back) and --stage money-loop --mode destination (REFUSED [connect-status] / [mode-mismatch] before any write, [plain-charge] on a platform charge; intent, charge and transfer read by id; a strictly partial refund through the vendor API with its transfer_reversal and the local row read back; --evidence .modes.destination). Selftest 75/0; six break arms red on target; gitleaks range rc 0, control rc 1 (30-28-SUMMARY.md). Stub-tested only: the live loop is 30-30..30-32. Next: 30-29 — the direct-charge loop and the payout stage, on this branch."
+last_updated: "2026-11-02T03:38:59.122Z"
 last_activity: 2026-11-02
-last_activity_desc: "30-27 complete: PR 7 merged 2fe0837b and deployed with parity; PAY-02 evidenced on staging from Stripe by id; live sync observed; #102 comment"
-state_head: 758a3129d71e89b6ca151f83107e4317508f1bd9
+last_activity_desc: "30-28 complete: connect-onboard, settlement-mode and the destination money loop (partial refund, transfer reversal, evidence) in staging-seed.sh; selftest 75/0, stub-tested"
+state_head: ee195d8eb2a64116fd9f4764a13e64f2d2a9590d
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 310
+  completed_plans: 311
   percent: 90
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 Phase: 30 (The Money Path, Executed) — EXECUTING
 Status: Executing Phase 30
-Last activity: 2026-11-02 — 30-27 complete (PR 7 merged 2fe0837b; PAY-02 per-location billing evidenced on staging); next 30-28
+Last activity: 2026-11-02 — 30-28 complete (staging-seed.sh connect-onboard, settlement-mode, money-loop --mode destination; selftest 75/0; stub-tested, not pushed); next 30-29
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1002,6 +1002,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 30 P12 | 79min | 3 tasks | 29 files |
 | Phase 30 P13 | 14min | 2 tasks | 20 files |
 | Phase 30 P26 | 13 min | 2 tasks | 8 files |
+| Phase 30 P28 | 33 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1465,6 +1466,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 30]: 30-26: both staging billing stages sign in as the staging vendor (BillingController gates on requireGroupAdmin; the vendor holds GROUP_ADMIN), take BILLING_LOCATION_RULE=all-shops from evidence/30-25-d04-decision.txt, and check 3900 three ways (DTO monthlyAmountPennies, Stripe price unit_amount, amount_paid = 3900 x quantity) as FAILs, never recomputed — PAY-02's falsifier is a test-mode invoice retrieved from Stripe by id; the stage reads subscription and invoice by id with the staging key and asserts livemode false on each
 - [Phase 30]: 30-27: the staging tenant had no subscription, so --stage billing SUBSCRIBED it (sub_1UXBDhDpS9ICNeRthdSjxKoZ, quantity 1 = 1 location); it is left ACTIVE as TEST-mode billing evidence, cancellable through the billing API
 - [Phase 30]: 30-27: round-1 #1087 finding 8 OBSERVED live (after-commit billing sync is synchronous, both polls hit at 0s); findings recorded, not patched; staging-seed.sh is next edited by 30-28
+- [Phase 30]: 30-28: the money loop reads the public menu first, so --refund-pennies (0 < N < the total) is a usage error before any Key Vault read or write; the realm-admin operator is deleted right after the preflight's admin read, so no admin stands while an order, refund or onboarding link exists
+- [Phase 30]: 30-28: this run's Stripe refund is found by metadata.refund_id = the local refund row id; a Refund carries no livemode field, so TEST mode is asserted on its charge; LOOP-ORDER prints only after the intent proves a destination charge (Pitfall 6)
+- [Phase 30]: 30-28: refund routing follows the shop's CURRENT settlement mode at refund time (RefundService -> resolveSettlementRouting), so each mode's loop order is refunded before --stage settlement-mode switches it; recorded for 30-32's gap list
 
 ### Pending Todos
 
@@ -1545,9 +1549,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-11-02T02:58:00.000Z
-Stopped at: Phase 30 — 30-27 done (27/32) on feat/30-pay03-staging-loop (not pushed; no upstream); PR 7 #1087 merged 2fe0837b; next is 30-28, PAY-03 PR 8 on this branch
-Resume file: `.planning/STATE.md` (Current Position), `HANDOFF.md` (RESUME HERE) and `.planning/phases/30-live-stripe-test-mode-execution/30-27-SUMMARY.md`
+Last session: 2026-11-02T03:38:37.000Z
+Stopped at: Phase 30 — 30-28 done (28/32) on feat/30-pay03-staging-loop (not pushed; no upstream); next is 30-29, the direct-charge loop and the payout stage, on this branch
+Resume file: `.planning/STATE.md` (Current Position), `HANDOFF.md` (RESUME HERE) and `.planning/phases/30-live-stripe-test-mode-execution/30-28-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
