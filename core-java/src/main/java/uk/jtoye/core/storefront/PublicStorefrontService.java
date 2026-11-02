@@ -557,7 +557,9 @@ public class PublicStorefrontService {
      *
      * <ol>
      *   <li><strong>the term read as a GB postcode</strong>, answered by distance</li>
-     *   <li>ranked full-text search over {@code shops.search_vector}</li>
+     *   <li>ranked full-text search over {@code shops.search_vector}, and over the
+     *       {@code search_vector} of each published shop's available products (a kitchen is
+     *       found by the dishes it sells; own-vector matches rank first, V89)</li>
      *   <li>the pre-existing {@code LIKE} fallback for short queries</li>
      * </ol>
      *
@@ -623,13 +625,26 @@ public class PublicStorefrontService {
                     SearchInterpretation.proximity(postcode.key(), postcode.precision(), defaultRadiusKm));
         }
 
-        // TIER 2 + 3 — the pre-existing text path, unchanged. Reached by every non-postcode term
+        // TIER 2 + 3 — the text path (tier 2 also matches dishes since V89). Reached by every non-postcode term
         // and by every postcode-shaped term the dataset does not know.
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
             // Use unsorted Pageable for native queries — ts_rank handles ordering
             Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
-            Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
+            // The search matches a kitchen through its dishes (V89 products_public_read), and that
+            // policy admits rows only when NO tenant is pinned. A caller carrying a tenant (a
+            // signed-in vendor browsing the storefront) would otherwise see dish matches from its
+            // own tenant only. The shop half is unaffected (published = true is in the query and
+            // shops_public_read admits every published shop), so the search runs tenant-less and
+            // the caller's tenant is restored before anything else reads.
+            Optional<UUID> callerTenant = TenantContext.get();
+            Page<Shop> results;
+            TenantContext.clear();
+            try {
+                results = shopRepository.fullTextSearchPublished(query, unsorted);
+            } finally {
+                callerTenant.ifPresent(TenantContext::set);
+            }
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
