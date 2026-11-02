@@ -72,9 +72,10 @@
 # WHEN CI GOES RED WITH NO CODE CHANGE — INTENDED, STATED IN ADVANCE
 #
 #   rabbitmq 4.3 (the only viable upgrade target) carries a vendor community-support horizon
-#   of 2026-11-30. With HORIZON_WARN_DAYS=90 this manifest turns the `ops-contracts` job
-#   RED on ~2026-09-01 — H-3 fails INSIDE the window, there is no warning-only state — and,
-#   once the dated exemption answering it expires, RED again on 2026-12-01, with no commit
+#   of 2027-01-31 (vendor; extended from the 2026-11-30 estimate). With HORIZON_WARN_DAYS=90
+#   this manifest turned the `ops-contracts` job RED on 2026-11-02 — H-3 fails INSIDE the
+#   window, there is no warning-only state — and, once the dated exemption answering it
+#   (#1088, expires 2026-12-31) lapses, RED again on 2027-01-01, with no commit
 #   in between. That is the mechanism working, not an outage. Do not diagnose it as a broken
 #   gate. (Measured 2026-09-02: red at 89 days; deferred under #724 until the horizon.)
 
@@ -167,24 +168,39 @@ dependencies:
     eol_source: vendor
     vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
+    exemption:
+      reason: >-
+        2026-11-02: rabbitmq/4.3 entered the 90-day window today (vendor community support ends
+        2027-01-31; the row's note below predicted this date). Upstream has published 4.4.0
+        (community support to 2027-07-31, released 2026-10-20). Moving the broker is a runtime
+        change across the compose pin (this row) and the staging RabbitmqCluster CR (row
+        rabbitmq-k8s) under
+        docs/runbooks/rabbitmq-broker-upgrade.md, so it is scheduled under #724 rather than done
+        as a gate hotfix the hour the window opened. Both rows move together; this exemption
+        expires before the vendor date so the deferral cannot outlive the horizon.
+      expires: "2026-12-31"
+      tracked_by: "#724"
     note: >-
       UPGRADED BY 27-02 (2026-07-29): 3.12.14 -> 4.3.4, by FRESH INSTALL. PATCHED BY 39-02
-      (2026-10-16): 4.3.4 -> 4.3.6 (the newest upstream release in the 4.3 series; no 4.4 series
-      exists upstream yet). There is no in-place 3.12 -> 4.x path (the chain is 3.12 -> 3.13 ->
+      (2026-10-16): 4.3.4 -> 4.3.6 (the newest 4.3 release on that date; upstream has since
+      released 4.3.7 and, on 2026-10-20, the 4.4 series). There is no in-place 3.12 -> 4.x path (the chain is 3.12 -> 3.13 ->
       4.2 -> 4.3) and 4.3 has no Mnesia reader at all, so the initial 3.12 -> 4.3 move was a
       fresh install; 4.3.4 -> 4.3.6 is an in-series Khepri patch. Procedure and rollback:
       docs/runbooks/rabbitmq-broker-upgrade.md.
 
       VENDOR OVERRIDE, AND IT IS LOAD-BEARING — HANDED TO 27-00 (D-10 item 2 / D-H.5).
-      `eol_date` here is the VENDOR date. The endoflife.date catalogue returns
-      `"eol": false` and `"extendedSupport": true` for cycle 4.3 — verified live, on the exact
-      pin this row adopts — while the vendor publishes community support ending 2027-01-31
-      (extended by upstream from the earlier 2026-11-30 estimate; re-verified 2026-10-16 against
-      https://www.rabbitmq.com/release-information). Because 2027-01-31 is 107 days out (outside
-      the 90-day HORIZON_WARN_DAYS window until ~2026-11-02), the #724 exemption is REMOVED here
-      (H-4 fails a stale exemption on a row outside the warn window). When the row re-enters the
-      90-day window around 2026-11-02, either upgrade to 4.4 if published by then or re-open a
-      dated exemption under #724.
+      `eol_date` here is the VENDOR date. On 2026-10-16 the endoflife.date catalogue returned
+      `"eol": false` and `"extendedSupport": true` for cycle 4.3 while the vendor published
+      community support ending 2027-01-31 (extended from the earlier 2026-11-30 estimate), so
+      the override was the only correct reading. Re-verified 2026-11-02: the catalogue now
+      returns `eol: 2027-01-31` for 4.3 (`latest: 4.3.7`) and lists a 4.4 cycle
+      (`eol: 2027-07-31`), agreeing with the vendor; eol_source stays `vendor` because
+      https://www.rabbitmq.com/release-information is the authority this row cites. On
+      2026-10-16 the #724 exemption was REMOVED because 2027-01-31 was 107 days out (H-4 fails a
+      stale exemption on a row outside the warn window). On 2026-11-02 the row re-entered the
+      90-day window exactly as predicted and the dated exemption above was re-opened under #724
+      (PR #1088); the 4.4 upgrade is #724's work, both rows together, before that exemption
+      expires on 2026-12-31.
 
   - id: azurite
     pin: "mcr.microsoft.com/azure-storage/azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5}"
@@ -678,20 +694,37 @@ dependencies:
     eol_source: vendor
     vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
+    exemption:
+      reason: >-
+        2026-11-02: rabbitmq/4.3 entered the 90-day window today (vendor community support ends
+        2027-01-31; the row's note below predicted this date). Upstream has published 4.4.0
+        (community support to 2027-07-31, released 2026-10-20). Moving the broker is a runtime
+        change across the compose pin (row rabbitmq) and the staging RabbitmqCluster CR (this
+        row) under
+        docs/runbooks/rabbitmq-broker-upgrade.md, so it is scheduled under #724 rather than done
+        as a gate hotfix the hour the window opened. Both rows move together; this exemption
+        expires before the vendor date so the deferral cannot outlive the horizon.
+      expires: "2026-12-31"
+      tracked_by: "#724"
     note: >-
       2026-10-18 (plan 29-10; ADR-0002, D-09): the in-cluster staging broker, run by the RabbitMQ
       cluster operator v2.23.1 (row rabbitmq-cluster-operator) from the RabbitmqCluster `rabbitmq`
       in k8s/components/rabbitmq/rabbitmq-cluster.yaml, which only k8s/staging includes. The broker
       version is that CR's spec.image, the same tag compose runs (row rabbitmq), so the two rows
-      share one pin and, through the vendor date, one horizon: both enter the 90-day window on
-      ~2026-11-02 and must be moved together. Before this plan the row was `pin: unknown`,
+      share one pin and, through the vendor date, one horizon, and must be moved together
+      (both entered the 90-day window on 2026-11-02, as predicted here on 2026-10-18; the dated
+      exemption above, re-opened under #724 in PR #1088, is what holds this row green until
+      2026-12-31). Before this plan the row was `pin: unknown`,
       `kind: out_of_repo`, `owner: UNASSIGNED` with a manual_review expiring 2027-01-16; that review
       is RETIRED per docs/runbooks/rabbitmq-broker-upgrade.md §7 step 4 (a row with a declared pin
       and a site needs no human re-check of an unknown), and the owner is the maintainer, who can
       now act on it in-repo. Production's broker is still decided in Phase 32 and is NOT covered by
       this row. Vendor date as on the compose row: 4.3 End of Community Support 2027-01-31
-      (https://www.rabbitmq.com/release-information, re-verified 2026-10-16); the catalogue returns
-      `eol: false` for cycle 4.3, hence eol_source vendor. H-1 discovers this pin only because
+      (https://www.rabbitmq.com/release-information, re-verified 2026-10-16 and 2026-11-02). On
+      2026-10-16 the catalogue returned `eol: false` for cycle 4.3, which is why eol_source is
+      vendor; re-measured 2026-11-02 the catalogue returns `eol: 2027-01-31` for 4.3 and lists a
+      4.4 cycle (`eol: 2027-07-31`), agreeing with the vendor, and eol_source stays vendor because
+      the vendor page is the authority this row cites. H-1 discovers this pin only because
       scripts/check-dependency-horizons.sh scans k8s/components (also plan 29-10).
 
   # ------------------------------------------------------------------ Key Vault secret sync (Phase 29)

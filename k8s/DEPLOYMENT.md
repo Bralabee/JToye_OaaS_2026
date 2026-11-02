@@ -871,10 +871,12 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 ENTRYPOINT is `/bin/prometheus`, so the call must pass `--entrypoint=promtool`). An outage of
 either turns the job **red at exit 2**, never green.
 
-**This job reddens on dates, with no code change.** RabbitMQ 4.3's vendor horizon is
-2027-01-31 against a 90-day warn window, so expect amber around **2026-11-02** and red on
-**2027-02-01**. Resolve it by upgrading the pin or re-dating the exemption in the manifest —
-never by weakening the job.
+**This job reddens on dates, with no code change, and there is no amber.** RabbitMQ 4.3's
+vendor horizon is 2027-01-31 against a 90-day warn window, so it went red on **2026-11-02**;
+the dated exemption that answered it (PR #1088, tracked by issue #724) lapses on 2026-12-31, so
+expect red again on **2027-01-01** and, past the vendor date, on **2027-02-01**. Resolve it by
+upgrading the pin (both the compose row and the `rabbitmq-k8s` row) or re-dating the exemption
+in the manifest — never by weakening the job.
 
 ### The runtime set — deliberately NOT in CI
 

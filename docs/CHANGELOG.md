@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Horizon Gate: RabbitMQ 4.3 Exemption Re-Opened on Both Rows, Tracked by #724 (#1088) — 2026-11-02
+
+- `infra/dependency-horizons.yaml`: a date-bounded `exemption:` (`expires: "2026-12-31"`, `tracked_by: "#724"`) on the `rabbitmq` and `rabbitmq-k8s` rows. On 2026-11-02 the vendor community-support date for RabbitMQ 4.3 (2027-01-31) entered the gate's 90-day window, and H-3 has no amber state: the Operational Contracts job went red on main (the #1070 merge run) and on every open PR with no code change. The rows' own 2026-10-16 notes predicted the date and named this remedy. No runtime change: upstream 4.4.0 (community support to 2027-07-31) is published and its Docker tag exists, and the broker bump across the compose pin and the staging `RabbitmqCluster` CR is issue #724's work under `docs/runbooks/rabbitmq-broker-upgrade.md`; the exemption expires before the vendor date so the deferral cannot outlive the horizon. Gate bracket on the committed copy: clean rc 0 (`active-exemptions=2`), expired-date arm rc 1 (`H-3 … EXPIRED`), blank-`tracked_by` arm rc 1 (`H-4 … no tracked_by`), restores sha256-verified, clean rc 0.
+
 ### Staging Billing Evidence: the Per-Location Subscription and Invoice Read From Stripe by Id (Phase 30 30-26, PAY-02, D-04) (#1087) — 2026-11-01
 
 Tooling only. The product change (per-location quantity, idempotency keys, the after-commit `BillingLocationSync` and its failure counter) shipped in #1067. This entry adds the two `scripts/staging-seed.sh` stages that prove it on staging from Stripe's own objects.
