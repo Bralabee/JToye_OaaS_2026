@@ -1,0 +1,198 @@
+{
+  "label": "r2-before",
+  "base": "http://localhost:3437",
+  "takenAt": "2026-11-02T15:51:28.913Z",
+  "viewports": {
+    "1366x768": {
+      "stripRequests": [],
+      "egusiRequests": [
+        {
+          "image": "egusi-soup-with-pounded-yam.webp",
+          "w": "384",
+          "priority": "High",
+          "type": "Image"
+        },
+        {
+          "image": "egusi-soup-with-pounded-yam.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        }
+      ],
+      "stripImg": {
+        "currentSrc": "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+        "fetchpriority": "high",
+        "loading": "eager",
+        "srcset": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75 384w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75 640w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=750&q=75 750w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=828&q=75 828w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=1080&q=75 1080w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=1200&q=75 1200w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=1920&q=75 1920w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=2048&q=75 2048w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=3840&q=75 3840w",
+        "sizes": "(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
+      },
+      "allImageRequests": [
+        {
+          "image": "egusi-soup-with-pounded-yam.webp",
+          "w": "384",
+          "priority": "High",
+          "type": "Image"
+        },
+        {
+          "image": "suya-with-pepper-sauce.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jollof-rice-with-vegetable.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jamaican-rice-and-peas.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "mutton-biryani.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "chana-masala.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "puff-puff.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "suya-with-pepper-sauce.webp",
+          "w": "384",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jollof-rice-with-vegetable.webp",
+          "w": "384",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "puff-puff.webp",
+          "w": "384",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "suya-with-pepper-sauce.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "egusi-soup-with-pounded-yam.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jollof-rice-and-dodo.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        }
+      ]
+    },
+    "390x844": {
+      "stripRequests": [
+        {
+          "image": "jollof-rice-and-dodo.webp",
+          "w": "384",
+          "priority": "High",
+          "type": "Image"
+        }
+      ],
+      "egusiRequests": [
+        {
+          "image": "egusi-soup-with-pounded-yam.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        }
+      ],
+      "stripImg": {
+        "currentSrc": "http://localhost:3437/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75",
+        "fetchpriority": "high",
+        "loading": "eager",
+        "srcset": "/_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=384&q=75 384w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=640&q=75 640w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=750&q=75 750w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=828&q=75 828w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=1080&q=75 1080w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=1200&q=75 1200w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=1920&q=75 1920w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=2048&q=75 2048w, /_next/image?url=%2Fmarketing%2Flanding%2Fjollof-rice-and-dodo.webp&w=3840&q=75 3840w",
+        "sizes": "(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
+      },
+      "allImageRequests": [
+        {
+          "image": "jollof-rice-and-dodo.webp",
+          "w": "384",
+          "priority": "High",
+          "type": "Image"
+        },
+        {
+          "image": "suya-with-pepper-sauce.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jollof-rice-with-vegetable.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jamaican-rice-and-peas.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "mutton-biryani.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "chana-masala.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "puff-puff.webp",
+          "w": "32",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "suya-with-pepper-sauce.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "egusi-soup-with-pounded-yam.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        },
+        {
+          "image": "jollof-rice-and-dodo.webp",
+          "w": "640",
+          "priority": "Low",
+          "type": "Image"
+        }
+      ]
+    }
+  }
+}

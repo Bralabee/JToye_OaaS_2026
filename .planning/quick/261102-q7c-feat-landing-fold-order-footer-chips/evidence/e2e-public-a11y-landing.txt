@@ -1,0 +1,8 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/public-a11y.spec.ts -g  / has no --reporter=line
+
+Running 2 tests using 1 worker
+
+[1/2] [mobile] › e2e/public-a11y.spec.ts:281:9 › public surfaces — WCAG 2.2 AA › / has no WCAG 2.2 AA violations
+[2/2] [desktop] › e2e/public-a11y.spec.ts:281:9 › public surfaces — WCAG 2.2 AA › / has no WCAG 2.2 AA violations
+  2 passed (7.1s)

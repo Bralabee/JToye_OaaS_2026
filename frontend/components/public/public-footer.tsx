@@ -102,7 +102,7 @@ export function PublicFooter() {
           every public route's footer declares. */}
       <div
         data-width-tier="marketing"
-        className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 py-12")}
+        className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 py-8")}
       >
         {/* A FIXED track count per breakpoint, never one derived from session
             state. Collapsing the tracks when the operator column hides was
@@ -123,10 +123,16 @@ export function PublicFooter() {
 
             2 tracks at sm rather than 4: four columns inside a 640px viewport
             leaves ~124px each, and "Cookie and browser-storage policy" is not a
-            124px label. 2x2 there, one row at lg. */}
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            124px label. 2x2 there, one row at lg.
+
+            D15 (design/decisions.md, 2026-11-02): a phone now takes 2 tracks
+            too, with the brand block spanning both, instead of stacking four
+            columns into a 955px footer at 390. Every column and link is kept;
+            the long Legal labels wrap inside their ~170px track. The rhythm is
+            tighter at every width (padding, column and list spacing). */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-7 lg:grid-cols-4 lg:gap-8">
           {/* Brand */}
-          <div className="space-y-3">
+          <div className="col-span-2 space-y-2.5 sm:col-span-1">
             <Link
               href="/"
               className="flex items-center gap-2 text-lg font-semibold tracking-tight text-white"
@@ -157,11 +163,11 @@ export function PublicFooter() {
               Deliberately written without naming the tag it replaced: the verify
               for this change counts that literal token in this file and expects
               zero, so a comment mentioning it would fail the gate it documents. */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
               For customers
             </h2>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-1.5 text-sm">
               <li>
                 <Link href="/shop" className="text-cream/85 transition-colors hover:text-white">
                   Browse shops
@@ -211,11 +217,11 @@ export function PublicFooter() {
               company identity — lib/company.ts:9-12 keeps the platform
               operator's trading disclosure off tenant storefronts, and this
               footer renders on every one of them. */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
               Legal
             </h2>
-            <ul className="space-y-2 text-sm">
+            <ul className="space-y-1.5 text-sm">
               <li>
                 <Link href="/legal" className="text-cream/85 transition-colors hover:text-white">
                   Legal &amp; company information
@@ -276,11 +282,11 @@ export function PublicFooter() {
           {/* For operators — KEEP LAST. This is the only conditionally-rendered
               column; anything placed after it shifts a track when it unmounts. */}
           {showOperatorColumn && (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
                 For operators
               </h2>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-1.5 text-sm">
                 <li>
                   <Link href="/for-operators" className="text-cream/85 transition-colors hover:text-white">
                     Become a vendor
@@ -300,8 +306,10 @@ export function PublicFooter() {
           )}
         </div>
 
-        {/* Bottom row */}
-        <div className="mt-10 flex flex-col gap-2 border-t border-white/15 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        {/* Bottom row. D15: separated from the columns by space alone; the 1px
+            rule above it went with the one over the attribution (taste-skill
+            hairline, the same tell D14 removed from the landing). */}
+        <div className="mt-10 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-cream/70">
             &copy; {year} J&apos;Toye Digital Ltd · Registered in England &amp; Wales · company no. 16471464
           </p>
@@ -318,16 +326,20 @@ export function PublicFooter() {
             acknowledgement is the single thing it asks in return. All three lines
             are required; shipping only the Ordnance Survey line is a breach.
             scripts/check-geo-attribution.sh fails CI if any line goes missing or
-            the year drifts from SOURCE.md. */}
-        <div className="mt-6 border-t border-white/10 pt-4">
-          <p className="text-xs leading-relaxed text-cream/55">
-            Contains Ordnance Survey data &copy; Crown copyright and database right {GEO_ATTRIBUTION_YEAR}.
-            <br />
-            Contains Royal Mail data &copy; Royal Mail copyright and database right {GEO_ATTRIBUTION_YEAR}.
-            <br />
-            Contains National Statistics data &copy; Crown copyright and database right {GEO_ATTRIBUTION_YEAR}.
-          </p>
-        </div>
+            the year drifts from SOURCE.md.
+
+            D15 (2026-11-02): the three statements run on as ONE paragraph
+            instead of three broken lines, each statement's wording verbatim and
+            each still on its own source line here (the gate greps this file per
+            rights holder). It sits directly under the bottom row, without a
+            second rule. At 12px the three together are wider than the 1216px
+            rail, so the paragraph wraps once on a desktop; that is the
+            paragraph wrapping, not three lines. */}
+        <p className="mt-3 text-xs leading-relaxed text-cream/55">
+          Contains Ordnance Survey data &copy; Crown copyright and database right {GEO_ATTRIBUTION_YEAR}.{" "}
+          Contains Royal Mail data &copy; Royal Mail copyright and database right {GEO_ATTRIBUTION_YEAR}.{" "}
+          Contains National Statistics data &copy; Crown copyright and database right {GEO_ATTRIBUTION_YEAR}.
+        </p>
       </div>
     </footer>
   )

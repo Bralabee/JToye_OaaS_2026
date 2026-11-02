@@ -1,0 +1,80 @@
+{
+  "390x844": {
+    "tabSequence": [
+      "Search",
+      "Grill",
+      "Jollof",
+      "Caribbean",
+      "South Asian",
+      "Vegan",
+      "Desserts"
+    ],
+    "reachedSixth": true,
+    "activeLeft": 274,
+    "activeRight": 374,
+    "railLeft": 12,
+    "railRight": 378,
+    "fullyInsideRail": true,
+    "railScrollLeft": 211,
+    "focusRingPainted": true,
+    "pageOverflowX": 0,
+    "credits": {
+      "closedByDefault": true,
+      "openedWithEnter": true,
+      "visibleLinksAfterOpen": 16,
+      "linksInDom": 16
+    }
+  },
+  "1024x768": {
+    "tabSequence": [
+      "Search",
+      "Grill",
+      "Jollof",
+      "Caribbean",
+      "South Asian",
+      "Vegan",
+      "Desserts"
+    ],
+    "reachedSixth": true,
+    "activeLeft": 384,
+    "activeRight": 484,
+    "railLeft": 28,
+    "railRight": 488,
+    "fullyInsideRail": true,
+    "railScrollLeft": 117,
+    "focusRingPainted": true,
+    "pageOverflowX": 0,
+    "credits": {
+      "closedByDefault": true,
+      "openedWithEnter": true,
+      "visibleLinksAfterOpen": 16,
+      "linksInDom": 16
+    }
+  },
+  "1366x768": {
+    "tabSequence": [
+      "Search",
+      "Grill",
+      "Jollof",
+      "Caribbean",
+      "South Asian",
+      "Vegan",
+      "Desserts"
+    ],
+    "reachedSixth": true,
+    "activeLeft": 544,
+    "activeRight": 644,
+    "railLeft": 71,
+    "railRight": 659,
+    "fullyInsideRail": true,
+    "railScrollLeft": 0,
+    "focusRingPainted": true,
+    "pageOverflowX": 0,
+    "credits": {
+      "closedByDefault": true,
+      "openedWithEnter": true,
+      "visibleLinksAfterOpen": 16,
+      "linksInDom": 16
+    }
+  }
+}

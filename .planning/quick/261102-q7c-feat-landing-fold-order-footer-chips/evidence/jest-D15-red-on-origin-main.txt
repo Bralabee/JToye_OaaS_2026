@@ -1,0 +1,94 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/__tests__/landing.test.tsx -t D15
+  Using tsconfig file: tsconfig.build.json
+FAIL app/__tests__/landing.test.tsx
+  ● Landing fold, order, footer and chips (D15) › puts How it works directly after the hero, ahead of the kitchen row
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 0
+    Received:   1
+
+      491 |     expect(how).toBeGreaterThanOrEqual(0)
+      492 |     expect(kitchens).toBeGreaterThanOrEqual(0)
+    > 493 |     expect(how).toBeLessThan(kitchens)
+          |                 ^
+      494 |     // ...and it is the first section after the hero.
+      495 |     const sections = Array.from(main.querySelectorAll("section"))
+      496 |     expect(sections[0].hasAttribute("data-hero-section")).toBe(true)
+
+      at Object.toBeLessThan (app/__tests__/landing.test.tsx:493:17)
+
+  ● Landing fold, order, footer and chips (D15) › keeps all six cuisine chips in ONE non-wrapping rail
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      508 |     }
+      509 |     expect(rail.querySelectorAll("a")).toHaveLength(6)
+    > 510 |     expect(rail.classList.contains("flex-nowrap")).toBe(true)
+          |                                                    ^
+      511 |     expect(rail.classList.contains("overflow-x-auto")).toBe(true)
+      512 |     expect(rail.classList.contains("flex-wrap")).toBe(false)
+      513 |     // The chips are the compact size the one-row fit was measured at.
+
+      at Object.toBe (app/__tests__/landing.test.tsx:510:52)
+
+  ● Landing fold, order, footer and chips (D15) › hides the order door's photo strip from lg up, and only there
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(^|\s)lg:hidden(\s|$)/
+    Received string:  "h-[120px] w-full object-cover"
+
+      521 |     // Control: the strip is still rendered (a phone's first food picture).
+      522 |     expect(strip).not.toBeNull()
+    > 523 |     expect(strip?.getAttribute("class")).toMatch(/(^|\s)lg:hidden(\s|$)/)
+          |                                          ^
+      524 |     expect(strip?.getAttribute("class")).not.toMatch(/(^|\s)hidden(\s|$)/)
+      525 |   })
+      526 |
+
+      at Object.toMatch (app/__tests__/landing.test.tsx:523:42)
+
+  ● Landing fold, order, footer and chips (D15) › folds the photo credits behind a native disclosure, attribution still in the DOM
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      529 |     const line = screen.getByText(/^Photographs/)
+      530 |     const details = line.closest("details")
+    > 531 |     expect(details).not.toBeNull()
+          |                         ^
+      532 |     expect(details?.querySelector("summary")?.textContent?.trim()).toBe("Photo credits")
+      533 |     expect(details?.querySelectorAll("a").length).toBeGreaterThanOrEqual(16)
+      534 |   })
+
+      at Object.toBeNull (app/__tests__/landing.test.tsx:531:25)
+
+  ● Landing fold, order, footer and chips (D15) › runs the three statutory attributions on as one paragraph, wording verbatim
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 0
+    Received length: 2
+    Received object: [<br />, <br />]
+
+      547 |       expect(text).toContain(statement)
+      548 |     }
+    > 549 |     expect(para.querySelectorAll("br")).toHaveLength(0)
+          |                                         ^
+      550 |   })
+      551 | })
+      552 |
+
+      at Object.toHaveLength (app/__tests__/landing.test.tsx:549:41)
+
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 26 skipped, 31 total
+Snapshots:   0 total
+Time:        1.97 s, estimated 4 s
+Ran all test suites matching app/__tests__/landing.test.tsx with tests matching "D15".

@@ -1,0 +1,357 @@
+{
+  "label": "r2-after",
+  "base": "http://localhost:3437",
+  "takenAt": "2026-11-02T15:53:09.970Z",
+  "viewports": {
+    "1024x768": {
+      "collage": {
+        "rows": "224px 200px",
+        "rowTrackCount": 2,
+        "columns": "218px 218px",
+        "height": 440,
+        "gridItems": [
+          "PICTURE(block)",
+          "IMG(block)",
+          "IMG(block)",
+          "IMG(block)"
+        ],
+        "egusiItemTag": "PICTURE",
+        "egusiColumn": 1,
+        "egusiRow": 1,
+        "egusiRect": {
+          "w": 225,
+          "h": 207
+        },
+        "egusiCurrentSrc": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75"
+      },
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        528
+      ],
+      "chipRows": 1,
+      "railScrollWidth": 577,
+      "railClientWidth": 460,
+      "railFits": false,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 584,
+      "goldDoorBottom": 836,
+      "goldDoorHeight": 252,
+      "browseShopsBottom": 816,
+      "goldDoorStripVisible": false,
+      "h2Order": [
+        "How it works",
+        "Kitchens on J'Toye"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 397,
+      "creditsHeight": 20,
+      "creditsMarginTop": 24,
+      "creditsTag": "DETAILS",
+      "trustBottomToFooterBottom": 449,
+      "footerPlusCredits": 441,
+      "docHeight": 2352,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1024x768",
+        "width": 1024,
+        "height": 768
+      }
+    },
+    "1280x800": {
+      "collage": {
+        "rows": "224px 200px",
+        "rowTrackCount": 2,
+        "columns": "282px 282px",
+        "height": 440,
+        "gridItems": [
+          "PICTURE(block)",
+          "IMG(block)",
+          "IMG(block)",
+          "IMG(block)"
+        ],
+        "egusiItemTag": "PICTURE",
+        "egusiColumn": 1,
+        "egusiRow": 1,
+        "egusiRect": {
+          "w": 289,
+          "h": 210
+        },
+        "egusiCurrentSrc": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75"
+      },
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        498
+      ],
+      "chipRows": 1,
+      "railScrollWidth": 588,
+      "railClientWidth": 588,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 554,
+      "goldDoorBottom": 759,
+      "goldDoorHeight": 205,
+      "browseShopsBottom": 739,
+      "goldDoorStripVisible": false,
+      "h2Order": [
+        "How it works",
+        "Kitchens on J'Toye"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 377,
+      "creditsHeight": 20,
+      "creditsMarginTop": 24,
+      "creditsTag": "DETAILS",
+      "trustBottomToFooterBottom": 429,
+      "footerPlusCredits": 421,
+      "docHeight": 2231,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1280x800",
+        "width": 1280,
+        "height": 800
+      }
+    },
+    "1366x768": {
+      "collage": {
+        "rows": "224px 200px",
+        "rowTrackCount": 2,
+        "columns": "282px 282px",
+        "height": 440,
+        "gridItems": [
+          "PICTURE(block)",
+          "IMG(block)",
+          "IMG(block)",
+          "IMG(block)"
+        ],
+        "egusiItemTag": "PICTURE",
+        "egusiColumn": 1,
+        "egusiRow": 1,
+        "egusiRect": {
+          "w": 289,
+          "h": 210
+        },
+        "egusiCurrentSrc": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75"
+      },
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        498
+      ],
+      "chipRows": 1,
+      "railScrollWidth": 588,
+      "railClientWidth": 588,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 554,
+      "goldDoorBottom": 759,
+      "goldDoorHeight": 205,
+      "browseShopsBottom": 739,
+      "goldDoorStripVisible": false,
+      "h2Order": [
+        "How it works",
+        "Kitchens on J'Toye"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 377,
+      "creditsHeight": 20,
+      "creditsMarginTop": 24,
+      "creditsTag": "DETAILS",
+      "trustBottomToFooterBottom": 429,
+      "footerPlusCredits": 421,
+      "docHeight": 2231,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1366x768",
+        "width": 1366,
+        "height": 768
+      }
+    },
+    "1440x900": {
+      "collage": {
+        "rows": "224px 200px",
+        "rowTrackCount": 2,
+        "columns": "282px 282px",
+        "height": 440,
+        "gridItems": [
+          "PICTURE(block)",
+          "IMG(block)",
+          "IMG(block)",
+          "IMG(block)"
+        ],
+        "egusiItemTag": "PICTURE",
+        "egusiColumn": 1,
+        "egusiRow": 1,
+        "egusiRect": {
+          "w": 289,
+          "h": 210
+        },
+        "egusiCurrentSrc": "/_next/image?url=%2Fmarketing%2Flanding%2Fegusi-soup-with-pounded-yam.webp&w=384&q=75"
+      },
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        498
+      ],
+      "chipRows": 1,
+      "railScrollWidth": 588,
+      "railClientWidth": 588,
+      "railFits": true,
+      "h1FontSize": "56px",
+      "h1Height": 175,
+      "goldDoorTop": 554,
+      "goldDoorBottom": 759,
+      "goldDoorHeight": 205,
+      "browseShopsBottom": 739,
+      "goldDoorStripVisible": false,
+      "h2Order": [
+        "How it works",
+        "Kitchens on J'Toye"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 377,
+      "creditsHeight": 20,
+      "creditsMarginTop": 24,
+      "creditsTag": "DETAILS",
+      "trustBottomToFooterBottom": 429,
+      "footerPlusCredits": 421,
+      "docHeight": 2231,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "1440x900",
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "390x844": {
+      "collage": null,
+      "scrollY": 0,
+      "chipCount": 6,
+      "chipRowTops": [
+        411
+      ],
+      "chipRows": 1,
+      "railScrollWidth": 577,
+      "railClientWidth": 366,
+      "railFits": false,
+      "h1FontSize": "34px",
+      "h1Height": 106,
+      "goldDoorTop": 467,
+      "goldDoorBottom": 782,
+      "goldDoorHeight": 315,
+      "browseShopsBottom": 758,
+      "goldDoorStripVisible": true,
+      "h2Order": [
+        "How it works",
+        "Kitchens on J'Toye"
+      ],
+      "sections": [
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": "Order from local kitchens. Or run yours."
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "How it works"
+        },
+        {
+          "bg": "bg-white",
+          "firstHeading": "Kitchens on J'Toye"
+        },
+        {
+          "bg": "bg-warm-100",
+          "firstHeading": ""
+        }
+      ],
+      "footerHeight": 732,
+      "creditsHeight": 20,
+      "creditsMarginTop": 24,
+      "creditsTag": "DETAILS",
+      "trustBottomToFooterBottom": 788,
+      "footerPlusCredits": 776,
+      "docHeight": 3220,
+      "httpStatus": 200,
+      "viewport": {
+        "name": "390x844",
+        "width": 390,
+        "height": 844
+      }
+    }
+  },
+  "assertions": {
+    "failures": [],
+    "passed": true
+  }
+}

@@ -83,6 +83,13 @@ const categories: Array<{ photo: LandingPhoto; label: string; q: string }> = [
   { photo: PHOTOS.puffPuff, label: "Desserts", q: "dessert" },
 ]
 
+// A transparent 1x1 GIF. A <picture> <source> pointing at it makes the browser
+// request NOTHING for an img at the widths where that img is hidden (CSP img-src
+// allows data:). D15 review: the door strip from lg, the first collage tile
+// below lg.
+const BLANK_PIXEL =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
 // The desktop collage (A): four dish photographs in place of the four gradient
 // emoji tiles (D9, D14). The small tilts are static, kept from the old tiles.
 const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
@@ -255,12 +262,16 @@ export default async function Home() {
             className={cn(
               "relative mx-auto",
               WIDTH_TIER_CLASS.marketing,
-              "px-4 sm:px-6 lg:px-8 pt-10 pb-14 md:pt-[72px] md:pb-[88px]"
+              "px-4 sm:px-6 lg:px-8 pt-10 pb-14 md:pt-[72px] md:pb-[88px] lg:pt-16"
             )}
           >
             <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
-              {/* Left column — copy, search, doors */}
-              <div>
+              {/* Left column — copy, search, doors. min-w-0 (D15): below lg
+                  this grid has no explicit track, so its one implicit column
+                  is sized to content, and the non-wrapping chip rail's content
+                  is wider than a phone; without it the column grew past the
+                  viewport instead of letting the rail scroll. */}
+              <div className="min-w-0">
                 {/* The tracked-caps eyebrow "Independent UK kitchens" is gone
                     (D14): "independent" is in the sentence below, and "UK" is in
                     the trust strip. Three lines at every width is the owner's
@@ -294,20 +305,34 @@ export default async function Home() {
                     against /shop?q= — the chips stay crawlable <a href> so the
                     category pages are reachable without JS. */}
                 <HeroSearch />
-                <div className="mt-4 flex flex-wrap gap-2">
+                {/* D15 (design/decisions.md, 2026-11-02): ONE row, all six chips
+                    (the owner's ruling: not fewer). The six wrapped to two rows
+                    in the 580px column (three at 390) and pushed the doors below
+                    a laptop's fold. Now a non-wrapping rail: compact chips (24px
+                    picture, 13px label) fit the column from 1280 up with no
+                    scrolling, and below that the rail swipes. No edge fade: the
+                    cut-off chip is the peek, the device D14 item 4 chose over a
+                    gradient fade for the kitchen row. The 4px padding (cancelled
+                    by the negative margin) keeps every focus ring inside the
+                    rail's clip, and a tabbed-to chip is scrolled into view by the
+                    browser itself, so the sixth stays reachable by keyboard. */}
+                <div
+                  data-cuisine-rail
+                  className="-mx-1 -mb-1 mt-3 flex snap-x flex-nowrap gap-1 overflow-x-auto scroll-px-1 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
                   {categories.map((c) => (
                     <Link
                       key={c.label}
                       href={`/shop?q=${encodeURIComponent(c.q)}`}
-                      className="inline-flex items-center gap-2 rounded-full bg-white py-1 pl-1 pr-3.5 text-sm font-medium text-warm-900 transition-colors duration-150 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+                      className="inline-flex shrink-0 snap-start items-center gap-1 whitespace-nowrap rounded-full bg-white py-1 pl-1 pr-2.5 text-[13px] font-medium leading-5 text-warm-900 transition-colors duration-150 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
                     >
                       <Image
                         src={c.photo.src}
-                        width={32}
-                        height={32}
-                        sizes="32px"
+                        width={24}
+                        height={24}
+                        sizes="24px"
                         alt=""
-                        className="h-8 w-8 rounded-full object-cover"
+                        className="h-6 w-6 rounded-full object-cover"
                       />
                       {c.label}
                     </Link>
@@ -318,7 +343,7 @@ export default async function Home() {
                     for ordering (the action accent) and oxblood for operators;
                     no gradient, no resting shadow, no hover lift. Press is a
                     0.98 scale; hover is one ramp step, gated on a fine pointer. */}
-                <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <Link
                     href="/shop"
                     data-hero-door
@@ -326,19 +351,41 @@ export default async function Home() {
                   >
                     {/* Food in the phone's first screen: the tiles are
                         desktop-only, this strip is not. Eager and high
-                        priority — on a phone it is the first picture seen. */}
-                    <Image
-                      src={PHOTOS.jollofDodo.src}
-                      width={PHOTOS.jollofDodo.width}
-                      height={PHOTOS.jollofDodo.height}
-                      sizes="(min-width: 1024px) 300px, (min-width: 640px) 45vw, 92vw"
-                      alt={PHOTOS.jollofDodo.alt}
-                      loading="eager"
-                      fetchPriority="high"
-                      className="h-[120px] w-full object-cover"
-                    />
-                    <span className="flex flex-1 flex-col px-6 pb-6 pt-5">
-                      <UtensilsCrossed aria-hidden className="mb-3 h-7 w-7" />
+                        priority — on a phone it is the first picture seen.
+
+                        D15 (2026-11-02): hidden from lg up, where the collage
+                        already carries the food and the strip's 120px held
+                        "Browse shops" below a 768px laptop fold. A hidden img
+                        still downloads, and a 1px `sizes` entry does not stop
+                        it: next/image drops every candidate under the smallest
+                        vw share (45vw of 640 = 288 -> 384w), measured as a
+                        384w high-priority fetch on a 1366 desktop. So the img
+                        sits in a <picture> whose lg source is a 1x1 data URI
+                        (CSP img-src allows data:): from lg it makes no request
+                        at all, and its high priority is spent only where the
+                        strip is seen. The first collage tile carries the
+                        desktop's high priority instead (below). The img's own
+                        attributes are left exactly as they were, so a phone's
+                        request is byte-identical; its `(min-width: 1024px) 1px`
+                        entry is inert there, the <source> wins from lg. */}
+                    <picture className="block lg:hidden">
+                      <source
+                        media="(min-width: 1024px)"
+                        srcSet={BLANK_PIXEL}
+                      />
+                      <Image
+                        src={PHOTOS.jollofDodo.src}
+                        width={PHOTOS.jollofDodo.width}
+                        height={PHOTOS.jollofDodo.height}
+                        sizes="(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
+                        alt={PHOTOS.jollofDodo.alt}
+                        loading="eager"
+                        fetchPriority="high"
+                        className="h-[120px] w-full object-cover lg:hidden"
+                      />
+                    </picture>
+                    <span className="flex flex-1 flex-col px-6 pb-6 pt-5 lg:pb-5 lg:pt-4">
+                      <UtensilsCrossed aria-hidden className="mb-3 h-7 w-7 lg:mb-2" />
                       <span className="text-xl font-bold leading-tight">Order food near you</span>
                       <span className="mt-1.5 text-base leading-snug">
                         Browse independent kitchens and order in minutes.
@@ -355,8 +402,8 @@ export default async function Home() {
                     data-hero-door
                     className="group flex flex-col overflow-hidden rounded-2xl bg-brand-900 text-white transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:hover:bg-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
                   >
-                    <span className="flex flex-1 flex-col px-6 pb-6 pt-5">
-                      <Store aria-hidden className="mb-3 h-7 w-7 text-gold" />
+                    <span className="flex flex-1 flex-col px-6 pb-6 pt-5 lg:pb-5 lg:pt-4">
+                      <Store aria-hidden className="mb-3 h-7 w-7 text-gold lg:mb-2" />
                       <span className="text-xl font-bold leading-tight">Run your food business</span>
                       <span className="mt-1.5 text-base leading-snug text-brand-100">
                         Take orders and manage your kitchen. A person reviews every application.
@@ -372,46 +419,64 @@ export default async function Home() {
 
               {/* Right column — dish photo collage (A), desktop only as before.
                   Decorative beside the doors, so the grid stays aria-hidden and
-                  the pictures carry empty alt text. */}
+                  the pictures carry empty alt text.
+
+                  D15 review (PR #1097): the FIRST tile is eager and high
+                  priority. On a desktop the LCP element is the h1 or this
+                  egusi tile (measured on production builds, before and after
+                  D15; the door strip never was), and with the strip no longer
+                  requested from lg this tile is the fold's first picture. Below
+                  lg the grid is display:none, and an eager img there would
+                  still be fetched (measured: a 32w High request on a 390
+                  phone), so the first tile mirrors the strip: a <picture>
+                  whose below-lg source is the same 1x1 data URI, so a phone
+                  requests nothing for it, exactly as before. The picture is
+                  the grid item and is a BLOCK: as `display: contents` it
+                  handed its <source> to the grid as a fifth item (a blank
+                  cell, three row tracks, the door 5px lower; PR #1097 round
+                  2). The img inside keeps the size and tilt classes, and
+                  preflight makes it a block, so the rendered tile is the same
+                  box as the other three. The other three stay lazy, and a lazy
+                  img in a display:none grid is never fetched. */}
               <div aria-hidden className="hidden grid-cols-2 gap-4 lg:grid">
-                {heroTiles.map((t) => (
-                  <Image
-                    key={t.photo.src}
-                    src={t.photo.src}
-                    width={t.photo.width}
-                    height={t.photo.height}
-                    sizes="(min-width: 1024px) 300px, 1px"
-                    alt=""
-                    className={`h-[200px] w-full rounded-2xl object-cover ${t.extra}`}
-                  />
-                ))}
+                {heroTiles.map((t, i) => {
+                  const tile = (
+                    <Image
+                      key={t.photo.src}
+                      src={t.photo.src}
+                      width={t.photo.width}
+                      height={t.photo.height}
+                      sizes="(min-width: 1024px) 300px, 1px"
+                      alt=""
+                      loading={i === 0 ? "eager" : "lazy"}
+                      fetchPriority={i === 0 ? "high" : "auto"}
+                      className={`h-[200px] w-full rounded-2xl object-cover ${t.extra}`}
+                    />
+                  )
+                  return i === 0 ? (
+                    <picture key={t.photo.src} className="block">
+                      <source media="(max-width: 1023px)" srcSet={BLANK_PIXEL} />
+                      {tile}
+                    </picture>
+                  ) : (
+                    tile
+                  )
+                })}
               </div>
             </div>
           </div>
         </section>
 
-        {/* ── The kitchen row — REAL published shops (#544, #460) ─────────── */}
-        {shops.length > 0 && (
-          <section className="bg-white">
-            <div
-              data-width-tier="marketing"
-              className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 pt-14 pb-16")}
-            >
-              {/* The row's heading, its scroller and its cards now live in a
-                  client island so that a visitor who GRANTS location gets the
-                  same shops re-ordered by real distance (33-07). The shops are
-                  still fetched HERE, on the server, and passed down — so the
-                  real names are in the initial HTML exactly as before, and the
-                  island's no-coordinate state is byte-for-byte what 33-03
-                  shipped. The heading it renders without a coordinate makes no
-                  locality claim; see near-you-row.tsx for the three states. */}
-              <NearYouRow serverShops={shops} serverTotal={serverTotal} />
-            </div>
-          </section>
-        )}
-
         {/* ── How it works (motion-hooked) ────────────────────────────────── */}
-        <section className="bg-warm-100 pb-[72px] pt-16 md:pb-24 md:pt-[88px]">
+        {/* D15 (2026-11-02): directly after the hero, ahead of the kitchen
+            row: the tester read the kitchens before knowing what the site
+            does. Its hooks moved with it unchanged; HeroScene finds them by
+            attribute, not position. The ground is now white: the hero is the
+            stone band above it, and the kitchen row below shares this white
+            field (its cards keep their own stone step, identity.md), so the
+            page reads stone hero / white body / stone trust band / oxblood
+            footer with or without published shops. */}
+        <section className="bg-white pb-[72px] pt-16 md:pb-24 md:pt-[88px]">
           <div
             data-width-tier="marketing"
             className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
@@ -447,11 +512,35 @@ export default async function Home() {
           </div>
         </section>
 
+        {/* ── The kitchen row — REAL published shops (#544, #460) ─────────── */}
+        {/* D15: after How it works, on the same white field, so the band's
+            top padding is gone; How it works' own bottom padding is the gap. */}
+        {shops.length > 0 && (
+          <section className="bg-white">
+            <div
+              data-width-tier="marketing"
+              className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 pt-0 pb-16")}
+            >
+              {/* The row's heading, its scroller and its cards now live in a
+                  client island so that a visitor who GRANTS location gets the
+                  same shops re-ordered by real distance (33-07). The shops are
+                  still fetched HERE, on the server, and passed down — so the
+                  real names are in the initial HTML exactly as before, and the
+                  island's no-coordinate state is byte-for-byte what 33-03
+                  shipped. The heading it renders without a coordinate makes no
+                  locality claim; see near-you-row.tsx for the three states. */}
+              <NearYouRow serverShops={shops} serverTotal={serverTotal} />
+            </div>
+          </section>
+        )}
+
         {/* ── Trust strip (motion-hooked chips) and the photo credits ─────── */}
         {/* The credit line shares the last band rather than adding a fifth: the
             band count is pinned in landing.test.tsx. It names every creator and
-            licence; credits.json beside the files is the per-picture record. */}
-        <section className="bg-white pb-8 pt-12">
+            licence; credits.json beside the files is the per-picture record.
+            D15: a stone band now (the white body sits above it), so the trust
+            chips flip to white to keep their tone step. */}
+        <section className="bg-warm-100 pb-8 pt-10">
           <div
             data-width-tier="marketing"
             className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
@@ -461,7 +550,7 @@ export default async function Home() {
                 <span
                   key={marker}
                   data-hero-chip
-                  className="inline-flex items-center gap-2 rounded-full bg-warm-100 px-4 py-2 text-sm font-medium text-warm-900"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-warm-900"
                 >
                   <CheckCircle2 aria-hidden className="h-4 w-4 text-emerald-700" />
                   {marker}
@@ -469,22 +558,32 @@ export default async function Home() {
               ))}
             </Reveal>
             {/* Each picture: title linked to its source page, creator, licence
-                linked; the modification stated once. What CC BY-SA 4.0 asks for. */}
-            <p className="mt-8 max-w-[70ch] text-sm text-warm-700">
-              Photographs ({PHOTO_DERIVATION_NOTE}), via Wikimedia Commons:{" "}
-              {PHOTO_CREDITS.map((c, i) => (
-                <span key={c.src}>
-                  <a href={c.page} className="underline decoration-warm-300 underline-offset-2 hover:decoration-warm-700">
-                    {c.title}
-                  </a>{" "}
-                  by {c.creator} (
-                  <a href={c.licenseUrl} className="underline decoration-warm-300 underline-offset-2 hover:decoration-warm-700">
-                    {c.license}
-                  </a>
-                  ){i < PHOTO_CREDITS.length - 1 ? "; " : "."}
-                </span>
-              ))}
-            </p>
+                linked; the modification stated once. What CC BY-SA 4.0 asks for.
+
+                D15: behind a native disclosure. The full attribution stays in
+                the DOM (and in the server HTML) and one click or Enter away; a
+                160px paragraph (260px on a phone) no longer sits above the
+                footer. No script: <details> is keyboard-operable as it is. */}
+            <details data-photo-credits className="mt-6 max-w-[70ch] text-sm text-warm-700">
+              <summary className="w-fit cursor-pointer rounded-sm font-medium underline decoration-warm-300 underline-offset-2 [@media(hover:hover)_and_(pointer:fine)]:hover:decoration-warm-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2">
+                Photo credits
+              </summary>
+              <p className="mt-2">
+                Photographs ({PHOTO_DERIVATION_NOTE}), via Wikimedia Commons:{" "}
+                {PHOTO_CREDITS.map((c, i) => (
+                  <span key={c.src}>
+                    <a href={c.page} className="underline decoration-warm-300 underline-offset-2 hover:decoration-warm-700">
+                      {c.title}
+                    </a>{" "}
+                    by {c.creator} (
+                    <a href={c.licenseUrl} className="underline decoration-warm-300 underline-offset-2 hover:decoration-warm-700">
+                      {c.license}
+                    </a>
+                    ){i < PHOTO_CREDITS.length - 1 ? "; " : "."}
+                  </span>
+                ))}
+              </p>
+            </details>
           </div>
         </section>
       </HeroScene>

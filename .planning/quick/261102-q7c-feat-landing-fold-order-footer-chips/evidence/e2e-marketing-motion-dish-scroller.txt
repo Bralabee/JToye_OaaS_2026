@@ -1,0 +1,21 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/marketing-motion.spec.ts e2e/marketing-dish-scroller.spec.ts --reporter=line
+
+Running 15 tests using 1 worker
+
+[1/15] [mobile] › e2e/marketing-dish-scroller.spec.ts:99:7 › marketing dish row — scroll affordance › discloses more-to-the-right only when there IS more, and stops claiming it at the end
+[2/15] [mobile] › e2e/marketing-dish-scroller.spec.ts:144:7 › marketing dish row — scroll affordance › the row is reachable as a labelled, focusable region
+[3/15] [mobile] › e2e/marketing-motion.spec.ts:157:9 › mobile floor (375px) — no heavy scenes › / degrades to fully-visible static content
+[4/15] [mobile] › e2e/marketing-motion.spec.ts:157:9 › mobile floor (375px) — no heavy scenes › /for-operators degrades to fully-visible static content
+[5/15] [mobile] › e2e/marketing-motion.spec.ts:193:9 › reduced motion — no heavy scenes › / builds no GSAP scene under prefers-reduced-motion: reduce
+[6/15] [mobile] › e2e/marketing-motion.spec.ts:193:9 › reduced motion — no heavy scenes › /for-operators builds no GSAP scene under prefers-reduced-motion: reduce
+[7/15] [desktop] › e2e/marketing-dish-scroller.spec.ts:99:7 › marketing dish row — scroll affordance › discloses more-to-the-right only when there IS more, and stops claiming it at the end
+[8/15] [desktop] › e2e/marketing-dish-scroller.spec.ts:144:7 › marketing dish row — scroll affordance › the row is reachable as a labelled, focusable region
+[9/15] [desktop] › e2e/marketing-dish-scroller.spec.ts:151:7 › marketing dish row — scroll affordance › @desktop-only arrows appear for a fine pointer and hide at the edge they cannot serve
+[10/15] [desktop] › e2e/marketing-motion.spec.ts:49:7 › desktop GSAP scenes (>=768px + motion) › / splits the hero headline, marks the scope active, has no heat-wash, scrubs the rail @desktop-only
+[11/15] [desktop] › e2e/marketing-motion.spec.ts:91:7 › desktop GSAP scenes (>=768px + motion) › /for-operators arrives POPULATED — headline + hero image + docket visible without scrolling, no pin @desktop-only
+[12/15] [desktop] › e2e/marketing-motion.spec.ts:157:9 › mobile floor (375px) — no heavy scenes › / degrades to fully-visible static content
+[13/15] [desktop] › e2e/marketing-motion.spec.ts:157:9 › mobile floor (375px) — no heavy scenes › /for-operators degrades to fully-visible static content
+[14/15] [desktop] › e2e/marketing-motion.spec.ts:193:9 › reduced motion — no heavy scenes › / builds no GSAP scene under prefers-reduced-motion: reduce
+[15/15] [desktop] › e2e/marketing-motion.spec.ts:193:9 › reduced motion — no heavy scenes › /for-operators builds no GSAP scene under prefers-reduced-motion: reduce
+  15 passed (28.4s)
