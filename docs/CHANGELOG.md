@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Stripe Connect: Connected Accounts Created Under Managed Risk, Not the Legacy Express Type — 2026-11-02
+### Stripe Connect: Connected Accounts Created Under Managed Risk, Not the Legacy Express Type — 2026-11-02 (#1091)
 
 Issue #1090. Since 2026-11-02 05:29Z, staging answered `POST /api/v1/admin/tenants/{id}/stripe/connect` with 502. Stripe was refusing the legacy `type` field on the account create, because the platform was the losses collector. The owner ruled option A, Managed Risk, the same day. The account create in `StripeConnectService` changes; nothing else about onboarding, sync, routing or fees does.
 
