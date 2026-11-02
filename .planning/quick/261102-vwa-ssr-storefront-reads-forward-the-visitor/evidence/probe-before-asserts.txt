@@ -1,0 +1,20 @@
+# Task 1 step 3 — runtime fail arm on the BASE build (6ce700eb)
+$ node assert-probe.mjs probe-before.jsonl before
+none: observed xff=null on /public/shops?page=0&size=function%28%29%7Bthrow+Error%28%22Attempted+to+call+SHOPS_PAGE_SIZE%28%29+from+the+server+but+SHOPS_PAGE_SIZE+is+on+the+client.+It%27s+not+possible+to+invoke+a+client+function+from+the+server%2C+it+can+only+be+rendered+as+a+Component+or+passed+to+props+of+a+Client+Component.%22%29%7D
+before: 13 upstream calls checked; violations=0
+rc=0 (must be 0)
+$ node assert-probe.mjs probe-before.jsonl after
+11
+after: 13 upstream calls checked over landing,shop,slug,cart,sitemap,orders,api-get,api-post,none; violations=11
+rc=1 (must be 1: the after-assertion can fail)
+
+probe statuses:
+landing 200
+shop 200
+slug 200
+cart 200
+sitemap 200
+orders 200
+api-get 200
+api-post 404
+none 200

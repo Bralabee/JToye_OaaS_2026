@@ -24,6 +24,25 @@ import {
   allProducts,
 } from "@/lib/storefront-server"
 import type { PublicProduct, PublicShop } from "@/types/storefront"
+import { headers } from "next/headers"
+
+/**
+ * next/headers (quick 261102-vwa). The mock DELEGATES to the real module by default, so every
+ * block in this file runs against the real out-of-scope behaviour ("`headers` was called outside
+ * a request scope") unless it says otherwise. That is the degrade path the sitemap and any
+ * non-request caller take, so the pre-existing blocks below double as its regression suite.
+ * The implementation is reset in beforeEach explicitly: the jest config sets no resetMocks, and
+ * Jest 30's restoreAllMocks does not touch a jest.fn made in a mock factory.
+ */
+jest.mock("next/headers", () => {
+  const actual = jest.requireActual("next/headers")
+  return { ...actual, headers: jest.fn(() => actual.headers()) }
+})
+const headersMock = headers as unknown as jest.Mock
+beforeEach(() => {
+  headersMock.mockReset()
+  headersMock.mockImplementation(() => jest.requireActual("next/headers").headers())
+})
 
 const shop: PublicShop = {
   slug: "brixton-village-grill",
@@ -383,5 +402,79 @@ describe("loadFeaturedShops", () => {
       throw new TypeError("fetch failed")
     }) as unknown as typeof fetch
     await expect(loadFeaturedShops()).resolves.toEqual([])
+  })
+})
+
+/**
+ * Quick 261102-vwa. The public rate limiter buckets per client address (`rl:public:{ip}`), and the
+ * socket peer of a server-side read is the frontend pod, so without the visitor's chain every
+ * SSR read of every visitor shares one bucket (#1104 r1, #1105 r1). The loaders forward exactly
+ * one header, X-Forwarded-For, byte-for-byte; core's ClientIpResolver alone decides whom to trust.
+ */
+describe("forwards the visitor's X-Forwarded-For chain verbatim (quick 261102-vwa)", () => {
+  const CHAIN = "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9"
+  const listing = () =>
+    mockFetch([[/\/public\/shops\?/, 200, { content: [shop], totalPages: 1, totalElements: 1 }]])
+  const initOf = (fetchMock: jest.Mock, i = 0) => fetchMock.mock.calls[i][1] as RequestInit
+
+  it("T1 sends the chain exactly as received, beside cache no-store and redirect manual", async () => {
+    headersMock.mockResolvedValue(new Headers({ "x-forwarded-for": CHAIN }))
+    const fetchMock = listing()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(loadShopList()).resolves.toMatchObject({ state: "ok" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const init = initOf(fetchMock)
+    expect(new Headers(init.headers).get("x-forwarded-for")).toBe(CHAIN)
+    expect(init.cache).toBe("no-store")
+    expect(init.redirect).toBe("manual")
+  })
+
+  it("T2 sends X-Forwarded-For and no other request header", async () => {
+    headersMock.mockResolvedValue(
+      new Headers({
+        "x-forwarded-for": CHAIN,
+        cookie: "jtoye-customer-access=secret",
+        authorization: "Bearer secret",
+        "x-real-ip": "203.0.113.50",
+        forwarded: "for=203.0.113.51",
+        "x-nonce": "nonce-1",
+        host: "frontend.internal",
+      })
+    )
+    const fetchMock = listing()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await loadShopList()
+    expect([...new Headers(initOf(fetchMock).headers).keys()]).toEqual(["x-forwarded-for"])
+  })
+
+  it("T3 sends no X-Forwarded-For when the request carried none", async () => {
+    headersMock.mockResolvedValue(new Headers({ cookie: "a=b", "x-nonce": "nonce-1" }))
+    const fetchMock = listing()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(loadShopList()).resolves.toMatchObject({ state: "ok" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(new Headers(initOf(fetchMock).headers).has("x-forwarded-for")).toBe(false)
+  })
+
+  it("T4 outside a request scope sends no header and never throws", async () => {
+    // Positive control: the REAL next/headers rejects here, so the default mock is not a no-op.
+    const actual = jest.requireActual("next/headers")
+    await expect(Promise.resolve().then(() => actual.headers())).rejects.toThrow(/outside a request scope/)
+
+    let fetchMock = listing()
+    global.fetch = fetchMock as unknown as typeof fetch
+    await expect(loadShopList()).resolves.toMatchObject({ state: "ok" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(new Headers(initOf(fetchMock).headers).has("x-forwarded-for")).toBe(false)
+
+    headersMock.mockImplementation(() => Promise.reject(new Error("no request store")))
+    fetchMock = listing()
+    global.fetch = fetchMock as unknown as typeof fetch
+    await expect(loadShopList()).resolves.toMatchObject({ state: "ok" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(new Headers(initOf(fetchMock).headers).has("x-forwarded-for")).toBe(false)
   })
 })

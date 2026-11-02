@@ -1,0 +1,25 @@
+# Task 1 step 6 — tracer build
+$ assert-probe.mjs probe-tracer.jsonl after --cases landing,shop,slug,cart,sitemap
+after: 9 upstream calls checked over landing,shop,slug,cart,sitemap; violations=0
+rc=0 (must be 0)
+$ assert-probe.mjs diff probe-before.jsonl probe-tracer.jsonl --cases landing,shop,slug,cart,sitemap,api-post
+diff: 10 call pairs compared over landing,shop,slug,cart,sitemap,api-post; violations=0
+rc=0 (must be 0)
+$ assert-probe.mjs probe-tracer.jsonl after --cases orders,api-get   (expected 1 here: Task 2 not yet wired)
+VIOLATION: case orders must carry exactly "198.51.100.6"
+  {"method":"GET","url":"/public/orders/mine?size=100","xff":null,"names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-customer-token"]}
+VIOLATION: case api-get must carry exactly "198.51.100.7"
+  {"method":"GET","url":"/public/orders/mine?size=5","xff":null,"names":["accept","accept-encoding","accept-language","cache-control","connection","host","pragma","sec-fetch-mode","user-agent","x-customer-token"]}
+after: 2 upstream calls checked over orders,api-get; violations=2
+rc=1
+
+statuses:
+landing 200
+shop 200
+slug 200
+cart 200
+sitemap 200
+orders 200
+api-get 200
+api-post 404
+none 200
