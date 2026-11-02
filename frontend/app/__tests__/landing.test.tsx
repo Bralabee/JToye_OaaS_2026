@@ -599,7 +599,6 @@ describe("Featured kitchens lead the landing row (D-03)", () => {
     tags: "Grill",
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const server = jest.requireMock("@/lib/storefront-server") as {
     loadFeaturedShops: jest.Mock
   }

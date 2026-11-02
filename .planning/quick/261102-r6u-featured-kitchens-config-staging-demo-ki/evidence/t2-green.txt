@@ -1,0 +1,35 @@
+Test Suites: 4 passed, 4 total
+Tests:       101 passed, 101 total
+jest rc=0
+lint rc=0
+
+✖ 26 problems (0 errors, 26 warnings)
+
+lint files with warnings (all pre-existing, none touched by this plan):
+frontend/app/dashboard/customers/page.tsx
+frontend/app/dashboard/error.tsx
+frontend/app/dashboard/kitchen/__tests__/page.test.tsx
+frontend/app/dashboard/marketing/page.tsx
+frontend/app/dashboard/marketing/page.tsx:706:29
+frontend/app/dashboard/orders/page.tsx
+frontend/app/dashboard/orders/page.tsx:389:26
+frontend/app/dashboard/products/import/page.tsx
+frontend/app/shop/[slug]/cart/page.tsx
+frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx
+frontend/app/shop/error.tsx
+frontend/app/shop/orders/orders-client.tsx
+frontend/components/dashboard/webhooks/WebhookCreateDialog.tsx
+frontend/components/dashboard/webhooks/WebhookCreateDialog.tsx:86:20
+frontend/components/ui/image-uploader.tsx
+frontend/components/ui/safe-image.tsx
+frontend/e2e/kitchen-flow.spec.ts
+frontend/e2e/storefront-flows.spec.ts
+frontend/e2e/unsubscribe-flow.spec.ts
+frontend/hooks/use-toast.ts
+frontend/lib/__tests__/vendor-logout.test.ts
+frontend/lib/customer-auth.ts
+frontend/lib/session-lapse.ts
+frontend/playwright.config.ts
+touched files among them: 0
+control: the same pattern finds frontend/app/__tests__/landing.test.tsx -> 1
+npm run build rc=0 (2026-11-02T20:20:30Z)

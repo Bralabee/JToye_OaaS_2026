@@ -1,0 +1,197 @@
+diff --git a/frontend/components/marketing/__tests__/near-you-row.test.tsx b/frontend/components/marketing/__tests__/near-you-row.test.tsx
+index 35b43912..08f4c892 100644
+--- a/frontend/components/marketing/__tests__/near-you-row.test.tsx
++++ b/frontend/components/marketing/__tests__/near-you-row.test.tsx
+@@ -462,3 +462,115 @@ describe("NearYouRow — the goods it must not displace", () => {
+     expect(within(live as HTMLElement).getByRole("heading")).toBeTruthy()
+   })
+ })
++
++/**
++ * D-03 (quick 261102-r6u, design D17): the featured kitchens. `serverShops`
++ * arrives featured-first from page.tsx; `featuredSlugs` names them in
++ * configured order. Every test above passes no `featuredSlugs` and is
++ * unedited: no prop means today's behaviour exactly.
++ */
++describe("NearYouRow — featured kitchens (D-03, D-04)", () => {
++  const PECKHAM = shop({
++    slug: "peckham-jollof-co",
++    name: "Peckham Jollof Co.",
++    latitude: 51.4655,
++    longitude: -0.0665,
++  })
++  // page.tsx's merged list: the featured kitchens (M, P) first, then the rest.
++  const MERGED = [MAMA, PECKHAM, BRIXTON]
++  const FEATURED = ["mama-ades-kitchen", "peckham-jollof-co"]
++
++  /** The slugs of the cards that carry a visible "Featured" label. */
++  function labelledSlugs(): string[] {
++    return screen
++      .queryAllByText("Featured", { exact: true })
++      .map((pill) => pill.closest("article")?.querySelector("a")?.getAttribute("href") ?? "")
++      .map((href) => href.replace("/shop/", ""))
++  }
++
++  it("idle: renders the merged order, labels only the featured cards, and claims no locality", () => {
++    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
++    expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill"])
++    expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
++    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens on J'Toye")
++  })
++
++  it("located, nothing in radius, featured non-empty: ONLY the featured kitchens, under an honest heading", async () => {
++    installGeolocation((success) => success(POSITION))
++    mockFetch.mockResolvedValue(page([]))
++
++    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
++    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
++
++    await waitFor(() =>
++      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
++        "No kitchens within 3.1 miles — featured on J'Toye"
++      )
++    )
++    expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
++    expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
++    // It names the radius and makes no locality claim.
++    expect(headingsSayingNearYou().map((h) => h.textContent)).toEqual([])
++    // The route to the full list stays.
++    expect(screen.getByRole("link", { name: /see all kitchens/i }).getAttribute("href")).toBe("/shop")
++  })
++
++  it("located with results: distance order wins, featured never jump ahead, but keep their label", async () => {
++    installGeolocation((success) => success(POSITION))
++    // The API's distance order puts the unfeatured Brixton first.
++    mockFetch.mockResolvedValue(
++      page([
++        { ...BRIXTON, distanceKm: 0.3 },
++        { ...PECKHAM, distanceKm: 1.1 },
++      ])
++    )
++
++    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
++    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
++
++    await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
++    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens near you")
++    expect(cardSlugs()).toEqual(["brixton-village-grill", "peckham-jollof-co"])
++    expect(labelledSlugs()).toEqual(["peckham-jollof-co"])
++  })
++
++  it("denied: the featured-first server list renders under 'Kitchens on J'Toye'", async () => {
++    installGeolocation((_success, failure) => failure(geoError(1)))
++
++    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
++    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
++
++    await waitFor(() => expect(screen.getByText(/showing every kitchen/i)).toBeTruthy())
++    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens on J'Toye")
++    expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill"])
++    expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
++  })
++
++  it("census with a merged list: a featured shop beyond page 0 is counted once, and counted when out of radius", async () => {
++    installGeolocation((success) => success(POSITION))
++    // F is featured and NOT on the listing's page 0; page 0 is the three kitchens.
++    // serverTotal is page0.length + 1: the merged list IS every published shop.
++    const F = shop({ slug: "far-away-featured", name: "Far Away Featured", latitude: 53.48, longitude: -2.24 })
++    const page0 = [MAMA, PECKHAM, BRIXTON]
++    // In radius: Mama and Peckham only. Brixton and F are out of radius.
++    mockFetch.mockResolvedValue(
++      page([
++        { ...MAMA, distanceKm: 0.2 },
++        { ...PECKHAM, distanceKm: 0.9 },
++      ])
++    )
++
++    render(
++      <NearYouRow
++        serverShops={[F, ...page0]}
++        serverTotal={page0.length + 1}
++        featuredSlugs={["far-away-featured", "mama-ades-kitchen"]}
++      />
++    )
++    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
++
++    await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
++    // 4 published (F + three) − 2 in radius − 0 unranked = 2 further away: F and Brixton.
++    expect(screen.getByText(/2 more kitchens are further than 3\.1 miles away/)).toBeTruthy()
++  })
++})
+diff --git a/frontend/components/marketing/__tests__/shop-card.test.tsx b/frontend/components/marketing/__tests__/shop-card.test.tsx
+index 3fc73f18..c71e30a3 100644
+--- a/frontend/components/marketing/__tests__/shop-card.test.tsx
++++ b/frontend/components/marketing/__tests__/shop-card.test.tsx
+@@ -367,3 +367,67 @@ describe("ShopCard — the link is named by its shop (UXT-082)", () => {
+     expect(link.hasAttribute("aria-describedby")).toBe(false)
+   })
+ })
++
++/**
++ * D-04 (quick 261102-r6u, design D17): a featured kitchen's card carries a small
++ * label reading exactly "Featured" — editorial, never paid. It is announced with
++ * the shop name (aria-describedby) and sits out of flow in the fixed-height
++ * picture box, so featured and unfeatured cards are the same height.
++ */
++describe("ShopCard — the Featured label (D-04)", () => {
++  function FeaturedCard({ shop, featured }: { shop: PublicShop; featured?: boolean }) {
++    return (
++      <Card
++        shop={shop}
++        featured={featured}
++        examplePhoto={assignExamplePhotos([shop]).get(shop.slug) ?? null}
++      />
++    )
++  }
++
++  const label = () => screen.queryByText("Featured", { exact: true })
++
++  it("a featured card shows a label reading exactly 'Featured'", () => {
++    render(<FeaturedCard shop={makeShop()} featured />)
++    expect(label()).not.toBeNull()
++    expect(label()!.textContent).toBe("Featured")
++  })
++
++  it("an unfeatured card, and a card with no featured prop, carry no label", () => {
++    const { unmount } = render(<FeaturedCard shop={makeShop()} featured={false} />)
++    expect(label()).toBeNull()
++    unmount()
++    render(<FeaturedCard shop={makeShop()} />)
++    expect(label()).toBeNull()
++  })
++
++  it("announces the label with the shop name through aria-describedby", () => {
++    render(<FeaturedCard shop={makeShop({ openNow: true })} featured />)
++    const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
++    const ids = (link.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
++    const text = ids.map((id) => (document.getElementById(id)?.textContent || "").trim())
++    expect(text).toContain("Featured")
++    // The open badge is still described too: the label is added, nothing displaced.
++    expect(text).toContain("Open")
++  })
++
++  it("sits out of flow inside the fixed-height picture box, so the text column is unchanged (CLS)", () => {
++    const { container: featuredCard } = render(<FeaturedCard shop={makeShop()} featured />)
++    const pill = label()!
++    expect(pill.className.split(/\s+/)).toContain("absolute")
++    const box = pill.closest("div.h-44")
++    expect(box).not.toBeNull()
++    const textColumn = (root: HTMLElement) =>
++      Array.from(root.querySelectorAll("article > div *")).map((el) => el.tagName + ":" + el.textContent)
++    const featuredColumn = textColumn(featuredCard)
++    const { container: plainCard } = render(<FeaturedCard shop={makeShop()} featured={false} />)
++    expect(textColumn(plainCard)).toEqual(featuredColumn)
++  })
++
++  it("is a word, not a star or an icon (the card removed invented ratings on purpose)", () => {
++    render(<FeaturedCard shop={makeShop()} featured />)
++    const pill = label()!
++    expect(pill.querySelector("svg")).toBeNull()
++    expect(pill.textContent).not.toMatch(/[★☆⭐]/u)
++  })
++})
+--- removed or changed lines (excluding file headers):
+0
+--- added lines:
+154
+--- control: the same removed-line pattern on near-you-row.tsx's own diff finds: 5

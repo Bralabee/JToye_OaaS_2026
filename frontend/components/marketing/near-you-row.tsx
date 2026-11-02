@@ -28,12 +28,26 @@ import type { PublicShop } from "@/types/storefront"
  * already fetched them; this component receives them as `serverShops` and
  * renders them verbatim until — and only until — it holds a real coordinate.
  *
- * ── THREE STATES, THREE HEADINGS. THE HEADING IS DERIVED, NEVER HARDCODED ────
+ * ── THREE STATES, FOUR HEADINGS. THE HEADING IS DERIVED, NEVER HARDCODED ────
  *
  *   no coordinate (initial, AND after a denial)  "Kitchens on J'Toye"
  *   coordinate held, shops inside the radius     "Kitchens near you"
  *   coordinate held, nothing inside the radius   "No kitchens within N miles —
  *                                                 here is everything on J'Toye"
+ *     ...and featured kitchens are configured    "No kitchens within N miles —
+ *                                                 featured on J'Toye"
+ *
+ * FEATURED KITCHENS (quick 261102-r6u, owner decisions D-03/D-04, design D17).
+ * `serverShops` arrives featured-first from page.tsx and `featuredSlugs` names
+ * them in configured order. Before a coordinate is held, and after a denial or
+ * a failure, the row is that featured-first list. When a coordinate is held and
+ * nothing is inside the radius, a non-empty featured list stands in ALONE under
+ * the fourth heading, which is honest for the same reason the third is: it names
+ * the radius that found nothing and makes no claim about where the visitor is —
+ * the kitchens are featured, not near. With nothing featured the third heading
+ * and the full list are exactly as before. When kitchens ARE inside the radius
+ * they win, in the API's distance order; a featured kitchen keeps its Featured
+ * label there but never jumps ahead. No prop at all means today's row exactly.
  *
  * The third state is not optional. Showing the full list under a "near you"
  * heading when nothing is near is the same class of untruth that issue 544
@@ -177,9 +191,13 @@ function withoutCoordinates(shops: PublicShop[]): PublicShop[] {
   return shops.filter((s) => s.latitude == null || s.longitude == null)
 }
 
+/** A stable empty default, so the featured set is not rebuilt on every render. */
+const NO_FEATURED: readonly string[] = []
+
 export function NearYouRow({
   serverShops,
   serverTotal,
+  featuredSlugs = NO_FEATURED,
 }: {
   serverShops: PublicShop[]
   /**
@@ -205,8 +223,19 @@ export function NearYouRow({
   const located = phase === "located" && nearby !== null
   // The server list is the fallback for EVERY non-located phase, including both
   // error phases and the nothing-in-radius one. A visitor who denies permission
-  // must never be left with a worse page than one who was never asked.
-  const shops = located ? nearby : serverShops
+  // must never be left with a worse page than one who was never asked. The one
+  // exception is D-03's: nothing in radius WITH featured kitchens configured
+  // shows the featured kitchens alone, under a heading that says so.
+  //
+  // The featured kitchens, in the order serverShops already carries them
+  // (page.tsx put them first). Filtered, never re-sorted.
+  const featuredSet = useMemo(() => new Set(featuredSlugs), [featuredSlugs])
+  const featuredShops = useMemo(
+    () => serverShops.filter((s) => featuredSet.has(s.slug)),
+    [serverShops, featuredSet]
+  )
+  const featuredStandIn = phase === "empty" && featuredShops.length > 0
+  const shops = located ? nearby : featuredStandIn ? featuredShops : serverShops
 
   // D13/D14: a kitchen with no banner shows a credited example photo of its
   // cuisine. Assigned over every shop this row has seen, in slug order, so the
@@ -219,7 +248,9 @@ export function NearYouRow({
   const heading = located
     ? "Kitchens near you"
     : phase === "empty"
-      ? `No kitchens within ${NEAR_YOU_RADIUS_TEXT} — here is everything on J'Toye`
+      ? featuredStandIn
+        ? `No kitchens within ${NEAR_YOU_RADIUS_TEXT} — featured on J'Toye`
+        : `No kitchens within ${NEAR_YOU_RADIUS_TEXT} — here is everything on J'Toye`
       : "Kitchens on J'Toye"
 
   const unranked = located ? withoutCoordinates(serverShops) : []
@@ -409,7 +440,12 @@ export function NearYouRow({
         <div aria-busy={phase === "locating"}>
           <DishScroller label="Dishes cooking near you">
             {shops.map((shop) => (
-              <ShopCard key={shop.slug} shop={shop} examplePhoto={examples.get(shop.slug) ?? null} />
+              <ShopCard
+                key={shop.slug}
+                shop={shop}
+                featured={featuredSet.has(shop.slug)}
+                examplePhoto={examples.get(shop.slug) ?? null}
+              />
             ))}
           </DishScroller>
         </div>
