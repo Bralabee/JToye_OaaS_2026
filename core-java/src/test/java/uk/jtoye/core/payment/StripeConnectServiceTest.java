@@ -245,8 +245,43 @@ class StripeConnectServiceTest {
         assertEquals(tenantId.toString(), metadata.get("tenant_id"));
         assertEquals("staging", metadata.get("environment"));
         assertNotNull(options.get(), "Account.create must carry RequestOptions (an idempotency key)");
-        assertEquals("connect-account-create-" + tenantId, options.get().getIdempotencyKey());
-        assertEquals(StripeConnectService.accountCreateIdempotencyKey(tenantId), options.get().getIdempotencyKey());
+        String key = options.get().getIdempotencyKey();
+        assertEquals(StripeConnectService.accountCreateIdempotencyKey(tenantId, params), key);
+        assertTrue(key.matches("connect-account-create-" + tenantId + "-[0-9a-f]{16}"), key);
+        assertTrue(key.length() <= 255, key);
+    }
+
+    @Test
+    @DisplayName("#1090: the idempotency key follows the create body, so a refusal Stripe saved under the legacy body never blocks the Managed Risk body, and the same body replays under the same key")
+    void accountCreateIdempotencyKey_followsTheBody() {
+        AccountCreateParams legacy = AccountCreateParams.builder()
+                .setType(AccountCreateParams.Type.EXPRESS)
+                .setCountry("GB")
+                .putMetadata("tenant_id", tenantId.toString())
+                .build();
+        java.util.function.Supplier<AccountCreateParams> managedRisk = () -> AccountCreateParams.builder()
+                .setController(AccountCreateParams.Controller.builder()
+                        .setLosses(AccountCreateParams.Controller.Losses.builder()
+                                .setPayments(AccountCreateParams.Controller.Losses.Payments.STRIPE).build())
+                        .setFees(AccountCreateParams.Controller.Fees.builder()
+                                .setPayer(AccountCreateParams.Controller.Fees.Payer.ACCOUNT).build())
+                        .build())
+                .setCountry("GB")
+                .putMetadata("tenant_id", tenantId.toString())
+                .build();
+
+        String legacyKey = StripeConnectService.accountCreateIdempotencyKey(tenantId, legacy);
+        String newKey = StripeConnectService.accountCreateIdempotencyKey(tenantId, managedRisk.get());
+
+        assertNotEquals(legacyKey, newKey, "a different body must not reuse the key Stripe saved the refusal under");
+        assertNotEquals("connect-account-create-" + tenantId, newKey,
+                "the pre-#1090 tenant-only key, which staging holds a saved refusal under");
+        assertEquals(newKey, StripeConnectService.accountCreateIdempotencyKey(tenantId, managedRisk.get()),
+                "the same body must replay under the same key");
+        assertNotEquals(newKey, StripeConnectService.accountCreateIdempotencyKey(UUID.randomUUID(), managedRisk.get()),
+                "the key stays tenant-specific");
+        assertTrue(newKey.matches("connect-account-create-" + tenantId + "-[0-9a-f]{16}"), newKey);
+        assertTrue(newKey.length() <= 255, newKey);
     }
 
     @Test

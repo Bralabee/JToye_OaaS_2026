@@ -7,6 +7,7 @@ import com.stripe.model.Event;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.AccountUpdateParams;
+import com.stripe.net.FormEncoder;
 import com.stripe.net.RequestOptions;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
@@ -26,9 +27,14 @@ import uk.jtoye.core.tenant.Tenant;
 import uk.jtoye.core.tenant.TenantRepository;
 import uk.jtoye.core.tenant.TenantStatus;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Stripe Connect integration (issue #102 [P2-11] AC2, ADR-0001 Decision 2,
@@ -111,7 +117,7 @@ public class StripeConnectService {
      * {@code transfers} capabilities explicitly rather than relying on the platform's Connect
      * defaults (research assumption A3), so a vendor who completes the hosted onboarding ends
      * with an account that can take direct charges and receive destination transfers. The create
-     * call rides the Stripe idempotency key {@link #accountCreateIdempotencyKey(UUID)}, so an SDK
+     * call rides the Stripe idempotency key {@link #accountCreateIdempotencyKey(UUID, AccountCreateParams)}, so an SDK
      * network retry cannot leave a second connected account. A reused account missing either
      * capability has both requested before the link is minted. The account is tagged with
      * metadata {@code environment}, like every other Stripe object this app creates.
@@ -156,8 +162,9 @@ public class StripeConnectService {
             if (tenant.getContactEmail() != null && !tenant.getContactEmail().isBlank()) {
                 params.setEmail(tenant.getContactEmail());
             }
-            Account account = Account.create(params.build(), RequestOptions.builder()
-                    .setIdempotencyKey(accountCreateIdempotencyKey(tenantId))
+            AccountCreateParams createParams = params.build();
+            Account account = Account.create(createParams, RequestOptions.builder()
+                    .setIdempotencyKey(accountCreateIdempotencyKey(tenantId, createParams))
                     .build());
             accountId = account.getId();
             tenant.setStripeAccountId(accountId);
@@ -181,11 +188,38 @@ public class StripeConnectService {
     }
 
     /**
-     * Stripe idempotency key for a tenant's connected-account creation (PAY-03, plan 30-12).
-     * Package-private so the test asserts the production expression, not a copy of it.
+     * Stripe idempotency key for a tenant's connected-account creation (PAY-03, plan 30-12;
+     * issue #1090). The key names the tenant AND a fingerprint of the create body. Stripe saves
+     * the first response under a key once the endpoint starts executing and then rejects a
+     * different body under the same key for 24 h: the staging tenant's refused
+     * {@code type=express} create was saved under the tenant-only key, and the Managed Risk body
+     * sent under that key after #1091 came back {@code idempotency_error} (observed 2026-11-02
+     * 09:21Z). With the body in the key, an identical SDK retry still replays (same body, same
+     * key) and a changed body gets its own key by construction, so no release has to remember
+     * to bump a version. Package-private so the test asserts the production expression, not a
+     * copy of it.
      */
-    static String accountCreateIdempotencyKey(UUID tenantId) {
-        return "connect-account-create-" + tenantId;
+    static String accountCreateIdempotencyKey(UUID tenantId, AccountCreateParams params) {
+        return "connect-account-create-" + tenantId + "-" + bodyFingerprint(params);
+    }
+
+    /**
+     * 16 hex characters of SHA-256 over the form-encoded create parameters, flattened the way the
+     * SDK sends them ({@code capabilities[card_payments][requested]=true}) and sorted by key, so
+     * the fingerprint depends on what is sent and not on map iteration order.
+     */
+    static String bodyFingerprint(AccountCreateParams params) {
+        String canonical = FormEncoder.flattenParams(params.toMap()).stream()
+                .map(kv -> kv.getKey() + "=" + kv.getValue())
+                .sorted()
+                .collect(Collectors.joining("&"));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest, 0, 8);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     /**

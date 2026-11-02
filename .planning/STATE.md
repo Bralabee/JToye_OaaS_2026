@@ -6,10 +6,10 @@ current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
 stopped_at: "Phase 30 executing at 29/32 (30-01..30-29). 30-29 COMPLETE 2026-11-02 on feat/30-pay03-staging-loop (not pushed; no upstream): scripts/staging-seed.sh --stage money-loop --mode direct (every Stripe call with Stripe-Account; REFUSED [mode-mismatch] unless the shop is DIRECT_CHARGE_VENDOR_MOR and the 201 names the tenant's account; intent + charge read on the account; partial refund read on the account, local row = Stripe's), --stage payout (tenant's own ENABLED account only [other-account]; manual schedule platform-level; available GBP balance [no-available-balance]; payout min(N, available) with <run id>-payout-<acct>; Stripe's status verbatim, payout-read hint when not paid), --stage payout-read, --run-id replay (no second order, refund or payout). Selftest 88/0; eight break arms red on target; gitleaks range rc 0, control rc 1 (30-29-SUMMARY.md). Stub-tested only: the live loops are 30-30..30-32. Next: 30-30 — RED refusal on today's staging, merge, onboarding link for the owner."
-last_updated: "2026-11-02T08:01:55.632Z"
+last_updated: "2026-11-02T09:25:40.668Z"
 last_activity: 2026-11-02
 last_activity_desc: "30-29 complete: the direct-charge money loop on the connected account, --stage payout / payout-read and --run-id replay in staging-seed.sh; selftest 88/0, stub-tested"
-state_head: 49e652dd4fae55046817d929a048b141bd9f3e52
+state_head: da30359dd013e5e687fb9be90a8e7ba2c448d3dd
 progress:
   total_phases: 20
   completed_phases: 18
@@ -1551,6 +1551,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 261025-8p7 | fix(cleanup): issue #1038, a stale card DRAFT's PaymentIntent is cancelled before its order is deleted | 2026-10-25 | 55071c62 | [261025-8p7-fix-issue-1038-stale-draft-cleanup-orpha](./quick/261025-8p7-fix-issue-1038-stale-draft-cleanup-orpha/) |
 | 261026-9qm | fix: three scheduled-CI reds on main: core-java curl/libcurl CVE-2026-92392 (named apk upgrade, GHA layer cache kept 8.22.0), the order page keeps an open Void dialog through an SSE refresh (E2E G-37-6 item 4), and the kitchen lapse spec waits out the 2 s session burst cache (#1045) | 2026-10-26 | 7c8d443e | [261026-9qm-fix-three-scheduled-ci-reds-core-java-cu](./quick/261026-9qm-fix-three-scheduled-ci-reds-core-java-cu/) |
 | 261102-apf | Fix #1090: Stripe refuses connected-account creation with legacy type=express; owner ruled Managed Risk - controller properties (losses=stripe, fees.payer=account, requirement_collection=stripe, dashboard=full), test, docs | 2026-11-02 | 49e652dd | [261102-apf-fix-1090-stripe-refuses-connected-accoun](./quick/261102-apf-fix-1090-stripe-refuses-connected-accoun/) |
+| 55 | Fix #1090 second observation: Stripe idempotency key for the connected-account create names the body (16-hex SHA-256 of the sorted form params); PR #1092 | 2026-11-02 | da30359d | — |
 
 ## Session Continuity
 
