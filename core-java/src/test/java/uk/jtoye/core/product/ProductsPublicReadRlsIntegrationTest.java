@@ -37,8 +37,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Allowed: exactly the rows {@code GET /shops/{slug}/products} already serves (an available product
  * of a published shop). Not allowed: an unavailable product, any product of an unpublished shop, any
- * write, and (the {@code current_tenant_id() IS NULL} guard) any foreign product for a caller that
- * DOES carry a tenant.
+ * write, any foreign product for a caller that DOES carry a tenant, and any product at all under a
+ * MALFORMED tenant setting (the branch admits only an empty / {@code 'default'} / unset raw setting,
+ * not {@code current_tenant_id() IS NULL}, which V51 also returns for a non-UUID value).
  *
  * <p>The last group pins the audit finding that came with the policy: {@link ProductService}'s
  * GROUP_ADMIN list and search branches ran an UNPREDICATED read and relied on RLS alone, so a realm
@@ -160,7 +161,7 @@ class ProductsPublicReadRlsIntegrationTest {
     }
 
     @Test
-    @DisplayName("a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard)")
+    @DisplayName("a caller pinned to ANOTHER tenant does not see tenant A's published products (raw-setting guard)")
     void tenantPinnedCallerDoesNotSeeForeignPublishedProducts() {
         TenantContext.set(tenantB);
         jdbc.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);

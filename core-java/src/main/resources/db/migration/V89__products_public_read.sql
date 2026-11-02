@@ -54,13 +54,30 @@
 --   * any WRITE: the policy is FOR SELECT only, so INSERT is refused (42501,
 --     new row violates row-level security policy) and UPDATE/DELETE match zero
 --     rows; products_rls_policy stays the only write path;
---   * anything at all once a tenant IS pinned: the branch is guarded by
---     current_tenant_id() IS NULL (the V87 shop_fulfilment_slots_public_read
---     shape), so an authenticated tenant's unpredicated SELECT never starts
---     seeing another tenant's published products.
+--   * anything at all once a tenant IS pinned, and anything at all under a
+--     MALFORMED setting: see "WHAT ANONYMOUS MEANS" below.
 --
--- The helper is the safe current_tenant_id() (V39/V51: a malformed GUC filters,
--- it never raises 22P02) and never the raw ::uuid cast.
+-- WHAT ANONYMOUS MEANS
+-- --------------------
+-- The branch admits a caller only when the RAW setting is empty, 'default' or
+-- unset: COALESCE(current_setting('app.current_tenant_id', true), '') IN
+-- ('', 'default'). Those are exactly the values TenantSetLocalAspect and the
+-- anonymous storefront paths leave behind (SET LOCAL ... TO DEFAULT, or
+-- set_config(..., '', true)).
+--
+-- It deliberately does NOT key on current_tenant_id() IS NULL. V51 hardened
+-- that helper to return NULL for a NON-UUID setting, so that a malformed value
+-- fails FILTERED instead of raising 22P02. A public-read branch keyed on the
+-- helper being NULL would read that same malformed value as "anonymous" and
+-- open every published menu to it: the opposite of what V51 promised.
+-- Measured (PR #1099 review round 2, and ProductsPublicReadRlsIntegrationTest
+-- malformedTenantSettingFailsFiltered): under NOSUPERUSER NOBYPASSRLS with
+-- 'not-a-uuid' the helper-keyed policy returned the published rows, and this
+-- one returns none. A valid UUID of any tenant also fails the check, so an
+-- authenticated tenant's unpredicated SELECT never starts seeing another
+-- tenant's published products. The setting is compared as TEXT and never
+-- cast, so nothing here can raise 22P02 either (and RlsContractTest's raw
+-- ::uuid sweep has nothing to find).
 --
 -- THE AUDIT THAT CAME WITH IT
 -- ---------------------------
@@ -84,7 +101,7 @@ DROP POLICY IF EXISTS products_public_read ON products;
 CREATE POLICY products_public_read ON products
     FOR SELECT
     USING (
-        current_tenant_id() IS NULL
+        COALESCE(current_setting('app.current_tenant_id', true), '') IN ('', 'default')
         AND available = true
         AND EXISTS (
             SELECT 1 FROM shops s

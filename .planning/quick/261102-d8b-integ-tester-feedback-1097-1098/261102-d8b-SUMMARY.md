@@ -83,3 +83,18 @@ repeated here.
 
 The full `:core-java:test` and `:core-java:integrationTest`, the full Jest suite and Playwright: CI
 runs them on the PR. No `docker compose` command was run; the local Compose stack is stale against main.
+
+## Review round 2 fix (V89 malformed-setting fail-open)
+
+Round 2 on #1099 admitted one finding: V89 used `current_tenant_id() IS NULL` as "anonymous", and
+V51's helper also returns NULL for a non-UUID setting, so a malformed `app.current_tenant_id` saw every
+published menu. V89 (unmerged) was edited in place: the guard is now
+`COALESCE(current_setting('app.current_tenant_id', true), '') IN ('', 'default')`, and its header says
+why. The comment in `PublicStorefrontService.searchPublishedShops` now says that only a tenant-bearing
+caller's DISH matches are restricted to its tenant, while the shop name/vector arms still follow
+`shops_public_read`. The sentences in CLAUDE.md, AGENTS.md and the #1098 CHANGELOG entry that quoted
+the old guard were corrected to match.
+
+The new arm `malformedTenantSettingFailsFiltered` was RED on the old V89 (expected 0, was 1) and is GREEN
+after the fix, with the four suites at 44/44. Metrics were regenerated: Java 3184, total 7027. Details
+are in `evidence/review-r2/README.md`.

@@ -633,9 +633,11 @@ public class PublicStorefrontService {
             Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
             // Dish matches (V89) follow the caller's tenant like every other read: an anonymous
             // caller sees every published kitchen's available dishes; a caller carrying a tenant
-            // sees dish matches from its own tenant only, the same restriction
-            // resolvePublicShopForSlug enforces (ruling 2026-11-02, review of #1098), so the
-            // search never offers a kitchen the caller could not then open.
+            // has its DISH matches restricted to its own tenant, the same restriction
+            // resolvePublicShopForSlug enforces (ruling 2026-11-02, review of #1098). The
+            // pre-existing arms that match a shop by its own name / search_vector are unchanged
+            // and still follow shops_public_read, so a tenant-bearing caller can still be offered
+            // another tenant's published kitchen through those arms.
             Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
