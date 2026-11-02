@@ -28,9 +28,45 @@ Found while reproducing, recorded and not fixed here: the hidden strip is not fr
 `sizes` gives `lg` a 1px slot, but next/image drops every srcset candidate below the smallest vw share
 (45vw x 640 = 288 -> 384w is the smallest kept), so a 1366 desktop still selects the 384w strip
 (`currentSrc` in `lcp-prod-branch-994b9e08.json`, heroImages). The page.tsx comment that says the
-browser takes "the smallest candidate" is therefore wrong. A candidate fix that gives the lg
-breakpoint a 1x1 data-URI `<source>` in a `<picture>` is kept as `candidate-fix-page.tsx.txt` with its
-measurements; it was not applied because the instruction for this item is "no change".
+browser takes "the smallest candidate" is therefore wrong. A candidate fix was measured
+(`lcp-*-candidate-fix-not-applied.json`) and, on the coordinator's follow-up, applied: section 4.
+
+## 4. Follow-up: the strip is no longer requested on a desktop (applied)
+
+`frontend/app/page.tsx`:
+- The strip's `<Image>` sits in a `<picture>` whose `(min-width: 1024px)` `<source>` is a 1x1 data URI
+  (CSP `img-src` allows `data:`). The img's own attributes are unchanged.
+- The first collage tile is `loading="eager"` + `fetchPriority="high"`. It also sits in a `<picture>`
+  (`display: contents`), whose `(max-width: 1023px)` source is the same data URI. Without that, the
+  first variant measured an extra 32w High request for the hidden tile on a 390 phone.
+- The comment now says what the browser does.
+
+Network capture (`../scripts/netprobe.cjs`, CDP `Network.requestWillBeSent` `initialPriority`, cache
+disabled, production build on :3437, `../scripts/prodnet.sh`):
+
+| Viewport | Before (994b9e08) | After |
+|---|---|---|
+| 1366x768 strip `jollof-rice-and-dodo` 384w | requested, **High** | **not requested** (`currentSrc` is the data URI) |
+| 1366x768 egusi tile 384w | requested, Low (lazy) | requested, **High** (eager) |
+| 1366x768 all `/_next/image` requests | 14 | 13 |
+| 390x844 strip 384w | requested, High | requested, High |
+| 390x844 all `/_next/image` requests | 10 | 10, the identical set (URL, width, priority) |
+| 390x844 strip img attributes (`srcset`, `sizes`, `loading`, `fetchpriority`, `currentSrc`) | — | identical to before |
+
+At 1366 Chrome also gave the kitchen card's 640w example photo High instead of Low after the change
+(its own heuristic for early large images; no attribute on it changed).
+
+LCP (production, 5 loads x 2 desktop viewports, `lcp-prod-before-994b9e08-run2.json`, `lcp-prod-after.json`):
+- before: h1 8, lazy tile 2 (228, 268 ms)
+- after: h1 7, eager tile 3 (220, 284, 368 ms)
+
+Together with the earlier runs (tile 216-260 ms before; 184-224 ms for the first fix variant), the
+desktop LCP is neutral within run-to-run noise on this shared machine. The change is justified by
+the request it removes, not by an LCP gain.
+
+`landing-webperf.spec.ts` on the production build gave the same result before and after: 7 passed,
+2 failed. Both failures are the POST-GRANT case, refused by core's CORS for origin :3437
+(`../cors-control.txt`).
 
 ## 2. Attribution year no longer pinned in landing.test.tsx
 

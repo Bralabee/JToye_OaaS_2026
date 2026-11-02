@@ -83,6 +83,13 @@ const categories: Array<{ photo: LandingPhoto; label: string; q: string }> = [
   { photo: PHOTOS.puffPuff, label: "Desserts", q: "dessert" },
 ]
 
+// A transparent 1x1 GIF. A <picture> <source> pointing at it makes the browser
+// request NOTHING for an img at the widths where that img is hidden (CSP img-src
+// allows data:). D15 review: the door strip from lg, the first collage tile
+// below lg.
+const BLANK_PIXEL =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
 // The desktop collage (A): four dish photographs in place of the four gradient
 // emoji tiles (D9, D14). The small tilts are static, kept from the old tiles.
 const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
@@ -349,19 +356,34 @@ export default async function Home() {
                         D15 (2026-11-02): hidden from lg up, where the collage
                         already carries the food and the strip's 120px held
                         "Browse shops" below a 768px laptop fold. A hidden img
-                        still downloads, so from lg `sizes` asks for 1px and the
-                        browser takes the smallest candidate: the collage
-                        tiles' own trick, inverted. */}
-                    <Image
-                      src={PHOTOS.jollofDodo.src}
-                      width={PHOTOS.jollofDodo.width}
-                      height={PHOTOS.jollofDodo.height}
-                      sizes="(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
-                      alt={PHOTOS.jollofDodo.alt}
-                      loading="eager"
-                      fetchPriority="high"
-                      className="h-[120px] w-full object-cover lg:hidden"
-                    />
+                        still downloads, and a 1px `sizes` entry does not stop
+                        it: next/image drops every candidate under the smallest
+                        vw share (45vw of 640 = 288 -> 384w), measured as a
+                        384w high-priority fetch on a 1366 desktop. So the img
+                        sits in a <picture> whose lg source is a 1x1 data URI
+                        (CSP img-src allows data:): from lg it makes no request
+                        at all, and its high priority is spent only where the
+                        strip is seen. The first collage tile carries the
+                        desktop's high priority instead (below). The img's own
+                        attributes are left exactly as they were, so a phone's
+                        request is byte-identical; its `(min-width: 1024px) 1px`
+                        entry is inert there, the <source> wins from lg. */}
+                    <picture className="block lg:hidden">
+                      <source
+                        media="(min-width: 1024px)"
+                        srcSet={BLANK_PIXEL}
+                      />
+                      <Image
+                        src={PHOTOS.jollofDodo.src}
+                        width={PHOTOS.jollofDodo.width}
+                        height={PHOTOS.jollofDodo.height}
+                        sizes="(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
+                        alt={PHOTOS.jollofDodo.alt}
+                        loading="eager"
+                        fetchPriority="high"
+                        className="h-[120px] w-full object-cover lg:hidden"
+                      />
+                    </picture>
                     <span className="flex flex-1 flex-col px-6 pb-6 pt-5 lg:pb-5 lg:pt-4">
                       <UtensilsCrossed aria-hidden className="mb-3 h-7 w-7 lg:mb-2" />
                       <span className="text-xl font-bold leading-tight">Order food near you</span>
@@ -397,19 +419,44 @@ export default async function Home() {
 
               {/* Right column — dish photo collage (A), desktop only as before.
                   Decorative beside the doors, so the grid stays aria-hidden and
-                  the pictures carry empty alt text. */}
+                  the pictures carry empty alt text.
+
+                  D15 review (PR #1097): the FIRST tile is eager and high
+                  priority. On a desktop the LCP element is the h1 or this
+                  egusi tile (measured on production builds, before and after
+                  D15; the door strip never was), and with the strip no longer
+                  requested from lg this tile is the fold's first picture. Below
+                  lg the grid is display:none, and an eager img there would
+                  still be fetched (measured: a 32w High request on a 390
+                  phone), so the first tile mirrors the strip: a <picture>
+                  whose below-lg source is the same 1x1 data URI, so a phone
+                  requests nothing for it, exactly as before. `contents` keeps
+                  the img itself the grid item. The other three stay lazy, and
+                  a lazy img in a display:none grid is never fetched. */}
               <div aria-hidden className="hidden grid-cols-2 gap-4 lg:grid">
-                {heroTiles.map((t) => (
-                  <Image
-                    key={t.photo.src}
-                    src={t.photo.src}
-                    width={t.photo.width}
-                    height={t.photo.height}
-                    sizes="(min-width: 1024px) 300px, 1px"
-                    alt=""
-                    className={`h-[200px] w-full rounded-2xl object-cover ${t.extra}`}
-                  />
-                ))}
+                {heroTiles.map((t, i) => {
+                  const tile = (
+                    <Image
+                      key={t.photo.src}
+                      src={t.photo.src}
+                      width={t.photo.width}
+                      height={t.photo.height}
+                      sizes="(min-width: 1024px) 300px, 1px"
+                      alt=""
+                      loading={i === 0 ? "eager" : "lazy"}
+                      fetchPriority={i === 0 ? "high" : "auto"}
+                      className={`h-[200px] w-full rounded-2xl object-cover ${t.extra}`}
+                    />
+                  )
+                  return i === 0 ? (
+                    <picture key={t.photo.src} className="contents">
+                      <source media="(max-width: 1023px)" srcSet={BLANK_PIXEL} />
+                      {tile}
+                    </picture>
+                  ) : (
+                    tile
+                  )
+                })}
               </div>
             </div>
           </div>

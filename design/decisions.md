@@ -138,10 +138,10 @@ dev server against the Compose stack's API; the BEFORE figures equal the ones me
    the copy above it wraps to more lines. The door's 120px photo strip is hidden from `lg` up (the
    collage carries the food there; the strip stays on phones, where it is the first food picture),
    the doors sit one step closer (`mt-7` to `mt-6`), and at `lg` the door padding and the hero's top
-   padding are one step tighter. The hidden strip is NOT free on a desktop: its `sizes` gives `lg` a
-   1px slot, but next/image drops every srcset candidate under the smallest vw share (45vw of 640),
-   so a 1366 desktop still selects and fetches the 384w strip at high priority (measured in the PR
-   #1097 review; it is not the LCP element, see `evidence/review-r1/lcp-*.json`). The gold door is
+   padding are one step tighter. PR #1097 review: a 1px `sizes` slot did not stop a desktop fetching
+   the hidden 384w strip at high priority, so the strip sits in a `<picture>` whose `lg` source is a
+   1x1 data URI (no request from 1366, phone request unchanged) and the first collage tile is eager
+   and high priority (`evidence/review-r1/network-prod-*.json`, `lcp-*.json`). The gold door is
    217px, not the 195px its own content needs: the doors share a row and the operator door's longer
    copy sets it.
    **The recorded fallback (h1 56px to 48px at `lg`) was NOT used:** measured, 48px sets the
