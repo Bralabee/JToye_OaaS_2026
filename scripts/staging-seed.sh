@@ -2056,14 +2056,14 @@ STUB
   cat > "$ast/stub/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STUB_LOG_DIR/curl.log"
-out=""; wfmt=""; hdr=""; method=""; url=""; data=0
+out=""; wfmt=""; hdr=""; method=""; url=""; data=0; bodyfile=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
     -w) wfmt="$2"; shift 2 ;;
     -D) hdr="$2"; shift 2 ;;
     -X) method="$2"; shift 2 ;;
-    --data-binary) data=1; case "$2" in @*) jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
+    --data-binary) data=1; case "$2" in @*) bodyfile="${2#@}"; jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
     --data-urlencode|-d) data=1; shift 2 ;;
     -K) command grep -ho 'Stripe-Account: [^"]*' "$2" >> "$STUB_LOG_DIR/stripe-account.log" 2>/dev/null || true; shift 2 ;;
     -H) shift 2 ;;
@@ -2074,7 +2074,7 @@ done
 [ -n "$method" ] || { if [ "$data" -eq 1 ]; then method=POST; else method=GET; fi; }
 rest="${url#*://}"; path="/${rest#*/}"; base="${path%%\?*}"; query=""
 case "$path" in *\?*) query="${path#*\?}" ;; esac
-key=""; code=404; location=""
+key=""; code=404; location=""; respfile=""
 case "$method $base" in
   "GET /health/ready") key=empty; code=200 ;;
   "POST /realms/master/protocol/openid-connect/token") key=admin-token; code=200 ;;
@@ -2094,7 +2094,11 @@ case "$method $base" in
   "GET /api/v1/products") key=products; code=200 ;;
   "GET /api/v1/products/culinary-packs") key=packs; code=200 ;;
   "POST /api/v1/products/culinary-packs/seed") key=seed; code=200 ;;
-  "GET /api/v1/shops/"*) key=shop; code=200 ;;
+  # A PUT of the shop is echoed back by the next GET (plan 30-28's read-back), unless
+  # STUB_SHOP_PUT_IGNORED says the server dropped it.
+  "GET /api/v1/shops/"*)
+    key=shop; code=200
+    if [ -z "${STUB_SHOP_PUT_IGNORED:-}" ] && [ -f "$STUB_LOG_DIR/shop-put-body.json" ]; then respfile="$STUB_LOG_DIR/shop-put-body.json"; fi ;;
   "GET /api/v1/trader-identity") key=identity; code=200 ;;
   "GET /api/v1/onboarding/me") key=onboarding; code=200 ;;
   # The order stage (plan 29-18): the anonymous storefront, then Stripe TEST.
@@ -2141,15 +2145,26 @@ case "$method $base" in
   "POST /api/v1/shops") key=shop-create-out; code=201; : > "$STUB_LOG_DIR/shop-created" ;;
   "DELETE /api/v1/shops/"*) key=empty; code=204; : > "$STUB_LOG_DIR/shop-deleted" ;;
   "GET /v1/invoices/"*) key="inv-${base#/v1/invoices/}"; code=200 ;;
+  # PAY-03 (plan 30-28): Connect onboarding, the shop's settlement mode, and the
+  # destination-charge loop's charge and transfer, each read by id.
+  "POST /api/v1/admin/tenants/"*"/stripe/connect") key=connect-out; code=200 ;;
+  "PUT /api/v1/shops/"*)
+    key=empty; code=200
+    if [ -n "$bodyfile" ]; then cp "$bodyfile" "$STUB_LOG_DIR/shop-put-body.json"; respfile="$STUB_LOG_DIR/shop-put-body.json"; fi ;;
+  "GET /v1/charges/"*) key="ch-${base#/v1/charges/}"; code=200 ;;
+  "GET /v1/transfers/"*)
+    trid="${base#/v1/transfers/}"; key="tr-$trid"
+    if [ -f "$STUB_LOG_DIR/refunded" ] && [ -f "$STUB_RESP_DIR/tr-$trid-after.json" ]; then key="tr-$trid-after"; fi; code=200 ;;
   # stripe-get: any other Stripe read answers the one generic fixture.
   "GET /v1/"*) key=stripe-get; code=200 ;;
 esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then
-  key=problem; code=500; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
+  key=problem; code=500; respfile=""; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
 fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
 if [ -n "$out" ]; then
-  if [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$key.json" ]; then cat "$STUB_RESP_DIR/$key.json" > "$out"; else printf '{}' > "$out"; fi
+  if [ -n "$respfile" ] && [ -f "$respfile" ]; then cat "$respfile" > "$out"
+  elif [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$key.json" ]; then cat "$STUB_RESP_DIR/$key.json" > "$out"; else printf '{}' > "$out"; fi
 fi
 if [ -n "$hdr" ]; then
   { printf 'HTTP/1.1 %s\r\n' "$code"; [ -z "$location" ] || printf 'Location: %s\r\n' "$location"; printf '\r\n'; } > "$hdr"
@@ -2221,7 +2236,7 @@ IDF
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
     rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
-    rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted"
+    rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted" "$ast/logs/shop-put-body.json" "$ast/logs/refunded"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -3337,15 +3352,302 @@ IDF
   rm -f "$ast/resp/sub-sub_bl1-added.json"
   cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
 
+  # ===== PAY-03 (plan 30-28): Connect onboarding, the shop's settlement mode, and the
+  # destination-charge money loop, every Stripe object read by id. The onboarding URL
+  # (STUBOBlp1), the client secret (STUBCSlp1) and the customer fields (piizq7) carry
+  # markers, so a print of any of them is detectable. The URL and the client secret
+  # are composed at run time (the 29-18 rule): no key-shaped literal sits here.
+  local lp_acct="acct_loop1" lp_oid="eeeeeeee-1111-4111-8111-000000000001" lp_cs lp_url lp_f
+  local lp_leak_re='STUBOBlp1|STUBCSlp1|piizq7|PIIZQ7|connect\.stripe\.com'
+  local ob_dir="$ast/onboard-out" ob_args=("${tool_args[@]}" --stage connect-onboard)
+  local sm_args=("${tool_args[@]}" --stage settlement-mode) ml_args=("${tool_args[@]}" --stage money-loop --mode destination)
+  local lp_env=(STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5)
+  lp_cs="pi_loop1"; lp_cs="${lp_cs}_secret_STUBCSlp1"
+  lp_url="https://connect.stripe.com/setup/e/${lp_acct}/STUBOBlp1"
+  mkdir -p "$ob_dir"
+  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition; do
+    rm -f "$ast/resp/$lp_f.pre-loop"; [ ! -f "$ast/resp/$lp_f.json" ] || cp "$ast/resp/$lp_f.json" "$ast/resp/$lp_f.pre-loop"
+  done
+  # _st_loop_pi STATUS KIND LIVEMODE — the order's intent; KIND dest (a destination
+  # charge), plain (no transfer_data, no fee, no settlement_mode: Pitfall 6), wrongdest,
+  # nofee or wrongmeta (one destination field wrong each).
+  _st_loop_pi() {
+    jq -n --arg st "$1" --arg k "$2" --argjson lm "$3" --arg t "$tid" '{id: "pi_loop1", object: "payment_intent", status: $st,
+        livemode: $lm, amount: 950, currency: "gbp", latest_charge: (if $st == "succeeded" then "ch_loop1" else null end),
+        application_fee_amount: (if $k == "plain" then null elif $k == "nofee" then 0 else 48 end),
+        transfer_data: (if $k == "plain" then null elif $k == "wrongdest" then {destination: "acct_other9"} else {destination: "acct_loop1"} end),
+        metadata: ({order_number: "ORD-STUB-L001", tenant_id: $t}
+          + (if $k == "plain" then {} elif $k == "wrongmeta" then {settlement_mode: "SPLIT_DEPOSIT_VENDOR_MOR"}
+             else {settlement_mode: "DESTINATION_CHARGE_PLATFORM_MOR"} end)),
+        receipt_email: "piizq7@example.invalid"}'
+  }
+  # _st_loop_fx CONNECT_STATUS SHOP_MODE(or null) KIND LIVE(none|pi|charge|transfer)
+  _st_loop_fx() {
+    local lm_pi=false lm_ch=false lm_tr=false
+    case "$4" in pi) lm_pi=true ;; charge) lm_ch=true ;; transfer) lm_tr=true ;; esac
+    jq -n --arg t "$tid" --arg n "$TENANT_NAME" --arg c "$1" --arg a "$lp_acct" '[{id: $t, name: $n, status: "ACTIVE",
+        contactEmail: "piizq7@example.invalid", stripeConnectStatus: $c, stripeAccountId: (if $c == "NONE" then null else $a end)}]' \
+      > "$ast/resp/tenants.json"
+    jq -n --arg s "$sid" --arg t "$tid" --arg slug "$SHOP_SLUG" --arg m "$2" '{id: $s, tenantId: $t, name: "Staging Test Kitchen",
+        slug: $slug, email: "piizq7@example.invalid", published: true, offersDelivery: true, offersCollection: true,
+        deliveryFeePennies: 250, freeDeliveryThresholdPennies: null, fulfilmentTimingMode: "IMMEDIATE_ON_DEMAND", depositBps: 10000,
+        settlementPolicyMode: (if $m == "null" then null else $m end), openingSchedule: {mon: [{open: "00:00", close: "23:59"}]}}' \
+      > "$ast/resp/shop.json"
+    jq -n --arg a "$lp_acct" --arg u "$lp_url" '{stripeAccountId: $a, connectStatus: "PENDING", onboardingUrl: $u}' > "$ast/resp/connect-out.json"
+    jq -n --arg slug "$SHOP_SLUG" '{slug: $slug, offersCollection: true, offersDelivery: true, deliveryFeePennies: 250, openNow: true}' \
+      > "$ast/resp/pub-shop.json"
+    jq -n --arg b "$p1" '{Mains: [{id: "aaaaaaaa-0000-4000-8000-000000000000", title: "Sold Out Stew", pricePennies: 700, inStock: false, allergenMask: 4},
+        {id: $b, title: "Pelau", pricePennies: 950, inStock: true, allergenMask: 9}]}' > "$ast/resp/pub-products.json"
+    jq -n --arg cs "$lp_cs" '{orderNumber: "ORD-STUB-L001", status: "PENDING", totalAmountPennies: 950, clientSecret: $cs,
+        stripeAccountId: null}' > "$ast/resp/guest-order.json"
+    jq -n '{orderNumber: "ORD-STUB-L001", status: "PENDING", paymentStatus: "CAPTURED"}' > "$ast/resp/tracking.json"
+    _st_loop_pi requires_payment_method "$3" "$lm_pi" > "$ast/resp/pi-before.json"
+    _st_loop_pi succeeded "$3" "$lm_pi" > "$ast/resp/pi-after.json"
+    cp "$ast/resp/pi-after.json" "$ast/resp/pi-confirm.json"
+    jq -n --argjson lm "$lm_ch" --arg k "$3" '{id: "ch_loop1", object: "charge", livemode: $lm, captured: true, paid: true,
+        status: "succeeded", amount: 950, amount_captured: 950, amount_refunded: 0, payment_intent: "pi_loop1",
+        transfer: (if $k == "plain" then null else "tr_loop1" end),
+        transfer_data: (if $k == "plain" then null else {destination: "acct_loop1"} end),
+        billing_details: {email: "piizq7@example.invalid", name: "Pii PIIZQ7"}, receipt_email: "piizq7@example.invalid"}' \
+      > "$ast/resp/ch-ch_loop1.json"
+    jq -n --argjson lm "$lm_tr" '{id: "tr_loop1", object: "transfer", livemode: $lm, amount: 902, currency: "gbp",
+        destination: "acct_loop1", source_transaction: "ch_loop1", amount_reversed: 0, reversed: false,
+        reversals: {object: "list", data: [], has_more: false}}' > "$ast/resp/tr-tr_loop1.json"
+    jq -n --arg o "$lp_oid" --arg s "$sid" '{content: [{id: $o, shopId: $s, orderNumber: "ORD-STUB-L001", status: "PENDING",
+        paymentStatus: "CAPTURED", paymentReference: "pi_loop1", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid"}],
+        totalElements: 1, totalPages: 1, number: 0, last: true}' > "$ast/resp/orders-status-PENDING.json"
+    jq -n --arg o "$lp_oid" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED", paymentStatus: "CAPTURED"}' > "$ast/resp/transition.json"
+  }
+  _st_lp_leaks() { command grep -cE "$lp_leak_re" <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
+  _st_order_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders '; }
+  _st_refund_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/[^ ]+/refund '; }
+  _st_accept_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/[^ ]+/confirm '; }
+  _st_stripe_writes() { _st_flow '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/'; }
+  local re_opdel='^DELETE http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users/op-0001 -> 204$'
+  local re_loop_any='^LOOP-(ORDER|CAPTURE|TRANSFER|REFUND) '
+
+  # --- onboard-new: no account yet -> POST connect; the URL reaches only the mode-600 file
+  _st_loop_fx NONE DESTINATION_CHARGE_PLATFORM_MOR dest none
+  rm -f "$ob_dir/new.url"
+  _st_run "${lp_env[@]}" -- "${ob_args[@]}" --link-out "$ob_dir/new.url"
+  why=""
+  local ob_post ob_del ob_mode
+  ob_post=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants/$tid/stripe/connect -> 200$")
+  ob_del=$(_st_line "$re_opdel")
+  ob_mode=$(stat -c %a "$ob_dir/new.url" 2>/dev/null || echo none)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CONNECT-ONBOARD tenant=$tid account=$lp_acct status=PENDING" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '/stripe/connect -> ')" -ne 1 ] || [ -z "$ob_post" ]; then why="the connect POST was not made exactly once to this tenant: $(command grep -F '/stripe/connect' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ -z "$ob_del" ] || [ "$ob_del" -le "$ob_post" ]; then why="the operator was not deleted after the connect POST (post=$ob_post delete=$ob_del)"
+  elif ! command grep -qF 'OPERATOR-DELETED: seed-operator-' <<<"$ST_OUT"; then why="the operator deletion was not printed"
+  elif [ "$ob_mode" != 600 ]; then why="the --link-out file is mode $ob_mode (want 600)"
+  elif [ "$(cat "$ob_dir/new.url")" != "$lp_url" ]; then why="the --link-out file does not hold exactly the onboarding URL"
+  elif [ "$(_st_lp_leaks)" -ne 0 ]; then why="the onboarding URL or a customer field was printed or put in argv ($(_st_lp_leaks) hit(s))"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS onboard-new rc=0 connect_posts=1 operator_deleted_after=1 file_mode=600 printed_url=0"
+  else _st_result "FAIL onboard-new $why"; fails=$((fails + 1)); fi
+
+  # --- onboard-enabled: the account is ENABLED -> no POST, no link, status printed ---
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  rm -f "$ob_dir/enabled.url"
+  _st_run "${lp_env[@]}" -- "${ob_args[@]}" --link-out "$ob_dir/enabled.url"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CONNECT-ONBOARD tenant=$tid account=$lp_acct status=ENABLED" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 200$')" -ne 1 ]; then why="the status was not read from the admin tenant list (non-vacuity)"
+  elif [ "$(_st_flow '/stripe/connect -> ')" -ne 0 ]; then why="a connect POST was made for an ENABLED account"
+  elif [ -e "$ob_dir/enabled.url" ]; then why="the --link-out file was created"
+  elif [ "$(_st_flow "$re_opdel")" -ne 1 ]; then why="the operator was not deleted exactly once"
+  elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="a marker was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS onboard-enabled rc=0 connect_posts=0 link_file=absent status=ENABLED"
+  else _st_result "FAIL onboard-enabled $why"; fails=$((fails + 1)); fi
+
+  # --- onboard-no-out: no --link-out -> usage error before any guard or call ------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ob_args[@]}"
+  if why=$(_st_refusal 2 "USAGE ERROR: --stage connect-onboard needs --link-out" 0 0); then _st_result "PASS onboard-no-out rc=2 az_calls=0 curl_calls=0"
+  else _st_result "FAIL onboard-no-out $why"; fails=$((fails + 1)); fi
+
+  # --- mode-read: no --set -> one shop read, nothing written, the mode printed ------
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${sm_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "SETTLEMENT-MODE shop=staging-test-kitchen mode=DESTINATION_CHARGE_PLATFORM_MOR" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")" -ne 1 ]; then why="the shop was not read exactly once by id"
+  elif [ "$(_st_non_get)" -ne 0 ]; then why="a write was made: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  else
+    _st_loop_fx ENABLED null dest none
+    _st_run "${lp_env[@]}" -- "${sm_args[@]}"
+    if [ "$ST_RC" -ne 0 ]; then why="null mode: rc=$ST_RC (want 0)"
+    elif [ "$(tail -n 1 <<<"$ST_OUT")" != "SETTLEMENT-MODE shop=staging-test-kitchen mode=null" ]; then why="null mode: the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+    elif [ "$(_st_non_get)" -ne 0 ]; then why="null mode: a write was made"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS mode-read rc=0 shop_gets=1 writes=0 modes=DESTINATION,null"
+  else _st_result "FAIL mode-read $why"; fails=$((fails + 1)); fi
+
+  # --- mode-set: GET the shop, PUT the same body with ONLY settlementPolicyMode changed,
+  #     read it back; a server that drops the change is a failure, not a pass
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${sm_args[@]}" --set DIRECT_CHARGE_VENDOR_MOR
+  why=""
+  local sm_put sm_g1 sm_p sm_g2
+  sm_put=$(command grep -F '"settlementPolicyMode"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  sm_g1=$(_st_line "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")
+  sm_p=$(_st_line "^PUT https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")
+  sm_g2=$(command grep -nE "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$" "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "SETTLEMENT-MODE shop=staging-test-kitchen mode=DIRECT_CHARGE_VENDOR_MOR previous=DESTINATION_CHARGE_PLATFORM_MOR" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '^PUT ')" -ne 1 ] || [ "$(_st_non_get)" -ne 1 ]; then why="want exactly one write, the shop PUT: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ -z "$sm_g1" ] || [ -z "$sm_p" ] || ! { [ "$sm_g1" -lt "$sm_p" ] && [ "$sm_p" -lt "$sm_g2" ]; }; then why="call order is not GET<PUT<GET (read-back): $sm_g1 $sm_p $sm_g2"
+  elif [ "$(jq -r '.settlementPolicyMode' <<<"${sm_put:-null}" 2>/dev/null)" != DIRECT_CHARGE_VENDOR_MOR ]; then why="the PUT does not set DIRECT_CHARGE_VENDOR_MOR: ${sm_put:-<none>}"
+  elif [ "$(jq -cS 'del(.settlementPolicyMode)' <<<"$sm_put")" != "$(jq -cS 'del(.settlementPolicyMode)' "$ast/resp/shop.json")" ]; then why="the PUT body is not the GET body with one field changed"
+  else
+    _st_run "${lp_env[@]}" STUB_SHOP_PUT_IGNORED=1 -- "${sm_args[@]}" --set DIRECT_CHARGE_VENDOR_MOR
+    if [ "$ST_RC" -ne 1 ]; then why="dropped PUT: rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'read back' <<<"$ST_ERR"; then why="dropped PUT: the failure does not name the read-back: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif command grep -q '^SETTLEMENT-MODE ' <<<"$ST_OUT"; then why="dropped PUT: a SETTLEMENT-MODE line was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS mode-set rc=0 order=GET<PUT<GET put_body=get_body+mode dropped_put=rc1"
+  else _st_result "FAIL mode-set $why"; fails=$((fails + 1)); fi
+
+  # --- mode-set-invalid: a third mode, or --set on another stage -> usage error ------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sm_args[@]}" --set SPLIT_DEPOSIT_VENDOR_MOR
+  if why=$(_st_refusal 2 "USAGE ERROR: --set must be DESTINATION_CHARGE_PLATFORM_MOR or DIRECT_CHARGE_VENDOR_MOR" 0 0); then
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ml_args[@]}" --set DIRECT_CHARGE_VENDOR_MOR
+    why=$(_st_refusal 2 "USAGE ERROR: --set is taken by --stage settlement-mode only" 0 0) || true
+  fi
+  if [ -z "$why" ]; then _st_result "PASS mode-set-invalid rc=2 split_deposit=refused set_elsewhere=refused curl_calls=0"
+  else _st_result "FAIL mode-set-invalid $why"; fails=$((fails + 1)); fi
+
+  # --- loop-not-enabled: the tenant's account is PENDING -> refused before any write ---
+  _st_loop_fx PENDING DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [connect-status]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [connect-status]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 200$')" -ne 1 ]; then why="the refusal was not reached through the admin tenant read"
+  elif [ "$(_st_order_posts)" -ne 0 ]; then why="an order was placed: $(_st_order_posts)"
+  elif [ "$(_st_stripe_writes)" -ne 0 ]; then why="a Stripe write was made"
+  elif [ "$(_st_flow "$re_opdel")" -ne 1 ]; then why="the operator was not deleted exactly once"
+  elif command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="a LOOP verdict was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-not-enabled rc=1 tag=connect-status order_posts=0 stripe_writes=0"
+  else _st_result "FAIL loop-not-enabled $why"; fails=$((fails + 1)); fi
+
+  # --- loop-mode-mismatch: the shop is DIRECT, the loop asked for destination -> refused
+  _st_loop_fx ENABLED DIRECT_CHARGE_VENDOR_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [mode-mismatch]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [mode-mismatch]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")" -lt 1 ]; then why="the refusal was not reached through the shop read"
+  elif [ "$(_st_order_posts)" -ne 0 ]; then why="an order was placed"
+  elif [ "$(_st_stripe_writes)" -ne 0 ]; then why="a Stripe write was made"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-mode-mismatch rc=1 tag=mode-mismatch order_posts=0"
+  else _st_result "FAIL loop-mode-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- loop-plain-charge: the intent has no transfer_data -> refused, nothing accepted
+  #     or refunded, no verdict claims a destination charge (Pitfall 6)
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR plain none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [plain-charge]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [plain-charge]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_order_posts)" -ne 1 ]; then why="order posts=$(_st_order_posts) (want 1: the refusal must come from the paid intent)"
+  elif [ "$(_st_refund_posts)" -ne 0 ] || [ "$(_st_accept_posts)" -ne 0 ]; then why="the order was accepted or refunded after a plain charge"
+  elif command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="a LOOP verdict was printed: $(command grep -E "$re_loop_any" <<<"$ST_OUT" | head -n 1)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-plain-charge rc=1 tag=plain-charge refund_posts=0 verdicts=0"
+  else _st_result "FAIL loop-plain-charge $why"; fails=$((fails + 1)); fi
+
+  # --- loop-intent-fields: a wrong destination, no fee, the wrong settlement_mode ------
+  why=""
+  local lk lk_want
+  for lk in wrongdest nofee wrongmeta; do
+    case "$lk" in wrongdest) lk_want='transfer_data.destination' ;; nofee) lk_want='application_fee_amount' ;; wrongmeta) lk_want='metadata.settlement_mode' ;; esac
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR "$lk" none
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$lk: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF "$lk_want" <<<"$ST_ERR"; then why="$lk: the failure does not name $lk_want: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_refund_posts)" -ne 0 ] || command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="$lk: the loop went on"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS loop-intent-fields rc=1 named=transfer_data.destination,application_fee_amount,metadata.settlement_mode"
+  else _st_result "FAIL loop-intent-fields $why"; fails=$((fails + 1)); fi
+
+  # --- loop-live: the intent, the charge or the transfer reads livemode true -> refused
+  why=""
+  local lo
+  for lo in pi charge transfer; do
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest "$lo"
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$lo: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="$lo: stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_refund_posts)" -ne 0 ] || command grep -q '^LOOP-TRANSFER ' <<<"$ST_OUT"; then why="$lo: the loop went on past a live object"
+    elif [ "$lo" = pi ] && [ "$(_st_confirms)" -ne 0 ]; then why="pi: a live intent was confirmed"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS loop-live rc=1 tag=stripe-mode objects=intent,charge,transfer"
+  else _st_result "FAIL loop-live $why"; fails=$((fails + 1)); fi
+
+  # --- loop-destination-ok: preflight, order, bypassPending confirm, CAPTURED, then the
+  #     intent, its charge and its transfer read by id; every key from one run id
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+  why=""
+  local ml_body ml_keys ml_stamp l_opdel l_order l_conf l_pi l_ch l_tr
+  ml_body=$(command grep -F '"customerEmail"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  ml_keys=$(command grep -oE 'Idempotency-Key: loop-[0-9]{8}T[0-9]{6}Z-[a-z]+' "$ast/logs/curl.log" | LC_ALL=C sort -u || true)
+  ml_stamp=$(head -n 1 <<<"$ml_keys" | command sed -E 's/^Idempotency-Key: (loop-[0-9]{8}T[0-9]{6}Z)-.*/\1/')
+  l_opdel=$(_st_line "$re_opdel")
+  l_order=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders -> 201$')
+  l_conf=$(_st_line '^POST https://api\.stripe\.com/v1/payment_intents/pi_loop1/confirm -> 200$')
+  l_pi=$(command grep -nE '^GET https://api\.stripe\.com/v1/payment_intents/pi_loop1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_ch=$(_st_line '^GET https://api\.stripe\.com/v1/charges/ch_loop1 -> 200$')
+  l_tr=$(_st_line '^GET https://api\.stripe\.com/v1/transfers/tr_loop1 -> 200$')
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qxF 'LOOP-ORDER mode=destination order=ORD-STUB-L001 intent=pi_loop1 amount=950 application_fee=48' <<<"$ST_OUT"; then why="no LOOP-ORDER verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF 'LOOP-CAPTURE charge=ch_loop1 captured=true amount=950' <<<"$ST_OUT"; then why="no LOOP-CAPTURE verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF "LOOP-TRANSFER transfer=tr_loop1 destination=$lp_acct amount=902" <<<"$ST_OUT"; then why="no LOOP-TRANSFER verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif [ -z "$l_opdel" ] || [ -z "$l_order" ] || [ "$l_opdel" -ge "$l_order" ]; then why="the operator was not deleted before the order (delete=$l_opdel order=$l_order)"
+  elif [ -z "$l_conf" ] || [ -z "$l_pi" ] || [ -z "$l_ch" ] || [ -z "$l_tr" ] \
+       || ! { [ "$l_order" -lt "$l_conf" ] && [ "$l_conf" -lt "$l_pi" ] && [ "$l_pi" -lt "$l_ch" ] && [ "$l_ch" -lt "$l_tr" ]; }; then
+    why="call order is not order<confirm<intent<charge<transfer: $l_order $l_conf $l_pi $l_ch $l_tr"
+  elif [ "$(_st_confirms)" -ne 1 ] || ! command grep -qF 'payment_method=pm_card_bypassPending' "$ast/logs/curl.log" \
+       || ! command grep -qF 'return_url=https://app-staging.olajay.co.uk/order-complete' "$ast/logs/curl.log"; then
+    why="the confirm is not one call with payment_method=pm_card_bypassPending and the return_url"
+  elif [ "$(_st_stripe_writes)" -ne 1 ]; then why="Stripe writes=$(_st_stripe_writes) (want 1, the confirm)"
+  elif [ "$(command grep -cxE "Idempotency-Key: ${ml_stamp:-none}-(order|confirm)" <<<"$ml_keys" || true)" -ne 2 ]; then why="the order and the confirm do not carry <run id>-order and <run id>-confirm of one run id: $(tr '\n' '|' <<<"$ml_keys")"
+  elif [ "$(jq -c '{f: .fulfilmentType, i: .items, a: .acknowledgedAllergenMask, t: .expectedTotalPennies}' <<<"${ml_body:-null}" 2>/dev/null)" \
+       != "$(jq -cn --arg p "$p1" '{f: "COLLECTION", i: [{productId: $p, quantity: 1, expectedUnitPricePennies: 950}], a: 9, t: 950}')" ]; then
+    why="the order body is not the first available dish at its shown price: ${ml_body:-<none>}"
+  elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="the client secret, a key or a customer field was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-destination-ok rc=0 order=preflight<order<confirm<intent<charge<transfer run_id=one"
+  else _st_result "FAIL loop-destination-ok $why"; fails=$((fails + 1)); fi
+
+  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition; do
+    if [ -f "$ast/resp/$lp_f.pre-loop" ]; then mv "$ast/resp/$lp_f.pre-loop" "$ast/resp/$lp_f.json"; else rm -f "$ast/resp/$lp_f.json"; fi
+  done
+
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
-  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing billing-sync-check; do
+  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing billing-sync-check connect-onboard settlement-mode money-loop; do
     case "$sub" in
       order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
       cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
       cancel-orphan-intents) set -- --intents pi_orphana,pi_orphanb ;;
       stripe-get)       set -- --path /v1/balance ;;
       pay-link)         set -- --link-out "$ast/link-out/dry.url" ;;
+      connect-onboard)  set -- --link-out "$ast/link-out/dry-onboard.url" ;;
+      money-loop)       set -- --mode destination ;;
       *)                set -- ;;
     esac
     _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage "$sub" "$@" --dry-run
@@ -3357,7 +3659,7 @@ IDF
     [ -z "$why" ] || break
   done
   set --
-  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=10 az_calls=0 curl_calls=0"
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=13 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
