@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
 [![Tests](https://img.shields.io/badge/tests-6996%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-proprietary-red.svg)](LICENSE)
 
 ---
 
@@ -372,11 +372,12 @@ EXPECT_SWAGGER=true EXPECT_PUBLIC_ACTUATOR=true ./scripts/smoke-test.sh
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Contributions are by J'Toye Digital Ltd and people working under a written agreement with it.
+
+1. Create a feature branch from `main` (`git checkout -b feature/amazing-feature origin/main`)
+2. Commit your changes (`git commit -m 'Add amazing feature'`)
+3. Push to the branch (`git push origin feature/amazing-feature`)
+4. Open a Pull Request
 
 **Development Guidelines:**
 - Follow existing code style
@@ -388,7 +389,7 @@ EXPECT_SWAGGER=true EXPECT_PUBLIC_ACTUATOR=true ./scripts/smoke-test.sh
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2025-2026 J'Toye Digital Ltd. All rights reserved. This is proprietary software: no licence is granted to copy, modify, distribute or use it except under a written agreement with J'Toye Digital Ltd. See [LICENSE](LICENSE).
 
 ---
 

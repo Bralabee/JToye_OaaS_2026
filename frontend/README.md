@@ -172,4 +172,4 @@ depend on the v5 `auth()` export shape.
 
 ## 📝 License
 
-Part of the J'Toye OaaS project - Enterprise-grade order management platform.
+Proprietary. Part of the J'Toye OaaS project; the terms are in the repository root [`LICENSE`](../LICENSE) (copyright J'Toye Digital Ltd, no licence granted except under a written agreement). `package.json` declares `"license": "UNLICENSED"`.
