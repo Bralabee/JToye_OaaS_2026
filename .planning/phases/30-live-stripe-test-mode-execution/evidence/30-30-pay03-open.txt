@@ -1,0 +1,175 @@
+Phase 30 plan 30-30 — PAY-03, PR 8 part 3 of 5: the loop's refusal on today's staging, and PR 8 opened
+Task 1 recorded from: 2026-11-02T04:22:47Z
+Branch: feat/30-pay03-staging-loop   Repo: Bralabee/JToye_OaaS_2026
+This file is deliberately UNTRACKED on this branch: nothing is pushed to PR 8 after its review starts.
+Task 3 commits it on docs/30-phase-close, cut from origin/main after the merge.
+
+== Base ==
+git fetch origin main (rc 0): origin/main = 2fe0837b (#1087); HEAD 5cb9a3ad is 15 ahead, 0 behind; no upstream set.
+
+== RED arm: the destination loop against today's staging (Stripe TEST mode) ==
+Command (the plan's <verify> 1, verbatim):
+  source ~/miniconda3/etc/profile.d/conda.sh && conda activate jtoye-ops && JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 \
+    bash scripts/staging-seed.sh --context jtoye-stg-aks --stage money-loop --mode destination
+Run: 2026-11-02T04:22:56Z .. 04:23:06Z
+Result: rc=1 refused=1 orders=0 -> <verify> 1 rc 0
+Full output (12 lines; no secret values: the vendor login is the shared staging vendor, "sk_test_" is the prefix word only):
+  | OK: context 'jtoye-stg-aks' passed staging_kube_guard
+  | OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+  | OK: money loop --mode destination, run id loop-20261102T042257Z (every Idempotency-Key derives from it); refund 100p
+  | OK: basket = 1 x "Pelau" (093dae8a-cff7-442f-a1c8-d8596879fbbf) at 950p, allergen mask 0, COLLECTION, expected total 950p
+  | OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
+  | OK: signed in as vendor.staging@olajay.co.uk
+  | OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
+  | OK: read 2 more Key Vault object(s) from jtoye-stg-kv (values not shown)
+  | OK: Keycloak ready through the port-forward (pid 4103951)
+  | OK: created the per-run operator seed-operator-20261102t042304z (4700a4d2-275b-49d3-93c6-8bed2b654d03) with realm role admin; it is deleted on exit
+  | OPERATOR-DELETED: seed-operator-20261102t042304z (4700a4d2-275b-49d3-93c6-8bed2b654d03) HTTP 204
+  | REFUSED [connect-status]: tenant 1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4's connected account is none with status NONE, not ENABLED: an order now would be a plain platform charge, never a settlement-mode proof (finish --stage connect-onboard first). Nothing was written
+Reading: the tenant 1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 has NO connected account (account none, status NONE).
+  So the staging estate does NOT already hold an ENABLED account; plan 30-31's premise (owner onboards from the
+  connect-onboard link) holds and needs no adaptation.
+What was written: no order, no Stripe object. Only the run's transient Keycloak operator, created and deleted
+  (OPERATOR-DELETED ... HTTP 204), which every operator stage does. The only order-path call before the refusal
+  is the public menu read (the basket line). No LOOP-ORDER, LOOP-WAIT, LOOP-CAPTURE line was printed.
+Fail direction of the <verify> 1 parser (same expression over planted outputs):
+  real output, rc 1                               -> rc=1 refused=1 orders=0 verdict 0 (pass)
+  arm A: a LOOP-ORDER line before the refusal     -> rc=1 refused=1 orders=1 verdict 1 (fail)
+  arm B: no refusal, rc 0 (an ENABLED account ran)-> rc=0 refused=0 orders=0 verdict 1 (fail)
+  arm C: a different refusal ([mode-mismatch])    -> rc=1 refused=0 orders=0 verdict 1 (fail)
+The guard itself was shown able to fail in 30-28 (break arm "skip the connect-status preflight" -> loop-not-enabled red 71/1).
+
+== Diff scope (proof the Java and Jest suites are unaffected) ==
+git diff --name-only origin/main..HEAD (rc 0): 25 files, +4013/-69
+  outside .planning/: HANDOFF.md, scripts/staging-seed.sh (docs/CHANGELOG.md joins after the PR number is known)
+paths under core-java/|frontend/|edge-go/|mcp-server/ : 0
+  control: the same grep over the list plus a planted core-java/src/X.java -> 1
+  control: the same grep over the real range origin/main~3..origin/main -> 6
+=> ./gradlew :core-java:test :core-java:integrationTest, full Jest and frontend lint: UNAFFECTED BY DIFF, not run locally;
+   CI runs them on the PR.
+
+== Per-PR suite at 5cb9a3ad (before the PR opened) ==
+bash scripts/staging-seed.sh --selftest        rc=0  (88 PASS / 0 FAIL)
+bash k8s/scripts/check-env-contract.sh         rc=0
+bash scripts/check-gate-enforcement.sh         rc=0
+bash scripts/docs-freshness.sh                 rc=0  (no drift, 6996 logical invocations; no --write needed)
+bash scripts/check-doc-metrics.sh              rc=0  (37/37 claims)
+bash scripts/check-branch-behind-base.sh       rc=0  (15 ahead, 0 behind 2fe0837b)
+
+== PR ==
+git push -u origin feat/30-pay03-staging-loop   rc=0 (new branch at 5cb9a3ad; upstream now set)
+Body: scratch file via quoted heredoc; pre-create scan attribution=0 closing=0, and no closing-keyword word anywhere;
+  controls on a scratch string "Co-Authored-By: x" + "Closes #957": attribution=1 closing=1
+gh pr create --draft                               rc=0
+PR=1089
+URL=https://github.com/Bralabee/JToye_OaaS_2026/pull/1089
+Title: feat(staging): the PAY-03 money loop on staging: connect onboarding, settlement-mode switch, destination and direct loops, payouts (Phase 30 30-28/30-29, PAY-03)
+
+== CHANGELOG + HANDOFF ==
+docs/CHANGELOG.md entry "### Staging Money Loop for PAY-03: ... (#1089) — 2026-11-02" newest under [Unreleased] (cites_1089=1)
+HANDOFF.md: title line updated; new RESUME HERE bullet; the 30-27 bullet marked superseded, text kept (+7 lines net)
+commit 889892b9 docs(30-30): CHANGELOG entry for PR 8 (#1089) and HANDOFF records it open for review
+  (attribution lines in message: 0; deletions: none)
+Gates (pre-commit run, then at 889892b9):
+bash scripts/check-handoff-contract.sh         rc=0  (39 state claims hold, 0 behind)
+  bracket at 889892b9: CLEAN-1 rc 0; arm "#724 is CLOSED" planted -> rc 1 "FAIL: H-2 HANDOFF.md claims #724 is CLOSED but the forge says open";
+  restored from scratch copy, git hash-object equals HEAD's blob; CLEAN-2 rc 0
+bash scripts/check-changelog-contract.sh       rc=0  (98 cited; reads merged history, so #1089 is checked after merge)
+bash scripts/docs-freshness.sh                 rc=0
+bash scripts/check-doc-metrics.sh              rc=0
+bash scripts/check-branch-behind-base.sh       rc=0  (16 ahead, 0 behind 2fe0837b)
+  fail direction: same script in a scratch worktree at origin/main~1 -> rc=1 "HEAD is 1 commit(s) behind origin/main"; worktree removed
+git push                                       rc=0  5cb9a3ad..889892b9; local == remote 889892b9
+gh pr ready 1089                               rc=0  (state OPEN, draft=false, base main, head 889892b9)
+
+== Body read back (the plan's <verify> 2, PR=1089) ==
+attribution=0 closing=0 -> rc 0
+stored body == scratch file byte for byte (diff rc 0; 170 backticks each, none executed); PAY-03 named 3 times;
+GitHub closingIssuesReferences = 0
+
+== CI at 2026-11-02T04:29:57Z ==
+gh pr checks 1089: 2 pass, 13 pending (rc 8 = pending). Commit status review-record = failure, as expected before the review series posts its record.
+
+Task 1 done at 2026-11-02T04:29:57Z. Task 2 (checkpoint:human-action): the owner runs the D3 review series on #1089 and squash-merges it.
+
+== Task 3 (continuation agent, 2026-11-02) ==
+Precondition: gh pr view 1089 --json state,mergeCommit (rc 0): MERGED 2026-11-02T04:41:22Z, mergeCommit 0ffad5752bf259585b2fdfa52cfbfecb2a8c399d.
+git fetch origin main (rc 0): origin/main = 0ffad575; merge-base --is-ancestor 0ffad575 origin/main rc 0.
+git switch -c docs/30-phase-close origin/main (rc 0); upstream unset (rc 0) so a bare push cannot target main.
+
+== Deploy watch and parity (run 41389859836, head 0ffad575) ==
+run conclusion=success, headSha 0ffad5752bf259585b2fdfa52cfbfecb2a8c399d; Deploy to Staging success (job 125109660755);
+Staging Edge Probe success (job 125111061659); Deploy to Production skipped. DEPLOY_TAG in the log = 0ffad5752bf2…
+The deploy log's "Digest parity" step (scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag "$DEPLOY_TAG") at 05:24:04Z:
+  core-java    sha256:72455181987366476dd3ff687047115689dac87e98a89d911c3c9480fa181988  MATCH
+  edge-go      sha256:5f33689083276fe513b64277c1244aecbdc4880d8758699beb2153efc40f7127  MATCH
+  frontend     sha256:0ffa17ed2f358b568cb902f5095646459fca50e8fd03fc4cef06269dc044d874  MATCH
+Re-read live from the operator host at 2026-11-02T05:28:45Z: the same three digests MATCH, PASS (set form), rc 0.
+Fail direction: the same script with --tag 2fe0837b0565edf97738184e0ede02f9ea513278 (origin/main~1) -> rc 1, all 3
+  "NOT IN THE EXPECTED SET". No rollback needed.
+
+== --stage connect-onboard (live, Stripe TEST mode) ==
+umask 077; mkdir -p $HOME/.local/state/jtoye (dir mode 700, empty before the run).
+Command: source ~/miniconda3/etc/profile.d/conda.sh && conda activate jtoye-ops && JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 \
+  bash scripts/staging-seed.sh --context jtoye-stg-aks --stage connect-onboard --link-out "$HOME/.local/state/jtoye/connect-onboard.url"
+Run: 2026-11-02T05:29:30Z .. 05:29:38Z   rc=1   (output captured to a scratch file first; its one URL is the problem-type URI on jtoye.uk, redacted below)
+  | OK: context 'jtoye-stg-aks' passed staging_kube_guard
+  | OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+  | OK: read 3 more Key Vault object(s) from jtoye-stg-kv (values not shown)
+  | OK: Keycloak ready through the port-forward (pid 364876)
+  | OK: created the per-run operator seed-operator-20261102t052935z (89418f62-adda-431a-9539-38847af03969) with realm role admin; it is deleted on exit
+  | OK: tenant "J'Toye Staging Test Kitchen" (1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4): connect status NONE, account none
+  | FAIL: POST /api/v1/admin/tenants/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/stripe/connect returned HTTP 502: <problem-type URI> | Payment Provider Error | Payment provider error: You tried to create an Accounts v1 connected account using the legacy `type` field with your platform as the losses collector. Use Accounts v2, remove `type`, and set `losses_collector` to `stripe`, then retr
+  | OPERATOR-DELETED: seed-operator-20261102t052935z (89418f62-adda-431a-9539-38847af03969) HTTP 204
+Reading: Stripe REFUSED to create the Express account. The creating call is
+  core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:121-122
+  (AccountCreateParams.builder().setType(AccountCreateParams.Type.EXPRESS)), the legacy v1 `type` field. The staging
+  sandbox platform takes loss liability, and Stripe now refuses `type` in that configuration.
+What was written: no Stripe account (Stripe refused the create), no link file ($HOME/.local/state/jtoye/ still empty),
+  and the tenant row is unchanged (still NONE). The transient operator was deleted (HTTP 204).
+  The 30-28 selftest arms stub curl, so they could not reach this refusal: it shows up only against live Stripe.
+No CONNECT-ONBOARD line. Task 3's <automated> verify would be VOID (link file missing). Not retried: a rerun hits the same refusal.
+STOPPED at a checkpoint:decision. The fix is a core-java change in a new PR (Accounts v2, or v1 with controller
+  properties instead of `type`), and it needs the owner's ruling on who collects losses.
+
+== Fix PR #1091 merged 40d91e0e (08:47:31Z); main run 41415635209 success (Deploy to Staging + Staging Edge Probe) 09:20:35Z ==
+Digest parity re-read live 2026-11-02T09:20:59Z: core-java, edge-go, frontend MATCH for 40d91e0e70a178672ce7255b8d1fa5816be87414, rc 0.
+Fail direction: --tag 0ffad5752bf259585b2fdfa52cfbfecb2a8c399d -> rc 1, 3 NOT IN THE EXPECTED SET.
+
+== --stage connect-onboard, second attempt (live, Stripe TEST mode) ==
+Run: 2026-11-02T09:21:13Z .. 09:21:21Z   rc=1   (URLs redacted)
+  | OK: context 'jtoye-stg-aks' passed staging_kube_guard
+  | OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+  | OK: read 3 more Key Vault object(s) from jtoye-stg-kv (values not shown)
+  | OK: Keycloak ready through the port-forward (pid 1953918)
+  | OK: created the per-run operator seed-operator-20261102t092118z (f231a209-d964-4c80-819f-4cbb949ad5fe) with realm role admin; it is deleted on exit
+  | OK: tenant "J'Toye Staging Test Kitchen" (1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4): connect status NONE, account none
+  | FAIL: POST /api/v1/admin/tenants/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/stripe/connect returned HTTP 502: <url> | Payment Provider Error | Payment provider error: Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than 'connect-account-create-1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4' if you meant to execu
+  | OPERATOR-DELETED: seed-operator-20261102t092118z (f231a209-d964-4c80-819f-4cbb949ad5fe) HTTP 204
+Reading: Stripe REFUSED again, this time with idempotency_error: the 05:29Z refusal WAS saved under
+  connect-account-create-1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 (the endpoint had begun executing), so the Managed Risk body under the
+  same key is rejected as 'different parameters'. This is #1091 round-1 finding 1, OBSERVED. Nothing written: no account, no link
+  file ($HOME/.local/state/jtoye still empty), tenant still NONE; the transient operator was deleted (204).
+Fix: version the idempotency key by the create body (fix PR from origin/main 40d91e0e), then re-run this stage.
+
+== Fix PR #1092 merged de5d86f4 (10:0xZ); main run 41425376834 success (Build and Push x4, Deploy to Staging, Staging Edge Probe) 10:40:22Z ==
+Digest parity re-read live 2026-11-02T10:40:42Z: core-java, edge-go, frontend MATCH for de5d86f428dfd9a607dd6304f58ad49b0bfe2c7b, rc 0.
+Fail direction: --tag 40d91e0e70a178672ce7255b8d1fa5816be87414 -> rc 1, 3 NOT IN THE EXPECTED SET.
+
+== --stage connect-onboard, third attempt (live, Stripe TEST mode) ==
+Command: source ~/miniconda3/etc/profile.d/conda.sh && conda activate jtoye-ops && JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 \
+  bash scripts/staging-seed.sh --context jtoye-stg-aks --stage connect-onboard --link-out "$HOME/.local/state/jtoye/connect-onboard.url"
+Run: 2026-11-02T10:40:56Z .. 10:41:08Z   rc=0   (URLs redacted; the link itself was never printed)
+  | OK: context 'jtoye-stg-aks' passed staging_kube_guard
+  | OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+  | OK: read 3 more Key Vault object(s) from jtoye-stg-kv (values not shown)
+  | OK: Keycloak ready through the port-forward (pid 2706121)
+  | OK: created the per-run operator seed-operator-20261102t104102z (3be2fa6a-9fd4-403b-9750-5d9022d7161f) with realm role admin; it is deleted on exit
+  | OK: tenant "J'Toye Staging Test Kitchen" (1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4): connect status NONE, account none
+  | OPERATOR-DELETED: seed-operator-20261102t104102z (3be2fa6a-9fd4-403b-9750-5d9022d7161f) HTTP 204
+  | OK: the single-use onboarding link is in /home/sanmi/.local/state/jtoye/connect-onboard.url (mode 600; not shown)
+  | CONNECT-ONBOARD tenant=1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 account=acct_1UXIfkDK5xypxMXe status=PENDING
+Reading: Stripe CREATED the connected account under the body-fingerprinted key: acct_1UXIfkDK5xypxMXe, tenant
+  1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4 now PENDING. The single-use onboarding link is in $HOME/.local/state/jtoye/connect-onboard.url
+  (mode 600, 70 bytes, one https://...stripe.com/ line; outside the repo; the owner is told the PATH, never the URL).
+  The transient operator was deleted (HTTP 204). Issue #1090 is closed by this run; 30-31 is the owner in Stripe's hosted flow.
