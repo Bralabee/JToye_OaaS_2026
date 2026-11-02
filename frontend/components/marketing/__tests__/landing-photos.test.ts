@@ -70,15 +70,28 @@ function shop(slug: string, tags: string | null, bannerUrl: string | null = null
 describe("landing photos — files, sizes and credits", () => {
   const photos = Object.values(PHOTOS)
 
-  it("has a credit record for every picture, and a picture for every credit record", () => {
-    expect(photos.length).toBe(9)
+  it("has a credit record for every picture, a picture for every credit record, and no file on disk outside both", () => {
+    expect(photos.length).toBe(11)
     expect(new Set(CREDITS.map((c) => c.src))).toEqual(new Set(photos.map((p) => p.src)))
+    // D16: a retired picture's file must leave with its record, so the files
+    // on disk are held to the same set (an orphan WebP fails here).
+    const onDisk = fs
+      .readdirSync(path.join(PUBLIC, "marketing/landing"))
+      .filter((f) => f.endsWith(".webp"))
+      .map((f) => `/marketing/landing/${f}`)
+    // Control: the directory read found the files.
+    expect(onDisk.length).toBeGreaterThan(0)
+    expect(new Set(onDisk)).toEqual(new Set(photos.map((p) => p.src)))
   })
 
   it("marks every credit record with its kind, own or open-collection (D16)", () => {
     for (const c of CREDITS) expect(`${c.src} ${c.kind}`).toMatch(/ (open-collection|own)$/)
     expect(OPEN.length + OWN.length).toBe(CREDITS.length)
-    expect(OWN.length).toBeGreaterThan(0)
+    // Open-collection pictures remain only where no own photograph exists yet.
+    expect(OPEN.map((c) => c.src).sort()).toEqual(
+      [PHOTOS.suya, PHOTOS.riceAndPeas, PHOTOS.biryani, PHOTOS.chana].map((p) => p.src).sort()
+    )
+    expect(OWN.length).toBe(7)
   })
 
   it("declares each picture at its real pixel size, read from the file", () => {
@@ -131,8 +144,8 @@ describe("landing photos — files, sizes and credits", () => {
 describe("assignExamplePhotos", () => {
   it("gives two kitchens of one cuisine two different dishes", () => {
     const m = assignExamplePhotos([shop("mama-ades-kitchen", "Nigerian, West African"), shop("peckham-jollof-co", "Nigerian, Grill")])
-    expect(m.get("mama-ades-kitchen")!.photo).toBe(PHOTOS.egusi)
-    expect(m.get("peckham-jollof-co")!.photo).toBe(PHOTOS.jollofDodo)
+    expect(m.get("mama-ades-kitchen")!.photo).toBe(PHOTOS.jollofBox)
+    expect(m.get("peckham-jollof-co")!.photo).toBe(PHOTOS.riceBeansStew)
     expect(m.get("peckham-jollof-co")!.cuisine).toBe("Nigerian")
   })
 
@@ -141,7 +154,17 @@ describe("assignExamplePhotos", () => {
     const forward = assignExamplePhotos(a)
     const reversed = assignExamplePhotos([...a].reverse())
     for (const s of a) expect(reversed.get(s.slug)).toEqual(forward.get(s.slug))
-    expect(forward.get("a-kitchen")!.photo).toBe(PHOTOS.egusi)
+    expect(forward.get("a-kitchen")!.photo).toBe(PHOTOS.jollofBox)
+  })
+
+  it("pictures catering and drinks kitchens with the owner's buffet and fruit punch photographs (D16)", () => {
+    const m = assignExamplePhotos([shop("k-cater", "Catering, Halal"), shop("k-juice", "Juice"), shop("k-drinks", "Halal, drinks")])
+    expect(m.get("k-cater")).toEqual({ cuisine: "Catering", photo: PHOTOS.cateringSoup })
+    expect(m.get("k-juice")).toEqual({ cuisine: "Juice", photo: PHOTOS.fruitPunch })
+    expect(m.get("k-drinks")).toEqual({ cuisine: "drinks", photo: PHOTOS.fruitPunch })
+    // Control: the photographs exist, so the equalities above are not undefined === undefined.
+    expect(PHOTOS.cateringSoup.src).toContain("beeslens-catering-soup-buffet")
+    expect(PHOTOS.fruitPunch.src).toContain("beeslens-fruit-punch-dispenser")
   })
 
   it("keeps the cuisine as the kitchen spelled it, from its first recognised tag", () => {

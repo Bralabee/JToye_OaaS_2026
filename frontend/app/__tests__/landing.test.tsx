@@ -422,10 +422,21 @@ describe("Landing elevate (D14)", () => {
 
   it("shows dish photographs: one per chip, the order door's strip, and the credit line", async () => {
     render(await Home())
+    // D16: Jollof and Desserts show the owner's photographs; the other four
+    // keep their open-collection pictures until an own photograph exists.
+    const chipPhoto: Record<string, string> = {
+      Grill: "suya-with-pepper-sauce",
+      Jollof: "beeslens-jollof-rice-meal-box",
+      Caribbean: "jamaican-rice-and-peas",
+      "South Asian": "mutton-biryani",
+      Vegan: "chana-masala",
+      Desserts: "beeslens-puff-puff",
+    }
     for (const label of ["Grill", "Jollof", "Caribbean", "South Asian", "Vegan", "Desserts"]) {
       const chip = screen.getByRole("link", { name: label })
       expect(chip.getAttribute("href")).toMatch(/^\/shop\?q=/)
       expect(chip.querySelector("img")?.getAttribute("src")).toMatch(/marketing%2Flanding|marketing\/landing/)
+      expect(`${label} ${chip.querySelector("img")?.getAttribute("src")}`).toContain(chipPhoto[label])
     }
     const door = screen.getByRole("link", { name: /Order food near you/ })
     const strip = door.querySelector("img")
@@ -447,8 +458,8 @@ describe("Landing elevate (D14)", () => {
     ) as Array<{ kind: string; title: string; creator: string; page: string; license: string; licenseUrl: string }>
     const open = credits.filter((c) => c.kind === "open-collection")
     const own = credits.filter((c) => c.kind === "own")
-    expect(open.length).toBe(8)
-    expect(own.length).toBe(1)
+    expect(open.length).toBe(4)
+    expect(own.length).toBe(7)
     const line = screen.getByText(/^Photographs/).closest("p")!
     expect(line.textContent).toMatch(/resized/i)
     for (const c of open) {
@@ -568,8 +579,17 @@ describe("Landing fold, order, footer and chips (D15)", () => {
       expect(item.classList.contains("contents")).toBe(false)
       if (item.tagName === "PICTURE") expect(item.classList.contains("block")).toBe(true)
     }
-    // ...and the egusi tile is still the first one, the fold's high-priority picture.
+    // ...and the jollof meal-box tile is the first one, the fold's high-priority picture.
     expect(items[0].querySelector("img") ?? items[0]).toHaveAttribute("fetchpriority", "high")
+    // D16: the owner's four photographs, in the approved order.
+    const srcs = Array.from(collage.querySelectorAll("img")).map((img) => img.getAttribute("src") ?? "")
+    const order = [
+      "beeslens-jollof-rice-meal-box",
+      "beeslens-rice-beans-plantain-stew",
+      "beeslens-plantain-yam-meal-prep",
+      "beeslens-puff-puff",
+    ]
+    order.forEach((name, i) => expect(`${i} ${srcs[i]}`).toContain(name))
   })
 
   it("folds the photo credits behind a native disclosure, attribution still in the DOM", async () => {
@@ -578,7 +598,14 @@ describe("Landing fold, order, footer and chips (D15)", () => {
     const details = line.closest("details")
     expect(details).not.toBeNull()
     expect(details?.querySelector("summary")?.textContent?.trim()).toBe("Photo credits")
-    expect(details?.querySelectorAll("a").length).toBeGreaterThanOrEqual(16)
+    // Two links (source page, licence) per open-collection picture, and none
+    // for the owner's own photographs (D16).
+    const credits = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../../public/marketing/landing/credits.json"), "utf8")
+    ) as Array<{ kind: string }>
+    const open = credits.filter((c) => c.kind === "open-collection").length
+    expect(open).toBe(4)
+    expect(details?.querySelectorAll("a").length).toBe(2 * open)
   })
 
   it("runs the three statutory attributions on as one paragraph, wording verbatim", async () => {
