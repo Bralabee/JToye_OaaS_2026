@@ -469,3 +469,83 @@ describe("Landing elevate (D14)", () => {
     expect(screen.getByText("Nigerian — example photo")).toBeTruthy()
   })
 })
+
+/**
+ * D15 (design/decisions.md, 2026-11-02): the tester's four points, as the owner
+ * approved them. Each assertion was run RED against origin/main's page (the
+ * evidence is in .planning/quick/261102-*-feat-landing-fold-order-footer-chips/
+ * evidence/) and GREEN on this one. The pixel facts (one chip row, the door
+ * above a 768px fold) are measured in a browser, not here; these pin the
+ * structure that produces them, so a revert of any one goes red.
+ */
+describe("Landing fold, order, footer and chips (D15)", () => {
+  const CUISINES = ["Grill", "Jollof", "Caribbean", "South Asian", "Vegan", "Desserts"]
+
+  it("puts How it works directly after the hero, ahead of the kitchen row", async () => {
+    render(await Home())
+    const main = screen.getByRole("main")
+    const h2s = Array.from(main.querySelectorAll("h2")).map((h) => h.textContent?.trim() ?? "")
+    const how = h2s.indexOf("How it works")
+    const kitchens = h2s.findIndex((t) => /kitchens/i.test(t))
+    // Control: both headings rendered (the kitchen row is conditional on shops).
+    expect(how).toBeGreaterThanOrEqual(0)
+    expect(kitchens).toBeGreaterThanOrEqual(0)
+    expect(how).toBeLessThan(kitchens)
+    // ...and it is the first section after the hero.
+    const sections = Array.from(main.querySelectorAll("section"))
+    expect(sections[0].hasAttribute("data-hero-section")).toBe(true)
+    expect(sections[1].querySelector("[data-hero-howtitle]")).not.toBeNull()
+  })
+
+  it("keeps all six cuisine chips in ONE non-wrapping rail", async () => {
+    render(await Home())
+    const chips = CUISINES.map((label) => screen.getByRole("link", { name: label }))
+    const rail = chips[0].parentElement as HTMLElement
+    for (const chip of chips) {
+      expect(chip.parentElement).toBe(rail)
+      expect(chip.getAttribute("href")).toMatch(/^\/shop\?q=/)
+      expect(chip.querySelector("img")?.getAttribute("alt")).toBe("")
+    }
+    expect(rail.querySelectorAll("a")).toHaveLength(6)
+    expect(rail.classList.contains("flex-nowrap")).toBe(true)
+    expect(rail.classList.contains("overflow-x-auto")).toBe(true)
+    expect(rail.classList.contains("flex-wrap")).toBe(false)
+    // The chips are the compact size the one-row fit was measured at.
+    expect(chips[0].querySelector("img")?.getAttribute("width")).toBe("24")
+  })
+
+  it("hides the order door's photo strip from lg up, and only there", async () => {
+    render(await Home())
+    const door = screen.getByRole("link", { name: /Order food near you/ })
+    const strip = door.querySelector("img")
+    // Control: the strip is still rendered (a phone's first food picture).
+    expect(strip).not.toBeNull()
+    expect(strip?.getAttribute("class")).toMatch(/(^|\s)lg:hidden(\s|$)/)
+    expect(strip?.getAttribute("class")).not.toMatch(/(^|\s)hidden(\s|$)/)
+  })
+
+  it("folds the photo credits behind a native disclosure, attribution still in the DOM", async () => {
+    render(await Home())
+    const line = screen.getByText(/^Photographs/)
+    const details = line.closest("details")
+    expect(details).not.toBeNull()
+    expect(details?.querySelector("summary")?.textContent?.trim()).toBe("Photo credits")
+    expect(details?.querySelectorAll("a").length).toBeGreaterThanOrEqual(16)
+  })
+
+  it("runs the three statutory attributions on as one paragraph, wording verbatim", async () => {
+    render(await Home())
+    const footer = screen.getByRole("contentinfo")
+    const os = within(footer).getByText(/Contains Ordnance Survey data/)
+    const para = os.closest("p") as HTMLElement
+    const text = (para.textContent ?? "").replace(/\s+/g, " ")
+    for (const statement of [
+      "Contains Ordnance Survey data © Crown copyright and database right 2026.",
+      "Contains Royal Mail data © Royal Mail copyright and database right 2026.",
+      "Contains National Statistics data © Crown copyright and database right 2026.",
+    ]) {
+      expect(text).toContain(statement)
+    }
+    expect(para.querySelectorAll("br")).toHaveLength(0)
+  })
+})
