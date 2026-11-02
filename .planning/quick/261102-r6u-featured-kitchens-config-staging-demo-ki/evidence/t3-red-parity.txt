@@ -1,0 +1,27 @@
+> Task :core-java:compileJava UP-TO-DATE
+> Task :core-java:processResources UP-TO-DATE
+> Task :core-java:classes UP-TO-DATE
+> Task :core-java:compileTestJava
+> Task :core-java:processTestResources UP-TO-DATE
+> Task :core-java:testClasses
+
+> Task :core-java:test FAILED
+
+DemoKitchensFixtureParityTest > initializationError FAILED
+    org.opentest4j.AssertionFailedError at DemoKitchensFixtureParityTest.java:34
+
+1 test completed, 1 failed
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':core-java:test'.
+> There were failing tests. See the report at: file:///home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/build-local/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 2s
+5 actionable tasks: 2 executed, 3 up-to-date
+RED (fixture absent) gradle rc=1
+uk.jtoye.core.dev.DemoKitchensFixtureParityTest tests=1 skipped=0 failures=1 errors=0
