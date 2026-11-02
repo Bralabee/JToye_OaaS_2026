@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Storefront: Server-Side Reads Carry the Visitor's Address to the Public Rate Limiter — 2026-11-02 (#PR-PENDING)
+### Storefront: Server-Side Reads Carry the Visitor's Address to the Public Rate Limiter — 2026-11-02 (#1106)
 
 Quick 261102-vwa. Raised by the #1104 and #1105 code reviews (round 1).
 
