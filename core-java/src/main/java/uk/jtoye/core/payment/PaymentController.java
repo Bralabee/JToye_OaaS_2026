@@ -55,7 +55,7 @@ public class PaymentController {
     /**
      * Stripe "Connected accounts" webhook endpoint (PAY-03, plan 30-12).
      *
-     * <p>Stripe sends Express {@code account.updated} and every direct-charge
+     * <p>Stripe sends connected-account {@code account.updated} and every direct-charge
      * {@code payment_intent.*} / {@code refund.*} event only to an endpoint registered for the
      * Connected-accounts scope, and signs it with that endpoint's own secret
      * ({@code stripe.connect-webhook-secret}). Register that endpoint at
@@ -64,7 +64,7 @@ public class PaymentController {
      */
     @PostMapping("/webhook/connect")
     @Operation(summary = "Stripe Connected-accounts webhook",
-            description = "Handles Stripe events from the Connected accounts scope (Express account.updated, "
+            description = "Handles Stripe events from the Connected accounts scope (account.updated, "
                     + "direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect "
                     + "endpoint's own secret and refuses an event without an account; refuses everything when "
                     + "that secret is not configured.")

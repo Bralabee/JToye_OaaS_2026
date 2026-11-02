@@ -19,7 +19,7 @@ public class StripeProperties {
 
     /**
      * Signing secret of the "Connected accounts" webhook endpoint (PAY-03, plan 30-12). Stripe
-     * delivers Express {@code account.updated} and every direct-charge {@code payment_intent.*} /
+     * delivers connected-account {@code account.updated} and every direct-charge {@code payment_intent.*} /
      * {@code refund.*} event only to an endpoint registered for that scope, and each endpoint has
      * its own secret, so it cannot be {@link #webhookSecret}. Blank (the default) means the Connect
      * route is not configured and refuses every request.
@@ -28,7 +28,7 @@ public class StripeProperties {
 
     /**
      * The runtime's environment name (e.g. {@code staging}), written as metadata
-     * {@code environment} on every PaymentIntent, Refund and Express Account this app creates, and
+     * {@code environment} on every PaymentIntent, Refund and connected Account this app creates, and
      * compared with the metadata of every verified webhook event (PAY-03, plan 30-12). Blank (the
      * default) means NOT DECLARED: objects are tagged {@link #UNSET_ENVIRONMENT}. Never default it
      * to a real environment name; each deployed runtime declares it (plan 30-13).
@@ -110,9 +110,9 @@ public class StripeProperties {
 
     /** Stripe Connect (connected-account) settings — issue #102, ADR-0001 Decision 2. */
     public static class Connect {
-        /** Country for new Express accounts (UK platform). */
+        /** Country for new connected accounts (UK platform). */
         private String country = "GB";
-        /** Where Stripe sends the vendor after completing Express onboarding. */
+        /** Where Stripe sends the vendor after completing Stripe-hosted onboarding. */
         private String returnUrl = "";
         /** Where Stripe sends the vendor when an onboarding link expires. */
         private String refreshUrl = "";

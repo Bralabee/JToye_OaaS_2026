@@ -6701,7 +6701,7 @@
     },
     "/api/v1/admin/tenants/{tenantId}/stripe/connect" : {
       "post" : {
-        "description" : "Creates an Express connected account for the tenant (idempotent: reuses an existing linked account) and returns a single-use Stripe-hosted onboarding link. Account capability state is then driven by the account.updated webhook.",
+        "description" : "Creates a Stripe connected account for the tenant under Managed Risk (Stripe collects losses and requirements; the vendor pays Stripe's processing fees and gets the full Stripe Dashboard) (idempotent: reuses an existing linked account) and returns a single-use Stripe-hosted onboarding link. Account capability state is then driven by the account.updated webhook.",
         "operationId" : "connectStripe",
         "parameters" : [
           {
@@ -13184,7 +13184,7 @@
     },
     "/api/v1/public/payments/webhook/connect" : {
       "post" : {
-        "description" : "Handles Stripe events from the Connected accounts scope (Express account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an account; refuses everything when that secret is not configured.",
+        "description" : "Handles Stripe events from the Connected accounts scope (account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an account; refuses everything when that secret is not configured.",
         "operationId" : "handleConnectWebhook_1",
         "parameters" : [
           {
@@ -16590,7 +16590,7 @@
     },
     "/public/payments/webhook/connect" : {
       "post" : {
-        "description" : "Handles Stripe events from the Connected accounts scope (Express account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an account; refuses everything when that secret is not configured.",
+        "description" : "Handles Stripe events from the Connected accounts scope (account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an account; refuses everything when that secret is not configured.",
         "operationId" : "handleConnectWebhook",
         "parameters" : [
           {

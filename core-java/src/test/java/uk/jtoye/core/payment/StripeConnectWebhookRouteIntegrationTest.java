@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * PAY-03 (plan 30-12): Stripe has exactly two event scopes, "Your account" and "Connected
  * accounts", and each endpoint registered for a scope has its own signing secret
- * (docs.stripe.com/connect/webhooks). Express {@code account.updated} and every direct-charge
+ * (docs.stripe.com/connect/webhooks). Connected-account {@code account.updated} and every direct-charge
  * {@code payment_intent.*} / {@code refund.*} event is delivered only to a Connected-accounts
  * endpoint, so the app needs a second route that verifies with that endpoint's secret.
  *

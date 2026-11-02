@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stripe Connect: Connected Accounts Created Under Managed Risk, Not the Legacy Express Type — 2026-11-02
+
+Issue #1090. Since 2026-11-02 05:29Z, staging answered `POST /api/v1/admin/tenants/{id}/stripe/connect` with 502. Stripe was refusing the legacy `type` field on the account create, because the platform was the losses collector. The owner ruled option A, Managed Risk, the same day. The account create in `StripeConnectService` changes; nothing else about onboarding, sync, routing or fees does.
+
+- **Controller properties, not a type:** a new connected account is created with `controller.losses.payments=stripe`, `controller.fees.payer=account`, `controller.requirement_collection=stripe` and `controller.stripe_dashboard.type=full`. No `type` is sent.
+- **Why the dashboard is `full`:** the Express Dashboard with Stripe as the losses collector exists only on the preview API version `2026-10-28.preview`, and stripe-java 34.0.0 pins the GA version.
+- **Fees:** with `fees.payer=account`, Stripe deducts its processing fee from the connected account on direct charges. The application fee therefore carries only the platform's share, which is the pass-through-fees model in `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`. Destination charges are billed to the platform regardless. No fee computation changed.
+- **Unchanged:** the `card_payments` + `transfers` capability request, the `tenant_id` and `environment` metadata, the idempotency key `connect-account-create-<tenantId>`, the AccountLink onboarding and the reuse path for an already-linked tenant.
+- **Contract:** the `@Operation` descriptions of the connect endpoint and the Connected-accounts webhook no longer call the account Express. `docs/api/openapi-snapshot.json` was regenerated, and 3 description lines changed. Comments and javadoc across the payment and tenant code now say "connected account". The V48 migration comment is untouched, to keep its Flyway checksum.
+- **Proof:** `StripeConnectServiceTest` asserts the absent type and all four properties in one `assertAll`, in both new-account tests. Against the pre-fix service it ran 22 tests with 2 failures, and each failure reported all five sub-assertions. Against the fix it ran 22 with 0 failures.
+- **Live proof pending:** plan 30-30 proves the create on staging. Issue #1090 stays open until then.
+
 ### Staging Money Loop for PAY-03: Connect Onboarding, Settlement-Mode Switch, Destination and Direct Loops, Payouts (Phase 30 30-28/30-29) (#1089) — 2026-11-02
 
 Tooling and evidence only. There is no product change: the diff touches 0 paths under `core-java/`, `frontend/`, `edge-go/` or `mcp-server/`. The branch also carries plan 30-27's PAY-02 staging evidence: the per-location subscription and invoice, read from Stripe by id.

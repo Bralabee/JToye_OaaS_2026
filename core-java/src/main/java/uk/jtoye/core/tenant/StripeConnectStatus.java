@@ -15,7 +15,7 @@ public enum StripeConnectStatus {
     /** No connected account linked. */
     NONE,
 
-    /** Account created; Express onboarding / KYC not complete yet. */
+    /** Account created; Stripe-hosted onboarding / KYC not complete yet. */
     PENDING,
 
     /** {@code charges_enabled=true} — destination charges may route here. */
