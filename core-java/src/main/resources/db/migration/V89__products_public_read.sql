@@ -28,7 +28,8 @@
 -- WHAT AN ANONYMOUS CALLER CAN NOW SEE
 -- ------------------------------------
 -- Exactly the rows GET /shops/{slug}/products already serves to anyone: a
--- product with available = true whose shop is published = true. Nothing more is
+-- product with available = true whose shop is published = true and belongs to
+-- the product's own tenant. Nothing more is
 -- disclosed than the public menu discloses, and the shop predicate is itself
 -- evaluated under the shops policies (shops_public_read admits published shops).
 --
@@ -37,6 +38,11 @@
 --   * a product of an UNPUBLISHED shop (the EXISTS requires published = true);
 --   * an UNAVAILABLE product (available = false), even on a published shop;
 --   * a product with no shop (shop_id IS NULL never satisfies the EXISTS);
+--   * a product whose shop_id names ANOTHER tenant's published shop:
+--     products.shop_id is a plain foreign key (V20), so nothing in the schema
+--     stops such a row (the FC-1 class, refused only by the application). The
+--     menu pins the shop's tenant and never shows it, so the EXISTS requires
+--     s.tenant_id = products.tenant_id, the predicate the search query uses;
 --   * any WRITE: the policy is FOR SELECT only, so INSERT is refused (42501,
 --     new row violates row-level security policy) and UPDATE/DELETE match zero
 --     rows; products_rls_policy stays the only write path;
@@ -75,6 +81,7 @@ CREATE POLICY products_public_read ON products
         AND EXISTS (
             SELECT 1 FROM shops s
             WHERE s.id = products.shop_id
+              AND s.tenant_id = products.tenant_id
               AND s.published = true
         )
     );

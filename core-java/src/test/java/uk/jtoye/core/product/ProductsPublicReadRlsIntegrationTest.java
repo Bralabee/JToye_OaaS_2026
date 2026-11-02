@@ -135,6 +135,18 @@ class ProductsPublicReadRlsIntegrationTest {
     }
 
     @Test
+    @DisplayName("anonymous does NOT see a tenant-B product pointed at tenant A's published shop (cross-tenant shop_id)")
+    void anonymousDoesNotSeeCrossTenantProductOnAPublishedShop() {
+        // products.shop_id is a plain foreign key (V20): nothing in the schema stops a tenant-B row
+        // naming tenant A's shop (the FC-1 class, refused only at the application layer). The menu
+        // endpoint pins A's tenant and never shows such a row, so the public policy must not either.
+        // Seeded as the superuser, because the application refuses to write it.
+        UUID foreign = seedProduct(tenantB, publishedShopA, "Foreign egusi", true);
+        dropToAnonymousRuntimeRole();
+        assertThat(visible(foreign)).isZero();
+    }
+
+    @Test
     @DisplayName("anonymous sees nothing beyond those rows: the whole visible table is the one product")
     void anonymousVisibleSetIsExactlyThePublicMenu() {
         dropToAnonymousRuntimeRole();

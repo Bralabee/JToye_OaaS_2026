@@ -643,6 +643,10 @@ public class PublicStorefrontService {
             try {
                 results = shopRepository.fullTextSearchPublished(query, unsorted);
             } finally {
+                // Restores the ThreadLocal ONLY. The transaction-local GUC app.current_tenant_id
+                // stays reset until TenantSetLocalAspect re-pins it on the NEXT repository or
+                // JdbcTemplate call, so no non-repository database read (EntityManager, native
+                // Session work) may be added after the search inside this method.
                 callerTenant.ifPresent(TenantContext::set);
             }
             if (results.hasContent()) {
