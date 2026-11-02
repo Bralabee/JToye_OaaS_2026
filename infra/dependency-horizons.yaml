@@ -167,6 +167,17 @@ dependencies:
     eol_source: vendor
     vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
+    exemption:
+      reason: >-
+        2026-11-02: rabbitmq/4.3 entered the 90-day window today (vendor community support ends
+        2027-01-31; the row's note above predicted this date). Upstream has published 4.4.0
+        (community support to 2027-07-31). Moving the broker is a runtime change across the
+        compose pin and the staging RabbitmqCluster CR (row rabbitmq-k8s) under
+        docs/runbooks/rabbitmq-broker-upgrade.md, so it is scheduled under #724 rather than done
+        as a gate hotfix the hour the window opened. Both rows move together; this exemption
+        expires before the vendor date so the deferral cannot outlive the horizon.
+      expires: "2026-12-31"
+      tracked_by: "#724"
     note: >-
       UPGRADED BY 27-02 (2026-07-29): 3.12.14 -> 4.3.4, by FRESH INSTALL. PATCHED BY 39-02
       (2026-10-16): 4.3.4 -> 4.3.6 (the newest upstream release in the 4.3 series; no 4.4 series
@@ -678,6 +689,17 @@ dependencies:
     eol_source: vendor
     vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
+    exemption:
+      reason: >-
+        2026-11-02: rabbitmq/4.3 entered the 90-day window today (vendor community support ends
+        2027-01-31; the row's note above predicted this date). Upstream has published 4.4.0
+        (community support to 2027-07-31). Moving the broker is a runtime change across the
+        compose pin and the staging RabbitmqCluster CR (row rabbitmq) under
+        docs/runbooks/rabbitmq-broker-upgrade.md, so it is scheduled under #724 rather than done
+        as a gate hotfix the hour the window opened. Both rows move together; this exemption
+        expires before the vendor date so the deferral cannot outlive the horizon.
+      expires: "2026-12-31"
+      tracked_by: "#724"
     note: >-
       2026-10-18 (plan 29-10; ADR-0002, D-09): the in-cluster staging broker, run by the RabbitMQ
       cluster operator v2.23.1 (row rabbitmq-cluster-operator) from the RabbitmqCluster `rabbitmq`
