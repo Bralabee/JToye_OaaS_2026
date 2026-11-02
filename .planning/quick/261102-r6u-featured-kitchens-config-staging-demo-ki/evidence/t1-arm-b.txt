@@ -1,0 +1,19 @@
+== ARM (b): re-ordering removed (repository order returned as-is) ==
+diff --git a/core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java b/core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java
+index 2f9598b8..5fa90c7f 100644
+--- a/core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java
++++ b/core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java
+@@ -418,6 +418,7 @@ public class PublicStorefrontService {
+         if (slugs == null || slugs.isEmpty()) {
+             return List.of();
+         }
++        if (true) return shopRepository.findByPublishedTrueAndSlugIn(slugs).stream().map(this::toPublicShopDto).toList(); // ARM (b)
+         Map<String, Shop> bySlug = shopRepository.findByPublishedTrueAndSlugIn(slugs).stream()
+                 .collect(Collectors.toMap(Shop::getSlug, shop -> shop, (first, second) -> first));
+         List<PublicShopDto> ordered = new ArrayList<>(bySlug.size());
+gradle rc=1
+uk.jtoye.core.storefront.FeaturedShopsIntegrationTest tests=1 skipped=0 failures=1 errors=0
+message="org.opentest4j.AssertionFailedError: [superuser read: the query itself excludes the unpublished shop] &#10;Expecting actual:&#10;  [&quot;feat-a-published&quot;, &quot;feat-b-published&quot;]&#10;to contain exactly (and in same order):&#10;  [&quot;feat-b-published&quot;, &quot;feat-a-published&quot
+== RESTORE ==
+git diff --exit-code rc=0
+ARM token count: 0

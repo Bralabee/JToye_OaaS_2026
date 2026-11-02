@@ -60,6 +60,9 @@ jest.mock("@/lib/storefront-server", () => ({
     state: "ok",
     data: { content: [FIXTURE_SHOP], totalElements: 1, totalPages: 1, number: 0, size: 8 },
   })),
+  // D-03 (quick 261102-r6u): the featured list is a second server-side read. Nothing is
+  // featured by default, so every test above renders exactly what it rendered before.
+  loadFeaturedShops: jest.fn(async () => []),
 }))
 
 /**
@@ -422,13 +425,32 @@ describe("Landing elevate (D14)", () => {
 
   it("shows dish photographs: one per chip, the order door's strip, and the credit line", async () => {
     render(await Home())
+    // D16: Jollof and Desserts show the owner's photographs; the other four
+    // keep their open-collection pictures until an own photograph exists.
+    const chipPhoto: Record<string, string> = {
+      Grill: "suya-with-pepper-sauce",
+      Jollof: "beeslens-jollof-rice-meal-box",
+      Caribbean: "jamaican-rice-and-peas",
+      "South Asian": "mutton-biryani",
+      Vegan: "chana-masala",
+      Desserts: "beeslens-puff-puff",
+    }
     for (const label of ["Grill", "Jollof", "Caribbean", "South Asian", "Vegan", "Desserts"]) {
       const chip = screen.getByRole("link", { name: label })
       expect(chip.getAttribute("href")).toMatch(/^\/shop\?q=/)
       expect(chip.querySelector("img")?.getAttribute("src")).toMatch(/marketing%2Flanding|marketing\/landing/)
+      expect(`${label} ${chip.querySelector("img")?.getAttribute("src")}`).toContain(chipPhoto[label])
     }
     const door = screen.getByRole("link", { name: /Order food near you/ })
-    expect(door.querySelector("img")?.getAttribute("alt")).toBe("A plate of jollof rice with fried plantain")
+    const strip = door.querySelector("img")
+    // D16: the owner's own spaghetti photograph, with D15's LCP wiring unchanged.
+    expect(strip?.getAttribute("alt")).toBe("Spaghetti with chicken and fried plantain on a tray")
+    expect(strip?.getAttribute("src")).toContain("beeslens-spaghetti-chicken-plantain")
+    expect(strip).toHaveAttribute("fetchpriority", "high")
+    expect(strip).toHaveAttribute("loading", "eager")
+    const picture = strip?.closest("picture")
+    expect(picture).not.toBeNull()
+    expect(picture?.querySelector("source")?.getAttribute("media")).toBe("(min-width: 1024px)")
     expect(screen.getByText(/^Photographs/)).toBeTruthy()
   })
 
@@ -436,11 +458,14 @@ describe("Landing elevate (D14)", () => {
     render(await Home())
     const credits = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, "../../public/marketing/landing/credits.json"), "utf8")
-    ) as Array<{ title: string; creator: string; page: string; license: string; licenseUrl: string }>
-    expect(credits.length).toBe(8)
+    ) as Array<{ kind: string; title: string; creator: string; page: string; license: string; licenseUrl: string }>
+    const open = credits.filter((c) => c.kind === "open-collection")
+    const own = credits.filter((c) => c.kind === "own")
+    expect(open.length).toBe(4)
+    expect(own.length).toBe(7)
     const line = screen.getByText(/^Photographs/).closest("p")!
     expect(line.textContent).toMatch(/resized/i)
-    for (const c of credits) {
+    for (const c of open) {
       const title = within(line).getByRole("link", { name: c.title })
       expect(title.getAttribute("href")).toBe(c.page)
       expect(line.textContent).toContain(c.creator)
@@ -449,6 +474,21 @@ describe("Landing elevate (D14)", () => {
     }
     // Control: a name that is not in the ledger is not on the page.
     expect(line.textContent).not.toContain("Nobody In Particular")
+    // The owner's own photographs are credited by name, never as a linked CC work.
+    const details = line.closest("details") as HTMLElement
+    for (const c of own) expect(within(details).queryByRole("link", { name: c.title })).toBeNull()
+  })
+
+  it("credits the owner's own photographs in one line, apart from the CC paragraph (D16)", async () => {
+    const { container } = render(await Home())
+    const details = container.querySelector("details[data-photo-credits]") as HTMLElement
+    expect(details).not.toBeNull()
+    const exact = Array.from(details.querySelectorAll("*")).filter(
+      (el) => (el.textContent ?? "").trim() === "Photography: BeesLens"
+    )
+    expect(exact.length).toBeGreaterThan(0)
+    const cc = within(details).getByText(/^Photographs/).closest("p")!
+    expect(cc.textContent).not.toContain("BeesLens")
   })
 
   it("the How-it-works step icon still answers the data-step-active toggle HeroScene scrubs (review 1085)", async () => {
@@ -542,8 +582,17 @@ describe("Landing fold, order, footer and chips (D15)", () => {
       expect(item.classList.contains("contents")).toBe(false)
       if (item.tagName === "PICTURE") expect(item.classList.contains("block")).toBe(true)
     }
-    // ...and the egusi tile is still the first one, the fold's high-priority picture.
+    // ...and the jollof meal-box tile is the first one, the fold's high-priority picture.
     expect(items[0].querySelector("img") ?? items[0]).toHaveAttribute("fetchpriority", "high")
+    // D16: the owner's four photographs, in the approved order.
+    const srcs = Array.from(collage.querySelectorAll("img")).map((img) => img.getAttribute("src") ?? "")
+    const order = [
+      "beeslens-jollof-rice-meal-box",
+      "beeslens-rice-beans-plantain-stew",
+      "beeslens-plantain-yam-meal-prep",
+      "beeslens-puff-puff",
+    ]
+    order.forEach((name, i) => expect(`${i} ${srcs[i]}`).toContain(name))
   })
 
   it("folds the photo credits behind a native disclosure, attribution still in the DOM", async () => {
@@ -552,7 +601,14 @@ describe("Landing fold, order, footer and chips (D15)", () => {
     const details = line.closest("details")
     expect(details).not.toBeNull()
     expect(details?.querySelector("summary")?.textContent?.trim()).toBe("Photo credits")
-    expect(details?.querySelectorAll("a").length).toBeGreaterThanOrEqual(16)
+    // Two links (source page, licence) per open-collection picture, and none
+    // for the owner's own photographs (D16).
+    const credits = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../../public/marketing/landing/credits.json"), "utf8")
+    ) as Array<{ kind: string }>
+    const open = credits.filter((c) => c.kind === "open-collection").length
+    expect(open).toBe(4)
+    expect(details?.querySelectorAll("a").length).toBe(2 * open)
   })
 
   it("runs the three statutory attributions on as one paragraph, wording verbatim", async () => {
@@ -575,5 +631,65 @@ describe("Landing fold, order, footer and chips (D15)", () => {
       expect(text).toContain(statement)
     }
     expect(para.querySelectorAll("br")).toHaveLength(0)
+  })
+})
+
+/**
+ * D-03 (quick 261102-r6u, design D17): before location is shared, the featured
+ * kitchens lead the row in their configured order, then the rest of the listing
+ * in its own order, with no slug twice. With nothing featured, the row is
+ * exactly today's.
+ *
+ * The featured shop here is deliberately NOT on the listing's page 0: a page
+ * that ignored the featured read would still render the listing and pass any
+ * test that only checked the listing was there.
+ */
+describe("Featured kitchens lead the landing row (D-03)", () => {
+  const FEATURED_ONLY: PublicShop = {
+    ...FIXTURE_SHOP,
+    slug: "brixton-village-grill",
+    name: "Brixton Village Grill",
+    tags: "Grill",
+  }
+
+  const server = jest.requireMock("@/lib/storefront-server") as {
+    loadFeaturedShops: jest.Mock
+  }
+
+  afterEach(() => {
+    server.loadFeaturedShops.mockImplementation(async () => [])
+  })
+
+  function rowCardHrefs(): string[] {
+    const row = screen.getByRole("region", { name: "Dishes cooking near you" })
+    return Array.from(row.querySelectorAll("a"))
+      .map((a) => a.getAttribute("href") ?? "")
+      .filter((href) => href.startsWith("/shop/"))
+  }
+
+  it("renders the featured shop FIRST, then the listing", async () => {
+    server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY])
+    render(await Home())
+    expect(rowCardHrefs()).toEqual(["/shop/brixton-village-grill", "/shop/mama-ades-kitchen"])
+  })
+
+  it("puts a featured shop that is ALSO on the listing once, in the featured position", async () => {
+    server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY, FIXTURE_SHOP])
+    render(await Home())
+    expect(rowCardHrefs()).toEqual(["/shop/brixton-village-grill", "/shop/mama-ades-kitchen"])
+  })
+
+  it("renders today's row when nothing is featured", async () => {
+    render(await Home())
+    expect(rowCardHrefs()).toEqual(["/shop/mama-ades-kitchen"])
+  })
+
+  it("puts the featured shops in the landing JSON-LD", async () => {
+    server.loadFeaturedShops.mockImplementation(async () => [FEATURED_ONLY])
+    const { container } = render(await Home())
+    const ld = container.querySelector('script[type="application/ld+json"]')?.innerHTML ?? ""
+    // Control: the listing shop is in it (the script rendered at all).
+    expect(ld).toContain("mama-ades-kitchen")
+    expect(ld).toContain("brixton-village-grill")
   })
 })

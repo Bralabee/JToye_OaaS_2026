@@ -1,22 +1,26 @@
 # Identity — J'Toye public surfaces
 
 **Status: RE-RULED by Sanmi 2026-11-01 (decision D14), adopting `runs/2026-11-01-landing-elevate/palette.md`.
-D13's "Market day" palette (tomato, palm-oil yellow, leaf) is SUPERSEDED; D11 was the first ruling.** Every
-later change is logged in `decisions.md`.
+D13's "Market day" palette (tomato, palm-oil yellow, leaf) is SUPERSEDED; D11 was the first ruling.** Later
+amendments: D15 (2026-11-02, the landing's grounds and footer) and D16 (2026-11-02, the owner's own BeesLens
+photography leads). Every later change is logged in `decisions.md`.
 
 ## Palette — oxblood, gold and warm stone (flat; no gradients, D9)
 
 The full system, sources and contrast table: `runs/2026-11-01-landing-elevate/palette.md`. Tailwind
-tokens: `brand-*`, `gold-*`, `warm-*` (`frontend/tailwind.config.ts`).
+tokens: `brand-*`, `gold-*`, `warm-*` (`frontend/tailwind.config.ts`). Each hex below is read from the
+token's source file, named in the token column; if the two ever disagree, the source file wins.
 
-| role | name | hex | where |
-|---|---|---|---|
-| ground | white | `#FFFFFF` | header, kitchen section, controls sitting on stone |
-| ground step | warm-100 | `#F4F2F0` | hero, How it works, kitchen cards; a tone step replaces every rule and shadow |
-| ink | warm-900 | `#1E1814` | body text; warm-700 `#4D4642` for secondary text |
-| brand | oxblood brand-900 | `#3A0B0D` | headings, the wordmark, the operator door field, step circles, text on gold |
-| brand mid | brand-700 | `#6E1D21` | links, the focus ring, the How-it-works rail fill, the search icon |
-| action | gold-400 | `#E8B04B` | the one accent: the search button and the Order-food door, brand-900 type on it |
+| role | name | hex | token (source) | where |
+|---|---|---|---|---|
+| ground | white | `#FFFFFF` | Tailwind `white` (`#ffffff` in `frontend/app/globals.css`) | header, How it works and the kitchen row (one white field, D15), controls sitting on stone |
+| ground step | warm-100 | `#F4F2F0` | `warm.100` (`tailwind.config.ts`) | hero, kitchen cards, trust band (its chips white, D15); a tone step replaces every rule and shadow |
+| ink | warm-900 | `#1E1814` | `warm.900` (`tailwind.config.ts`) | body text; warm-700 `#4D4642` (`warm.700`) for secondary text |
+| brand | oxblood brand-900 | `#3A0B0D` | `brand.900` (`tailwind.config.ts`) | headings, the wordmark, the operator door field, step circles, text on gold |
+| brand mid | brand-700 | `#6E1D21` | `brand.700` (`tailwind.config.ts`) | links, the focus ring, the How-it-works rail fill, the search icon |
+| action | gold-400 | `#E8B04B` | `gold.400` (`tailwind.config.ts`) | the one accent: the search button and the Order-food door, brand-900 type on it |
+| footer field | oxblood | `#3A0B0D` | legacy `oxblood` DEFAULT (`tailwind.config.ts`), the same hex as brand-900 | the footer, `bg-oxblood text-cream` in `frontend/components/public/public-footer.tsx` (cream `#FBF6F0`, `cream` DEFAULT) |
+| open / trust | emerald-700 | `#047857` | `--trust` (`frontend/app/globals.css`) | the Open state with white text, the trust band's check icons |
 
 Ramps: oxblood brand-100 `#F8E9E8` · 700 `#6E1D21` · 800 `#571417` (hover) · 900 `#3A0B0D`; gold 200
 `#FCD89E` (Paused badge) · 400 `#E8B04B` · 500 `#D1992D` (hover); warm 100 `#F4F2F0` · 200 `#E8E5E4`
@@ -48,12 +52,17 @@ every item, nothing to download).
 **Under D14 the landing keeps its existing structure (rubric R11, elevate not redesign):** the
 two-column hero, search and dish chips, the two doors as two flat fields (gold for ordering, oxblood
 for operators), real kitchens, How it works with its rail. The memorable thing is the food itself:
-credited dish photographs in the tiles, the chips, the Order-food door and every kitchen card, set
-against a quiet warm-stone interface. The order ticket on the pass (D11/D13's device) is not used on
+the owner's own BeesLens photographs (D16) in the tiles, the Order-food door, the Jollof and Desserts
+chips and the kitchen cards, with credited open-collection pictures only where no own photograph
+exists yet, set against a quiet warm-stone interface. The order ticket on the pass (D11/D13's device) is not used on
 the elevated landing. Motion: the existing GSAP hero scene, less the heat-wash parallax (the wash is
 gone); reduced-motion still.
 
-## Imagery (D10)
+## Imagery (D10, amended by D16)
 
-Real, credited pictures of the kitchens' world until each kitchen's own photos exist; the four real
-product screens for operators; never a stock burger, never an emoji, never a drawn dish.
+The owner's own photography first: seven BeesLens photographs (D16, 2026-11-02), credited
+"Photography: BeesLens". Credited open-collection pictures only where no own photograph exists yet
+(today Grill, Caribbean, South Asian and Vegan). On a kitchen card any picture that is not the
+kitchen's own is captioned "<Cuisine> — example photo" and never presented as that kitchen's dish
+(D10/D13); each kitchen's own photos replace it once uploaded. The four real product screens for
+operators; never a stock burger, never an emoji, never a drawn dish.

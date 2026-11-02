@@ -1,0 +1,8 @@
+Branch-behind-base gate
+  repo root    : /home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens
+  head         : HEAD -> 56a63f74 (feat/featured-kitchens)
+  base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+  fetch        : refreshed refs/remotes/origin/main
+  base head    : 03eb939a
+
+PASS: HEAD contains every commit on origin/main (03eb939a); it is 15 commit(s) ahead and 0 behind.

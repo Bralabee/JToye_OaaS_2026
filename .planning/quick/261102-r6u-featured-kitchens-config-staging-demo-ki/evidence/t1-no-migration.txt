@@ -1,0 +1,3 @@
+git diff rc=0
+migration files changed vs origin/main: []
+positive control (same command over core-java/src/main/java): 6 files

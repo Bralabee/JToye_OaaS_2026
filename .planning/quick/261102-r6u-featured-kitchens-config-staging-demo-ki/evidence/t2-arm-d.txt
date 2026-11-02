@@ -1,0 +1,10 @@
+== ARM (d) ==
+ frontend/components/marketing/shop-card.tsx | 1 -
+ 1 file changed, 1 deletion(-)
+  ● ShopCard — the Featured label (D-04) › announces the label with the shop name through aria-describedby
+Tests:       1 failed, 59 passed, 60 total
+jest rc=1
+== RESTORE ==
+git diff --exit-code rc=0
+Tests:       60 passed, 60 total
+GREEN jest rc=0

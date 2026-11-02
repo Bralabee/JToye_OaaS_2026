@@ -1,0 +1,11 @@
+== ARM (e): orderWithFeatured without deduplication ==
+ frontend/lib/featured-shops.ts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  ● orderWithFeatured › never shows a slug twice: a featured shop also on the listing keeps its featured position
+  ● Featured kitchens lead the landing row (D-03) › puts a featured shop that is ALSO on the listing once, in the featured position
+Tests:       2 failed, 39 passed, 41 total
+jest rc=1
+== RESTORE ==
+git diff --exit-code rc=0
+Tests:       41 passed, 41 total
+GREEN jest rc=0

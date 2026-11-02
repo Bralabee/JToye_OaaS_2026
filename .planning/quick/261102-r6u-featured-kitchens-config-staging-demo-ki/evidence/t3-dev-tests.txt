@@ -1,0 +1,10 @@
+== dev unit + integration after the behaviour-neutral DemoDataSeeder refactor ==
+dev unit rc=0
+dev integration rc=0
+uk.jtoye.core.dev.DemoKitchensFixtureParityTest tests=4 skipped=0 failures=0 errors=0
+uk.jtoye.core.dev.DemoImageManifestTest tests=8 skipped=0 failures=0 errors=0
+uk.jtoye.core.dev.DemoDataSeederAddressTest tests=4 skipped=0 failures=0 errors=0
+uk.jtoye.core.dev.DemoDataSeederHoursIntegrationTest tests=3 skipped=0 failures=0 errors=0
+uk.jtoye.core.dev.DemoDataSeederTraderIdentityIntegrationTest tests=3 skipped=0 failures=0 errors=0
+uk.jtoye.core.dev.DemoDataSeederServiceAccountGrantIntegrationTest tests=5 skipped=0 failures=0 errors=0
+existing dev test files changed vs origin/main: []

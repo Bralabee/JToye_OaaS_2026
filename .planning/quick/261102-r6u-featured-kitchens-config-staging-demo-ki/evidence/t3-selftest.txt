@@ -1,0 +1,103 @@
+PASS prod-api rc=1 az_calls=0 curl_calls=0 pod_reads=0
+PASS local-api rc=1 az_calls=0 curl_calls=0 pod_reads=0
+PASS no-context rc=2 kubectl_calls=0
+PASS stale-server rc=1 kubectl_calls=1(config view)
+PASS dev-profile rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS rollout-mixed rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS no-ready-pod rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS dry-run-plan rc=0 steps=19 az_calls=0 curl_calls=0
+PASS list-kv-objects rc=0 objects=5
+PASS operator-deleted-on-failure rc=1 seed_500_line=20 operator_delete_line=21 kv_reads=4 pinned=5 argv_secrets=0
+PASS operator-deleted-on-success rc=0 last_call=DELETE-operator readback=LIVE
+PASS order-live-key rc=1 kv_reads=1 curl_calls=0
+PASS order-first-run rc=0 confirms=1 verdict=SEED-ORDER event=evt_stub0001 secrets_printed=0
+PASS order-replay rc=0 confirms=0 verdict=SEED-ORDER
+PASS order-cash-refused rc=1 confirms=0 verdict=none
+PASS order-two-intents rc=1 verdict=none
+PASS order-livemode-true rc=1 confirms=0
+PASS order-unpaid-deadline rc=1 last_state=PENDING
+PASS dry-run-order rc=0 az_calls=0 curl_calls=0
+PASS stage-all rc=0 operator_delete_line=28 order_post_line=31 verdict=SEED-ORDER
+PASS list-drafts-ok rc=0 candidates=3 card=2
+PASS list-drafts-readonly rc=0 draft_list_gets=1 non_get_calls=0
+PASS list-drafts-no-pii rc=0 pii_lines=0 candidates=3
+PASS transition-refused rc=0 http=409 type=awaiting-payment transition_posts=1
+PASS transition-event-refused rc=2 az_calls=0 curl_calls=0
+PASS vendor-order-ok rc=0 body=shopId+1item idempotency_key=vendor-order-<stamp>
+PASS vendor-order-not-none rc=1 payment_status_PENDING=refused status_PENDING=refused
+PASS pay-link-ok rc=0 order=send<order<verify<issue file_mode=600 printed_otp_token_url_cs=0
+PASS pay-link-otp-hidden rc=1 tag=otp-hidden order_posts=0 issue_calls=0
+PASS pay-link-no-out rc=2 az_calls=0 curl_calls=0
+PASS pay-link-unverified rc=1 verify=422 issue_calls=0
+PASS cancel-one rc=0 order=stripe_cancel:5<intent_readback:6<order_cancel:7<order_readback:8 verdict=SEED-CANCEL
+PASS cancel-not-draft rc=1 pending+none+unlisted=refused stripe_calls=0 vendor_cancels=0
+PASS cancel-paid rc=1 succeeded+processing+requires_capture=refused stripe_cancels=0 vendor_cancels=0
+PASS cancel-live rc=1 stripe_cancels=0 vendor_cancels=0
+PASS cancel-stripe-fails rc=1 D001_vendor_cancels=0 D002_cancelled=1 summary=2/1/1
+PASS cancel-already-canceled rc=0 stripe_posts=0 vendor_cancels=1
+PASS cancel-only-listed rc=0 vendor_cancels=1 unnamed_touched=0
+PASS cancel-empty-list rc=2 absent+empty+malformed=usage-error az_calls=0 curl_calls=0
+PASS orphan-list rc=0 orphans=1 known+paid+no-metadata+other-tenant=excluded status_reads=8 writes=0
+PASS orphan-list-blind rc=2 void orphans=0
+PASS orphan-cancel-one rc=0 read<recheck<cancel<readback stripe_cancels=1 vendor_cancels=0 verdict=SEED-ORPHAN-CANCEL
+PASS orphan-cancel-refusals rc=1 order-exists+paid+no-metadata+other-tenant=refused refused_cancels=0 next_cancelled=1
+PASS orphan-cancel-already-canceled rc=0 stripe_posts=0
+PASS orphan-cancel-args rc=2 absent+malformed+twice+elsewhere=usage-error az_calls=0 curl_calls=0
+PASS stripe-get-sanitized rc=0 printed=pi_sg1+ch_sg1 secrets=0 pii=0
+PASS stripe-get-path-refused rc=1 customers+traversal+payment_methods=refused curl_calls=0 az_calls=0
+PASS stripe-get-live rc=1 printed=none
+PASS stripe-get-account-header with=acct_STUB1 without=none argv=none
+PASS stripe-get-livemode-absent refund=printed+n/a intent=refused
+PASS billing-ok rc=0 order=billing_get<pm<subscribe<sub<invoice quantity=1 locations=1 amount_paid=3900
+PASS billing-quantity-mismatch rc=1 quantity=1 locations=2
+PASS billing-amount-mismatch rc=1 quantity=2 amount_paid=3900 want=7800
+PASS billing-live rc=1 tag=stripe-mode printed=none
+PASS billing-replay rc=0 subscribe_calls=0 pm_calls=0 verdict=BILLING
+PASS billing-no-secret printed_key=0 printed_pm_body=0 printed_customer=0
+PASS sync-ok rc=0 quantity=1>2>1 order=read<create<delete<read probe_deleted=1
+PASS sync-no-subscription rc=1 tag=no-subscription shop_writes=0
+PASS sync-cleanup-on-fail rc=1 probe_deleted=1 summary=none
+PASS onboard-new rc=0 connect_posts=1 operator_deleted_after=1 file_mode=600 printed_url=0
+PASS onboard-enabled rc=0 connect_posts=0 link_file=absent status=ENABLED
+PASS onboard-no-out rc=2 az_calls=0 curl_calls=0
+PASS mode-read rc=0 shop_gets=1 writes=0 modes=DESTINATION,null
+PASS mode-set rc=0 order=GET<PUT<GET put_body=get_body+mode dropped_put=rc1
+PASS mode-set-invalid rc=2 split_deposit=refused set_elsewhere=refused curl_calls=0
+PASS loop-not-enabled rc=1 tag=connect-status order_posts=0 stripe_writes=0
+PASS loop-mode-mismatch rc=1 tag=mode-mismatch order_posts=0
+PASS loop-plain-charge rc=1 tag=plain-charge refund_posts=0 verdicts=0
+PASS loop-intent-fields rc=1 named=transfer_data.destination,application_fee_amount,metadata.settlement_mode
+PASS loop-live rc=1 tag=stripe-mode objects=intent,charge,transfer
+PASS loop-destination-ok rc=0 order=preflight<order<confirm<intent<charge<transfer<accept<refund<reversal<local run_id=one no_reversal=rc1
+PASS loop-refund-full rc=2 equal=refused above=refused zero=refused writes=0
+PASS loop-refund-mismatch rc=1 local=pending stripe=succeeded verdict=none
+PASS loop-evidence-clean rc=0 entry=modes.destination kept=1 secret_url_email_hits=0 sorted=1 mode=600 non_object=refused
+PASS direct-mode-mismatch rc=1 tag=mode-mismatch shop_modes=DESTINATION,null order_posts=0 platform_intent=refused
+PASS direct-ok rc=0 stripe_calls=7 without_header=0 order=order<confirm<intent<charge<accept<refund<refund-by-id<charge<local evidence=destination,direct
+PASS direct-missing-header rc=1 planted=charge,intent answer=resource_missing named=1 accept_posts=0 refund_posts=0
+PASS direct-local-refund-lag rc=1 local=pending stripe=succeeded verdict=none
+PASS evidence-order rc=0 sorted=1 modes=destination,direct steps=loop-order earlier_entry=kept
+PASS payout-ok rc=0 payout=500 of 950 states=in_transit,paid schedule=manual,platform-level header=balance,payout,reads key=<run>-payout-<acct>
+PASS payout-all-available rc=0 requested=2000,default available=950 payout=950 whole_balance=true above_available_requested=0
+PASS payout-no-balance rc=1 tag=no-available-balance balance_reads=1 payout_posts=0
+PASS payout-pending rc=0 status=in_transit printed_paid=0 hint=payout-read entry=in_transit
+PASS payout-read rc=0 status=in_transit->paid entry=updated stripe_writes=0 unknown_payout=refused,file_untouched
+PASS payout-other-account rc=1 tag=other-account stages=payout,payout-read stripe_calls=0
+PASS payout-args rc=2 cases=7 az_calls=0 curl_calls=0
+PASS replay-run-id rc=0 order_key=replayed confirm_posts=0 accept_posts=0 refund_posts=0 payout_posts=0 other_run=own_keys,own_refund
+PASS dry-run-tools rc=0 stages=15 direct_plan=1 az_calls=0 curl_calls=0
+PASS demo-dry-run-plan rc=0 kitchens=3 az_calls=0 curl_calls=0 kubectl=guards-only
+PASS demo-first-run rc=0 tenants=3 vendors=3 shops=3 products=21 identities=3 live=3 billing_calls=0 last_call=DELETE-operator passwords_printed=0
+PASS demo-rerun-idempotent rc=0 core_writes=0 verdict=DEMO-KITCHENS
+PASS demo-partial-menu rc=0 posted=4 modified=0
+PASS demo-slug-taken rc=1 tag=slug-taken product_writes=0 operator_deleted=1
+PASS demo-phase30-refused rc=1 variants=3 tool_calls=0
+PASS demo-fixture-void rc=2 variants=4 tool_calls=0
+PASS demo-featured-mismatch rc=1 tag=featured-mismatch operator_deleted=1
+PASS demo-prod-api-refused rc=1 stages=4 az_calls=0 curl_calls=0
+PASS demo-seller-label-missing rc=1 tag=demo-label operator_deleted=1
+PASS demo-order-card rc=0 kitchen=mama-ades-kitchen charge=platform stripe_account_headers=0 confirms=1
+PASS demo-order-kitchen-refused rc=1 slugs=2 tool_calls=0
+PASS demo-list-open rc=0 open=4 core_writes=0 operator_deleted_line=13<first_read=14 pii=0
+PASS demo-clear-orders rc=1 cleared=4 refused=1 D=intent-then-cancel P0=cancel-OTHER PC=accept-then-refund K=refund C=not-clearable operator_deleted_first=1
+PASS demo-clear-needs-kitchen rc=2 stages=2 tool_calls=0

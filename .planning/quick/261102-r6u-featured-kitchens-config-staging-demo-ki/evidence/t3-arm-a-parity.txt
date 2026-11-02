@@ -1,0 +1,17 @@
+== ARM (a1): a price changed in the FIXTURE (MAK-JOL 899 -> 900) ==
+ scripts/fixtures/demo-kitchens.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+gradle rc=1
+uk.jtoye.core.dev.DemoKitchensFixtureParityTest tests=4 skipped=0 failures=1 errors=0
+message="org.opentest4j.AssertionFailedError: [mama-ades-kitchen item 0 (MAK-JOL) price] &#10;expected: 899L&#10; but was: 900L
+-- restore: rc=0 fixture MAK-JOL price now 899
+== ARM (a2): a price changed in DemoDataSeeder (MAK-JOL 899L -> 900L) ==
+ core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+gradle rc=1
+uk.jtoye.core.dev.DemoKitchensFixtureParityTest tests=4 skipped=0 failures=1 errors=0
+message="org.opentest4j.AssertionFailedError: [mama-ades-kitchen item 0 (MAK-JOL) price] &#10;expected: 900L&#10; but was: 899L
+-- restore: rc=0 seeder line: 1
+== GREEN after both restores ==
+gradle rc=0
+uk.jtoye.core.dev.DemoKitchensFixtureParityTest tests=4 skipped=0 failures=0 errors=0

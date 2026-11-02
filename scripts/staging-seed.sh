@@ -32,6 +32,10 @@
 #                           [--amount-pennies N] [--run-id ID] [--evidence FILE] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage payout-read --account acct_… --payout po_…
 #                           [--evidence FILE] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage demo-kitchens [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage order --kitchen SLUG [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage list-open --kitchen SLUG [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage clear-orders --kitchen SLUG --orders ORD-a,ORD-b [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -191,6 +195,54 @@
 #     --stage payout-read --account acct_… --payout po_…
 #                        one read of the payout on the account; PAYOUT line with its
 #                        current status; --evidence updates that entry's status only.
+#   The staging demo kitchens (quick 261102-r6u; owner decisions D-01 as ruled and D-05,
+#   2026-11-02; design D17). scripts/fixtures/demo-kitchens.json is their only source
+#   (STAGING_SEED_DEMO_FIXTURE overrides the path: the selftest seam). It is read and
+#   checked before any guard or call: a broken fixture is VOID, one naming the Phase 30
+#   tenant, shop or vendor is REFUSED [phase30-tenant]. Staging only, like every stage.
+#     --stage demo-kitchens
+#                        three demo tenants "J'Toye Demo — <kitchen>", one kitchen each
+#                        (V43 lets one tenant take one shop live), through the real admin,
+#                        staff, shop, product, trader-identity and onboarding APIs with a
+#                        per-run realm-admin operator (deleted on every exit). Idempotent:
+#                        everything is read first; a missing dish is POSTed, nothing is ever
+#                        PUT or deleted; a 409 on the shop is REFUSED [slug-taken], never
+#                        adopted. Each demo vendor's password is re-randomised on every run
+#                        (reset-password PUT, mode-600 file, never printed, no Key Vault
+#                        object). Never calls /api/v1/billing. Read-back per kitchen
+#                        (DEMO-KITCHEN …): published, a coordinate (else FAIL
+#                        [no-coordinate]), every dish, LIVE, and the anonymous public seller
+#                        "<kitchen> (demo)" (else FAIL [demo-label], D-05). Then the public
+#                        featured list must equal the fixture slugs in order (DEMO-FEATURED;
+#                        else FAIL [featured-mismatch]). Ends DEMO-KITCHENS kitchens=… live=…
+#                        published=… located=… labelled=… products=… at=<ISO>.
+#     --stage order --kitchen SLUG
+#                        the order stage at a demo kitchen (Idempotency-Key
+#                        seed-order-<slug>-v1): while STRIPE_API_KEY is set every guest
+#                        order is a card order, and a demo tenant has no ENABLED Connect
+#                        account, so the intent must be a plain PLATFORM-account TEST charge:
+#                        read without Stripe-Account, no transfer_data (else FAIL [routing]).
+#                        Ends SEED-ORDER kitchen=… charge=platform order=… … livemode=false.
+#                        Without --kitchen the order stage is exactly as above.
+#     --stage list-open --kitchen SLUG
+#                        READ-ONLY, as that kitchen's demo vendor (a password minted fresh for
+#                        the run; the operator is deleted before any order is read): one
+#                        OPEN-ORDER kitchen=… order=… status=… payment_status=… created=…
+#                        total=…p per DRAFT, PENDING, CONFIRMED, PREPARING or READY order
+#                        (no customer field), then LIST-OPEN kitchen=… count=… at=<ISO>.
+#     --stage clear-orders --kitchen SLUG --orders ORD-a,ORD-b
+#                        the owner-confirmed list ONLY, one demo tenant: an unpaid card DRAFT
+#                        has its intent cancelled first, then the order; PENDING with payment
+#                        NONE is cancelled with reasonCode OTHER; PENDING CAPTURED is accepted
+#                        then fully refunded; CONFIRMED, PREPARING or READY CAPTURED is fully
+#                        refunded (Idempotency-Key demo-clear-<order>-refund-<dead attempts>), read back
+#                        REFUNDED; anything else is REFUSED [not-clearable] with no write.
+#                        Ends CLEAR-ORDERS kitchen=… requested=… cleared=… refused=…, rc 1
+#                        when anything was refused. A paid order is refunded, not cancelled,
+#                        because a cancel refunds nothing. Customers of cleared orders get the
+#                        normal status email, which staging relays to allow-listed testers only.
+#   list-open and clear-orders without --kitchen are a usage error: the Phase 30 tenant
+#   is never their target (its tools are list-drafts and cancel-drafts, unchanged).
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -232,6 +284,16 @@ NEVER_RESOLVED_GATES="TRADER_IDENTITY ALLERGEN_DATA_COMPLETE"
 STRIPE_API="https://api.stripe.com"
 STRIPE_KV_OBJECT="stripe-credentials--api-key"
 ORDER_IDEMPOTENCY_KEY="seed-order-staging-test-kitchen-v1"
+# Quick 261102-r6u: --stage order --kitchen SLUG places the order at a demo kitchen instead, keyed
+# seed-order-<slug>-v1; without --kitchen these stay the Phase 30 values, byte for byte.
+ORDER_SLUG="$SHOP_SLUG"
+ORDER_KEY="$ORDER_IDEMPOTENCY_KEY"
+# The order helpers act as this caller: the Phase 30 vendor, or a demo vendor (list-open, clear-orders).
+ORDER_WHO=vendor
+# The staging demo kitchens (quick 261102-r6u, design D17). STAGING_SEED_DEMO_FIXTURE overrides the
+# path; it is the selftest seam (a fixture that names the Phase 30 tenant, or a broken one).
+DEMO_FIXTURE="${STAGING_SEED_DEMO_FIXTURE:-$REPO_ROOT/scripts/fixtures/demo-kitchens.json}"
+KITCHEN=""
 GUEST_NAME="Staging Test Guest"
 GUEST_EMAIL="guest.staging@olajay.co.uk"
 GUEST_PHONE="07700 900123"
@@ -372,6 +434,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
+  case "$STAGE" in demo-kitchens|list-open|clear-orders) print_demo_plan ;; esac
   case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read) print_tool_plan ;; esac
 }
 print_tool_plan() {
@@ -524,10 +587,10 @@ print_tool_plan() {
 print_order_plan() {
   cat <<PLAN
 PLAN --stage order (dry-run: nothing below is called)
-  target        api ${API_BASE}; Stripe ${STRIPE_API} (TEST only); shop ${SHOP_SLUG}
+  target        api ${API_BASE}; Stripe ${STRIPE_API} (TEST only); shop ${ORDER_SLUG}
   01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)
-  02 GET        /api/v1/public/shops/${SHOP_SLUG}, /api/v1/public/shops/${SHOP_SLUG}/products   anonymous; first available dish
-  03 POST       /api/v1/public/shops/${SHOP_SLUG}/orders   Idempotency-Key ${ORDER_IDEMPOTENCY_KEY}; ${GUEST_EMAIL}; expected prices + allergen acknowledgement
+  02 GET        /api/v1/public/shops/${ORDER_SLUG}, /api/v1/public/shops/${ORDER_SLUG}/products   anonymous; first available dish
+  03 POST       /api/v1/public/shops/${ORDER_SLUG}/orders   Idempotency-Key ${ORDER_KEY}; ${GUEST_EMAIL}; expected prices + allergen acknowledgement
   04 GET        ${STRIPE_API}/v1/payment_intents/{id}   the intent from the client secret (or, on a replay, by order_number metadata); livemode false
   05 POST       ${STRIPE_API}/v1/payment_intents/{id}/confirm   payment_method=pm_card_visa, return_url ${ORDER_RETURN_URL}; skipped if already succeeded
   06 GET        ${STRIPE_API}/v1/payment_intents?limit=100   exactly one intent names the order
@@ -1036,11 +1099,11 @@ set_tenant_attribute() {
 # trap: imported users keep their attributes, so the vendor is re-written
 # through the realm partialImport (OVERWRITE, same id, same Key Vault password).
 partial_import_vendor() {
-  local id="$1" tenant="$2" code
-  jq -n --arg id "$id" --arg u "$VENDOR_USERNAME" --arg t "$tenant" --rawfile p "$WORKDIR/vendor-password" '{
+  local id="$1" tenant="$2" uname="${3:-$VENDOR_USERNAME}" pfile="${4:-$WORKDIR/vendor-password}" fname="${5:-Staging}" code
+  jq -n --arg id "$id" --arg u "$uname" --arg t "$tenant" --rawfile p "$pfile" --arg f "$fname" '{
       ifResourceExists: "OVERWRITE",
       users: [{ id: $id, username: $u, email: $u, enabled: true, emailVerified: true,
-                firstName: "Staging", lastName: "Vendor", requiredActions: [], attributes: {tenant_id: [$t]},
+                firstName: $f, lastName: "Vendor", requiredActions: [], attributes: {tenant_id: [$t]},
                 credentials: [{type: "password", value: $p, temporary: false}] }] }' | body "$WORKDIR/partial.json"
   code=$(kc_api POST "/admin/realms/$REALM/partialImport" "$WORKDIR/partial-done.json" "$WORKDIR/partial.json")
   rm -f "$WORKDIR/partial.json"
@@ -1052,13 +1115,13 @@ partial_import_vendor() {
 # PASSED on the facts), approve, go live. Every step reads the status first, so a
 # re-run resumes wherever the last one stopped.
 onboard_to_live() {
-  local shop_id="$1" code status onb_id t0 open gate g resubmitted=0 resolved=" "
+  local shop_id="$1" who="${2:-vendor}" label="${3:-$SHOP_SLUG}" reason="${4:-$GATE_REASON}" code status onb_id t0 open gate g resubmitted=0 resolved=" "
   t0=$(date +%s)
   while :; do
-    code=$(api vendor GET /api/v1/onboarding/me "$WORKDIR/onb.json")
+    code=$(api "$who" GET /api/v1/onboarding/me "$WORKDIR/onb.json")
     if [ "$code" = 404 ]; then
       jq -n --arg m "$ONBOARDING_MODEL" --arg s "$shop_id" '{model: $m, shopId: $s}' | body "$WORKDIR/onb-create.json"
-      code=$(api vendor POST /api/v1/onboarding "$WORKDIR/onb.json" "$WORKDIR/onb-create.json")
+      code=$(api "$who" POST /api/v1/onboarding "$WORKDIR/onb.json" "$WORKDIR/onb-create.json")
       [ "$code" = 201 ] || fail_http "POST /api/v1/onboarding" "$code" "$WORKDIR/onb.json"
       echo "CREATED: onboarding ($ONBOARDING_MODEL, sole trader)"
       continue
@@ -1066,14 +1129,14 @@ onboard_to_live() {
     [ "$code" = 200 ] || fail_http "GET /api/v1/onboarding/me" "$code" "$WORKDIR/onb.json"
     status=$(jq -r '.status' "$WORKDIR/onb.json"); onb_id=$(jq -r '.id' "$WORKDIR/onb.json")
     if [ "$(jq -r '.shopId' "$WORKDIR/onb.json")" != "$shop_id" ]; then
-      refuse onboarding "the tenant's onboarding gates shop $(jq -r '.shopId' "$WORKDIR/onb.json"), not $SHOP_SLUG ($shop_id)"
+      refuse onboarding "the tenant's onboarding gates shop $(jq -r '.shopId' "$WORKDIR/onb.json"), not $label ($shop_id)"
     fi
     case "$status" in
       LIVE)
         echo "OK: onboarding LIVE"
         return 0 ;;
       DRAFT)
-        code=$(api vendor POST /api/v1/onboarding/submit "$WORKDIR/onb-step.json")
+        code=$(api "$who" POST /api/v1/onboarding/submit "$WORKDIR/onb-step.json")
         [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/submit" "$code" "$WORKDIR/onb-step.json"
         echo "OK: onboarding submitted" ;;
       VERIFYING)
@@ -1087,11 +1150,11 @@ onboard_to_live() {
               fi
             done
             case "$resolved" in *" $gate "*) echo "FAIL: gate $gate is open again after it was resolved" >&2; exit 1 ;; esac
-            jq -n --arg r "$GATE_REASON" '{decision: "WAIVE", reason: $r}' | body "$WORKDIR/resolve.json"
+            jq -n --arg r "$reason" '{decision: "WAIVE", reason: $r}' | body "$WORKDIR/resolve.json"
             code=$(api operator POST "/api/v1/onboarding/admin/$onb_id/gates/$gate/resolve" "$WORKDIR/resolved.json" "$WORKDIR/resolve.json")
             [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/admin/$onb_id/gates/$gate/resolve" "$code" "$WORKDIR/resolved.json"
             resolved="$resolved$gate "
-            echo "RESOLVED: gate $gate WAIVED (\"$GATE_REASON\")"
+            echo "RESOLVED: gate $gate WAIVED (\"$reason\")"
           done
         fi ;;
       ACTION_REQUIRED)
@@ -1099,7 +1162,7 @@ onboard_to_live() {
           echo "FAIL: onboarding is ACTION_REQUIRED again after a resubmit: $(jq -r '[.gates[] | select(.status == "FAILED") | "\(.gateType): \(.reason // "")"] | join("; ")' "$WORKDIR/onb.json")" >&2
           exit 1
         fi
-        code=$(api vendor POST /api/v1/onboarding/resubmit "$WORKDIR/onb-step.json")
+        code=$(api "$who" POST /api/v1/onboarding/resubmit "$WORKDIR/onb-step.json")
         [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/resubmit" "$code" "$WORKDIR/onb-step.json"
         resubmitted=1
         echo "OK: onboarding resubmitted after ACTION_REQUIRED" ;;
@@ -1108,7 +1171,7 @@ onboard_to_live() {
         [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/admin/$onb_id/approve" "$code" "$WORKDIR/onb-step.json"
         echo "OK: onboarding approved" ;;
       APPROVED)
-        code=$(api vendor POST /api/v1/onboarding/go-live "$WORKDIR/onb-step.json")
+        code=$(api "$who" POST /api/v1/onboarding/go-live "$WORKDIR/onb-step.json")
         [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/go-live" "$code" "$WORKDIR/onb-step.json"
         echo "OK: go-live accepted" ;;
       *)
@@ -1304,21 +1367,21 @@ order_stage() {
 
   # 2. The public shop and menu, as a customer's browser reads them.
   local fulfilment fee
-  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG" "$WORKDIR/pub-shop.json")
-  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG" "$code" "$WORKDIR/pub-shop.json"
+  code=$(pub_api GET "/api/v1/public/shops/$ORDER_SLUG" "$WORKDIR/pub-shop.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$ORDER_SLUG" "$code" "$WORKDIR/pub-shop.json"
   if [ "$(jq -r '.offersCollection' "$WORKDIR/pub-shop.json")" = true ]; then
     fulfilment=COLLECTION; fee=0
   elif [ "$(jq -r '.offersDelivery' "$WORKDIR/pub-shop.json")" = true ]; then
     fulfilment=DELIVERY; fee=$(jq -r '.deliveryFeePennies // 0' "$WORKDIR/pub-shop.json")
   else
-    echo "FAIL: $SHOP_SLUG offers neither collection nor delivery" >&2; exit 1
+    echo "FAIL: $ORDER_SLUG offers neither collection nor delivery" >&2; exit 1
   fi
-  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG/products" "$WORKDIR/pub-products.json")
-  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG/products" "$code" "$WORKDIR/pub-products.json"
+  code=$(pub_api GET "/api/v1/public/shops/$ORDER_SLUG/products" "$WORKDIR/pub-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$ORDER_SLUG/products" "$code" "$WORKDIR/pub-products.json"
   local pick pid price mask title
   pick=$(jq -c '[(if type == "object" and has("content") then .content[] elif type == "object" then .[][] else .[] end)
                  | select(.inStock == true)][0] // empty' "$WORKDIR/pub-products.json")
-  [ -n "$pick" ] || { echo "FAIL: $SHOP_SLUG has no available product on its public menu; publish one as the vendor first" >&2; exit 1; }
+  [ -n "$pick" ] || { echo "FAIL: $ORDER_SLUG has no available product on its public menu; publish one as the vendor first" >&2; exit 1; }
   pid=$(jq -r '.id' <<<"$pick"); price=$(jq -r '.pricePennies' <<<"$pick")
   mask=$(jq -r '.allergenMask // 0' <<<"$pick"); title=$(jq -r '.title // .name // "?"' <<<"$pick")
   [[ "$price" =~ ^[0-9]+$ ]] && [[ "$mask" =~ ^[0-9]+$ ]] || { echo "FAIL: the menu entry for $pid has no integer price or allergen mask" >&2; exit 1; }
@@ -1333,16 +1396,16 @@ order_stage() {
        acknowledgedAllergenMask: $m, expectedTotalPennies: $t}
       + (if $f == "DELIVERY" then {addressLine1: "1 Staging Test Street", addressCity: "Birmingham", addressPostcode: "B1 1AA"} else {} end)' \
     | body "$WORKDIR/guest-order.json"
-  code=$(pub_api POST "/api/v1/public/shops/$SHOP_SLUG/orders" "$WORKDIR/guest-order-out.json" "$WORKDIR/guest-order.json" \
-    "Idempotency-Key: $ORDER_IDEMPOTENCY_KEY")
-  [ "$code" = 201 ] || fail_http "POST /api/v1/public/shops/$SHOP_SLUG/orders" "$code" "$WORKDIR/guest-order-out.json"
+  code=$(pub_api POST "/api/v1/public/shops/$ORDER_SLUG/orders" "$WORKDIR/guest-order-out.json" "$WORKDIR/guest-order.json" \
+    "Idempotency-Key: $ORDER_KEY")
+  [ "$code" = 201 ] || fail_http "POST /api/v1/public/shops/$ORDER_SLUG/orders" "$code" "$WORKDIR/guest-order-out.json"
   local order_no ostatus cs intent
   order_no=$(jq -r '.orderNumber // empty' "$WORKDIR/guest-order-out.json")
   ostatus=$(jq -r '.status // empty' "$WORKDIR/guest-order-out.json")
   cs=$(jq -r '.clientSecret // empty' "$WORKDIR/guest-order-out.json")
   rm -f "$WORKDIR/guest-order-out.json"
   [ -n "$order_no" ] || { echo "FAIL: the 201 carried no orderNumber" >&2; exit 1; }
-  echo "OK: order $order_no status $ostatus (Idempotency-Key $ORDER_IDEMPOTENCY_KEY; client secret $([ -n "$cs" ] && echo present || echo absent), not shown)"
+  echo "OK: order $order_no status $ostatus (Idempotency-Key $ORDER_KEY; client secret $([ -n "$cs" ] && echo present || echo absent), not shown)"
 
   # 4. Its intent: from the client secret on a first run (pi_X_secret_Y), else
   #    by metadata. Exactly one intent may name the order.
@@ -1386,6 +1449,16 @@ order_stage() {
   assert_test_mode "$WORKDIR/pi.json" "PaymentIntent $intent"
   pstatus=$(jq -r '.status' "$WORKDIR/pi.json")
   [ "$pstatus" = succeeded ] || { echo "FAIL: PaymentIntent $intent is $pstatus after the confirm, not succeeded" >&2; exit 1; }
+  # Quick 261102-r6u (D-05, the MEASURED path): a demo kitchen's tenant has no ENABLED connected
+  # account, so PaymentService.createPaymentIntent sets neither transfer_data nor Stripe-Account and the
+  # charge is the PLATFORM's TEST charge. The intent was read without Stripe-Account; it must carry no
+  # transfer_data either, or the routing is not the one D17 records.
+  if [ -n "$KITCHEN" ]; then
+    if [ "$(jq -r 'if .transfer_data == null then "absent" else "present" end' "$WORKDIR/pi.json")" != absent ]; then
+      echo "FAIL [routing]: PaymentIntent $intent carries transfer_data; a demo kitchen's order must be a plain platform-account charge (D17)" >&2; exit 1
+    fi
+    echo "OK: $intent is a platform-account charge (read without Stripe-Account; no transfer_data)"
+  fi
   echo "OK: PaymentIntent $intent succeeded, livemode false, amount $(jq -r '.amount' "$WORKDIR/pi.json") $(jq -r '.currency' "$WORKDIR/pi.json")"
 
   # 6. One intent for this order, no more.
@@ -1424,7 +1497,7 @@ order_stage() {
   echo "STRIPE-EVENT id=$(jq -r '.id' <<<"$evt") type=payment_intent.succeeded intent=$intent pending_webhooks=$(jq -r '.pending_webhooks' <<<"$evt") created=$(jq -r '.created' <<<"$evt")"
 
   # 9. The verdict, one machine-checkable line, last.
-  echo "SEED-ORDER order=$order_no intent=$intent status=$tstatus payment_status=$tpay livemode=$(jq -r '.livemode' "$WORKDIR/pi.json") at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "SEED-ORDER ${KITCHEN:+kitchen=$KITCHEN charge=platform }order=$order_no intent=$intent status=$tstatus payment_status=$tpay livemode=$(jq -r '.livemode' "$WORKDIR/pi.json") at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
 # ===========================================================================
@@ -1474,7 +1547,7 @@ orders_in_status() {
   local st="$1" out="$2" page=0 pages code
   printf '[]' | body "$out"
   while :; do
-    code=$(api vendor GET "/api/v1/orders/status/$st?size=100&page=$page&sort=createdAt,asc" "$WORKDIR/orders-page.json")
+    code=$(api "$ORDER_WHO" GET "/api/v1/orders/status/$st?size=100&page=$page&sort=createdAt,asc" "$WORKDIR/orders-page.json")
     [ "$code" = 200 ] || fail_http "GET /api/v1/orders/status/$st (page $page)" "$code" "$WORKDIR/orders-page.json"
     if ! jq -e '(.content | type) == "array"' "$WORKDIR/orders-page.json" >/dev/null 2>&1; then
       echo "FAIL: GET /api/v1/orders/status/$st (page $page) did not return a page with a content array" >&2; exit 1
@@ -1589,7 +1662,7 @@ order_transition_stage() {
 # canceled first, so a later payment cannot land on a cancelled order.
 cancel_one() {
   local id="$1" n="$2" code ost ops pref pist lm
-  code=$(api vendor GET "/api/v1/orders/$id/detail" "$WORKDIR/c-detail.json")
+  code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/c-detail.json")
   [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($n)" "$code" "$WORKDIR/c-detail.json"
   ost=$(jq -r '.status // ""' "$WORKDIR/c-detail.json")
   ops=$(jq -r '.paymentStatus // ""' "$WORKDIR/c-detail.json")
@@ -1627,10 +1700,10 @@ cancel_one() {
   pist=$(jq -r '.status // ""' "$WORKDIR/c-pi.json"); lm=$(jq -r '.livemode' "$WORKDIR/c-pi.json")
   [ "$pist" = canceled ] || { echo "FAIL: PaymentIntent $pref reads $pist after the cancel, not canceled; $n is left untouched" >&2; exit 1; }
 
-  code=$(api vendor POST "/api/v1/orders/$id/cancel" "$WORKDIR/c-cancel.json")
+  code=$(api "$ORDER_WHO" POST "/api/v1/orders/$id/cancel" "$WORKDIR/c-cancel.json")
   rm -f "$WORKDIR/c-cancel.json"
   [ "$code" = 200 ] || { echo "FAIL: POST /api/v1/orders/{id}/cancel ($n) returned HTTP $code; its intent $pref IS canceled" >&2; exit 1; }
-  code=$(api vendor GET "/api/v1/orders/$id/detail" "$WORKDIR/c-detail.json")
+  code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/c-detail.json")
   ost=$(jq -r '.status // ""' "$WORKDIR/c-detail.json" 2>/dev/null || true)
   rm -f "$WORKDIR/c-detail.json"
   [ "$code" = 200 ] && [ "$ost" = CANCELLED ] || { echo "FAIL: $n reads HTTP $code status '$ost' after the cancel, not CANCELLED" >&2; exit 1; }
@@ -3108,6 +3181,511 @@ payout_read_stage() {
   payout_verdict
 }
 
+# ===========================================================================
+# The staging demo kitchens (quick 261102-r6u; owner decisions D-01 as ruled
+# and D-05, 2026-11-02; design D17)
+# ===========================================================================
+#
+# Three demo tenants, "J'Toye Demo — <kitchen>", one kitchen each (V43's
+# uq_onboarding_tenant and the GO_LIVE side effect let one tenant take exactly one
+# shop live through the real API). scripts/fixtures/demo-kitchens.json is the ONLY
+# source of their slugs, tenant names and vendor usernames, and DemoKitchensFixture
+# ParityTest holds it equal to DemoDataSeeder. Nothing here touches the Phase 30
+# tenant (TENANT_NAME, SHOP_SLUG, VENDOR_USERNAME): a fixture naming any of them,
+# a resolved id equal to its id, or a --kitchen outside the fixture is refused
+# before any write. No stage here calls /api/v1/billing (no subscription, D-01).
+#
+# Each demo vendor's password is re-randomised on every run through the Keycloak
+# admin reset-password PUT and held only in a mode-600 WORKDIR file: no Key Vault
+# object, never printed, never in argv, and nobody holds a standing credential.
+
+DEMO_GATE_REASON="staging demo kitchen, scripted — design D17"
+
+# load_demo_fixture — runs before any guard or tool call. VOID (2) on a missing,
+# malformed or incomplete fixture or a duplicate key, slug or tenant name; REFUSED
+# [phase30-tenant] when it names the Phase 30 tenant, slug or vendor; REFUSED
+# [kitchen] when --kitchen names no fixture kitchen. Sets DEMO_N, and DEMO_I to
+# the --kitchen's index.
+DEMO_N=0
+DEMO_I=""
+load_demo_fixture() {
+  local f="$DEMO_FIXTURE" verdict i
+  command -v jq >/dev/null 2>&1 || void "jq not on PATH"
+  [ -s "$f" ] || void "the demo fixture $f is missing or empty"
+  jq -e '(.kitchens | type) == "array"' "$f" >/dev/null 2>&1 || void "the demo fixture $f is not valid JSON with a kitchens array"
+  if jq -e --arg t "$TENANT_NAME" --arg s "$SHOP_SLUG" --arg v "$VENDOR_USERNAME" \
+       'any(.kitchens[]; .tenantName? == $t or .shop?.slug? == $s or .vendorUsername? == $v)' "$f" >/dev/null 2>&1; then
+    refuse phase30-tenant "the demo fixture names the Phase 30 tenant \"$TENANT_NAME\", its shop $SHOP_SLUG or its vendor; the demo kitchens never touch it"
+  fi
+  verdict=$(jq -r '
+    def str: type == "string" and length > 0;
+    def int: type == "number" and . == floor and . >= 0;
+    if (type != "object") or (.schemaVersion != 1) or ((.kitchens | type) != "array") or ((.kitchens | length) == 0) then "not a schemaVersion 1 fixture with kitchens"
+    else
+      [ .kitchens | to_entries[] | .key as $i | .value as $k
+        | ( [ (if ($k.key | str) and ($k.key | test("^[a-z0-9]+(-[a-z0-9]+)*$")) then empty else "key" end),
+              (if ($k.tenantName | str) then empty else "tenantName" end),
+              (if ($k.vendorUsername | str) and ($k.vendorUsername | test("^[a-z0-9.]+@[a-z0-9-]+\\.example\\.com$")) then empty else "vendorUsername" end),
+              (if ($k.shop | type) == "object" then
+                 ( ("name","slug","address","description","tags","logoUrl","email") as $s | if ($k.shop[$s] | str) then empty else "shop.\($s)" end ),
+                 ( if ($k.shop.slug | str) and ($k.shop.slug | test("^[a-z0-9]+(-[a-z0-9]+)*$")) then empty else "shop.slug shape" end ),
+                 ( ("deliveryFeePennies","freeDeliveryThresholdPennies","minimumOrderPennies") as $s | if ($k.shop[$s] | int) then empty else "shop.\($s)" end )
+               else "shop" end),
+              (if ($k.trader | type) == "object" then
+                 ( ("legalName","entityType","addressLine1","addressCity","addressPostcode") as $s | if ($k.trader[$s] | str) then empty else "trader.\($s)" end )
+               else "trader" end),
+              (if ($k.menu | type) == "array" and ($k.menu | length) > 0 then
+                 ( $k.menu | to_entries[] | .key as $j | .value as $m
+                   | ( ("sku","title","category","description","ingredientsText","durabilityType") as $s | if ($m[$s] | str) then empty else "menu[\($j)].\($s)" end ),
+                     ( ("pricePennies","allergenMask","shelfLifeDays") as $s | if ($m[$s] | int) then empty else "menu[\($j)].\($s)" end ) )
+               else "menu" end) ]
+          | map("kitchens[\($i)].\(.)") )[] ] as $missing
+      | if ($missing | length) > 0 then "missing or malformed: \($missing[0:5] | join(", "))"
+        elif ([.kitchens[].key] | length) != ([.kitchens[].key] | unique | length) then "a duplicate key"
+        elif ([.kitchens[].shop.slug] | length) != ([.kitchens[].shop.slug] | unique | length) then "a duplicate slug"
+        elif ([.kitchens[].tenantName] | length) != ([.kitchens[].tenantName] | unique | length) then "a duplicate tenant name"
+        elif ([.kitchens[].vendorUsername] | length) != ([.kitchens[].vendorUsername] | unique | length) then "a duplicate vendor username"
+        elif ([.kitchens[].menu[].sku] | length) != ([.kitchens[].menu[].sku] | unique | length) then "a duplicate SKU"
+        else "ok" end
+    end' "$f" 2>/dev/null) || verdict="not valid JSON"
+  [ "$verdict" = ok ] || void "the demo fixture $f is unusable: ${verdict:-unreadable}"
+  DEMO_N=$(jq '.kitchens | length' "$f")
+  if [ -n "$KITCHEN" ]; then
+    i=$(jq -r --arg s "$KITCHEN" '[.kitchens[].shop.slug] | index($s) // empty' "$f")
+    [ -n "$i" ] || refuse kitchen "--kitchen '$KITCHEN' is not a demo kitchen of $(basename "$f") ($(jq -r '[.kitchens[].shop.slug] | join(", ")' "$f")); nothing was called"
+    DEMO_I="$i"
+  fi
+}
+
+# demo_field I JQ-PATH — one field of kitchen I, raw.
+demo_field() { jq -r --argjson i "$1" ".kitchens[\$i]$2" "$DEMO_FIXTURE"; }
+
+# demo_tenants — the tenant list as the operator (realm admin), into demo-tenants.json,
+# and PHASE30_TENANT_ID (read-only, used only to refuse; empty when it does not exist).
+PHASE30_TENANT_ID=""
+demo_tenants() {
+  local code
+  code=$(api operator GET /api/v1/admin/tenants "$WORKDIR/demo-tenants.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/admin/tenants" "$code" "$WORKDIR/demo-tenants.json"
+  PHASE30_TENANT_ID=$(jq -r --arg n "$TENANT_NAME" '[.[] | select(.name == $n)][0].id // empty' "$WORKDIR/demo-tenants.json")
+}
+
+# demo_tenant_id I — sets DEMO_TENANT_ID to kitchen I's tenant by its exact name (empty
+# when none); more than one is a refusal, and so is the Phase 30 tenant's id.
+DEMO_TENANT_ID=""
+demo_tenant_id() {
+  local name n
+  name=$(demo_field "$1" .tenantName)
+  n=$(jq --arg n "$name" '[.[] | select(.name == $n)] | length' "$WORKDIR/demo-tenants.json")
+  [ "$n" -le 1 ] || refuse tenant "$n tenants are named \"$name\"; the stage cannot tell which is the demo kitchen's"
+  DEMO_TENANT_ID=$(jq -r --arg n "$name" '[.[] | select(.name == $n)][0].id // empty' "$WORKDIR/demo-tenants.json")
+  if [ -n "$DEMO_TENANT_ID" ] && [ -n "$PHASE30_TENANT_ID" ] && [ "$DEMO_TENANT_ID" = "$PHASE30_TENANT_ID" ]; then
+    refuse phase30-tenant "\"$name\" resolved to the Phase 30 tenant's id $PHASE30_TENANT_ID"
+  fi
+}
+
+# demo_fresh_password WHO — a fresh random password, mode 600, never printed or in argv.
+demo_fresh_password() {
+  (umask 077 && openssl rand -base64 32 | tr -d '\n' > "$WORKDIR/$1-password") || void "openssl rand failed"
+  [ -s "$WORKDIR/$1-password" ] || void "openssl rand produced no password"
+}
+
+# demo_reset_password USER_ID WHO — the Keycloak admin reset-password PUT, from a mode-600 body.
+demo_reset_password() {
+  local id="$1" who="$2" code
+  jq -n --rawfile p "$WORKDIR/$who-password" '{type: "password", value: $p, temporary: false}' | body "$WORKDIR/$who-reset.json"
+  code=$(kc_api PUT "/admin/realms/$REALM/users/$id/reset-password" "$WORKDIR/$who-reset-out.json" "$WORKDIR/$who-reset.json")
+  rm -f "$WORKDIR/$who-reset.json"
+  [ "$code" = 204 ] || fail_http "PUT users/{id}/reset-password ($who)" "$code" "$WORKDIR/$who-reset-out.json"
+}
+
+# demo_vendor_user I TENANT CREATE — kitchen I's vendor user, reused by username (refused
+# if it belongs to another tenant) or, when CREATE is 1, created; its password is
+# re-randomised either way and its tenant_id read back by content. Sets DEMO_VENDOR_ID
+# and leaves WHO=demo-<key> ready for user_token.
+DEMO_VENDOR_ID=""
+demo_vendor_user() {
+  local i="$1" tenant="$2" create="$3" key uname who code existing
+  key=$(demo_field "$i" .key); uname=$(demo_field "$i" .vendorUsername); who="demo-$key"
+  (umask 077 && printf '%s' "$uname" > "$WORKDIR/$who-username")
+  demo_fresh_password "$who"
+  code=$(kc_api GET "/admin/realms/$REALM/users?username=$uname&exact=true" "$WORKDIR/$who-find.json")
+  [ "$code" = 200 ] || fail_http "GET users?username=$uname" "$code" "$WORKDIR/$who-find.json"
+  DEMO_VENDOR_ID=$(jq -r --arg u "$uname" '[.[] | select(.username == $u)][0].id // empty' "$WORKDIR/$who-find.json")
+  if [ -n "$DEMO_VENDOR_ID" ]; then
+    code=$(kc_api GET "/admin/realms/$REALM/users/$DEMO_VENDOR_ID" "$WORKDIR/$who-user.json")
+    [ "$code" = 200 ] || fail_http "GET users/$DEMO_VENDOR_ID" "$code" "$WORKDIR/$who-user.json"
+    existing=$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/$who-user.json")
+    if [ -n "$existing" ] && [ "$existing" != "$tenant" ]; then
+      refuse vendor-tenant "$uname belongs to tenant $existing, not $tenant; the stage does not re-home a user"
+    fi
+    demo_reset_password "$DEMO_VENDOR_ID" "$who"
+    echo "SKIP: demo vendor $uname exists ($DEMO_VENDOR_ID); its password was re-randomised (not shown)"
+  else
+    [ "$create" -eq 1 ] || refuse vendor "the demo vendor $uname does not exist; run --stage demo-kitchens first"
+    jq -n --arg u "$uname" --arg t "$tenant" --rawfile p "$WORKDIR/$who-password" '{
+        username: $u, email: $u, enabled: true, emailVerified: true, firstName: "Demo", lastName: "Vendor",
+        requiredActions: [], attributes: {tenant_id: [$t]},
+        credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/$who-create.json"
+    code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/$who-created.json" "$WORKDIR/$who-create.json")
+    rm -f "$WORKDIR/$who-create.json"
+    [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($uname)" "$code" "$WORKDIR/$who-created.json"
+    DEMO_VENDOR_ID=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
+    [ -n "$DEMO_VENDOR_ID" ] || { echo "FAIL: the demo vendor create returned no Location" >&2; exit 1; }
+    echo "CREATED: demo vendor $uname ($DEMO_VENDOR_ID)"
+  fi
+  code=$(kc_api GET "/admin/realms/$REALM/users/$DEMO_VENDOR_ID" "$WORKDIR/$who-user.json")
+  [ "$code" = 200 ] || fail_http "GET users/$DEMO_VENDOR_ID" "$code" "$WORKDIR/$who-user.json"
+  if [ "$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/$who-user.json")" != "$tenant" ]; then
+    echo "NOTICE: tenant_id did not survive on $uname; re-writing it through partialImport (imported users keep it)"
+    partial_import_vendor "$DEMO_VENDOR_ID" "$tenant" "$uname" "$WORKDIR/$who-password" Demo
+    code=$(kc_api GET "/admin/realms/$REALM/users/$DEMO_VENDOR_ID" "$WORKDIR/$who-user.json")
+    if [ "$code" != 200 ] || [ "$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/$who-user.json")" != "$tenant" ]; then
+      refuse tenant-attribute "$uname has no tenant_id $tenant after the partialImport fallback"
+    fi
+  fi
+  user_token "$who" || { echo "FAIL: the demo vendor $uname could not sign in with its fresh password" >&2; exit 1; }
+  if [ "$(jwt_claim "$who" tenant_id)" != "$tenant" ]; then
+    refuse tenant-claim "the demo vendor's token carries tenant_id '$(jwt_claim "$who" tenant_id)', not $tenant"
+  fi
+  [ -z "$PHASE30_TENANT_ID" ] || [ "$tenant" != "$PHASE30_TENANT_ID" ] || refuse phase30-tenant "the demo vendor's tenant is the Phase 30 tenant"
+}
+
+# demo_operator_login — the subscription guard, the operator's three Key Vault objects
+# (no new object), the per-run realm-admin operator, and the tenant list.
+demo_operator_login() {
+  azure_guard_once
+  need_tool curl; need_tool openssl; need_tool base64
+  ensure_workdir
+  read_kv KC_ADMIN_USERNAME KC_ADMIN_PASSWORD CORE_API_CLIENT_SECRET
+  operator_up
+  demo_tenants
+}
+
+# demo_vendor_login — list-open and clear-orders: sign in as --kitchen's demo vendor with
+# a password minted fresh for this run, then delete the operator BEFORE any order is read
+# or written (the plan 30-28 pattern: no realm admin stands while an order moves).
+demo_vendor_login() {
+  local name
+  demo_operator_login
+  name=$(demo_field "$DEMO_I" .tenantName)
+  demo_tenant_id "$DEMO_I"
+  [ -n "$DEMO_TENANT_ID" ] || refuse tenant "no tenant is named \"$name\"; run --stage demo-kitchens first"
+  demo_vendor_user "$DEMO_I" "$DEMO_TENANT_ID" 0
+  ORDER_WHO="demo-$(demo_field "$DEMO_I" .key)"
+  echo "OK: signed in as the demo vendor of $KITCHEN (tenant $DEMO_TENANT_ID)"
+  operator_down || exit 1
+}
+
+# demo_kitchen I — one kitchen, every step read first so a re-run writes nothing it holds.
+DEMO_LIVE=0; DEMO_PUBLISHED=0; DEMO_LOCATED=0; DEMO_LABELLED=0; DEMO_PRODUCTS=0
+demo_kitchen() {
+  local i="$1" key slug name who tenant code shop_id sku missing n legal got
+  key=$(demo_field "$i" .key); slug=$(demo_field "$i" .shop.slug); name=$(demo_field "$i" .tenantName); who="demo-$key"
+  echo "== demo kitchen $slug (tenant \"$name\")"
+
+  # The tenant, by exact name.
+  demo_tenant_id "$i"
+  tenant="$DEMO_TENANT_ID"
+  if [ -n "$tenant" ]; then
+    echo "SKIP: tenant \"$name\" exists ($tenant)"
+  else
+    jq -n --arg n "$name" --arg e "$(demo_field "$i" .vendorUsername)" '{name: $n, contactName: "J'"'"'Toye Demo", contactEmail: $e}' \
+      | body "$WORKDIR/$who-tenant-create.json"
+    code=$(api operator POST /api/v1/admin/tenants "$WORKDIR/$who-tenant.json" "$WORKDIR/$who-tenant-create.json")
+    [ "$code" = 201 ] || fail_http "POST /api/v1/admin/tenants ($name)" "$code" "$WORKDIR/$who-tenant.json"
+    tenant=$(jq -r '.id // empty' "$WORKDIR/$who-tenant.json")
+    echo "CREATED: tenant \"$name\" ($tenant)"
+  fi
+  [[ "$tenant" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the tenant id '$tenant' is not a UUID" >&2; exit 1; }
+  [ -z "$PHASE30_TENANT_ID" ] || [ "$tenant" != "$PHASE30_TENANT_ID" ] || refuse phase30-tenant "\"$name\" is the Phase 30 tenant"
+
+  # The operator acts inside that tenant from here on (as in the vendor stage).
+  set_tenant_attribute "$OP_ID" "$tenant" operator
+  user_token operator || exit 1
+
+  # The demo vendor, its fresh password, its token and its tenant claim.
+  demo_vendor_user "$i" "$tenant" 1
+
+  # GROUP_ADMIN (strict scoping: ungranted means no access).
+  local sub
+  code=$(api "$who" GET /api/v1/staff/me "$WORKDIR/$who-staff-me.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/staff/me ($who)" "$code" "$WORKDIR/$who-staff-me.json"
+  sub=$(jq -r '.userId // empty' "$WORKDIR/$who-staff-me.json")
+  if [ "$(jq -r '.groupAdmin' "$WORKDIR/$who-staff-me.json")" = true ]; then
+    echo "SKIP: the demo vendor is already GROUP_ADMIN"
+  else
+    jq -n --arg u "$sub" '{userId: $u, shopId: null, role: "GROUP_ADMIN"}' | body "$WORKDIR/$who-grant.json"
+    code=$(api operator POST /api/v1/staff/grant "$WORKDIR/$who-granted.json" "$WORKDIR/$who-grant.json")
+    case "$code" in 200|201) ;; *) fail_http "POST /api/v1/staff/grant ($who GROUP_ADMIN)" "$code" "$WORKDIR/$who-granted.json" ;; esac
+    code=$(api "$who" GET /api/v1/staff/me "$WORKDIR/$who-staff-me.json")
+    if [ "$code" != 200 ] || [ "$(jq -r '.groupAdmin' "$WORKDIR/$who-staff-me.json")" != true ]; then
+      echo "FAIL: the demo vendor is not GROUP_ADMIN after the grant (HTTP $code)" >&2; exit 1
+    fi
+    echo "CREATED: GROUP_ADMIN grant for the demo vendor"
+  fi
+
+  # The shop, by slug in the vendor's tenant; open every day so it takes orders (D-05).
+  # A 409 is another tenant's slug: refused, never adopted.
+  code=$(api "$who" GET "/api/v1/shops?size=100" "$WORKDIR/$who-shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops ($who)" "$code" "$WORKDIR/$who-shops.json"
+  shop_id=$(jq -r --arg s "$slug" '[.content[]? | select(.slug == $s)][0].id // empty' "$WORKDIR/$who-shops.json")
+  if [ -n "$shop_id" ]; then
+    echo "SKIP: shop $slug exists ($shop_id)"
+  else
+    jq --argjson i "$i" '([{open: "00:00", close: "23:59"}]) as $w | .kitchens[$i].shop
+        | {name, slug, address, description, tags, logoUrl, email, deliveryFeePennies, freeDeliveryThresholdPennies,
+           minimumOrderPennies, openingSchedule: {mon: $w, tue: $w, wed: $w, thu: $w, fri: $w, sat: $w, sun: $w}}' \
+      "$DEMO_FIXTURE" | body "$WORKDIR/$who-shop-create.json"
+    code=$(api "$who" POST /api/v1/shops "$WORKDIR/$who-shop.json" "$WORKDIR/$who-shop-create.json")
+    if [ "$code" = 409 ]; then
+      refuse slug-taken "$slug is held by another tenant ($(jq -r '[.type, .detail] | map(select(. != null)) | join(" | ")' "$WORKDIR/$who-shop.json" 2>/dev/null)); the stage never adopts or edits another tenant's shop"
+    fi
+    [ "$code" = 201 ] || fail_http "POST /api/v1/shops ($slug)" "$code" "$WORKDIR/$who-shop.json"
+    shop_id=$(jq -r '.id // empty' "$WORKDIR/$who-shop.json")
+    [ -n "$shop_id" ] || { echo "FAIL: the shop create returned no id" >&2; exit 1; }
+    echo "CREATED: shop $slug ($shop_id)"
+  fi
+
+  # The dishes: every fixture SKU the shop lacks, POSTed available. Existing products are
+  # never PUT or deleted.
+  code=$(api "$who" GET "/api/v1/products?shopId=$shop_id&size=100" "$WORKDIR/$who-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/products?shopId=$shop_id" "$code" "$WORKDIR/$who-products.json"
+  missing=$(jq -r --argjson i "$i" --slurpfile have "$WORKDIR/$who-products.json" \
+    '[$have[0].content[]?.sku] as $h | .kitchens[$i].menu[] | select(.sku as $s | $h | index($s) | not) | .sku' "$DEMO_FIXTURE")
+  n=0
+  for sku in $missing; do
+    jq --argjson i "$i" --arg sku "$sku" --arg s "$shop_id" '.kitchens[$i].menu[] | select(.sku == $sku)
+        | {sku, title, category, pricePennies, description, ingredientsText, allergenMask, featured, dietaryTags,
+           durabilityType, shelfLifeDays, shopId: $s, available: true}' "$DEMO_FIXTURE" | body "$WORKDIR/$who-product.json"
+    code=$(api "$who" POST /api/v1/products "$WORKDIR/$who-product-out.json" "$WORKDIR/$who-product.json")
+    case "$code" in 200|201) ;; *) fail_http "POST /api/v1/products ($sku)" "$code" "$WORKDIR/$who-product-out.json" ;; esac
+    n=$((n + 1))
+  done
+  if [ "$n" -gt 0 ]; then echo "CREATED: $n dish(es) on $slug"; else echo "SKIP: $slug already lists every fixture dish"; fi
+
+  # The trader identity, "<kitchen> (demo)" (D-05): PUT unless identical.
+  jq --argjson i "$i" '.kitchens[$i].trader | {legalName, entityType, addressLine1, addressLine2, addressCity, addressPostcode, vatNumber}' \
+    "$DEMO_FIXTURE" | body "$WORKDIR/$who-identity.json"
+  code=$(api "$who" GET /api/v1/trader-identity "$WORKDIR/$who-identity-now.json")
+  if [ "$code" = 200 ] && [ "$(jq -S '{legalName, entityType, addressLine1, addressLine2, addressCity, addressPostcode, vatNumber}' "$WORKDIR/$who-identity-now.json")" = "$(jq -S . "$WORKDIR/$who-identity.json")" ]; then
+    echo "SKIP: the trader identity is already on file"
+  else
+    case "$code" in 200|404) ;; *) fail_http "GET /api/v1/trader-identity ($who)" "$code" "$WORKDIR/$who-identity-now.json" ;; esac
+    code=$(api "$who" PUT /api/v1/trader-identity "$WORKDIR/$who-identity-put.json" "$WORKDIR/$who-identity.json")
+    case "$code" in 200|201) ;; *) fail_http "PUT /api/v1/trader-identity ($who)" "$code" "$WORKDIR/$who-identity-put.json" ;; esac
+    echo "WRITTEN: trader identity $(demo_field "$i" .trader.legalName) (SOLE_TRADER, no VAT number)"
+  fi
+
+  # Onboarding to LIVE, as the demo vendor, with the demo gate reason.
+  onboard_to_live "$shop_id" "$who" "$slug" "$DEMO_GATE_REASON"
+
+  # Read-back: published with a coordinate, every dish, LIVE, and the "(demo)" seller a
+  # customer sees on the anonymous public shop read.
+  local published lat lon count live
+  code=$(api "$who" GET "/api/v1/shops/$shop_id" "$WORKDIR/$who-rb-shop.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/shops/$shop_id" "$code" "$WORKDIR/$who-rb-shop.json"
+  published=$(jq -r '.published' "$WORKDIR/$who-rb-shop.json"); lat=$(jq -r '.latitude // empty' "$WORKDIR/$who-rb-shop.json"); lon=$(jq -r '.longitude // empty' "$WORKDIR/$who-rb-shop.json")
+  code=$(api "$who" GET "/api/v1/products?shopId=$shop_id&size=100" "$WORKDIR/$who-rb-products.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/products" "$code" "$WORKDIR/$who-rb-products.json"
+  count=$(jq -r --argjson i "$i" --slurpfile have "$WORKDIR/$who-rb-products.json" \
+    '[$have[0].content[]?.sku] as $h | [.kitchens[$i].menu[] | select(.sku as $s | $h | index($s))] | length' "$DEMO_FIXTURE")
+  code=$(api "$who" GET /api/v1/onboarding/me "$WORKDIR/$who-rb-onb.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/onboarding/me" "$code" "$WORKDIR/$who-rb-onb.json"
+  live=$(jq -r '.status' "$WORKDIR/$who-rb-onb.json")
+  code=$(pub_api GET "/api/v1/public/shops/$slug" "$WORKDIR/$who-pub-shop.json")
+  [ "$code" = 200 ] || fail_http "anonymous GET /api/v1/public/shops/$slug" "$code" "$WORKDIR/$who-pub-shop.json"
+  legal=$(demo_field "$i" .trader.legalName); got=$(jq -r '.seller.legalName // ""' "$WORKDIR/$who-pub-shop.json")
+  echo "DEMO-KITCHEN slug=$slug tenant=$tenant published=$published latitude=${lat:-null} longitude=${lon:-null} products=$count/$(jq --argjson i "$i" '.kitchens[$i].menu | length' "$DEMO_FIXTURE") onboarding=$live seller=\"$got\""
+  [ "$published" = true ] || { echo "FAIL: $slug is not published after go-live" >&2; exit 1; }
+  [ -n "$lat" ] && [ -n "$lon" ] || { echo "FAIL [no-coordinate]: $slug has no coordinate; its postcode did not geocode, so no located visitor would ever see it" >&2; exit 1; }
+  [ "$count" -eq "$(jq --argjson i "$i" '.kitchens[$i].menu | length' "$DEMO_FIXTURE")" ] || { echo "FAIL: $slug lists $count of its fixture dishes" >&2; exit 1; }
+  [ "$live" = LIVE ] || { echo "FAIL: $slug onboarding is $live, not LIVE" >&2; exit 1; }
+  [ "$got" = "$legal" ] || { echo "FAIL [demo-label]: the public seller of $slug reads \"$got\", not \"$legal\" (D-05: a customer must see \"(demo)\" in the Seller block)" >&2; exit 1; }
+  DEMO_LIVE=$((DEMO_LIVE + 1)); DEMO_PUBLISHED=$((DEMO_PUBLISHED + 1)); DEMO_LOCATED=$((DEMO_LOCATED + 1))
+  DEMO_LABELLED=$((DEMO_LABELLED + 1)); DEMO_PRODUCTS=$((DEMO_PRODUCTS + count))
+}
+
+# --stage demo-kitchens — D-01 as ruled. The EXIT trap deletes the operator.
+demo_kitchens_stage() {
+  local i expected got code
+  demo_operator_login
+  for ((i = 0; i < DEMO_N; i++)); do demo_kitchen "$i"; done
+  expected=$(jq -r '[.kitchens[].shop.slug] | join(",")' "$DEMO_FIXTURE")
+  code=$(pub_api GET /api/v1/public/featured-shops "$WORKDIR/featured.json")
+  [ "$code" = 200 ] || fail_http "anonymous GET /api/v1/public/featured-shops" "$code" "$WORKDIR/featured.json"
+  got=$(jq -r 'if type == "array" then [.[].slug] | join(",") else "not-an-array" end' "$WORKDIR/featured.json" 2>/dev/null || echo unparseable)
+  # The realm-admin operator is deleted now, so the verdict below is printed with none standing.
+  operator_down || exit 1
+  echo "DEMO-FEATURED expected=$expected got=$got"
+  [ "$got" = "$expected" ] || { echo "FAIL [featured-mismatch]: the landing's featured list is '$got', not the demo kitchens in order ('$expected'); check app-config storefront.featured-shop-slugs" >&2; exit 1; }
+  echo "DEMO-KITCHENS kitchens=$DEMO_N live=$DEMO_LIVE published=$DEMO_PUBLISHED located=$DEMO_LOCATED labelled=$DEMO_LABELLED products=$DEMO_PRODUCTS at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# The open statuses (a demo order still on a kitchen board).
+OPEN_ORDER_STATUSES="DRAFT PENDING CONFIRMED PREPARING READY"
+
+# --stage list-open --kitchen SLUG — READ-ONLY. No customer field is printed.
+list_open_stage() {
+  local st total=0
+  demo_vendor_login
+  for st in $OPEN_ORDER_STATUSES; do
+    orders_in_status "$st" "$WORKDIR/open-$st.json"
+    jq -r --arg k "$KITCHEN" 'map({orderNumber, status, paymentStatus, createdAt, totalAmountPennies})[]
+      | "OPEN-ORDER kitchen=\($k) order=\(.orderNumber) status=\(.status) payment_status=\(.paymentStatus // "NONE") created=\(.createdAt) total=\(.totalAmountPennies)p"' \
+      "$WORKDIR/open-$st.json"
+    total=$((total + $(jq 'length' "$WORKDIR/open-$st.json")))
+  done
+  echo "LIST-OPEN kitchen=$KITCHEN count=$total at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# clear_full_refund ID NUMBER — a full refund of a paid, accepted order through the vendor
+# API, keyed demo-clear-<number>-refund-<failed|canceled attempts> (a re-run never refunds twice; a dead attempt gets a fresh key), read back REFUNDED
+# locally and succeeded|pending in Stripe (its charge read for livemode false).
+clear_full_refund() {
+  local id="$1" n="$2" code amount dead re ch st t0
+  code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/cl-detail.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($n)" "$code" "$WORKDIR/cl-detail.json"
+  # Live refunds are the ones RefundRepository.sumLiveAmountByOrderId counts: CREATING, pending,
+  # requires_action, succeeded (RefundStatus serialises lower-case). failed and canceled leave the
+  # money on the charge, so they are not owed back and each one makes the retry key new: the server
+  # replays whatever refund it holds under a key, a failed one included (review 1104 round 1).
+  amount=$(jq -r '(.totalAmountPennies // 0) - ([.refunds[]? | select((.status // "") | IN("CREATING","pending","requires_action","succeeded","SUCCEEDED")) | .amountPennies // 0] | add // 0)' "$WORKDIR/cl-detail.json")
+  dead=$(jq -r '[.refunds[]? | select((.status // "") | ascii_downcase | IN("failed","canceled"))] | length' "$WORKDIR/cl-detail.json")
+  rm -f "$WORKDIR/cl-detail.json"
+  [[ "$amount" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: $n has nothing left to refund ($amount)" >&2; exit 1; }
+  jq -n --argjson a "$amount" --arg n "Staging demo order cleared (design D17): a full refund of a TEST charge" \
+    '{amountPennies: $a, reason: "REQUESTED_BY_CUSTOMER", note: $n}' | body "$WORKDIR/cl-refund.json"
+  API_EXTRA_HEADER="Idempotency-Key: demo-clear-$n-refund-$dead"
+  code=$(api "$ORDER_WHO" POST "/api/v1/orders/$id/refund" "$WORKDIR/cl-refund-out.json" "$WORKDIR/cl-refund.json")
+  API_EXTRA_HEADER=""
+  rm -f "$WORKDIR/cl-refund.json"
+  [ "$code" = 201 ] || fail_http "POST /api/v1/orders/{id}/refund ($n, ${amount}p)" "$code" "$WORKDIR/cl-refund-out.json"
+  re=$(jq -r '.stripeRefundId // empty' "$WORKDIR/cl-refund-out.json"); rm -f "$WORKDIR/cl-refund-out.json"
+  echo "OK: full refund of ${amount}p requested for $n (Idempotency-Key demo-clear-$n-refund-$dead)"
+  t0=$(date +%s)
+  while :; do
+    code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/cl-detail.json")
+    st=$(jq -r '.status // ""' "$WORKDIR/cl-detail.json" 2>/dev/null || true); rm -f "$WORKDIR/cl-detail.json"
+    [ "$code" != 200 ] || [ "$st" != REFUNDED ] || break
+    if [ $(( $(date +%s) - t0 )) -ge "$REFUND_DEADLINE_SECONDS" ]; then
+      echo "FAIL: $n reads HTTP $code status '$st' ${REFUND_DEADLINE_SECONDS}s after the refund, not REFUNDED" >&2; exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  [[ "$re" =~ ^re_[A-Za-z0-9]+$ ]] || { echo "FAIL: the refund of $n carries no Stripe refund id" >&2; exit 1; }
+  code=$(stripe_api GET "/v1/refunds/$re" "$WORKDIR/cl-re.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/refunds/$re" "$code" "$WORKDIR/cl-re.json"
+  case "$(jq -r '.status // ""' "$WORKDIR/cl-re.json")" in succeeded|pending) ;; *) echo "FAIL: Stripe refund $re is $(jq -r '.status' "$WORKDIR/cl-re.json")" >&2; exit 1 ;; esac
+  ch=$(jq -r '.charge // empty' "$WORKDIR/cl-re.json")
+  code=$(stripe_api GET "/v1/charges/$ch" "$WORKDIR/cl-ch.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/charges/$ch" "$code" "$WORKDIR/cl-ch.json"
+  assert_test_mode "$WORKDIR/cl-ch.json" "the refunded charge $ch"
+  echo "SEED-CLEAR order=$n action=refund amount=${amount}p refund=$re order_status=REFUNDED livemode=false at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# clear_one ID NUMBER — one owner-named order, by its status and payment status.
+clear_one() {
+  local id="$1" n="$2" code ost ops st
+  code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/cl-detail.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($n)" "$code" "$WORKDIR/cl-detail.json"
+  ost=$(jq -r '.status // ""' "$WORKDIR/cl-detail.json"); ops=$(jq -r '.paymentStatus // "NONE"' "$WORKDIR/cl-detail.json")
+  rm -f "$WORKDIR/cl-detail.json"
+  case "$ost/$ops" in
+    DRAFT/*)
+      # An unpaid card DRAFT: the intent cancelled in Stripe TEST first (platform account).
+      cancel_one "$id" "$n" ;;
+    PENDING/NONE)
+      # Cash, reachable only if staging ever runs without a Stripe key.
+      jq -n '{reasonCode: "OTHER"}' | body "$WORKDIR/cl-cancel.json"
+      code=$(api "$ORDER_WHO" POST "/api/v1/orders/$id/cancel" "$WORKDIR/cl-cancel-out.json" "$WORKDIR/cl-cancel.json")
+      rm -f "$WORKDIR/cl-cancel.json" "$WORKDIR/cl-cancel-out.json"
+      [ "$code" = 200 ] || { echo "FAIL: POST /api/v1/orders/{id}/cancel ($n) returned HTTP $code" >&2; exit 1; }
+      code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/cl-detail.json")
+      st=$(jq -r '.status // ""' "$WORKDIR/cl-detail.json" 2>/dev/null || true); rm -f "$WORKDIR/cl-detail.json"
+      [ "$code" = 200 ] && [ "$st" = CANCELLED ] || { echo "FAIL: $n reads HTTP $code status '$st' after the cancel, not CANCELLED" >&2; exit 1; }
+      echo "SEED-CLEAR order=$n action=cancel reason=OTHER order_status=CANCELLED at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" ;;
+    PENDING/CAPTURED)
+      # Paid, not yet accepted: a refund needs CONFIRMED or later (RefundService), so accept first.
+      code=$(api "$ORDER_WHO" POST "/api/v1/orders/$id/confirm" "$WORKDIR/cl-accept.json")
+      st=$(jq -r '.status // ""' "$WORKDIR/cl-accept.json" 2>/dev/null || true); rm -f "$WORKDIR/cl-accept.json"
+      [ "$code" = 200 ] && [ "$st" = CONFIRMED ] || { echo "FAIL: the accept of $n answered HTTP $code status '$st', not CONFIRMED" >&2; exit 1; }
+      echo "OK: $n accepted (CONFIRMED) so it can be refunded"
+      clear_full_refund "$id" "$n" ;;
+    CONFIRMED/CAPTURED|PREPARING/CAPTURED|READY/CAPTURED)
+      clear_full_refund "$id" "$n" ;;
+    *)
+      # Cancelling a paid order would refund nothing (OrderStateMachineConfig), and a
+      # COMPLETED, CANCELLED or REFUNDED order is not stale.
+      refuse not-clearable "$n is $ost with payment status $ops; nothing was written for it" ;;
+  esac
+}
+
+# --stage clear-orders --kitchen SLUG --orders ORD-a,ORD-b — the owner-confirmed list
+# ONLY (the D-02 precedent), each order in its own errexit subshell.
+clear_orders_stage() {
+  local n id rc st requested=0 cleared=0 refused=0
+  local -a list=()
+  demo_vendor_login
+  read_stripe_key
+  printf '[]' | body "$WORKDIR/cl-all.json"
+  for st in $ALL_ORDER_STATUSES; do
+    orders_in_status "$st" "$WORKDIR/cl-$st.json"
+    jq -s '.[0] + .[1]' "$WORKDIR/cl-all.json" "$WORKDIR/cl-$st.json" | body "$WORKDIR/cl-all.next"
+    cp "$WORKDIR/cl-all.next" "$WORKDIR/cl-all.json"; rm -f "$WORKDIR/cl-all.next" "$WORKDIR/cl-$st.json"
+  done
+  IFS=, read -r -a list <<<"$ORDERS"
+  for n in "${list[@]}"; do
+    requested=$((requested + 1))
+    id=$(jq -r --arg n "$n" '[.[] | select(.orderNumber == $n)] | if length == 1 then .[0].id else empty end' "$WORKDIR/cl-all.json")
+    if [ -z "$id" ]; then
+      echo "REFUSED [not-found]: $n is not one of $KITCHEN's orders; nothing was called for it" >&2
+      refused=$((refused + 1)); continue
+    fi
+    set +e
+    ( set -e; clear_one "$id" "$n" ); rc=$?
+    set -e
+    if [ "$rc" -eq 0 ]; then cleared=$((cleared + 1))
+    else refused=$((refused + 1)); echo "NOT-CLEARED: $n (rc=$rc); going on to the next named order" >&2; fi
+  done
+  echo "CLEAR-ORDERS kitchen=$KITCHEN requested=$requested cleared=$cleared refused=$refused"
+  [ "$refused" -eq 0 ] || exit 1
+}
+
+print_demo_plan() {
+  local i
+  echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
+  case "$STAGE" in
+    demo-kitchens)
+      echo "  target        api ${API_BASE}; fixture ${DEMO_FIXTURE}; a per-run realm-admin operator (deleted on EVERY exit path)"
+      echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: keycloak-credentials--admin-username keycloak-credentials--admin-password keycloak-credentials--frontend-client-secret (values never printed; no new object)"
+      echo "  02 operator   port-forward svc/keycloak ${PF_PORTS[*]}; seed-operator-<UTC> + realm role admin; GET /api/v1/admin/tenants (the Phase 30 tenant read only to refuse)"
+      for ((i = 0; i < DEMO_N; i++)); do
+        echo "  kitchen $((i + 1))     \"$(demo_field "$i" .tenantName)\" / $(demo_field "$i" .shop.slug) / $(demo_field "$i" .vendorUsername)"
+      done
+      echo "  per kitchen   POST /api/v1/admin/tenants (unless it exists); the operator's tenant_id set; the demo vendor created or reused (refused if another tenant's), password re-randomised by PUT users/{id}/reset-password (mode 600, never printed)"
+      echo "                GET /api/v1/staff/me, POST /api/v1/staff/grant GROUP_ADMIN (unless held); GET /api/v1/shops, POST /api/v1/shops (409 = REFUSED [slug-taken])"
+      echo "                GET /api/v1/products, POST /api/v1/products per missing fixture SKU (never PUT or DELETE); GET/PUT /api/v1/trader-identity \"<kitchen> (demo)\""
+      echo "                /api/v1/onboarding: create, submit, waive the human-review gates (\"${DEMO_GATE_REASON}\"), approve, /api/v1/onboarding/go-live"
+      echo "                read-back: published, a coordinate, every dish, LIVE; anonymous GET /api/v1/public/shops/<slug> .seller.legalName ends \" (demo)\" (else FAIL [demo-label])"
+      echo "  last          anonymous GET /api/v1/public/featured-shops == the fixture slugs in order (else FAIL [featured-mismatch]); DEMO-KITCHENS kitchens=… live=… published=… located=… labelled=… products=… at=…; never /api/v1/billing" ;;
+    list-open|clear-orders)
+      echo "  target        api ${API_BASE}; kitchen ${KITCHEN} (tenant \"$(demo_field "$DEMO_I" .tenantName)\")"
+      echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: keycloak-credentials--admin-username keycloak-credentials--admin-password keycloak-credentials--frontend-client-secret (values never printed)"
+      echo "  02 operator   seed-operator-<UTC>: the demo tenant by name, the demo vendor's tenant_id, a fresh password (reset-password PUT), its token; the operator is deleted HERE, before any order is read"
+      if [ "$STAGE" = list-open ]; then
+        echo "  03 GET        /api/v1/orders/status/{${OPEN_ORDER_STATUSES// /,}}   READ-ONLY"
+        echo "  04 print      OPEN-ORDER kitchen=… order=… status=… payment_status=… created=… total=…p (no customer field), then LIST-OPEN kitchen=… count=… at=…"
+      else
+        echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+        echo "  per order     of exactly ${ORDERS//,/ }: DRAFT -> the intent cancelled in Stripe TEST, then the order; PENDING/NONE -> cancel {reasonCode: OTHER};"
+        echo "                PENDING/CAPTURED -> accept, then a full refund; CONFIRMED|PREPARING|READY/CAPTURED -> a full refund (Idempotency-Key demo-clear-<order>-refund-<dead attempts>), read back REFUNDED"
+        echo "                anything else -> REFUSED [not-clearable], nothing written"
+        echo "  last          CLEAR-ORDERS kitchen=… requested=… cleared=… refused=… (rc 1 when anything was refused)"
+      fi ;;
+  esac
+}
+
 # --selftest
 # ===========================================================================
 _ST_RESULTS=()
@@ -3184,6 +3762,10 @@ STUB
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STUB_LOG_DIR/curl.log"
 out=""; wfmt=""; hdr=""; method=""; url=""; data=0; bodyfile=""; acct_hdr=""; idem=""
+# quick 261102-r6u: the CALLER of a call, from its -K file (WHO-auth.curlrc -> WHO) or its password
+# grant (username@.../WHO-username -> WHO). $STUB_RESP_DIR/<caller>/<key>.json (and <key>.code) take
+# precedence over the shared fixture, so one run can answer three demo vendors differently.
+caller=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
@@ -3191,8 +3773,9 @@ while [ "$#" -gt 0 ]; do
     -D) hdr="$2"; shift 2 ;;
     -X) method="$2"; shift 2 ;;
     --data-binary) data=1; case "$2" in @*) bodyfile="${2#@}"; jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
-    --data-urlencode|-d) data=1; shift 2 ;;
-    -K) acct_hdr=$(command grep -ho 'Stripe-Account: [^"]*' "$2" 2>/dev/null || true)
+    --data-urlencode|-d) data=1; case "$2" in username@*) caller=$(basename "${2#username@}"); caller="${caller%-username}" ;; esac; shift 2 ;;
+    -K) caller=$(basename "$2"); caller="${caller%.curlrc}"; caller="${caller%-auth}"
+        acct_hdr=$(command grep -ho 'Stripe-Account: [^"]*' "$2" 2>/dev/null || true)
         [ -z "$acct_hdr" ] || printf '%s\n' "$acct_hdr" >> "$STUB_LOG_DIR/stripe-account.log"
         acct_hdr="${acct_hdr##*Stripe-Account: }"; shift 2 ;;
     -H) case "$2" in "Idempotency-Key: "*) idem="${2#Idempotency-Key: }" ;; esac; shift 2 ;;
@@ -3235,19 +3818,45 @@ esac
   "GET /health/ready") key=empty; code=200 ;;
   "POST /realms/master/protocol/openid-connect/token") key=admin-token; code=200 ;;
   "POST /realms/jtoye-staging/protocol/openid-connect/token") key=user-token; code=200 ;;
-  "POST /admin/realms/jtoye-staging/users") key=empty; code=201; location="http://127.0.0.1:18080/admin/realms/jtoye-staging/users/op-0001" ;;
+  "POST /admin/realms/jtoye-staging/users")
+    key=empty; code=201; location="http://127.0.0.1:18080/admin/realms/jtoye-staging/users/op-0001"
+    nu=$(jq -r '.username // empty' "$bodyfile" 2>/dev/null || true)
+    case "$nu" in vendor@*.example.com) nu="${nu#vendor@}"; location="http://127.0.0.1:18080/admin/realms/jtoye-staging/users/demo-${nu%.example.com}" ;; esac ;;
   "GET /admin/realms/jtoye-staging/users")
-    case "$query" in *vendor.staging*) key=vendor-list ;; *) key=empty-list ;; esac; code=200 ;;
+    case "$query" in
+      *vendor.staging*) key=vendor-list ;;
+      *username=vendor@*.example.com*) q="${query#*username=vendor@}"; key="kc-find-${q%%.example.com*}"; [ -f "$STUB_RESP_DIR/$key.json" ] || key=empty-list ;;
+      *) key=empty-list ;;
+    esac; code=200 ;;
   "GET /admin/realms/jtoye-staging/roles/admin") key=role-admin; code=200 ;;
   "POST /admin/realms/jtoye-staging/users/"*"/role-mappings/realm") key=empty; code=204 ;;
-  "GET /admin/realms/jtoye-staging/users/op-0001") key=operator; code=200 ;;
+  "GET /admin/realms/jtoye-staging/users/op-0001")
+    key=operator; code=200; [ ! -f "$STUB_LOG_DIR/kcuser-put-op-0001.json" ] || respfile="$STUB_LOG_DIR/kcuser-put-op-0001.json" ;;
+  "GET /admin/realms/jtoye-staging/users/demo-"*)
+    key="kc-user-${base##*/}"; code=200; [ ! -f "$STUB_LOG_DIR/kcuser-put-${base##*/}.json" ] || respfile="$STUB_LOG_DIR/kcuser-put-${base##*/}.json" ;;
+  "PUT /admin/realms/jtoye-staging/users/"*"/reset-password") key=empty; code=204 ;;
   "GET /admin/realms/jtoye-staging/users/vendor-0001") key=vendor; code=200 ;;
-  "PUT /admin/realms/jtoye-staging/users/"*) key=empty; code=204 ;;
+  "PUT /admin/realms/jtoye-staging/users/"*)
+    key=empty; code=204; [ -z "$bodyfile" ] || cp "$bodyfile" "$STUB_LOG_DIR/kcuser-put-${base##*/}.json" ;;
   "DELETE /admin/realms/jtoye-staging/users/"*) key=empty; code=204 ;;
   "GET /api/v1/admin/tenants") key=tenants; code=200 ;;
-  "GET /api/v1/staff/me") key=staff-me; code=200 ;;
+  # quick 261102-r6u: a tenant create answers the id tenant-ids.json maps its name to.
+  "POST /api/v1/admin/tenants")
+    key=empty; code=201; respfile="$STUB_LOG_DIR/tenant-created.json"
+    jq -n --slurpfile b "$bodyfile" --slurpfile m "$STUB_RESP_DIR/tenant-ids.json" '{id: $m[0][$b[0].name], name: $b[0].name}' > "$respfile" 2>/dev/null || printf '{}' > "$respfile" ;;
+  "POST /api/v1/staff/grant")
+    key=empty; code=201; gu=$(jq -r '.userId // empty' "$bodyfile" 2>/dev/null || true); : > "$STUB_LOG_DIR/granted-${gu:-none}" ;;
+  "GET /api/v1/staff/me")
+    key=staff-me; code=200
+    if [ -n "$caller" ] && [ -f "$STUB_RESP_DIR/$caller/staff-me-granted.json" ] \
+       && [ -f "$STUB_LOG_DIR/granted-$(jq -r '.userId // "none"' "$STUB_RESP_DIR/$caller/staff-me.json" 2>/dev/null)" ]; then key=staff-me-granted; fi ;;
   "GET /api/v1/shops") key=shops; code=200 ;;
-  "GET /api/v1/products") key=products; code=200 ;;
+  "GET /api/v1/products")
+    key=products; code=200; [ ! -f "$STUB_LOG_DIR/products-posted-${caller:-none}" ] || key=products-after ;;
+  "POST /api/v1/products") key=empty; code=201; : > "$STUB_LOG_DIR/products-posted-${caller:-none}" ;;
+  "PUT /api/v1/trader-identity") key=empty; code=200 ;;
+  "POST /api/v1/onboarding") key=empty; code=201 ;;
+  "POST /api/v1/onboarding/"*) key=empty; code=200 ;;
   "GET /api/v1/products/culinary-packs") key=packs; code=200 ;;
   "POST /api/v1/products/culinary-packs/seed") key=seed; code=200 ;;
   # A PUT of the shop is echoed back by the next GET (plan 30-28's read-back), unless
@@ -3256,12 +3865,23 @@ esac
     key=shop; code=200
     if [ -z "${STUB_SHOP_PUT_IGNORED:-}" ] && [ -f "$STUB_LOG_DIR/shop-put-body.json" ]; then respfile="$STUB_LOG_DIR/shop-put-body.json"; fi ;;
   "GET /api/v1/trader-identity") key=identity; code=200 ;;
-  "GET /api/v1/onboarding/me") key=onboarding; code=200 ;;
+  "GET /api/v1/onboarding/me")
+    key=onboarding; code=200
+    # A demo vendor's onboarding walks onboarding-1, -2, ... (each optionally with a .code), then -last.
+    if [ -n "$caller" ] && [ -f "$STUB_RESP_DIR/$caller/onboarding-1.json" ]; then
+      on=$(( $(cat "$STUB_LOG_DIR/onb-reads-$caller" 2>/dev/null || echo 0) + 1 )); echo "$on" > "$STUB_LOG_DIR/onb-reads-$caller"
+      key="onboarding-$on"; [ -f "$STUB_RESP_DIR/$caller/$key.json" ] || key=onboarding-last
+    fi ;;
   # The order stage (plan 29-18): the anonymous storefront, then Stripe TEST.
   # A confirm leaves a marker, so the intent reads succeeded only after it.
   "GET /api/v1/public/shops/staging-test-kitchen") key=pub-shop; code=200 ;;
   "GET /api/v1/public/shops/staging-test-kitchen/products") key=pub-products; code=200 ;;
   "POST /api/v1/public/shops/staging-test-kitchen/orders") key=guest-order; code=201 ;;
+  # quick 261102-r6u: any other public shop, by slug, and the featured list.
+  "GET /api/v1/public/featured-shops") key=featured-shops; code=200 ;;
+  "GET /api/v1/public/shops/"*"/products") ps="${base#/api/v1/public/shops/}"; key="pub-products-${ps%/products}"; code=200 ;;
+  "GET /api/v1/public/shops/"*) key="pub-shop-${base#/api/v1/public/shops/}"; code=200 ;;
+  "POST /api/v1/public/shops/"*"/orders") key=guest-order; code=201 ;;
   "GET /api/v1/public/orders/"*) key=tracking; code=200 ;;
   "POST /v1/payment_intents/"*"/confirm") key=pi-confirm; code=200; : > "$STUB_LOG_DIR/confirmed" ;;
   "GET /v1/payment_intents") key=pi-list; code=200 ;;
@@ -3282,11 +3902,16 @@ esac
   "POST /api/v1/orders/"*"/payment-links") key=pay-link-issue; code=201 ;;
   "GET /api/v1/orders/"*"/detail")
     oid="${base#/api/v1/orders/}"; oid="${oid%/detail}"
-    if [ -f "$STUB_LOG_DIR/order-cancelled-$oid" ]; then key="detail-$oid-after"; else key="detail-$oid"; fi; code=200 ;;
+    if [ -f "$STUB_LOG_DIR/order-cancelled-$oid" ]; then key="detail-$oid-after"; else key="detail-$oid"; fi; code=200
+    # quick 261102-r6u: an order confirmed, then refunded, reads its own later fixture when one exists.
+    if [ -f "$STUB_LOG_DIR/order-refunded-$oid" ] && [ -f "$STUB_RESP_DIR/detail-$oid-refunded.json" ]; then key="detail-$oid-refunded"
+    elif [ -f "$STUB_LOG_DIR/order-confirmed-$oid" ] && [ -f "$STUB_RESP_DIR/detail-$oid-confirmed.json" ]; then key="detail-$oid-confirmed"; fi ;;
   "POST /api/v1/orders/"*"/cancel")
     oid="${base#/api/v1/orders/}"; oid="${oid%/cancel}"; key=empty; code=200; : > "$STUB_LOG_DIR/order-cancelled-$oid" ;;
   "POST /api/v1/orders/"*"/submit"|"POST /api/v1/orders/"*"/confirm"|"POST /api/v1/orders/"*"/start-preparation")
-    key=transition; code="${STUB_TRANSITION_CODE:-200}" ;;
+    key=transition; code="${STUB_TRANSITION_CODE:-200}"
+    case "$base" in */confirm) oid="${base#/api/v1/orders/}"; oid="${oid%/confirm}"; : > "$STUB_LOG_DIR/order-confirmed-$oid"
+      [ ! -f "$STUB_RESP_DIR/confirm-$oid.json" ] || key="confirm-$oid" ;; esac ;;
   # billing (plan 30-26, PAY-02 / D-04): the product's billing API, a TEST payment
   # method, then the subscription and its invoice read from Stripe by id.
   "GET /api/v1/billing/subscription") key=billing-get; code=200 ;;
@@ -3316,7 +3941,10 @@ esac
     if [ -f "$STUB_LOG_DIR/refunded" ] && [ -f "$STUB_RESP_DIR/tr-$trid-after.json" ]; then key="tr-$trid-after"; fi
     [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
   # The vendor refund (it marks the transfer reversed), then the refund read from Stripe.
-  "POST /api/v1/orders/"*"/refund") key=refund-out; code=201; : > "$STUB_LOG_DIR/refunded" ;;
+  "POST /api/v1/orders/"*"/refund")
+    key=refund-out; code=201; : > "$STUB_LOG_DIR/refunded"
+    oid="${base#/api/v1/orders/}"; oid="${oid%/refund}"; : > "$STUB_LOG_DIR/order-refunded-$oid"
+    [ ! -f "$STUB_RESP_DIR/refund-out-$oid.json" ] || key="refund-out-$oid" ;;
   "GET /v1/refunds")
     key=refund-list; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
   "GET /v1/refunds/"*)
@@ -3338,9 +3966,11 @@ esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then
   key=problem; code=500; respfile=""; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
 fi
+if [ -n "$caller" ] && [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$caller/$key.code" ]; then code=$(cat "$STUB_RESP_DIR/$caller/$key.code"); fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
 if [ -n "$out" ]; then
   if [ -n "$respfile" ] && [ -f "$respfile" ]; then cat "$respfile" > "$out"
+  elif [ -n "$caller" ] && [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$caller/$key.json" ]; then cat "$STUB_RESP_DIR/$caller/$key.json" > "$out"
   elif [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$key.json" ]; then cat "$STUB_RESP_DIR/$key.json" > "$out"; else printf '{}' > "$out"; fi
 fi
 if [ -n "$hdr" ]; then
@@ -3415,6 +4045,8 @@ IDF
     rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
     rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted" "$ast/logs/shop-put-body.json" "$ast/logs/refunded"
     : > "$ast/logs/stripe-acct-flow.log"; rm -f "$ast/logs/stripe-error.json" "$ast/logs/"po-reads-* "$ast/logs/payout-created"
+    rm -f "$ast/logs/"kcuser-put-* "$ast/logs/"granted-* "$ast/logs/"products-posted-* "$ast/logs/"onb-reads-* \
+      "$ast/logs/"order-confirmed-* "$ast/logs/"order-refunded-* "$ast/logs/tenant-created.json"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -5458,6 +6090,370 @@ IDF
   if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=15 direct_plan=1 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
+  # ===== The staging demo kitchens (quick 261102-r6u; D-01 as ruled, D-05; design D17) =====
+  # Three demo tenants, one kitchen each, from scripts/fixtures/demo-kitchens.json. A caller
+  # directory (resp/demo-<key>/) answers one demo vendor's calls; resp/ answers the rest.
+  local df="$REPO_ROOT/scripts/fixtures/demo-kitchens.json" di dslug dname
+  local demo_args=(--context jtoye-stg-aks --identity-file "$ast/identity.yaml")
+  local demo_tids=(d1d1d1d1-0000-4000-8000-000000000001 d2d2d2d2-0000-4000-8000-000000000002 d3d3d3d3-0000-4000-8000-000000000003)
+  local demo_sids=(5a5a5a5a-0000-4000-8000-000000000001 5b5b5b5b-0000-4000-8000-000000000002 5c5c5c5c-0000-4000-8000-000000000003)
+  local demo_n
+  demo_n=$(jq '.kitchens | length' "$df" 2>/dev/null || echo 0)
+  _st_demo_jwt() { printf 'eyJhbGciOiJub25lIn0.%s.stub' "$(jq -cn --arg s "$1" --arg t "$2" '{sub: $s, tenant_id: $t, azp: "core-api"}' | base64 | tr -d '\n=' | tr '/+' '_-')"; }
+  # _st_demo_fx first|rerun — every demo fixture, from the committed fixture file.
+  _st_demo_fx() {
+    local mode="$1" i k slug tname vuser legal sid tid c
+    rm -rf "$ast/resp/"demo-*
+    rm -f "$ast/resp/"kc-find-* "$ast/resp/"kc-user-demo-* "$ast/resp/"pub-shop-* "$ast/resp/"pub-products-* \
+      "$ast/resp/featured-shops.json" "$ast/resp/tenant-ids.json"
+    jq -n --arg n "$TENANT_NAME" '[{id: "11111111-2222-4333-8444-555555555555", name: $n, status: "ACTIVE"}]' > "$ast/resp/tenants.json"
+    printf '{}' > "$ast/resp/tenant-ids.json"
+    jq '[.kitchens[].shop.slug | {slug: .}]' "$df" > "$ast/resp/featured-shops.json"
+    for i in $(seq 0 $((demo_n - 1))); do
+      k=$(jq -r ".kitchens[$i].key" "$df"); slug=$(jq -r ".kitchens[$i].shop.slug" "$df")
+      tname=$(jq -r ".kitchens[$i].tenantName" "$df"); vuser=$(jq -r ".kitchens[$i].vendorUsername" "$df")
+      legal=$(jq -r ".kitchens[$i].trader.legalName" "$df"); tid="${demo_tids[$i]}"; sid="${demo_sids[$i]}"; c="$ast/resp/demo-$k"
+      mkdir -p "$c"
+      jq --arg n "$tname" --arg t "$tid" '. + {($n): $t}' "$ast/resp/tenant-ids.json" > "$ast/resp/t.json" && mv "$ast/resp/t.json" "$ast/resp/tenant-ids.json"
+      jq -n --arg j "$(_st_demo_jwt "demo-$k-sub" "$tid")" '{access_token: $j, token_type: "Bearer"}' > "$c/user-token.json"
+      jq -n --arg u "demo-$k-sub" '{userId: $u, groupAdmin: true}' > "$c/staff-me-granted.json"
+      jq -n --arg s "$sid" --arg slug "$slug" '{id: $s, slug: $slug}' > "$c/shop-create-out.json"
+      jq -n --arg s "$sid" --arg slug "$slug" '{id: $s, slug: $slug, published: true, latitude: 51.47, longitude: -0.07}' > "$c/shop.json"
+      jq --arg s "$sid" ".kitchens[$i].menu | {content: [.[] | {id: (\"p-\" + .sku), sku, shopId: \$s}], totalElements: length}" "$df" > "$c/products-after.json"
+      jq -n --arg i "$slug" --arg u "$vuser" --arg t "$tid" '{id: ("demo-" + $i), username: $u, attributes: {tenant_id: [$t]}}' > "$ast/resp/kc-user-demo-$slug.json"
+      jq --arg l "$legal" ".kitchens[$i].shop | {slug, offersCollection: true, offersDelivery: true, deliveryFeePennies, openNow: true,
+          seller: {legalName: \$l}}" "$df" > "$ast/resp/pub-shop-$slug.json"
+      if [ "$mode" = first ]; then
+        jq -n --arg u "demo-$k-sub" '{userId: $u, groupAdmin: false}' > "$c/staff-me.json"
+        printf '{"content":[],"totalElements":0}' > "$c/shops.json"
+        printf '{"content":[],"totalElements":0}' > "$c/products.json"
+        printf '{"type":"about:blank","title":"Not Found","status":404}' > "$c/identity.json"; printf '404' > "$c/identity.code"
+        printf '{}' > "$c/onboarding-1.json"; printf '404' > "$c/onboarding-1.code"
+        jq -n --arg s "$sid" --arg k "$k" '{id: ("onb-" + $k), status: "DRAFT", model: "MARKETPLACE", shopId: $s, gates: []}' > "$c/onboarding-2.json"
+        jq '.status = "PENDING_APPROVAL"' "$c/onboarding-2.json" > "$c/onboarding-3.json"
+        jq '.status = "APPROVED"' "$c/onboarding-2.json" > "$c/onboarding-4.json"
+        jq '.status = "LIVE"' "$c/onboarding-2.json" > "$c/onboarding-last.json"
+      else
+        jq --arg n "$tname" --arg t "$tid" '. + [{id: $t, name: $n, status: "ACTIVE"}]' "$ast/resp/tenants.json" > "$ast/resp/t.json" && mv "$ast/resp/t.json" "$ast/resp/tenants.json"
+        jq -n --arg i "$slug" --arg u "$vuser" '[{id: ("demo-" + $i), username: $u}]' > "$ast/resp/kc-find-$slug.json"
+        cp "$c/staff-me-granted.json" "$c/staff-me.json"
+        jq -n --arg s "$sid" --arg slug "$slug" '{content: [{id: $s, slug: $slug, published: true}], totalElements: 1}' > "$c/shops.json"
+        cp "$c/products-after.json" "$c/products.json"
+        jq ".kitchens[$i].trader + {id: \"ti-$k\", companyNumber: null}" "$df" > "$c/identity.json"
+        jq -n --arg s "$sid" --arg k "$k" '{id: ("onb-" + $k), status: "LIVE", model: "MARKETPLACE", shopId: $s, gates: []}' > "$c/onboarding.json"
+      fi
+    done
+  }
+  _st_demo_pw_leaks() {   # every generated password (create or reset bodies) seen in stdout, stderr or argv
+    local pw hits=0
+    while IFS= read -r pw; do
+      [ -n "$pw" ] || continue
+      if command grep -qF -- "$pw" <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")"; then hits=$((hits + 1)); fi
+    done < <(jq -r 'select(type == "object") | (.credentials[0].value? // empty), (if .type == "password" then .value else empty end)' "$ast/logs/bodies.log" 2>/dev/null || true)
+    echo "$hits"
+  }
+  _st_demo_pw_count() { jq -r 'select(type == "object") | (.credentials[0].value? // empty), (if .type == "password" then .value else empty end)' "$ast/logs/bodies.log" 2>/dev/null | command grep -c . || true; }
+  _st_core_writes() { command grep -cE "^(POST|PUT|DELETE) https://api-staging\.olajay\.co\.uk$1" "$ast/logs/curl-flow.log" || true; }
+  local op_del='^DELETE http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users/op-0001 -> 204$'
+  local dk_re='^DEMO-KITCHENS kitchens=3 live=3 published=3 located=3 labelled=3 products=21 at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
+
+  # --- demo-dry-run-plan: the plan names the three tenants and slugs; only the guards read --
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${demo_args[@]}" --stage demo-kitchens --dry-run
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_lines az)" -ne 0 ] || [ "$(_st_lines curl)" -ne 0 ]; then why="az=$(_st_lines az) curl=$(_st_lines curl) (want 0, 0)"
+  elif [ "$(_st_kubectl_other)" -ne 0 ]; then why="kubectl calls beyond the guards' read-only config view and pod read: $(_st_kubectl_other)"
+  else
+    for di in 0 1 2; do
+      dname=$(jq -r ".kitchens[$di].tenantName" "$df" 2>/dev/null); dslug=$(jq -r ".kitchens[$di].shop.slug" "$df" 2>/dev/null)
+      command grep -qF -- "$dname" <<<"$ST_OUT" && command grep -qF -- "$dslug" <<<"$ST_OUT" || { why="the plan does not name kitchen $di ($dname, $dslug)"; break; }
+    done
+    [ -n "$why" ] || command grep -qF 'PLAN --stage demo-kitchens (dry-run' <<<"$ST_OUT" || why="no PLAN header"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-dry-run-plan rc=0 kitchens=3 az_calls=0 curl_calls=0 kubectl=guards-only"
+  else _st_result "FAIL demo-dry-run-plan $why"; fails=$((fails + 1)); fi
+
+  # --- demo-first-run: three tenants, vendors, shops, 21 dishes, identities, LIVE; operator last --
+  _st_demo_fx first
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage demo-kitchens
+  why=""
+  local dskus_want dskus_got dlast
+  dskus_want=$(jq -r '.kitchens[].menu[].sku' "$df" | LC_ALL=C sort | tr '\n' ' ')
+  dskus_got=$(jq -r 'select(type == "object" and has("sku") and has("shopId")) | .sku' "$ast/logs/bodies.log" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+  dlast=$(tail -n 1 "$ast/logs/curl-flow.log" 2>/dev/null || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 201$')" -ne 3 ]; then why="tenant creates=$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/admin/tenants -> 201$') (want 3)"
+  elif [ "$(_st_flow '^POST http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users -> 201$')" -ne 4 ]; then why="Keycloak user creates=$(_st_flow '^POST http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users -> 201$') (want 4: the operator and 3 demo vendors)"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> 201$')" -ne 3 ]; then why="shop creates=$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> 201$') (want 3)"
+  elif [ "$dskus_got" != "$dskus_want" ]; then why="the product POSTs are not exactly the fixture SKUs: got '$dskus_got'"
+  elif [ "$(_st_flow '^PUT https://api-staging\.olajay\.co\.uk/api/v1/trader-identity -> 200$')" -ne 3 ]; then why="trader identity PUTs=$(_st_flow '^PUT https://api-staging\.olajay\.co\.uk/api/v1/trader-identity -> 200$') (want 3)"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/onboarding/go-live -> 200$')" -ne 3 ]; then why="go-live calls=$(_st_flow '/api/v1/onboarding/go-live') (want 3)"
+  elif [ "$(_st_flow '/api/v1/billing')" -ne 0 ]; then why="billing was called"
+  elif command grep -qF -e "$SHOP_SLUG" -e "$TENANT_NAME" "$ast/logs/curl.log" "$ast/logs/bodies.log"; then why="a call or body names the Phase 30 tenant or staging-test-kitchen"
+  elif ! [[ "$dlast" =~ $op_del ]]; then why="the last call is not the operator DELETE: '$dlast'"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ $dk_re ]]; then why="the last line is not the DEMO-KITCHENS verdict: '$(tail -n 1 <<<"$ST_OUT")'"
+  elif ! command grep -qE '^DEMO-FEATURED expected=mama-ades-kitchen,peckham-jollof-co,brixton-village-grill got=mama-ades-kitchen,peckham-jollof-co,brixton-village-grill$' <<<"$ST_OUT"; then why="no matching DEMO-FEATURED line"
+  elif [ "$(_st_demo_pw_count)" -lt 4 ]; then why="only $(_st_demo_pw_count) generated passwords were sent (want 4: the operator and 3 vendors)"
+  elif [ "$(_st_demo_pw_leaks)" -ne 0 ]; then why="$(_st_demo_pw_leaks) generated password(s) appear in stdout, stderr or curl argv"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="secret marker printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-first-run rc=0 tenants=3 vendors=3 shops=3 products=21 identities=3 live=3 billing_calls=0 last_call=DELETE-operator passwords_printed=0"
+  else _st_result "FAIL demo-first-run $why"; fails=$((fails + 1)); fi
+
+  # --- demo-rerun-idempotent: everything present and LIVE -> no create, no update --------
+  _st_demo_fx rerun
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage demo-kitchens
+  why=""
+  local dwrites
+  dwrites=$(_st_core_writes '/api/v1/(admin/tenants|shops|products|trader-identity|onboarding)')
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$dwrites" -ne 0 ]; then why="$dwrites write(s) on a re-run: $(command grep -E '^(POST|PUT|DELETE) https://api-staging' "$ast/logs/curl-flow.log" | head -2 | tr '\n' '|')"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ $dk_re ]]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_demo_pw_leaks)" -ne 0 ]; then why="a re-randomised password was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-rerun-idempotent rc=0 core_writes=0 verdict=DEMO-KITCHENS"
+  else _st_result "FAIL demo-rerun-idempotent $why"; fails=$((fails + 1)); fi
+
+  # --- demo-partial-menu: 3 of 7 dishes present -> exactly the 4 missing are POSTed --------
+  _st_demo_fx rerun
+  jq '{content: .content[0:3], totalElements: 3}' "$ast/resp/demo-mama-ades/products-after.json" > "$ast/resp/demo-mama-ades/products.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage demo-kitchens
+  why=""
+  dskus_want=$(jq -r '.kitchens[0].menu[3:][].sku' "$df" | LC_ALL=C sort | tr '\n' ' ')
+  dskus_got=$(jq -r 'select(type == "object" and has("sku") and has("shopId")) | .sku' "$ast/logs/bodies.log" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_core_writes '/api/v1/products -> ')" -ne 4 ]; then why="product POSTs=$(_st_core_writes '/api/v1/products -> ') (want 4)"
+  elif [ "$dskus_got" != "$dskus_want" ]; then why="POSTed '$dskus_got', want the missing '$dskus_want'"
+  elif [ "$(_st_core_writes '/api/v1/products/')" -ne 0 ]; then why="an existing product was modified"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-partial-menu rc=0 posted=4 modified=0"
+  else _st_result "FAIL demo-partial-menu $why"; fails=$((fails + 1)); fi
+
+  # --- demo-slug-taken: a 409 on the shop create is refused, never adopted ------------------
+  _st_demo_fx first
+  printf '409' > "$ast/resp/demo-mama-ades/shop-create-out.code"
+  jq -n '{type: "https://jtoye.uk/errors/shop-slug-taken", title: "Conflict", status: 409, detail: "That shop address is already taken."}' > "$ast/resp/demo-mama-ades/shop-create-out.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage demo-kitchens
+  why=""
+  dlast=$(tail -n 1 "$ast/logs/curl-flow.log" 2>/dev/null || true)
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [slug-taken]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [slug-taken]': $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_core_writes '/api/v1/products')" -ne 0 ]; then why="a product was written after the refusal"
+  elif ! [[ "$dlast" =~ $op_del ]]; then why="the operator was not deleted last: '$dlast'"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-slug-taken rc=1 tag=slug-taken product_writes=0 operator_deleted=1"
+  else _st_result "FAIL demo-slug-taken $why"; fails=$((fails + 1)); fi
+
+  # --- demo-phase30-refused: a fixture naming the Phase 30 tenant, slug or vendor ----------
+  why=""
+  local dvar dfx
+  for dvar in tenantName slug vendorUsername; do
+    dfx="$ast/demo-phase30-$dvar.json"
+    case "$dvar" in
+      tenantName) jq --arg v "$TENANT_NAME" '.kitchens[1].tenantName = $v' "$df" > "$dfx" ;;
+      slug) jq --arg v "$SHOP_SLUG" '.kitchens[2].shop.slug = $v' "$df" > "$dfx" ;;
+      vendorUsername) jq --arg v "$VENDOR_USERNAME" '.kitchens[0].vendorUsername = $v' "$df" > "$dfx" ;;
+    esac
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_DEMO_FIXTURE="$dfx" -- "${demo_args[@]}" --stage demo-kitchens
+    why=$(_st_refusal 1 "REFUSED [phase30-tenant]" 0 0) || { why="$dvar: $why"; break; }
+    if [ "$(_st_lines kubectl)" -ne 0 ]; then why="$dvar: kubectl was called ($(_st_lines kubectl))"; break; fi
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS demo-phase30-refused rc=1 variants=3 tool_calls=0"
+  else _st_result "FAIL demo-phase30-refused $why"; fails=$((fails + 1)); fi
+
+  # --- demo-fixture-void: malformed, incomplete or duplicated fixtures VOID before any call --
+  why=""
+  for dvar in malformed missing-field duplicate-slug duplicate-key; do
+    dfx="$ast/demo-void-$dvar.json"
+    case "$dvar" in
+      malformed) printf '{"schemaVersion": 1, "kitchens": [' > "$dfx" ;;
+      missing-field) jq 'del(.kitchens[1].menu[2].pricePennies)' "$df" > "$dfx" ;;
+      duplicate-slug) jq '.kitchens[2].shop.slug = .kitchens[0].shop.slug' "$df" > "$dfx" ;;
+      duplicate-key) jq '.kitchens[1].key = .kitchens[0].key' "$df" > "$dfx" ;;
+    esac
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_DEMO_FIXTURE="$dfx" -- "${demo_args[@]}" --stage demo-kitchens
+    why=$(_st_refusal 2 "VOID" 0 0) || { why="$dvar: $why"; break; }
+    if [ "$(_st_lines kubectl)" -ne 0 ]; then why="$dvar: kubectl was called"; break; fi
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS demo-fixture-void rc=2 variants=4 tool_calls=0"
+  else _st_result "FAIL demo-fixture-void $why"; fails=$((fails + 1)); fi
+
+  # --- demo-featured-mismatch: the public featured list must equal the fixture, in order ----
+  _st_demo_fx rerun
+  jq 'reverse' "$ast/resp/featured-shops.json" > "$ast/resp/t.json" && mv "$ast/resp/t.json" "$ast/resp/featured-shops.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage demo-kitchens
+  why=""
+  dlast=$(tail -n 1 "$ast/logs/curl-flow.log" 2>/dev/null || true)
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'FAIL [featured-mismatch]' <<<"$ST_ERR"; then why="stderr lacks 'FAIL [featured-mismatch]': $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(command grep -cE '^DEMO-KITCHEN slug=' <<<"$ST_OUT" || true)" -ne 3 ]; then why="the mismatch was not reached after the three read-backs"
+  elif ! command grep -qE '^DEMO-FEATURED expected=mama-ades-kitchen,peckham-jollof-co,brixton-village-grill got=brixton-village-grill,peckham-jollof-co,mama-ades-kitchen$' <<<"$ST_OUT"; then why="no DEMO-FEATURED line showing both lists"
+  elif ! [[ "$dlast" =~ $op_del ]]; then why="the operator was not deleted last: '$dlast'"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-featured-mismatch rc=1 tag=featured-mismatch operator_deleted=1"
+  else _st_result "FAIL demo-featured-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- demo-prod-api-refused: every demo stage is staging only --------------------------
+  why=""
+  local dstage
+  for dstage in "demo-kitchens" "order --kitchen mama-ades-kitchen" "list-open --kitchen mama-ades-kitchen" "clear-orders --kitchen mama-ades-kitchen --orders ORD-DEMO-X"; do
+    # shellcheck disable=SC2086
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${demo_args[@]}" --stage $dstage --api https://api.olajay.co.uk
+    why=$(_st_refusal 1 "REFUSED [api-base]" 1 0) || { why="$dstage: $why"; break; }
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS demo-prod-api-refused rc=1 stages=4 az_calls=0 curl_calls=0"
+  else _st_result "FAIL demo-prod-api-refused $why"; fails=$((fails + 1)); fi
+
+  # --- demo-seller-label-missing: the customer-visible seller must say (demo) (D-05) --------
+  _st_demo_fx rerun
+  jq '.seller.legalName = "Peckham Jollof Co."' "$ast/resp/pub-shop-peckham-jollof-co.json" > "$ast/resp/t.json" && mv "$ast/resp/t.json" "$ast/resp/pub-shop-peckham-jollof-co.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage demo-kitchens
+  why=""
+  dlast=$(tail -n 1 "$ast/logs/curl-flow.log" 2>/dev/null || true)
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'FAIL [demo-label]' <<<"$ST_ERR"; then why="stderr lacks 'FAIL [demo-label]': $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$dlast" =~ $op_del ]]; then why="the operator was not deleted last: '$dlast'"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-seller-label-missing rc=1 tag=demo-label operator_deleted=1"
+  else _st_result "FAIL demo-seller-label-missing $why"; fails=$((fails + 1)); fi
+
+  # --- demo-order-card: one guest order at a demo kitchen, a PLATFORM-account TEST intent ----
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 false CAPTURED
+  _st_demo_fx rerun
+  cp "$ast/resp/pub-products.json" "$ast/resp/pub-products-mama-ades-kitchen.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${demo_args[@]}" --stage order --kitchen mama-ades-kitchen
+  why=""
+  olast=$(tail -n 1 <<<"$ST_OUT")
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$olast" =~ ^SEED-ORDER\ kitchen=mama-ades-kitchen\ charge=platform\ order=ORD-STUB-0001\ intent=pi_stub0001\ status=PENDING\ payment_status=CAPTURED\ livemode=false\ at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]]; then why="the last line is not the platform-charge verdict: '$olast'"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/mama-ades-kitchen/orders -> 201$')" -ne 1 ]; then why="no single guest order at mama-ades-kitchen"
+  elif ! command grep -qF 'Idempotency-Key: seed-order-mama-ades-kitchen-v1' "$ast/logs/curl.log"; then why="the order POST does not carry Idempotency-Key seed-order-mama-ades-kitchen-v1"
+  elif [ "$(_st_lines stripe-account)" -ne 0 ]; then why="$(_st_lines stripe-account) Stripe call(s) carried Stripe-Account (a demo charge is on the platform account)"
+  elif [ "$(_st_confirms)" -ne 1 ]; then why="confirm calls=$(_st_confirms) (want 1)"
+  elif command grep -qF "$SHOP_SLUG" "$ast/logs/curl.log"; then why="a call names $SHOP_SLUG"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a key or client secret was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-order-card rc=0 kitchen=mama-ades-kitchen charge=platform stripe_account_headers=0 confirms=1"
+  else _st_result "FAIL demo-order-card $why"; fails=$((fails + 1)); fi
+
+  # --- demo-order-kitchen-refused: --kitchen takes fixture slugs only -----------------------
+  why=""
+  for dslug in "$SHOP_SLUG" no-such-kitchen; do
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${demo_args[@]}" --stage order --kitchen "$dslug"
+    why=$(_st_refusal 1 "REFUSED [kitchen]" 0 0) || { why="$dslug: $why"; break; }
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS demo-order-kitchen-refused rc=1 slugs=2 tool_calls=0"
+  else _st_result "FAIL demo-order-kitchen-refused $why"; fails=$((fails + 1)); fi
+
+  # --- demo-list-open: READ-ONLY, five open statuses, no customer field, operator gone first --
+  _st_demo_fx rerun
+  local dst
+  _st_open() {   # ID NUMBER STATUS PAYMENT_STATUS TOTAL CREATED
+    jq -n --arg id "$1" --arg n "$2" --arg st "$3" --arg ps "$4" --argjson t "$5" --arg c "$6" '{id: $id, orderNumber: $n,
+      status: $st, paymentStatus: $ps, totalAmountPennies: $t, createdAt: $c, customerName: "Pii PIIZQ7 Name",
+      customerEmail: "piizq7@example.invalid", customerPhone: "07700 900777", addressLine1: "1 PIIZQ7 Road", notes: "PIIZQ7"}'
+  }
+  for dst in $ALL_ORDER_STATUSES; do printf '{"content":[],"totalElements":0,"totalPages":1}' > "$ast/resp/demo-peckham-jollof/orders-status-$dst.json"; done
+  _st_open o1 ORD-DEMO-1 DRAFT PENDING 950 2026-11-02T10:00:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-peckham-jollof/orders-status-DRAFT.json"
+  _st_open o2 ORD-DEMO-2 PENDING CAPTURED 1200 2026-11-02T11:00:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-peckham-jollof/orders-status-PENDING.json"
+  _st_open o3 ORD-DEMO-3 CONFIRMED CAPTURED 700 2026-11-02T12:00:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-peckham-jollof/orders-status-CONFIRMED.json"
+  _st_open o4 ORD-DEMO-4 READY CAPTURED 800 2026-11-02T13:00:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-peckham-jollof/orders-status-READY.json"
+  _st_open o5 ORD-DEMO-5 COMPLETED CAPTURED 900 2026-11-02T14:00:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-peckham-jollof/orders-status-COMPLETED.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${demo_args[@]}" --stage list-open --kitchen peckham-jollof-co
+  why=""
+  local lo_want lo_del lo_first
+  lo_want=$(printf '%s\n' \
+    'OPEN-ORDER kitchen=peckham-jollof-co order=ORD-DEMO-1 status=DRAFT payment_status=PENDING created=2026-11-02T10:00:00Z total=950p' \
+    'OPEN-ORDER kitchen=peckham-jollof-co order=ORD-DEMO-2 status=PENDING payment_status=CAPTURED created=2026-11-02T11:00:00Z total=1200p' \
+    'OPEN-ORDER kitchen=peckham-jollof-co order=ORD-DEMO-3 status=CONFIRMED payment_status=CAPTURED created=2026-11-02T12:00:00Z total=700p' \
+    'OPEN-ORDER kitchen=peckham-jollof-co order=ORD-DEMO-4 status=READY payment_status=CAPTURED created=2026-11-02T13:00:00Z total=800p')
+  lo_del=$(_st_line "$op_del"); lo_first=$(_st_line '^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/status/')
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(command grep -E '^OPEN-ORDER ' <<<"$ST_OUT" || true)" != "$lo_want" ]; then why="the OPEN-ORDER lines are not the four projections: $(command grep -E '^OPEN-ORDER ' <<<"$ST_OUT" | tr '\n' '|' || true)"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ ^LIST-OPEN\ kitchen=peckham-jollof-co\ count=4\ at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_core_writes '')" -ne 0 ]; then why="$(_st_core_writes '') write(s) to core"
+  elif [ -z "$lo_del" ] || [ -z "$lo_first" ] || [ "$lo_del" -ge "$lo_first" ]; then why="the operator was not deleted before the first order read (delete=${lo_del:-none} first_read=${lo_first:-none})"
+  elif [ "$(_st_pii)" -ne 0 ]; then why="a customer field was printed"
+  elif [ "$(_st_demo_pw_leaks)" -ne 0 ]; then why="the demo password was printed or put in argv"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="secret marker printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-list-open rc=0 open=4 core_writes=0 operator_deleted_line=$lo_del<first_read=$lo_first pii=0"
+  else _st_result "FAIL demo-list-open $why"; fails=$((fails + 1)); fi
+
+  # --- demo-clear-orders: D cancel (intent first), P0 cancel OTHER, PC accept+refund, K refund, C refused --
+  _st_demo_fx rerun
+  local cD=c0000000-0000-4000-8000-00000000000d cP0=c0000000-0000-4000-8000-0000000000a0 cPC=c0000000-0000-4000-8000-0000000000ac
+  local cK=c0000000-0000-4000-8000-00000000000b cC=c0000000-0000-4000-8000-00000000000c
+  for dst in $ALL_ORDER_STATUSES; do printf '{"content":[],"totalElements":0,"totalPages":1}' > "$ast/resp/demo-brixton-grill/orders-status-$dst.json"; done
+  _st_open "$cD" ORD-DEMO-D DRAFT PENDING 950 2026-11-02T10:00:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-brixton-grill/orders-status-DRAFT.json"
+  { _st_open "$cP0" ORD-DEMO-P0 PENDING NONE 1200 2026-11-02T10:05:00Z; _st_open "$cPC" ORD-DEMO-PC PENDING CAPTURED 950 2026-11-02T10:10:00Z; } \
+    | jq -s '{content: ., totalElements: 2, totalPages: 1}' > "$ast/resp/demo-brixton-grill/orders-status-PENDING.json"
+  _st_open "$cK" ORD-DEMO-K CONFIRMED CAPTURED 1500 2026-11-02T10:15:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-brixton-grill/orders-status-CONFIRMED.json"
+  _st_open "$cC" ORD-DEMO-C COMPLETED CAPTURED 900 2026-11-02T10:20:00Z | jq -s '{content: ., totalElements: 1, totalPages: 1}' > "$ast/resp/demo-brixton-grill/orders-status-COMPLETED.json"
+  _st_cancel_fx "$cD" ORD-DEMO-D pi_demod DRAFT PENDING requires_payment_method false
+  _st_cancel_fx "$cP0" ORD-DEMO-P0 "" PENDING NONE
+  _st_clear_paid_fx() {   # ID NUMBER STATUS TOTAL RE CH
+    jq -n --arg id "$1" --arg n "$2" --arg st "$3" --argjson t "$4" '{id: $id, orderNumber: $n, status: $st, paymentStatus: "CAPTURED",
+        paymentReference: "pi_paid", totalAmountPennies: $t, refunds: [], customerName: "Pii PIIZQ7 Name", items: []}' > "$ast/resp/detail-$1.json"
+    jq '.status = "CONFIRMED"' "$ast/resp/detail-$1.json" > "$ast/resp/detail-$1-confirmed.json"
+    jq -n '{status: "CONFIRMED"}' > "$ast/resp/confirm-$1.json"
+    jq -n --arg re "$5" --argjson t "$4" '{id: "f0000000-0000-4000-8000-000000000001", amountPennies: $t, stripeRefundId: $re, status: "SUCCEEDED"}' > "$ast/resp/refund-out-$1.json"
+    jq --arg re "$5" --argjson t "$4" '.status = "REFUNDED" | .paymentStatus = "REFUNDED" | .refunds = [{amountPennies: $t, stripeRefundId: $re, status: "SUCCEEDED"}]' \
+      "$ast/resp/detail-$1.json" > "$ast/resp/detail-$1-refunded.json"
+    jq -n --arg re "$5" --arg ch "$6" --argjson t "$4" '{id: $re, object: "refund", status: "succeeded", amount: $t, charge: $ch}' > "$ast/resp/re-$5.json"
+    jq -n --arg ch "$6" '{id: $ch, object: "charge", livemode: false, refunded: true}' > "$ast/resp/ch-$6.json"
+  }
+  _st_clear_paid_fx "$cPC" ORD-DEMO-PC PENDING 950 re_demopc ch_demopc
+  _st_clear_paid_fx "$cK" ORD-DEMO-K CONFIRMED 1500 re_demok ch_demok
+  # Review 1104 round 1: K carries two DEAD earlier attempts, spelled as RefundStatus serialises them
+  # (lower-case). They leave the money on the charge, so the full 1500 is still owed, and the retry
+  # needs a fresh Idempotency-Key, or the server replays the failed refund.
+  jq '.refunds = [{amountPennies: 1500, status: "failed"}, {amountPennies: 1500, status: "canceled"}]' "$ast/resp/detail-$cK.json" > "$ast/resp/detail-$cK.tmp" \
+    && mv "$ast/resp/detail-$cK.tmp" "$ast/resp/detail-$cK.json"
+  jq -n --arg id "$cC" '{id: $id, orderNumber: "ORD-DEMO-C", status: "COMPLETED", paymentStatus: "CAPTURED", totalAmountPennies: 900, refunds: []}' > "$ast/resp/detail-$cC.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 STAGING_SEED_REFUND_DEADLINE_SECONDS=2 -- \
+    "${demo_args[@]}" --stage clear-orders --kitchen brixton-village-grill --orders ORD-DEMO-D,ORD-DEMO-P0,ORD-DEMO-PC,ORD-DEMO-K,ORD-DEMO-C
+  why=""
+  local co_del co_w1 co_pic co_dc co_pcc co_pcr
+  co_del=$(_st_line "$op_del"); co_w1=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/')
+  co_pic=$(_st_line '^POST https://api\.stripe\.com/v1/payment_intents/pi_demod/cancel -> 200$'); co_dc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$cD/cancel -> 200$")
+  co_pcc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$cPC/confirm -> 200$"); co_pcr=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$cPC/refund -> 201$")
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1: one order refused): $(tail -c 300 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CLEAR-ORDERS kitchen=brixton-village-grill requested=5 cleared=4 refused=1" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif ! command grep -qE 'REFUSED \[not-clearable\]: ORD-DEMO-C ' <<<"$ST_ERR"; then why="ORD-DEMO-C was not refused [not-clearable]"
+  elif [ "$(_st_flow "/api/v1/orders/$cC/")" -ne 1 ]; then why="ORD-DEMO-C had calls beyond its one detail read: $(_st_flow "/api/v1/orders/$cC/")"
+  elif [ -z "$co_pic" ] || [ -z "$co_dc" ] || [ "$co_pic" -ge "$co_dc" ]; then why="D: the intent cancel (${co_pic:-none}) does not precede the order cancel (${co_dc:-none})"
+  elif ! command grep -qF '{"reasonCode":"OTHER"}' "$ast/logs/bodies.log"; then why="P0 was not cancelled with reasonCode OTHER"
+  elif [ "$(_st_flow "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$cP0/cancel -> 200$")" -ne 1 ]; then why="P0 was not cancelled once"
+  elif [ -z "$co_pcc" ] || [ -z "$co_pcr" ] || [ "$co_pcc" -ge "$co_pcr" ]; then why="PC: the accept (${co_pcc:-none}) does not precede the refund (${co_pcr:-none})"
+  elif [ "$(_st_flow "/api/v1/orders/$cK/confirm")" -ne 0 ]; then why="K (already CONFIRMED) was accepted again"
+  elif [ "$(_st_flow "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$cK/refund -> 201$")" -ne 1 ]; then why="K was not refunded once"
+  elif ! command grep -qF 'Idempotency-Key: demo-clear-ORD-DEMO-PC-refund-0' "$ast/logs/curl.log" || ! command grep -qF 'Idempotency-Key: demo-clear-ORD-DEMO-K-refund-2' "$ast/logs/curl.log"; then why="a refund lacks its demo-clear-<order>-refund-<dead attempts> Idempotency-Key (PC -0, K -2)"
+  elif [ "$(jq -r 'select(type == "object" and has("amountPennies")) | .amountPennies' "$ast/logs/bodies.log" | tr '\n' ' ')" != "950 1500 " ]; then why="the refunds are not full: $(jq -c 'select(type == "object" and has("amountPennies"))' "$ast/logs/bodies.log" | tr '\n' ' ')"
+  elif [ "$(_st_lines stripe-account)" -ne 0 ]; then why="a Stripe call carried Stripe-Account"
+  elif [ -z "$co_del" ] || [ -z "$co_w1" ] || [ "$co_del" -ge "$co_w1" ]; then why="the operator was not deleted before the first order write (delete=${co_del:-none} first_write=${co_w1:-none})"
+  elif [ "$(_st_demo_pw_leaks)" -ne 0 ]; then why="the demo password was printed or put in argv"
+  elif [ "$(_st_pii)" -ne 0 ]; then why="a customer field was printed"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="secret marker printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS demo-clear-orders rc=1 cleared=4 refused=1 D=intent-then-cancel P0=cancel-OTHER PC=accept-then-refund K=refund C=not-clearable operator_deleted_first=1"
+  else _st_result "FAIL demo-clear-orders $why"; fails=$((fails + 1)); fi
+
+  # --- demo-clear-needs-kitchen: list-open and clear-orders never default to a tenant -------
+  why=""
+  for dstage in "clear-orders --orders ORD-DEMO-X" "list-open"; do
+    # shellcheck disable=SC2086
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${demo_args[@]}" --stage $dstage
+    why=$(_st_refusal 2 "USAGE ERROR" 0 0) || { why="$dstage: $why"; break; }
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS demo-clear-needs-kitchen rc=2 stages=2 tool_calls=0"
+  else _st_result "FAIL demo-clear-needs-kitchen $why"; fails=$((fails + 1)); fi
+
   _st_render
   [ "$fails" -eq 0 ]
 }
@@ -5505,6 +6501,7 @@ while [ "$#" -gt 0 ]; do
     --run-id)          shift; [ "$#" -gt 0 ] || usage_error "--run-id needs an id"; RUN_ID="$1" ;;
     --amount-pennies)  shift; [ "$#" -gt 0 ] || usage_error "--amount-pennies needs a whole number of pennies"; PAYOUT_PENNIES="$1" ;;
     --payout)          shift; [ "$#" -gt 0 ] || usage_error "--payout needs a payout id (po_…)"; PAYOUT_ID="$1" ;;
+    --kitchen)         shift; [ "$#" -gt 0 ] || usage_error "--kitchen needs a demo kitchen slug"; KITCHEN="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -5522,9 +6519,18 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing, billing-sync-check, connect-onboard, settlement-mode, money-loop, payout or payout-read" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read|demo-kitchens|list-open|clear-orders) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check|connect-onboard|settlement-mode|money-loop|payout|payout-read|demo-kitchens|list-open|clear-orders)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing, billing-sync-check, connect-onboard, settlement-mode, money-loop, payout, payout-read, demo-kitchens, list-open or clear-orders" ;;
+esac
+# Quick 261102-r6u: --kitchen names a demo kitchen, and only the stages that act on one take it;
+# list-open and clear-orders REQUIRE it, so the Phase 30 tenant can never be their target.
+case "$STAGE" in
+  order|list-open|clear-orders) ;;
+  *) [ -z "$KITCHEN" ] || usage_error "--kitchen is taken by --stage order, list-open and clear-orders only" ;;
+esac
+case "$STAGE" in
+  list-open|clear-orders) [ -n "$KITCHEN" ] || usage_error "--stage $STAGE needs --kitchen SLUG (a demo kitchen of the fixture); it never acts on the Phase 30 tenant" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
@@ -5588,6 +6594,22 @@ case "$STAGE" in
       done
     fi
     [ -z "$_cd_why" ] || usage_error "--stage cancel-drafts needs --orders ORD-a,ORD-b (the owner-confirmed list, D-02): $_cd_why" ;;
+  clear-orders)
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    _co_why=""
+    if [ -z "$ORDERS" ]; then _co_why="no list was given"
+    else
+      _co_seen=" "
+      IFS=, read -r -a _co_list <<<"$ORDERS"
+      [ "${#_co_list[@]}" -gt 0 ] || _co_why="the list is empty"
+      [[ "$ORDERS" != *, && "$ORDERS" != ,* && "$ORDERS" != *,,* ]] || _co_why="the list has an empty entry"
+      for _co_n in "${_co_list[@]}"; do
+        [[ "$_co_n" =~ ^ORD-[A-Za-z0-9-]+$ ]] || { _co_why="'$_co_n' is not an order number"; break; }
+        case "$_co_seen" in *" $_co_n "*) _co_why="$_co_n is named twice"; break ;; esac
+        _co_seen="$_co_seen$_co_n "
+      done
+    fi
+    [ -z "$_co_why" ] || usage_error "--stage clear-orders needs --orders ORD-a,ORD-b (the owner-confirmed list, the D-02 precedent): $_co_why" ;;
   cancel-orphan-intents)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage cancel-orphan-intents"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
@@ -5668,6 +6690,12 @@ case "$STAGE" in
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only" ;;
 esac
 
+# Quick 261102-r6u: the demo fixture is read and checked BEFORE any guard or tool call.
+case "$STAGE" in
+  demo-kitchens|list-open|clear-orders) load_demo_fixture ;;
+  order) if [ -n "$KITCHEN" ]; then load_demo_fixture; ORDER_SLUG="$KITCHEN"; ORDER_KEY="seed-order-$KITCHEN-v1"; fi ;;
+esac
+
 run_guards
 if [ "$DRY_RUN" -eq 1 ]; then
   print_plan
@@ -5691,6 +6719,9 @@ case "$STAGE" in
   money-loop)       money_loop_stage ;;
   payout)           payout_stage ;;
   payout-read)      payout_read_stage ;;
+  demo-kitchens)    demo_kitchens_stage ;;
+  list-open)        list_open_stage ;;
+  clear-orders)     clear_orders_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,

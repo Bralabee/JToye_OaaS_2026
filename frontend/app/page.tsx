@@ -17,8 +17,15 @@ import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
 import { NearYouRow } from "@/components/marketing/near-you-row"
-import { PHOTOS, PHOTO_CREDITS, PHOTO_DERIVATION_NOTE, type LandingPhoto } from "@/components/marketing/landing-photos"
-import { loadShopList } from "@/lib/storefront-server"
+import {
+  PHOTOS,
+  PHOTO_CREDITS,
+  PHOTO_DERIVATION_NOTE,
+  OWN_PHOTO_CREDIT,
+  type LandingPhoto,
+} from "@/components/marketing/landing-photos"
+import { loadFeaturedShops, loadShopList } from "@/lib/storefront-server"
+import { featuredSlugsOf, orderWithFeatured } from "@/lib/featured-shops"
 import { headers } from "next/headers"
 import { resolvePublicOrigin } from "@/lib/public-origin"
 import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
@@ -76,7 +83,7 @@ const trustMarkers = [
 // decorative (`alt=""`): the label is the link's name.
 const categories: Array<{ photo: LandingPhoto; label: string; q: string }> = [
   { photo: PHOTOS.suya, label: "Grill", q: "grill" },
-  { photo: PHOTOS.jollofVeg, label: "Jollof", q: "jollof" },
+  { photo: PHOTOS.jollofBox, label: "Jollof", q: "jollof" },
   { photo: PHOTOS.riceAndPeas, label: "Caribbean", q: "caribbean" },
   { photo: PHOTOS.biryani, label: "South Asian", q: "south asian" },
   { photo: PHOTOS.chana, label: "Vegan", q: "vegan" },
@@ -93,9 +100,9 @@ const BLANK_PIXEL =
 // The desktop collage (A): four dish photographs in place of the four gradient
 // emoji tiles (D9, D14). The small tilts are static, kept from the old tiles.
 const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
-  { photo: PHOTOS.egusi, extra: "-rotate-2" },
-  { photo: PHOTOS.suya, extra: "rotate-2 mt-6" },
-  { photo: PHOTOS.jollofVeg, extra: "rotate-2" },
+  { photo: PHOTOS.jollofBox, extra: "-rotate-2" },
+  { photo: PHOTOS.riceBeansStew, extra: "rotate-2 mt-6" },
+  { photo: PHOTOS.plantainYam, extra: "rotate-2" },
   { photo: PHOTOS.puffPuff, extra: "-rotate-2 -mt-2" },
 ]
 
@@ -179,13 +186,44 @@ const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
  * is the whole point of #507. The island's no-coordinate state renders exactly
  * what this section rendered before it existed, heading included, and only ever
  * says "near you" while it genuinely holds a coordinate.
+ *
+ * ── FEATURED KITCHENS (quick 261102-r6u, D-02/D-03, design D17) ─────────────
+ *
+ * The row's source is now TWO server reads, issued in parallel: page 0 of the
+ * listing (`loadShopList`) and this environment's featured kitchens
+ * (`loadFeaturedShops`, `GET /public/featured-shops`: published only, in
+ * configured order). Before location is shared the featured kitchens lead the
+ * row, then the listing in its own order, no slug twice (`orderWithFeatured`).
+ * With nothing featured (production ships empty) the row is exactly what it was.
+ * The JSON-LD below is built from the same merged list, so featured kitchens are
+ * crawlable links in the initial HTML and in the structured data. No new client
+ * request: the island still makes its one located fetch and nothing else.
  */
 export default async function Home() {
   // Server-side, at request time, so the real names are in the INITIAL HTML —
   // before any JavaScript. A useEffect fetch would leave the crawler and the
   // first paint with an empty row, which is #507's measured complaint.
-  const shopList = await loadShopList({ page: 0, size: 8 })
-  const shops = shopList.state === "ok" ? (shopList.data.content ?? []) : []
+  //
+  // FEATURED KITCHENS (quick 261102-r6u, D-02/D-03, design D17): the second read
+  // runs IN PARALLEL with the listing, so the page waits for the slower call,
+  // never the sum of both. It is optional: any failure is [] and the row is
+  // exactly today's.
+  const [shopList, featured] = await Promise.all([
+    loadShopList({ page: 0, size: 8 }),
+    loadFeaturedShops(),
+  ])
+  // Merged ONLY when the listing loaded. When it did not, the row stays hidden
+  // exactly as before: a featured-only row with no serverTotal would let the
+  // island's census arithmetic count against a list that is not the listing.
+  //
+  // The merged list is still a valid census input: it is deduplicated by slug and
+  // every entry is a PUBLISHED shop (the server guarantees both halves), so
+  // `shops.length >= serverTotal` still means "this is every published shop" and
+  // never counts one twice, while a featured shop beyond page 0 only makes the
+  // sample larger, never wrong.
+  const shops =
+    shopList.state === "ok" ? orderWithFeatured(featured, shopList.data.content ?? []) : []
+  const featuredSlugs = shopList.state === "ok" ? featuredSlugsOf(featured) : []
   // How many published shops EXIST, not how many fitted on the page — the
   // island's exclusion disclosure may only do arithmetic over `shops` when the
   // two agree (review WR-01: a truncated sample must never be presented as a
@@ -374,11 +412,11 @@ export default async function Home() {
                         srcSet={BLANK_PIXEL}
                       />
                       <Image
-                        src={PHOTOS.jollofDodo.src}
-                        width={PHOTOS.jollofDodo.width}
-                        height={PHOTOS.jollofDodo.height}
+                        src={PHOTOS.spaghetti.src}
+                        width={PHOTOS.spaghetti.width}
+                        height={PHOTOS.spaghetti.height}
                         sizes="(min-width: 1024px) 1px, (min-width: 640px) 45vw, 92vw"
-                        alt={PHOTOS.jollofDodo.alt}
+                        alt={PHOTOS.spaghetti.alt}
                         loading="eager"
                         fetchPriority="high"
                         className="h-[120px] w-full object-cover lg:hidden"
@@ -423,7 +461,7 @@ export default async function Home() {
 
                   D15 review (PR #1097): the FIRST tile is eager and high
                   priority. On a desktop the LCP element is the h1 or this
-                  egusi tile (measured on production builds, before and after
+                  jollof meal-box tile (measured on production builds, before and after
                   D15; the door strip never was), and with the strip no longer
                   requested from lg this tile is the fold's first picture. Below
                   lg the grid is display:none, and an eager img there would
@@ -529,7 +567,7 @@ export default async function Home() {
                   island's no-coordinate state is byte-for-byte what 33-03
                   shipped. The heading it renders without a coordinate makes no
                   locality claim; see near-you-row.tsx for the three states. */}
-              <NearYouRow serverShops={shops} serverTotal={serverTotal} />
+              <NearYouRow serverShops={shops} serverTotal={serverTotal} featuredSlugs={featuredSlugs} />
             </div>
           </section>
         )}
@@ -568,6 +606,7 @@ export default async function Home() {
               <summary className="w-fit cursor-pointer rounded-sm font-medium underline decoration-warm-300 underline-offset-2 [@media(hover:hover)_and_(pointer:fine)]:hover:decoration-warm-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2">
                 Photo credits
               </summary>
+              <p className="mt-2">{OWN_PHOTO_CREDIT}</p>
               <p className="mt-2">
                 Photographs ({PHOTO_DERIVATION_NOTE}), via Wikimedia Commons:{" "}
                 {PHOTO_CREDITS.map((c, i) => (

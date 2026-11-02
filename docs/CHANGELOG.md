@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Landing: The Owner's Own BeesLens Photographs Lead — 2026-11-02 (#1103)
+
+The owner supplied seven of his own BeesLens photographs and approved where each goes; recorded as D16 in `design/decisions.md` (amends D10), run record `design/runs/2026-11-02-landing-beeslens/`.
+
+- **What changed:** the phone's Order-food door strip shows spaghetti with chicken and plantain; the desktop collage shows a jollof meal box, rice/beans/plantain with pepper stew, plantain and yam meal-prep boxes and puff-puff; the Jollof and Desserts chips use the owner's photographs; kitchen cards with no banner get them by cuisine, and catering and drinks/juice kitchens now get a picture too (captions still "<Cuisine> — example photo", D10/D13).
+- **What stays Wikimedia:** Grill (suya), Caribbean (rice and peas), South Asian (biryani) and Vegan (chana), with their CC credits unchanged. The four replaced Wikimedia pictures and their credit records are retired.
+- **Credits:** one line "Photography: BeesLens" inside the Photo credits disclosure; `credits.json` gains a `kind` (own / open-collection) and the tests hold files on disk = `PHOTOS` = `credits.json`.
+- **LCP wiring kept:** the strip's `<picture>` + 1x1 `lg` source and the first tile's eager / high-priority wiring are unchanged (0 changed lines). The strip is 52,598 B (was 53,586), the first tile 84,376 B (was 189,454), every new file under 200,000 B; all metadata stripped, the watermark cropped on three.
+- **Proof:** Jest RED then GREEN (164 in the landing suites), four break arms (size, orphan file, unstripped EXIF, missing record) each RED then restored by hash; `npm run build` and eslint rc 0; the landing web-perf spec PASS on the production build.
+### Landing: Featured Kitchens Lead the Row; Staging Gets Three Demo Kitchens That Take Orders — 2026-11-02 (#1104)
+
+Owner decisions D-01..D-05 (2026-11-02), recorded as D17 in `design/decisions.md`.
+
+- **Featured kitchens (D-02):** `jtoye.storefront.featured-shop-slugs` (`JTOYE_FEATURED_SHOP_SLUGS`, k8s app-config `storefront.featured-shop-slugs`), an ordered, comma-separated slug list validated at startup (slug shape, no blanks or duplicates, at most 12; a bad value refuses to start, naming the key). `GET /api/v1/public/featured-shops` (and the legacy `/public/featured-shops`) returns the published shops among them in configured order, one query with the published predicate in the query, unknown or unpublished slugs skipped with one WARN per distinct set. Staging lists the three demo kitchens; production and the local-k8s overlay render it empty; compose dev lists the dev demo slugs. No migration, no RLS change.
+- **Landing row (D-03, D-04):** the listing and the featured list are fetched in parallel on the server and merged featured-first with no kitchen twice; with nothing featured the row is unchanged. Shared location with nothing inside 3.1 miles shows the featured kitchens alone under "No kitchens within 3.1 miles — featured on J'Toye"; nearby kitchens still win in distance order. Featured cards carry a small "Featured" label, out of flow (no CLS), announced with the shop name; editorial, never paid.
+- **Staging demo kitchens (D-01 as ruled, D-05):** `scripts/staging-seed.sh --stage demo-kitchens` seeds three tenants "J'Toye Demo — <kitchen>" from `scripts/fixtures/demo-kitchens.json` (held equal to `DemoDataSeeder` by `DemoKitchensFixtureParityTest`) through the real APIs, apart from the Phase 30 test tenant and from billing; each seller of record reads "<kitchen> (demo)". `--stage order --kitchen` proves a demo order is a platform-account Stripe TEST charge; `--stage list-open` and `--stage clear-orders` (owner-confirmed list, `--kitchen` required) list and clear stale demo orders. Not run against staging by this change.
+- **Proof:** NOSUPERUSER `FeaturedShopsIntegrationTest`, properties and service unit tests, Jest for the merge, the row and the card, 15 new `--selftest` arms (103 PASS), each shown RED on a deliberate break.
+
 ### Storefront Search: A Kitchen Is Found by the Dishes It Sells — 2026-11-02 (#1098)
 
 An external tester searched "pounded yam" and "plantain" on `/shop` and got "No kitchens found" while a published kitchen sold both. The search read only the shop's own `search_vector` (name, tags, description, address); the dishes were never consulted.

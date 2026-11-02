@@ -16,7 +16,7 @@
 
 import { render, screen } from "@testing-library/react"
 import { ShopCard as Card } from "@/components/marketing/shop-card"
-import { assignExamplePhotos } from "@/components/marketing/landing-photos"
+import { PHOTOS, assignExamplePhotos } from "@/components/marketing/landing-photos"
 import type { PublicShop } from "@/types/storefront"
 
 /**
@@ -134,10 +134,10 @@ describe("ShopCard", () => {
     // Without these the browser cannot reserve space and the picture's arrival
     // shifts everything below it — the exact risk the landing CWV budget in
     // e2e/landing-webperf.spec.ts exists to catch. "Jollof" is the first tag,
-    // so the picture is the jollof-and-plantain plate at its real 800x532.
-    expect(img!.getAttribute("width")).toBe("800")
-    expect(img!.getAttribute("height")).toBe("532")
-    expect(img!.getAttribute("src")).toContain("jollof-rice-and-dodo.webp")
+    // so the picture is the owner's jollof meal box (D16) at its real 1000x667.
+    expect(img!.getAttribute("width")).toBe("1000")
+    expect(img!.getAttribute("height")).toBe("667")
+    expect(img!.getAttribute("src")).toContain("beeslens-jollof-rice-meal-box.webp")
     expect(screen.getByText("Jollof — example photo")).toBeTruthy()
   })
 
@@ -154,7 +154,7 @@ describe("ShopCard", () => {
   it("says 'example photo' once per card, in the caption, not again in the alt (review 1085)", () => {
     const { container } = render(<ShopCard shop={makeShop()} />)
     const img = container.querySelector("img")!
-    expect(img.getAttribute("alt")).toBe("A plate of jollof rice with fried plantain")
+    expect(img.getAttribute("alt")).toBe(PHOTOS.jollofBox.alt)
     // Everything a screen reader would announce for the picture: alt + caption.
     const announced = `${img.getAttribute("alt")} ${container.querySelector("figcaption")?.textContent ?? ""}`
     expect(announced.match(/example photo/g)).toHaveLength(1)
@@ -365,5 +365,69 @@ describe("ShopCard — the link is named by its shop (UXT-082)", () => {
     const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
 
     expect(link.hasAttribute("aria-describedby")).toBe(false)
+  })
+})
+
+/**
+ * D-04 (quick 261102-r6u, design D17): a featured kitchen's card carries a small
+ * label reading exactly "Featured" — editorial, never paid. It is announced with
+ * the shop name (aria-describedby) and sits out of flow in the fixed-height
+ * picture box, so featured and unfeatured cards are the same height.
+ */
+describe("ShopCard — the Featured label (D-04)", () => {
+  function FeaturedCard({ shop, featured }: { shop: PublicShop; featured?: boolean }) {
+    return (
+      <Card
+        shop={shop}
+        featured={featured}
+        examplePhoto={assignExamplePhotos([shop]).get(shop.slug) ?? null}
+      />
+    )
+  }
+
+  const label = () => screen.queryByText("Featured", { exact: true })
+
+  it("a featured card shows a label reading exactly 'Featured'", () => {
+    render(<FeaturedCard shop={makeShop()} featured />)
+    expect(label()).not.toBeNull()
+    expect(label()!.textContent).toBe("Featured")
+  })
+
+  it("an unfeatured card, and a card with no featured prop, carry no label", () => {
+    const { unmount } = render(<FeaturedCard shop={makeShop()} featured={false} />)
+    expect(label()).toBeNull()
+    unmount()
+    render(<FeaturedCard shop={makeShop()} />)
+    expect(label()).toBeNull()
+  })
+
+  it("announces the label with the shop name through aria-describedby", () => {
+    render(<FeaturedCard shop={makeShop({ openNow: true })} featured />)
+    const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
+    const ids = (link.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
+    const text = ids.map((id) => (document.getElementById(id)?.textContent || "").trim())
+    expect(text).toContain("Featured")
+    // The open badge is still described too: the label is added, nothing displaced.
+    expect(text).toContain("Open")
+  })
+
+  it("sits out of flow inside the fixed-height picture box, so the text column is unchanged (CLS)", () => {
+    const { container: featuredCard } = render(<FeaturedCard shop={makeShop()} featured />)
+    const pill = label()!
+    expect(pill.className.split(/\s+/)).toContain("absolute")
+    const box = pill.closest("div.h-44")
+    expect(box).not.toBeNull()
+    const textColumn = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll("article > div *")).map((el) => el.tagName + ":" + el.textContent)
+    const featuredColumn = textColumn(featuredCard)
+    const { container: plainCard } = render(<FeaturedCard shop={makeShop()} featured={false} />)
+    expect(textColumn(plainCard)).toEqual(featuredColumn)
+  })
+
+  it("is a word, not a star or an icon (the card removed invented ratings on purpose)", () => {
+    render(<FeaturedCard shop={makeShop()} featured />)
+    const pill = label()!
+    expect(pill.querySelector("svg")).toBeNull()
+    expect(pill.textContent).not.toMatch(/[★☆⭐]/u)
   })
 })

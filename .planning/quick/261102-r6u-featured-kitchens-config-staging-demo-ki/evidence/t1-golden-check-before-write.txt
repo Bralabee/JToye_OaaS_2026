@@ -1,0 +1,51 @@
+FAIL [staging]: render DRIFTED from k8s/goldens/staging.yaml
+--- k8s/goldens/staging.yaml (GOLDEN)
++++ kubectl kustomize k8s/staging (CURRENT)
+@@ -727,6 +727,7 @@
+   storefront.cash-caps.per-ip: "5"
+   storefront.cash-caps.per-phone: "3"
+   storefront.client-ip-digest.retention-hours: "72"
++  storefront.featured-shop-slugs: mama-ades-kitchen,peckham-jollof-co,brixton-village-grill
+   stripe.connect.refresh-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh
+   stripe.connect.return-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/return
+   stripe.environment-tag: staging
+@@ -4307,6 +4308,11 @@
+             configMapKeyRef:
+               key: storefront.client-ip-digest.retention-hours
+               name: app-config
++        - name: JTOYE_FEATURED_SHOP_SLUGS
++          valueFrom:
++            configMapKeyRef:
++              key: storefront.featured-shop-slugs
++              name: app-config
+         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+         imagePullPolicy: IfNotPresent
+         lifecycle:
+FAIL [production]: render DRIFTED from k8s/goldens/production.yaml
+--- k8s/goldens/production.yaml (GOLDEN)
++++ kubectl kustomize k8s/production (CURRENT)
+@@ -143,6 +143,7 @@
+   storefront.cash-caps.per-ip: "5"
+   storefront.cash-caps.per-phone: "3"
+   storefront.client-ip-digest.retention-hours: "72"
++  storefront.featured-shop-slugs: ""
+   stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
+   stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
+   stripe.environment-tag: production
+@@ -764,6 +765,11 @@
+             configMapKeyRef:
+               key: storefront.client-ip-digest.retention-hours
+               name: app-config
++        - name: JTOYE_FEATURED_SHOP_SLUGS
++          valueFrom:
++            configMapKeyRef:
++              key: storefront.featured-shop-slugs
++              name: app-config
+         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+         imagePullPolicy: IfNotPresent
+         lifecycle:
+
+The staging/production render no longer matches its committed golden.
+If the change is INTENDED, review the diff above, then run
+  k8s/scripts/render-golden.sh --write
+and commit the regenerated golden alongside the k8s/base edit that caused it.

@@ -1,0 +1,30 @@
+== HEAD baseline (origin/main 03eb939a k8s tree) ==
+kustomize staging rc=0
+kustomize production rc=0
+kustomize local rc=0
+[staging] value: 
+[staging] env JTOYE_FEATURED_SHOP_SLUGS count: 
+[production] value: 
+[production] env JTOYE_FEATURED_SHOP_SLUGS count: 
+[local] value: 
+[local] env JTOYE_FEATURED_SHOP_SLUGS count: 
+FAIL staging value
+FAIL production value not empty
+FAIL local value not empty
+FAIL staging env missing
+FAIL production env missing
+FAIL local env missing
+render-value check rc=1
+script rc=1
+== this branch ==
+kustomize staging rc=0
+kustomize production rc=0
+kustomize local rc=0
+[staging] value: 730:  storefront.featured-shop-slugs: mama-ades-kitchen,peckham-jollof-co,brixton-village-grill
+[staging] env JTOYE_FEATURED_SHOP_SLUGS count: 1
+[production] value: 146:  storefront.featured-shop-slugs: ""
+[production] env JTOYE_FEATURED_SHOP_SLUGS count: 1
+[local] value: 143:  storefront.featured-shop-slugs: ""
+[local] env JTOYE_FEATURED_SHOP_SLUGS count: 1
+render-value check rc=0
+script rc=0

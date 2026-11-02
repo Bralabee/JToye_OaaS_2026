@@ -1,0 +1,21 @@
+check-doc-metrics  (2026-11-02T20:49:16Z)
+  manifest : docs/metrics.json
+FAIL: README.md [total_logical_invocations]: doc says 7027, docs/metrics.json says 7065
+FAIL: README.md [total_logical_invocations]: doc says 7027, docs/metrics.json says 7065
+FAIL: README.md [java_test_methods]: doc says 3184, docs/metrics.json says 3200
+FAIL: README.md [java_test_files]: doc says 437, docs/metrics.json says 441
+FAIL: README.md [jest_blocks]: doc says 3464, docs/metrics.json says 3486
+FAIL: README.md [jest_files]: doc says 292, docs/metrics.json says 293
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 7027, docs/metrics.json says 7065
+FAIL: CLAUDE.md [java_test_methods]: doc says 3184, docs/metrics.json says 3200
+FAIL: CLAUDE.md [java_test_files]: doc says 437, docs/metrics.json says 441
+FAIL: CLAUDE.md [jest_blocks]: doc says 3464, docs/metrics.json says 3486
+FAIL: CLAUDE.md [jest_files]: doc says 292, docs/metrics.json says 293
+FAIL: AGENTS.md [total_logical_invocations]: doc says 7027, docs/metrics.json says 7065
+FAIL: AGENTS.md [java_test_methods]: doc says 3184, docs/metrics.json says 3200
+FAIL: AGENTS.md [java_test_files]: doc says 437, docs/metrics.json says 441
+FAIL: AGENTS.md [jest_blocks]: doc says 3464, docs/metrics.json says 3486
+FAIL: AGENTS.md [jest_files]: doc says 292, docs/metrics.json says 293
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.

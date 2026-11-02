@@ -1,0 +1,31 @@
+== ARM (c): properties validation removed ==
+diff --git a/core-java/src/main/java/uk/jtoye/core/storefront/FeaturedShopsProperties.java b/core-java/src/main/java/uk/jtoye/core/storefront/FeaturedShopsProperties.java
+index 810aa040..8c6aafeb 100644
+--- a/core-java/src/main/java/uk/jtoye/core/storefront/FeaturedShopsProperties.java
++++ b/core-java/src/main/java/uk/jtoye/core/storefront/FeaturedShopsProperties.java
+@@ -43,7 +43,7 @@ public record FeaturedShopsProperties(List<String> featuredShopSlugs) {
+     private static final int MAX_SLUG_LENGTH = 100;
+ 
+     public FeaturedShopsProperties {
+-        featuredShopSlugs = validate(featuredShopSlugs);
++        featuredShopSlugs = featuredShopSlugs == null ? List.of() : featuredShopSlugs.stream().map(String::trim).toList(); // ARM (c)
+     }
+ 
+     private static List<String> validate(List<String> raw) {
+gradle rc=1
+uk.jtoye.core.storefront.FeaturedShopsPropertiesTest tests=8 skipped=0 failures=4 errors=0
+10:FeaturedShopsPropertiesTest > a duplicate refuses to start, naming the key and the entry FAILED
+13:FeaturedShopsPropertiesTest > more than 12 entries refuses to start, naming the key FAILED
+16:FeaturedShopsPropertiesTest > a value that is not a slug refuses to start, naming the key and the entry FAILED
+19:FeaturedShopsPropertiesTest > a blank entry (two commas together) refuses to start, naming the key FAILED
+== RESTORE ==
+git diff --exit-code rc=0
+validate( calls: 2
+GREEN gradle rc=0
+uk.jtoye.core.storefront.FeaturedShopsPropertiesTest tests=8 skipped=0 failures=0 errors=0
+8:> Task :core-java:test FAILED
+10:FeaturedShopsPropertiesTest > a duplicate refuses to start, naming the key and the entry FAILED
+13:FeaturedShopsPropertiesTest > more than 12 entries refuses to start, naming the key FAILED
+16:FeaturedShopsPropertiesTest > a value that is not a slug refuses to start, naming the key and the entry FAILED
+19:FeaturedShopsPropertiesTest > a blank entry (two commas together) refuses to start, naming the key FAILED
+33:BUILD FAILED in 3s

@@ -205,3 +205,12 @@ data:
   # anything a client writes to the left of it is never read.
   # Empty ("") restores trust-none.
   security.trusted-proxies: "10.244.0.0/16"
+
+  # --- Featured kitchens (quick 261102-r6u, owner decision D-02, design D17) -----
+  # The three staging demo kitchens, in the order the landing row leads with them
+  # (core JTOYE_FEATURED_SHOP_SLUGS -> jtoye.storefront.featured-shop-slugs). They
+  # are seeded by scripts/staging-seed.sh --stage demo-kitchens (three demo tenants,
+  # "J'Toye Demo - <kitchen>"). Deploy order is safe either way: until that stage
+  # has run, the slugs name no published shop, core skips them with one WARN, and
+  # the landing row is exactly what it was.
+  storefront.featured-shop-slugs: "mama-ades-kitchen,peckham-jollof-co,brixton-village-grill"

@@ -12553,6 +12553,31 @@
         ]
       }
     },
+    "/api/v1/public/featured-shops" : {
+      "get" : {
+        "description" : "An editorial, per-environment ordering hint for the landing page, never paid placement. Published shops only, in configured order. Configured slugs that are unknown or unpublished are skipped. An empty array when none are configured.",
+        "operationId" : "featuredShops_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PublicShopDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The featured published shops, in configured order."
+          }
+        },
+        "summary" : "List featured shops",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/gdpr/dsar" : {
       "post" : {
         "description" : "Records a UK GDPR Article 15/17 request against an email address. Always returns 202 with an identical, opaque body — the response never indicates whether any tenant holds the address. The address itself is stored only as a one-way SHA-256 digest. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original response and never queues a second request.",
@@ -16156,6 +16181,31 @@
         },
         "tags" : [
           "core-application"
+        ]
+      }
+    },
+    "/public/featured-shops" : {
+      "get" : {
+        "description" : "An editorial, per-environment ordering hint for the landing page, never paid placement. Published shops only, in configured order. Configured slugs that are unknown or unpublished are skipped. An empty array when none are configured.",
+        "operationId" : "featuredShops",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PublicShopDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The featured published shops, in configured order."
+          }
+        },
+        "summary" : "List featured shops",
+        "tags" : [
+          "Public Storefront"
         ]
       }
     },

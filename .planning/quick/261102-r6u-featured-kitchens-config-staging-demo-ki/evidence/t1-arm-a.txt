@@ -1,0 +1,10 @@
+== ARM (a): finder without its published predicate (findBySlugIn) ==
+ core-java/src/main/java/uk/jtoye/core/shop/ShopRepository.java          | 2 +-
+ .../src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+gradle rc=1
+uk.jtoye.core.storefront.FeaturedShopsIntegrationTest tests=1 skipped=0 failures=1 errors=0
+message="org.opentest4j.AssertionFailedError: [superuser read: the query itself excludes the unpublished shop] &#10;Expecting actual:&#10;  [&quot;feat-b-published&quot;, &quot;feat-u-unpublished&quot;, &quot;feat-a-published&quot;]&#10;to contain exactly (and in same order):&#10;  [&quot;feat-b-published&qu
+== RESTORE ==
+git diff --exit-code rc=0
+content: core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java:2 core-java/src/main/java/uk/jtoye/core/shop/ShopRepository.java:1 

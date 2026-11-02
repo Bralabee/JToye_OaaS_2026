@@ -55,7 +55,7 @@
  * the server-rendered row and the island are all build outputs, and
  * `docker compose start` does not rebuild).
  */
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect, type Page, type APIRequestContext } from "@playwright/test"
 import { execFileSync } from "node:child_process"
 
 /** Unit 74, Brixton Village Market, SW9 8PS. */
@@ -68,6 +68,22 @@ const MANCHESTER = { latitude: 53.4808, longitude: -2.2426 }
 const row = (page: Page) => page.getByRole("region", { name: "Dishes cooking near you" })
 const nearYouHeading = (page: Page) => page.getByRole("heading", { name: /near you/i })
 const useMyLocation = (page: Page) => page.getByRole("button", { name: /use my location/i })
+
+/** The core API as the browser sees it (compose publishes core-java on 9090). */
+const API = process.env.PLAYWRIGHT_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
+
+/**
+ * The environment's featured kitchens (quick 261102-r6u, D-02), read from the
+ * same public endpoint the landing page reads server-side, so the assertions
+ * below follow whatever this stack configures (compose dev lists the three demo
+ * slugs; "" turns the feature off) instead of hardcoding it.
+ */
+async function featuredSlugs(request: APIRequestContext): Promise<string[]> {
+  const res = await request.get(`${API}/api/v1/public/featured-shops`)
+  expect(res.ok(), `GET /api/v1/public/featured-shops answered ${res.status()}`).toBe(true)
+  const body = (await res.json()) as Array<{ slug: string }>
+  return body.map((s) => s.slug)
+}
 
 /** Every shop card in the row, by slug, in DOM order. */
 async function cardSlugs(page: Page): Promise<string[]> {
@@ -116,8 +132,9 @@ test.describe("landing row — device location", () => {
     ).toContain("geolocation=(self)")
   })
 
-  test("no coordinate: real shops, and no heading claims proximity", async ({ page, context }) => {
+  test("no coordinate: real shops, and no heading claims proximity", async ({ page, context, request }) => {
     await context.clearPermissions()
+    const featured = await featuredSlugs(request)
     await openLanding(page)
 
     // THE criterion, scoped to headings. `/` legitimately renders "near you" at
@@ -131,6 +148,15 @@ test.describe("landing row — device location", () => {
     const slugs = await cardSlugs(page)
     expect(slugs.length, "the kitchen row served no cards at all").toBeGreaterThan(0)
     expect(slugs).toContain("mama-ades-kitchen")
+    // D-03/D-04: the featured kitchens lead the row in configured order, each
+    // carrying the Featured label (an empty list leaves the row as it was).
+    expect(slugs.slice(0, featured.length), "the featured kitchens do not lead the row").toEqual(featured)
+    for (const slug of featured) {
+      await expect(
+        row(page).locator("article", { has: page.locator(`a[href="/shop/${slug}"]`) }).getByText("Featured", { exact: true }),
+        `${slug} is featured but its card has no Featured label`
+      ).toHaveCount(1)
+    }
     // Nothing may claim a distance when none was computed.
     expect(await distancesShown(page)).toEqual([])
 
@@ -235,9 +261,11 @@ test.describe("landing row — device location", () => {
   test("far from every kitchen: says so, and still shows the full list", async ({
     page,
     context,
+    request,
   }) => {
     await context.grantPermissions(["geolocation"])
     await context.setGeolocation(MANCHESTER)
+    const featured = await featuredSlugs(request)
     await openLanding(page)
     const unlocated = await cardSlugs(page)
 
@@ -254,8 +282,17 @@ test.describe("landing row — device location", () => {
       page.getByRole("heading", { name: /no kitchens within 3\.1 miles/i })
     ).toHaveCount(1)
     await expect(nearYouHeading(page)).toHaveCount(0)
-    // ...and the visitor is not punished for being far away.
-    expect(await cardSlugs(page)).toEqual(unlocated)
+    if (featured.length > 0) {
+      // D-03: with featured kitchens configured, they stand in ALONE under a
+      // heading that names the radius and claims no locality.
+      await expect(
+        page.getByRole("heading", { name: /no kitchens within 3\.1 miles — featured on j'toye/i })
+      ).toHaveCount(1)
+      expect(await cardSlugs(page)).toEqual(featured.filter((slug) => unlocated.includes(slug)))
+    } else {
+      // ...and the visitor is not punished for being far away.
+      expect(await cardSlugs(page)).toEqual(unlocated)
+    }
     expect(
       await distancesShown(page),
       "a distance was printed for shops that are NOT in the result set"

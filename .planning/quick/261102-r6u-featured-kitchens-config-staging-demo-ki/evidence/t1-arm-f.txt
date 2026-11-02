@@ -1,0 +1,19 @@
+== ARM (f): production patch set to the demo slugs ==
+ k8s/production/configmap-patch.yaml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+kustomize staging rc=0
+kustomize production rc=0
+kustomize local rc=0
+[staging] value: 730:  storefront.featured-shop-slugs: mama-ades-kitchen,peckham-jollof-co,brixton-village-grill
+[staging] env JTOYE_FEATURED_SHOP_SLUGS count: 1
+[production] value: 146:  storefront.featured-shop-slugs: mama-ades-kitchen,peckham-jollof-co,brixton-village-grill
+[production] env JTOYE_FEATURED_SHOP_SLUGS count: 1
+[local] value: 143:  storefront.featured-shop-slugs: ""
+[local] env JTOYE_FEATURED_SHOP_SLUGS count: 1
+FAIL production value not empty
+render-value check rc=1
+render-value check rc=1
+== RESTORE ==
+git diff --exit-code rc=0
+render-value check rc=0
+GREEN render-value rc=0

@@ -1,0 +1,12 @@
+== ARM (d): page.tsx passes the listing alone ==
+ frontend/app/page.tsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  ● Featured kitchens lead the landing row (D-03) › renders the featured shop FIRST, then the listing
+  ● Featured kitchens lead the landing row (D-03) › puts a featured shop that is ALSO on the listing once, in the featured position
+  ● Featured kitchens lead the landing row (D-03) › puts the featured shops in the landing JSON-LD
+Tests:       3 failed, 33 passed, 36 total
+jest rc=1
+== RESTORE ==
+git diff --exit-code rc=0
+Tests:       36 passed, 36 total
+GREEN jest rc=0
