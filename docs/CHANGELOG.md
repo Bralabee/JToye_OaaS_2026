@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Stripe Connect: The Account-Create Idempotency Key Follows the Request Body — 2026-11-02
+### Stripe Connect: The Account-Create Idempotency Key Follows the Request Body — 2026-11-02 (#1092)
 
 Issue #1090, second observation. With #1091 deployed to staging (`40d91e0e`, parity rc 0), `--stage connect-onboard` still answered 502: Stripe had saved the 05:29Z `type=express` refusal under `connect-account-create-<tenantId>` and rejected the Managed Risk body under the same key (`idempotency_error`, 09:21Z). Stripe keeps such a key for 24 hours, and any tenant whose first create was ever refused would have been stuck the same way.
 
