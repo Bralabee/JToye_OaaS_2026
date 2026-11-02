@@ -143,3 +143,27 @@ check-handoff-contract  (2026-11-02T14:57:31Z)
 PASS: HANDOFF.md — 1 gate-count claim(s) and 38 state claim(s) hold; 1 commit(s) behind (budget 3).
       NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
 rc=0
+
+### Finding 3 (coordinator, after round 1): scripts/check-no-object-store-residue.sh BEFORE (allowlist line 61 still .env.example:584; the .env.example additions moved the kubectl delete-secret comment to 593)
+  VIOLATION .env.example:593: [R-1] #   kubectl --context jtoye -n jtoye-local delete secret s3-media-credentials s3-backup-credentials --ignore-not-found
+  ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:61: stale entry '.env.example:584' covers no current hit (hits in .env.example are now at line(s): 593 252 ) — delete it, or renumber it in the same change that moved the line
+SUMMARY files_scanned=4847 raw_hits=2213 unique_lines=2037 allowlisted=2036 violations=1 stale_entries=1 hygiene_failures=0 entries_not_judged=0
+FAIL: 1 residue line(s), 1 stale and 0 malformed allowlist entr(ies).
+rc=1
+
+### Finding 3: scripts/gates/object-store-residue-selftest.sh BEFORE (planted fixtures only, independent of the real tree, so it is rc 0 on both sides; the real-tree red is the gate run above)
+# tests 41
+# pass 41
+# fail 0
+rc=0
+
+### Finding 3: AFTER renumbering allowlist line 61 from .env.example:584 to .env.example:593 (no entry added, no other line touched)
+SUMMARY files_scanned=4847 raw_hits=2213 unique_lines=2037 allowlisted=2037 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+PASS: no retired object-store residue in 4847 tracked file(s); 2037 hit line(s) covered by 51 reasoned, live allowlist entr(ies).
+rc=0
+
+### Finding 3: scripts/gates/object-store-residue-selftest.sh AFTER
+# tests 41
+# pass 41
+# fail 0
+rc=0
