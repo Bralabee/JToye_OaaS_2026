@@ -1,0 +1,38 @@
+== D17 baseline (origin/main): rc=1 ; this branch: 1
+== docs-freshness BEFORE --write ==
+ERROR: documentation metrics are stale (docs/metrics.json != source reality).
+--- committed (docs/metrics.json) ---
+{
+  "java_test_methods": 3184,
+  "java_test_files": 437,
+  "java_controllers": 33,
+  "schema_version": 89,
+  "go_test_funcs": 112,
+  "go_test_files": 14,
+  "jest_blocks": 3464,
+  "jest_files": 292,
+  "playwright_blocks": 197,
+  "playwright_specs": 51,
+  "mcp_test_blocks": 70,
+  "mcp_test_files": 8,
+  "total_logical_invocations": 7027
+}
+--- computed from source ---
+{
+  "java_test_methods": 3200,
+  "java_test_files": 441,
+  "java_controllers": 34,
+  "schema_version": 89,
+  "go_test_funcs": 112,
+  "go_test_files": 14,
+  "jest_blocks": 3486,
+  "jest_files": 293,
+  "playwright_blocks": 197,
+  "playwright_specs": 51,
+  "mcp_test_blocks": 70,
+  "mcp_test_files": 8,
+  "total_logical_invocations": 7065
+}
+
+Fix by running: scripts/docs-freshness.sh --write   (then update README/PROJECT.md and commit)
+docs-freshness rc=1

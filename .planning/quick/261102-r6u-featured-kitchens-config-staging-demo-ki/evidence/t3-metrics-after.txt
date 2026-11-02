@@ -1,0 +1,8 @@
+check-doc-metrics  (2026-11-02T20:49:27Z)
+  manifest : docs/metrics.json
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+check-doc-metrics rc=0
+docs-freshness OK: metrics match source (total logical invocations: 7065).
+docs-freshness rc=0
