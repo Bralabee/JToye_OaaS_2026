@@ -15,7 +15,18 @@ An external tester's four points about the landing (2026-10-30), measured on sta
 - **Order:** "How it works" follows the hero, ahead of the kitchen row. Grounds read stone hero, white body, stone trust band, oxblood footer. No motion hook moved.
 - **Chips:** all six cuisine chips sit in one non-wrapping rail (24px pictures, 13px labels). From 1280 up they fit the column with no scrolling; below that the rail swipes. Every chip is still a crawlable `/shop?q=` link, and Tab scrolls each one into view with its focus ring inside the rail.
 - **Footer:** 377px on desktop (was 497) and 732px at 390 (was 955), every column and link kept. The three OGL statements run on as one paragraph, worded verbatim; both 1px rules are gone. The photo credits (160px, 260px on a phone) sit behind a native "Photo credits" disclosure and stay in the DOM.
-- **Proof:** five new `landing.test.tsx` cases were RED against origin/main's page and footer and are GREEN here. Before/after measurements, fold screenshots and gate output are in `.planning/quick/261102-q7c-feat-landing-fold-order-footer-chips/evidence/`.
+- **Proof:** six new `landing.test.tsx` cases: five were RED against origin/main's page and footer, the sixth (no `display: contents` collage item) RED against review round 1's head, and all six are GREEN here. Before/after measurements, fold screenshots and gate output are in `.planning/quick/261102-q7c-feat-landing-fold-order-footer-chips/evidence/`.
+
+### Keycloak: The J'Toye Wordmark Links Home on Every Keycloak Page — 2026-11-02 (#1095)
+
+Owner ruling 2026-11-02. A tester on Keycloak's "Email verification" page had no way back to the site, because the header wordmark is each realm's `displayNameHtml` and it was a `<span>`. The `jtoye` theme stays CSS-only.
+
+- **Both realms:** `displayNameHtml` is now `<a href="${PUBLIC_APP_ORIGIN}" style="…">J'Toye</a>`, keeping the inline oxblood, weight and tracking.
+- **New render variable `PUBLIC_APP_ORIGIN`:** it is in every compose realm render site's envsubst list and render-service environment (default `http://localhost:3000`), in `.env.example`, and checked by `scripts/verify-env.sh` (one bare `http(s)://host[:port]`, else FAIL). Staging writes `https://app-staging.olajay.co.uk` through `staging-realm.jq`. The staging assertion suite refuses a header that does not link there, on the render and on the live read-back.
+- **Sanitiser measured:** Keycloak 26.8.1's `kcSanitize` keeps the tag, the `href` and the `style`, and adds `rel="nofollow"`. On a throwaway container, the login, register and email-verification pages showed RED on the old realm and GREEN on the new one, and the reset page was GREEN too.
+- **Theme:** `#kc-header-wrapper a` has no underline, oxblood-700 on hover, and a primary focus-visible ring.
+- **Gate:** `scripts/check-keycloak-wordmark-home.sh` (with `--selftest`) runs in `ci-cd.yaml`. It found 8 defects on the pre-fix tree and passes here.
+- **Rollout:** existing realms keep the old header until a field-scoped `kcadm.sh update` is run; see `docs/runbooks/keycloak-wordmark-home.md`. Staging has not been updated yet.
 
 ### Kitchen Directory Search: One Clear Button, and Backspacing No Longer Searches Every Fragment — 2026-11-02 (#1094)
 

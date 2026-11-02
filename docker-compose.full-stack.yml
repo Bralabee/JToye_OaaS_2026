@@ -105,6 +105,13 @@ services:
       CUSTOMER_STOREFRONT_REDIRECT_URIS: ${CUSTOMER_STOREFRONT_REDIRECT_URIS:?CUSTOMER_STOREFRONT_REDIRECT_URIS must be set (renders customer storefront redirect URIs)}
       CUSTOMER_STOREFRONT_WEB_ORIGINS: ${CUSTOMER_STOREFRONT_WEB_ORIGINS:?CUSTOMER_STOREFRONT_WEB_ORIGINS must be set (renders customer storefront web origins)}
       CUSTOMER_VERIFY_EMAIL: ${CUSTOMER_VERIFY_EMAIL:-false}
+      # The single public app origin (scheme://host[:port], no path, no trailing slash).
+      # Both realms render their header wordmark as a link to it (owner ruling
+      # 2026-11-02), so a person on the email-verification page can get back to the
+      # site. Defaulted, not required: localhost:3000 is this stack's frontend, and an
+      # existing .env without the key must keep booting. scripts/verify-env.sh refuses a
+      # set-but-malformed value.
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:-http://localhost:3000}
       # Google identity-provider credentials for the customer realm (#432 / CUST-03).
       # DELIBERATELY OPTIONAL and empty by default — the IdP ships `enabled: false`
       # per ADR-0005, so the stack must boot with neither of these set. Do NOT give
@@ -121,7 +128,7 @@ services:
       - |
         set -e
         apk add --no-cache gettext >/dev/null
-        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET $$PUBLIC_APP_ORIGIN' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
         # Second realm (Phase 18): render jtoye-customers passing ONLY the explicit
@@ -134,7 +141,7 @@ services:
         # NB: do not write a dollar-brace token in these comment lines. Compose
         # interpolates this entrypoint string, so it would try to resolve them and fail
         # the whole file with "invalid interpolation format".
-        envsubst '$$CUSTOMER_STOREFRONT_REDIRECT_URIS $$CUSTOMER_STOREFRONT_WEB_ORIGINS $$CUSTOMER_VERIFY_EMAIL $$GOOGLE_CLIENT_ID $$GOOGLE_CLIENT_SECRET' \
+        envsubst '$$CUSTOMER_STOREFRONT_REDIRECT_URIS $$CUSTOMER_STOREFRONT_WEB_ORIGINS $$CUSTOMER_VERIFY_EMAIL $$GOOGLE_CLIENT_ID $$GOOGLE_CLIENT_SECRET $$PUBLIC_APP_ORIGIN' \
           < /keycloak/realm-export-customers.template.json > /keycloak/realm-export-customers.json
         echo "Rendered infra/keycloak/realm-export-customers.json from template"
     networks:

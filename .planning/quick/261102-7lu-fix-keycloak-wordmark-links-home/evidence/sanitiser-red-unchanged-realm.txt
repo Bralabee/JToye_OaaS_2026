@@ -1,0 +1,9 @@
+login http fetched (7159 bytes)
+[RED-unchanged-realm] login header: <div id="kc-header-wrapper"              class=""><span style="color:#3a0b0d;font-weight:700;letter-spacing:0.01em">J&#39;Toye</span>
+  NO ANCHOR to http://localhost:3000
+register http fetched (6093 bytes)
+[RED-unchanged-realm] register header: <div id="kc-header-wrapper"              class=""><span style="color:#3a0b0d;font-weight:700;letter-spacing:0.01em">J&#39;Toye</span>
+  NO ANCHOR to http://localhost:3000
+after register POST: page title = 'Email verification'
+[RED-unchanged-realm] after-register(Email_verification) header: <div id="kc-header-wrapper"              class=""><span style="color:#3a0b0d;font-weight:700;letter-spacing:0.01em">J&#39;Toye</span>
+  NO ANCHOR to http://localhost:3000
