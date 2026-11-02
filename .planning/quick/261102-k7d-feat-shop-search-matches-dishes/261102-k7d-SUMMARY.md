@@ -9,7 +9,8 @@ requires: []
 provides:
   - "V89 products_public_read (FOR SELECT, current_tenant_id() IS NULL, available product of a published shop)"
   - "ShopRepository.fullTextSearchPublished matches a shop through its available dishes; own-vector matches rank first"
-  - "PublicStorefrontService.searchPublishedShops runs the text search tenant-less"
+  - "the LIKE tier also matches an available product's title (q=plantai)"
+  - "ShopRepository.FULL_TEXT_SEARCH_PUBLISHED_SQL, EXPLAINed by ProductSearchFtsIntegrationTest (both GIN indexes pinned)"
   - "ProductService GROUP_ADMIN list/search return an empty page when no tenant is pinned"
 affects: []
 tech-stack:
@@ -33,7 +34,7 @@ key-files:
     - docs/CHANGELOG.md
 decisions:
   - "owner-session ruling 2026-11-02: products_public_read policy (V87 shape) because products had no anonymous read policy; no-migration premise withdrawn"
-  - "The text search runs with no tenant pinned and restores the caller's tenant, so a signed-in caller gets the same cross-tenant dish matches (the shop half is unchanged: published = true is in the query and shops_public_read admits every published shop)"
+  - "Review round 1 (2026-11-02): a tenant-bearing caller keeps its tenant and gets own-tenant dish matches only, as resolvePublicShopForSlug restricts it (the earlier clear/restore was removed); the policy also requires the product and its shop to share a tenant"
   - "ProductService GROUP_ADMIN branches answer an empty page with no tenant (what RLS answered before V89) rather than throwing, so no caller sees a behaviour change"
 metrics:
   completed: 2026-11-02
@@ -60,20 +61,26 @@ withdrew the premise and ruled V89, a FOR SELECT policy in the V87 shape.
 ```sql
 SELECT s.* FROM shops s
  WHERE s.published = true
-   AND (s.search_vector @@ plainto_tsquery('english', :q)
-        OR EXISTS (SELECT 1 FROM products p
-                    WHERE p.shop_id = s.id AND p.tenant_id = s.tenant_id AND p.available = true
-                      AND p.search_vector @@ plainto_tsquery('english', :q)))
+   AND (s.id, s.tenant_id) IN (
+        SELECT sh.id, sh.tenant_id FROM shops sh
+         WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+        UNION
+        SELECT p.shop_id, p.tenant_id FROM products p
+         WHERE p.search_vector @@ plainto_tsquery('english', :q)
+           AND p.available = true)
  ORDER BY COALESCE(s.search_vector @@ plainto_tsquery('english', :q), false) DESC,
           COALESCE(ts_rank(s.search_vector, plainto_tsquery('english', :q)), 0) DESC,
           s.name ASC, s.id ASC
--- countQuery: SELECT COUNT(*) with the identical WHERE
+-- countQuery: SELECT COUNT(*) with the identical WHERE; both are constants on ShopRepository.
+-- LIKE tier (searchPublished): name/tags LIKE, OR EXISTS an available same-tenant product whose title LIKE.
+-- Policy (V89): FOR SELECT USING (current_tenant_id() IS NULL AND available AND EXISTS (published shop,
+--   s.id = products.shop_id AND s.tenant_id = products.tenant_id)).
 ```
 
 ## Audit
 
 Every `ProductRepository` method and every call site that can run with no tenant is listed in
-`evidence/audit.md` (21 rows). There was one class of finding: the GROUP_ADMIN branches of
+`evidence/audit.md` (24 rows, including the review's `DemoDataSeeder.findAll()` and the LIKE tier). There was one class of finding: the GROUP_ADMIN branches of
 `ProductService.listProducts` and `ProductService.search` (`findAll`, `findByAvailableTrue`,
 `searchFullText`) have no tenant predicate, and a realm admin or a `SystemPrincipal` caller reaches them
 without a tenant. With V89 alone, such a caller listed another tenant's product (expected 0, got 1). With
@@ -86,14 +93,15 @@ Full red/green record: `evidence/red-green.txt`.
 
 | Gate | Fail direction | After |
 |------|----------------|-------|
-| ShopSearchMatchesDishesIntegrationTest (NOSUPERUSER, no tenant) | 9b737e61: tests=6 failures=4 | tests=6 failures=0 |
-| ProductsPublicReadRlsIntegrationTest | 9b737e61: failures=2 (anonymous reads); V89 without the ProductService fix: failures=2 (the audit finding) | tests=11 failures=0 |
-| Policy break arm (FOR ALL USING (true) WITH CHECK (true)) | failures=8: every negative read, the IS NULL guard, INSERT, UPDATE, DELETE | restored, diff empty |
+| ShopSearchMatchesDishesIntegrationTest (NOSUPERUSER, no tenant) | 9b737e61: tests=6 failures=4; review round: tenant-scope and plantai tests red on 2856edc1, all 7 red on the origin/main query (incl. both positive controls) | tests=7 failures=0 |
+| ProductsPublicReadRlsIntegrationTest | 9b737e61: failures=2 (anonymous reads); V89 without the ProductService fix: failures=2 (the audit finding); review arm (tenant-B product on tenant A's shop) on e9dfcb4a: tests=12 failures=1, `expected: 0L but was: 1L` | tests=12 failures=0 |
+| Policy break arms | WRITE arm `FOR ALL USING (true) WITH CHECK (true)`: write tests red (it is the write criteria's fail direction). READ arm `FOR SELECT USING (true)`: 6 of 12 red (unavailable, unpublished, exact set, caller-with-tenant, cross-tenant shop_id, tenant-A control list) | restored, diff empty |
 | Availability break arm (predicate removed from policy and query) | the plantain test fails | restored |
-| Tenant-clear break arm | the signed-in-caller test fails | restored |
+| Tenant-clear break arm (pre-review) | superseded: the clear was removed in review round 1 and the test inverted | n/a |
+| Pinned plan (EXPLAIN of the repository constant, NOSUPERUSER) | OR shape: idx_shops_search absent (shops via idx_shops_published + Filter) | UNION pairs: idx_shops_search AND idx_products_search, anonymous and tenant-pinned |
 | RlsContractTest | no exemption added | 7/7 |
 | ProductSearchFtsIntegrationTest | n/a | 17/17 in two runs, no flake |
-| Full suite (`:core-java:test :core-java:integrationTest`) | n/a | rc 0; unit 2083 tests and integration 1430, 0 failures, 1 skip each |
+| Full suite (`:core-java:test :core-java:integrationTest`) | n/a | rc 0 on 5c575c4e; unit 2083 tests and integration 1432, 0 failures, 1 skip each |
 | check-doc-metrics.sh | 12 FAIL after `--write` | 37/37 PASS |
 | check-branch-behind-base.sh | fail direction not re-executed here | rc 0 |
 
@@ -115,9 +123,8 @@ Full red/green record: `evidence/red-green.txt`.
 - **Frontend routing** (out of this lane's scope). The landing `HeroSearch` and the `/shop?q=` deep link
   are assumed to reach the discovery page, which calls `GET /api/v1/public/shops?q=`, the one endpoint
   changed here.
-- **Query plans.** No EXPLAIN was taken of the new query on a production-sized catalogue. The products
-  subquery is served by `idx_products_search` only where `ts_match_vq` is LEAKPROOF (V44 notes it needs
-  a superuser), and the RLS EXISTS on `shops` runs per candidate product.
+- **Query plans at scale.** The plan is pinned on the test catalogue (both GIN indexes, `enable_seqscan = off`); no EXPLAIN
+  was taken on a production-sized catalogue.
 - **Runtime parity:** N/A. No runtime was rebuilt or deployed, by instruction.
 
 ## Quality dimensions

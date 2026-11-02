@@ -314,3 +314,89 @@ SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=12 failur
   FAIL a caller pinned to ANOTHER tenant does not see tenant A's published products (IS NULL guard) | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
   FAIL anonymous does NOT see an unavailable product of a published shop | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
   FAIL anonymous does NOT see a tenant-B product pointed at tenant A's published shop (cross-tenant shop_id) | org.opentest4j.AssertionFailedError:  expected: 0L  but was: 1L
+
+## 10. Code-review round 1 of #1098 (items 1, 2, 3, 6, 7)
+### 10a. RED on head 2856edc1 behaviour (OR-shaped query hoisted UNCHANGED into ShopRepository constants; tenant clear still in; LIKE tier without products). gradle rc=1
+#    The first attempt of this run also errored the plantai test on a TEST bug (it seeded after SET LOCAL ROLE; fixed with RESET ROLE); the re-run below is the recorded search RED.
+SUITE uk.jtoye.core.product.ProductSearchFtsIntegrationTest tests=17 failures=1 errors=0 skipped=0
+  FAIL v44LeakproofMakesGinIndexServeShopsFtsUnderRls() | java.lang.AssertionError: [With ts_match_vq LEAKPROOF (V44) the public shop search must be served by idx_shops_search AND idx_products_search 
+  PASS v44LeakproofMakesGinIndexServeFtsUnderRls()
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=7 failures=2 errors=0 skipped=0
+  PASS the unpublished kitchen never appears, whatever it sells
+  PASS the paging count query agrees with the result set (page size 1 forces the count query)
+  FAIL a caller carrying a tenant gets dish matches from its OWN tenant only | org.opentest4j.AssertionFailedError:  Expecting actual:   ["Ade's Buka", "Mama's Kitchen"] to contain exactly (and in same order):   ["Ade's Buka"] but some elements were not expected:   ["Mama's Kitchen"] 
+  PASS q=plantain finds the kitchen with an AVAILABLE plantain dish, never the one whose plantain is unavailable
+  PASS q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller
+  FAIL a partial word (q=plantai) reaches the LIKE fallback and still finds a kitchen by its available dish | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  PASS a kitchen whose NAME matches ranks above a kitchen matched only through a dish
+
+#    BEFORE plan (anonymous, NOSUPERUSER, enable_seqscan=off), from the failing assertion: idx_shops_search ABSENT;
+#    shops reached through idx_shops_published with the tsvector match as a Filter:
+
+### 10b. Item 3 controls RED on the UNFIXED query (origin/main SQL placed in the constants as an arm; restored by copy, cmp rc 0). gradle rc=1
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=7 failures=7 errors=0 skipped=0
+  FAIL the unpublished kitchen never appears, whatever it sells | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL the paging count query agrees with the result set (page size 1 forces the count query) | java.lang.AssertionError:  Expecting actual:   [] to contain exactly in any order:   ["Mama's Kitchen", "Ade's Buka"] but could not find the following elements:   ["Mama's Kitchen", "Ade's Buka"] 
+  FAIL a caller carrying a tenant gets dish matches from its OWN tenant only | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Ade's Buka"] but could not find the following elements:   ["Ade's Buka"] 
+  FAIL q=plantain finds the kitchen with an AVAILABLE plantain dish, never the one whose plantain is unavailable | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Dodo Spot"] but could not find the following elements:   ["Dodo Spot"] 
+  FAIL q=pounded yam finds the published kitchen that SELLS it, as an anonymous NOSUPERUSER caller | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL a partial word (q=plantai) reaches the LIKE fallback and still finds a kitchen by its available dish | org.opentest4j.AssertionFailedError:  Expecting actual:   [] to contain exactly (and in same order):   ["Mama's Kitchen"] but could not find the following elements:   ["Mama's Kitchen"] 
+  FAIL a kitchen whose NAME matches ranks above a kitchen matched only through a dish | org.opentest4j.AssertionFailedError:  Expecting actual:   ["Pounded Yam Palace"] to contain exactly (and in same order):   ["Pounded Yam Palace", "Mama's Kitchen"] but could not find the following elements:   ["Mama's Ki
+
+### 10c. GREEN after the rewrite (UNION pairs), tenant clear removed, LIKE dish EXISTS. gradle rc=0
+SUITE uk.jtoye.core.product.ProductSearchFtsIntegrationTest tests=17 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.product.ProductsPublicReadRlsIntegrationTest tests=12 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.security.RlsContractTest tests=7 failures=0 errors=0 skipped=0
+SUITE uk.jtoye.core.storefront.ShopSearchMatchesDishesIntegrationTest tests=7 failures=0 errors=0 skipped=0
+### 10a-plan. BEFORE plan, verbatim from the failing assertion of v44LeakproofMakesGinIndexServeShopsFtsUnderRls on the OR shape
+#    (anonymous, NOSUPERUSER, enable_seqscan=off). idx_products_search IS used inside the hashed SubPlan; idx_shops_search is NOT:
+#    the shops side is a Bitmap Index Scan on idx_shops_published with the tsvector match left as a Filter.
+Sort  (cost=282.33..282.34 rows=4 width=2043)
+  Sort Key: (COALESCE((s.search_vector @@ '''coffe'''::tsquery), false)) DESC, (COALESCE(ts_rank(s.search_vector, '''coffe'''::tsquery), '0'::real)) DESC, s.name, s.id
+  ->  Bitmap Heap Scan on shops s  (cost=4.21..282.29 rows=4 width=2043)
+        Recheck Cond: published
+        Filter: (((tenant_id = current_tenant_id()) OR published OR (tenant_id = current_tenant_id())) AND ((search_vector @@ '''coffe'''::tsquery) OR (ANY ((id = (hashed SubPlan 6).col1) AND (tenant_id = (hashed SubPlan 6).col2)))))
+        ->  Bitmap Index Scan on idx_shops_published  (cost=0.00..4.21 rows=15 width=0)
+        SubPlan 6
+          ->  Bitmap Heap Scan on products p  (cost=12.80..25.98 rows=1 width=32)
+                Recheck Cond: (search_vector @@ '''coffe'''::tsquery)
+                Filter: (available AND ((tenant_id = current_tenant_id()) OR ((current_tenant_id() IS NULL) AND available AND EXISTS(SubPlan 4))))
+                ->  Bitmap Index Scan on idx_products_search  (cost=0.00..12.80 rows=1 width=0)
+                      Index Cond: (search_vector @@ '''coffe'''::tsquery)
+                SubPlan 4
+                  ->  Index Scan using idx_shops_tenant_name on shops s_1  (cost=0.14..8.66 rows=1 width=0)
+                        Index Cond: (tenant_id = p.tenant_id)
+                        Filter: (published AND (id = p.shop_id) AND ((tenant_id = current_tenant_id()) OR published OR (tenant_id = current_tenant_id())))
+
+### 10d. AFTER plan (head 5c575c4e, anonymous, NOSUPERUSER, enable_seqscan=off), from the test's system-out: BOTH GIN indexes
+SHOP-SEARCH-PLAN anonymous:
+Sort  (cost=60.70..60.70 rows=1 width=2043)
+  Sort Key: (COALESCE((s.search_vector @@ '''coffe'''::tsquery), false)) DESC, (COALESCE(ts_rank(s.search_vector, '''coffe'''::tsquery), '0'::real)) DESC, s.name, s.id
+  ->  Nested Loop  (cost=43.46..60.69 rows=1 width=2043)
+        ->  Unique  (cost=43.32..43.34 rows=2 width=32)
+              ->  Sort  (cost=43.32..43.33 rows=2 width=32)
+                    Sort Key: sh.id, sh.tenant_id
+                    ->  Append  (cost=12.80..43.31 rows=2 width=32)
+                          ->  Bitmap Heap Scan on shops sh  (cost=12.80..17.32 rows=1 width=32)
+                                Recheck Cond: (search_vector @@ '''coffe'''::tsquery)
+                                Filter: ((tenant_id = current_tenant_id()) OR published OR (tenant_id = current_tenant_id()))
+                                ->  Bitmap Index Scan on idx_shops_search  (cost=0.00..12.80 rows=1 width=0)
+                                      Index Cond: (search_vector @@ '''coffe'''::tsquery)
+                          ->  Bitmap Heap Scan on products p  (cost=12.80..25.98 rows=1 width=32)
+                                Recheck Cond: (search_vector @@ '''coffe'''::tsquery)
+                                Filter: (available AND ((tenant_id = current_tenant_id()) OR ((current_tenant_id() IS NULL) AND available AND EXISTS(SubPlan 1))))
+                                ->  Bitmap Index Scan on idx_products_search  (cost=0.00..12.80 rows=1 width=0)
+                                      Index Cond: (search_vector @@ '''coffe'''::tsquery)
+                                SubPlan 1
+                                  ->  Index Scan using idx_shops_tenant_name on shops s_1  (cost=0.14..8.66 rows=1 width=0)
+                                        Index Cond: (tenant_id = p.tenant_id)
+                                        Filter: (published AND (id = p.shop_id) AND ((tenant_id = current_tenant_id()) OR published OR (tenant_id = current_tenant_id())))
+        ->  Index Scan using idx_shops_tenant_name on shops s  (cost=0.14..8.66 rows=1 width=2038)
+              Index Cond: (tenant_id = sh.tenant_id)
+              Filter: (published AND (id = sh.id) AND ((tenant_id = current_tenant_id()) OR published OR (tenant_id = current_tenant_id())))
+#    (the tenant-pinned plan is asserted the same way, also containing both index names; test passed)
+
+### 10e. Full suite on 5c575c4e: ./gradlew :core-java:test :core-java:integrationTest --continue -> rc=0, BUILD SUCCESSFUL in 16m 29s
+#    test: 228 files, tests=2083 skipped=1 failures=0 errors=0
+#    integrationTest: 234 files, tests=1432 skipped=1 failures=0 errors=0
+#    metrics regenerated: 3183 Java @Test, 7020 logical; check-doc-metrics 37/37 PASS (7 FAIL before the prose edit); check-claims 56/56 PASS
