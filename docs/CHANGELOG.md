@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Storefront Search: A Kitchen Is Found by the Dishes It Sells — 2026-11-02 (#1098)
+
+An external tester searched "pounded yam" and "plantain" on `/shop` and got "No kitchens found" while a published kitchen sold both. The search read only the shop's own `search_vector` (name, tags, description, address); the dishes were never consulted.
+
+- **Search:** `ShopRepository.fullTextSearchPublished` now matches a published shop on its own vector OR through an available product of that shop whose `search_vector` (V25: title, category, description, ingredients, dietary tags) matches the same `plainto_tsquery`. Shops whose own vector matches rank first, by `ts_rank` as before; shops matched only through a dish follow, then name and id for stable paging. The count query carries the identical WHERE.
+- **V89 `products_public_read`:** `products` had only its tenant-scoped policy (V2) and no anonymous read policy, so under the NOSUPERUSER runtime role with no tenant the dish half of the search saw nothing (measured: the superuser found the kitchen, the runtime role returned `[]`). The new FOR SELECT policy, guarded by `current_tenant_id() IS NULL` (the V87 slots shape), admits exactly the rows `GET /shops/{slug}/products` already serves: an available product of a published shop. Unavailable products, unpublished shops' products and every write stay refused; a caller with a tenant pinned sees nothing new. Owner-session ruling 2026-11-02 (the brief's "no migration" premise was withdrawn).
+- **Same answer for a signed-in caller:** `PublicStorefrontService.searchPublishedShops` runs the text search with no tenant pinned and restores the caller's tenant afterwards, so a vendor browsing the storefront sees dish matches from every tenant, not only its own.
+- **Audit finding fixed:** every no-tenant read of `products` was listed. `ProductService`'s GROUP_ADMIN list and search branches carried no tenant predicate and relied on RLS, so after V89 a realm admin or system caller with no tenant claim would have listed every tenant's published products (proven: 1 instead of 0). With no tenant they now return an empty page, as RLS did before.
+- **Proof:** `ShopSearchMatchesDishesIntegrationTest` (6) and `ProductsPublicReadRlsIntegrationTest` (11), both as a `NOSUPERUSER NOBYPASSRLS` role; RED on `9b737e61`, GREEN after, with break arms for the policy, the availability predicate and the tenant clear. `RlsContractTest` stays green with no exemption. Allergen and dietary filtering (#862) is not part of this change.
+
 ### Kitchen Directory Search: One Clear Button, and Backspacing No Longer Searches Every Fragment — 2026-11-02 (#1094)
 
 An external tester on `/shop` reported two X buttons in the search box and "a glitch" when backspacing the query to empty instead of using the X. Both are fixed in `frontend/app/shop/shop-discovery-client.tsx`.
