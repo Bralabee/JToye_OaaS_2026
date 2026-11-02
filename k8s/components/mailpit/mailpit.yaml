@@ -26,7 +26,10 @@
 #   MP_SMTP_RELAY_AUTH "plain"                Go's PlainAuth, which refuses to send the
 #                                             password over an unencrypted connection
 #   MP_SMTP_RELAY_MATCHING                    auto-relay ONLY recipients matching this regex
-#                                             (never MP_SMTP_RELAY_ALL, which relays everything)
+#                                             (never MP_SMTP_RELAY_ALL, which relays everything);
+#                                             named addresses only, one per alternative, never
+#                                             a pattern (the live check UI-7 judges it by a
+#                                             positive grammar, scripts/staging-mail-ui.sh)
 #   MP_SMTP_RELAY_ALLOWED_RECIPIENTS          the SAME regex: a configured relay also enables
 #                                             the UI/API "release" button, and this bounds a
 #                                             manual release to the same allow-list

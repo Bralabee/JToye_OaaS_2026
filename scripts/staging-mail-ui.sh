@@ -49,9 +49,14 @@
 #        reports MessageRelay.Enabled false, OR (owner ruling 2026-11-02, D-20 amended; the
 #        relay is on only while the optional Secret mailpit-relay exists) Enabled true with
 #        a BOUNDED AllowedRecipients (a UI release is bounded by the tester allow-list):
-#        anchored at both ends, `^...$` with an optional leading `(?i)`, and holding no
-#        `.*` or `.+`, so `.*`, an unanchored `@gmail\.com$` or `^.*@gmail\.com$` fail
-#        (D-20 allows named testers, never a pattern); only the verdict and the length are
+#        named addresses only, one per alternative, judged by a POSITIVE grammar
+#        (ALLOWLIST_GRAMMAR_RE): an optional `(?i)`, `^`, then one address or a
+#        parenthesised `|`-alternation of addresses, then `$`. An address is literal
+#        letters, digits, `_`, `-`, `=` and one `@`, with `\.` the only escape and a
+#        domain of at least two labels. Anything else is NOT bounded: a class (`[^@]+`),
+#        a shorthand (`\S`), a bare `.`, a quantifier, `+` (a quantifier, so a plus-address
+#        cannot be listed), a domain-wide or unanchored pattern (D-20 allows named
+#        testers, never a pattern; ruled 2026-11-02). Only the verdict and the length are
 #        printed, never the list; and SMTPServer on :587; an
 #        authenticated POST /api/v1/send answers 401 (its Send API credential is random per
 #        pod and held by nobody); and the Ready mailpit pod's env carries none of the
@@ -89,8 +94,11 @@ FORBIDDEN_ENV="MP_SMTP_RELAY_CONFIG MP_SMTP_RELAY_ALL MP_SMTP_FORWARD_CONFIG MP_
 # The tester relay's env names (k8s/components/mailpit/mailpit.yaml TESTER RELAY; INV-18(c)
 # pins their shape in the render). The only relay names the Ready pod may carry.
 TESTER_RELAY_ENV='^MP_SMTP_RELAY_(HOST|PORT|USERNAME|PASSWORD|MATCHING|ALLOWED_RECIPIENTS|OVERRIDE_FROM|STARTTLS|AUTH)$'
-# A bounded allow-list (UI-7): `^...$`, optionally prefixed `(?i)`; judge_ui7 also refuses `.*`/`.+`.
-ALLOWLIST_ANCHORED_RE='^(\(\?i\))?\^.+\$$'
+# A bounded allow-list (UI-7), as a POSITIVE grammar (an allow-list of shapes, never a deny-list of
+# spellings): optional (?i), ^, one ADDRESS or (ADDRESS|ADDRESS|...), $. In the ERE below `\\\.`
+# is a literal backslash followed by a literal dot, i.e. the regex escape `\.` in the allow-list.
+ALLOWLIST_ADDR_RE='([A-Za-z0-9_=-]|\\\.)+@[A-Za-z0-9-]+(\\\.[A-Za-z0-9-]+)+'
+ALLOWLIST_GRAMMAR_RE='^(\(\?i\))?\^('"$ALLOWLIST_ADDR_RE"'|\('"$ALLOWLIST_ADDR_RE"'(\|'"$ALLOWLIST_ADDR_RE"')*\))\$$'
 
 usage_error() { echo "USAGE ERROR: $*" >&2; exit 2; }
 void() { echo "VOID: $*" >&2; exit 2; }
@@ -164,8 +172,8 @@ judge_ui7() {
   relay=$(jq -r '.MessageRelay.Enabled' "$W/webui.body" 2>/dev/null); send=$(code send)
   alen=$(jq -r '(.MessageRelay.AllowedRecipients // "") | length' "$W/webui.body" 2>/dev/null)
   ar=$(jq -r '.MessageRelay.AllowedRecipients // ""' "$W/webui.body" 2>/dev/null)
-  # Bounded = anchored both ends (optional leading (?i)) and no .* / .+ anywhere.
-  if [[ "$ar" =~ $ALLOWLIST_ANCHORED_RE ]] && [[ "$ar" != *'.*'* ]] && [[ "$ar" != *'.+'* ]]; then bounded=yes; fi
+  # Bounded = the WHOLE value matches the positive grammar (named addresses only).
+  if [[ "$ar" =~ $ALLOWLIST_GRAMMAR_RE ]]; then bounded=yes; fi
   srv=$(jq -r '.MessageRelay.SMTPServer // ""' "$W/webui.body" 2>/dev/null)
   # Every relay/forward variable (MP_SMTP_RELAY_*, MP_SMTP_FORWARD_*, a superset of
   # FORBIDDEN_ENV) plus accept-any and chaos, less the nine tester-relay names.
@@ -370,6 +378,10 @@ case "\$url" in
             ui7-relay-unbounded) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":""}}' ;;
             ui7-relay-dotstar) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":".*"}}' ;;
             ui7-relay-domain) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"@gmail\\\\.com\$"}}' ;;
+            ui7-relay-negclass) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"(?i)^[^@]+@gmail\\\\.com\$"}}' ;;
+            ui7-relay-shorthand) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"^\\\\S+@gmail\\\\.com\$"}}' ;;
+            ui7-relay-anychar) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"^.\$"}}' ;;
+            ui7-relay-alt-anychar) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"^(tester1@example\\\\.com|.)\$"}}' ;;
             ui7-relay-anchored-dotstar) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"(?i)^.*@gmail\\\\.com\$"}}' ;;
             good-relay) body='{"MessageRelay":{"Enabled":true,"SMTPServer":"smtp.zoho.eu:587","AllowedRecipients":"(?i)^(someone@example\\\\.invalid)\$"}}' ;;
             *) body='{"MessageRelay":{"Enabled":false}}' ;;
@@ -394,11 +406,11 @@ STUB
 exit 1
 STUB
   chmod +x "$st/bin/"*
-  local -a ARMS=(good good-relay ui1-open ui2-wrong-accepted ui3-missing-id ui4-plain-ui ui5-smtp-open ui5-loadbalancer ui6-default-cert ui7-relay ui7-relay-unbounded ui7-relay-dotstar ui7-relay-domain ui7-relay-anchored-dotstar ui7-relay-env ui7-send-open ui8-no-429 dns-wrong list-kv-objects)
+  local -a ARMS=(good good-relay ui1-open ui2-wrong-accepted ui3-missing-id ui4-plain-ui ui5-smtp-open ui5-loadbalancer ui6-default-cert ui7-relay ui7-relay-unbounded ui7-relay-dotstar ui7-relay-domain ui7-relay-anchored-dotstar ui7-relay-negclass ui7-relay-shorthand ui7-relay-anychar ui7-relay-alt-anychar ui7-relay-env ui7-send-open ui8-no-429 dns-wrong list-kv-objects)
   declare -A WANT=(
     [good]="PROBE: 8/8 PASS" [good-relay]="PROBE: 8/8 PASS" [ui1-open]="ARM UI-1 FAIL" [ui2-wrong-accepted]="ARM UI-2 FAIL" [ui3-missing-id]="ARM UI-3 FAIL"
     [ui4-plain-ui]="ARM UI-4 FAIL" [ui5-smtp-open]="ARM UI-5 FAIL" [ui5-loadbalancer]="ARM UI-5 FAIL" [ui6-default-cert]="ARM UI-6 FAIL"
-    [ui7-relay]="ARM UI-7 FAIL" [ui7-relay-unbounded]="ARM UI-7 FAIL" [ui7-relay-dotstar]="ARM UI-7 FAIL" [ui7-relay-domain]="ARM UI-7 FAIL" [ui7-relay-anchored-dotstar]="ARM UI-7 FAIL" [ui7-relay-env]="ARM UI-7 FAIL" [ui7-send-open]="ARM UI-7 FAIL" [ui8-no-429]="ARM UI-8 FAIL"
+    [ui7-relay]="ARM UI-7 FAIL" [ui7-relay-unbounded]="ARM UI-7 FAIL" [ui7-relay-dotstar]="ARM UI-7 FAIL" [ui7-relay-domain]="ARM UI-7 FAIL" [ui7-relay-anchored-dotstar]="ARM UI-7 FAIL" [ui7-relay-negclass]="ARM UI-7 FAIL" [ui7-relay-shorthand]="ARM UI-7 FAIL" [ui7-relay-anychar]="ARM UI-7 FAIL" [ui7-relay-alt-anychar]="ARM UI-7 FAIL" [ui7-relay-env]="ARM UI-7 FAIL" [ui7-send-open]="ARM UI-7 FAIL" [ui8-no-429]="ARM UI-8 FAIL"
     [dns-wrong]="VOID: $HOST resolves to '203.0.113.7'" [list-kv-objects]="$KV_PASSWORD_OBJECT"
   )
   declare -A WANT_RC=([good]=0 [good-relay]=0 [dns-wrong]=2 [list-kv-objects]=0)

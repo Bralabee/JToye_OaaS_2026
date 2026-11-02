@@ -128,4 +128,22 @@ check-gate-enforcement, docs-freshness (7001), check-doc-metrics 37/37, check-cl
 check-doc-citations 46/46, check-branch-behind-base 0 behind 888084b1. The runbook now describes
 the malformed-Secret behaviour and the anchored-allow-list rule.
 
+## Round 2 review (#1096): UI-7 "bounded" is a positive grammar
+
+Round 2 confirmed fixes 1 and 3 of round 1 and reopened UI-7: the deny-list (anchors, no `.*`/`.+`)
+still passed `(?i)^[^@]+@gmail\.com$`, `^\S+@gmail\.com$`, `^.$` and `^(tester1@example\.com|.)$`.
+`judge_ui7` now accepts only `ALLOWLIST_GRAMMAR_RE`: optional `(?i)`, `^`, one address or a
+parenthesised `|`-alternation of addresses, `$`; an address is literal `[A-Za-z0-9_=-]` with `\.`
+the only escape, one `@`, and a domain of at least two labels. `+` is excluded (it is a regex
+quantifier), so a plus-address cannot be listed; the runbook says so.
+
+| Check | Before (head 7eba1d0d judge) | After |
+|-------|------------------------------|-------|
+| 4 new arms (negclass, shorthand, anychar, alt-anychar) | caught=no each, 19/23 | caught, 23/23 (good-relay and round 1's three arms unchanged) |
+| Grammar table, 19 patterns + 5 named lists | n/a (no grammar) | WRONG=0 |
+
+Re-run: render-golden OK, check-render-invariants PASS, check-gate-enforcement PASS,
+docs-freshness 7001, check-doc-metrics 37/37, check-claims 56/56, check-doc-citations 46/46.
+Evidence: evidence/round2-ui7-grammar.txt.
+
 ## Self-Check: PASSED

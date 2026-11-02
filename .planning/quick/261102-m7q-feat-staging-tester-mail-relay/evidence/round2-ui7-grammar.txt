@@ -1,0 +1,83 @@
+# Round 2 (#1096): UI-7 'bounded' becomes a POSITIVE grammar (named addresses only)
+
+## BEFORE: head 7eba1d0d's deny-list judge, with the four new arms added (negclass, shorthand,
+## anychar, alt-anychar): each PASSES UI-7, so the arm is not caught
+ARM good caught=yes
+ARM good-relay caught=yes
+ARM ui1-open caught=yes
+ARM ui2-wrong-accepted caught=yes
+ARM ui3-missing-id caught=yes
+ARM ui4-plain-ui caught=yes
+ARM ui5-smtp-open caught=yes
+ARM ui5-loadbalancer caught=yes
+ARM ui6-default-cert caught=yes
+ARM ui7-relay caught=yes
+ARM ui7-relay-unbounded caught=yes
+ARM ui7-relay-dotstar caught=yes
+ARM ui7-relay-domain caught=yes
+ARM ui7-relay-anchored-dotstar caught=yes
+ARM ui7-relay-negclass caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk 
+ARM ui7-relay-shorthand caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk
+ARM ui7-relay-anychar caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk H
+ARM ui7-relay-alt-anychar caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.
+ARM ui7-relay-env caught=yes
+ARM ui7-send-open caught=yes
+ARM ui8-no-429 caught=yes
+ARM dns-wrong caught=yes
+ARM list-kv-objects caught=yes
+SELFTEST: 19/23 as expected
+
+## AFTER: ALLOWLIST_GRAMMAR_RE judge
+ARM good caught=yes
+ARM good-relay caught=yes
+ARM ui1-open caught=yes
+ARM ui2-wrong-accepted caught=yes
+ARM ui3-missing-id caught=yes
+ARM ui4-plain-ui caught=yes
+ARM ui5-smtp-open caught=yes
+ARM ui5-loadbalancer caught=yes
+ARM ui6-default-cert caught=yes
+ARM ui7-relay caught=yes
+ARM ui7-relay-unbounded caught=yes
+ARM ui7-relay-dotstar caught=yes
+ARM ui7-relay-domain caught=yes
+ARM ui7-relay-anchored-dotstar caught=yes
+ARM ui7-relay-negclass caught=yes
+ARM ui7-relay-shorthand caught=yes
+ARM ui7-relay-anychar caught=yes
+ARM ui7-relay-alt-anychar caught=yes
+ARM ui7-relay-env caught=yes
+ARM ui7-send-open caught=yes
+ARM ui8-no-429 caught=yes
+ARM dns-wrong caught=yes
+ARM list-kv-objects caught=yes
+SELFTEST: 23/23 as expected
+
+## Grammar table: the grammar as staging-mail-ui.sh defines it (eval of its two RE lines),
+## judged on crafted values; want=no rows are patterns, want=yes rows are named addresses
+ok    want=no  got=no  (?i)^[^@]+@gmail\.com$
+ok    want=no  got=no  ^\S+@gmail\.com$
+ok    want=no  got=no  ^.$
+ok    want=no  got=no  ^(tester1@example\.com|.)$
+ok    want=no  got=no  .*
+ok    want=no  got=no  @gmail\.com$
+ok    want=no  got=no  (?i)^.*@gmail\.com$
+ok    want=no  got=no  ^tester1@example\.com
+ok    want=no  got=no  tester1@example\.com$
+ok    want=no  got=no  ^tester1@example.com$
+ok    want=no  got=no  ^tester1+x@example\.com$
+ok    want=no  got=no  ^tester1@example\.com|^x@y\.z$
+ok    want=no  got=no  ^(tester1@example\.com|)$
+ok    want=no  got=no  ^(tester1@example\.com)+$
+ok    want=no  got=no  ^tester1@gmail$
+ok    want=no  got=no  ^\w+@example\.com$
+ok    want=no  got=no  ^te{2}st@example\.com$
+ok    want=no  got=no  ^te?st@example\.com$
+ok    want=no  got=no  (?s)^tester1@example\.com$
+ok    want=yes got=yes ^tester1@example\.com$
+ok    want=yes got=yes (?i)^tester1@example\.com$
+ok    want=yes got=yes (?i)^(someone@example\.invalid)$
+ok    want=yes got=yes (?i)^(tester1@example\.com|tester2@example\.org)$
+ok    want=yes got=yes ^(first_last-1=x@sub\.example\.co\.uk|a\.b@example\.com)$
+WRONG=0
+grammar-table rc=0

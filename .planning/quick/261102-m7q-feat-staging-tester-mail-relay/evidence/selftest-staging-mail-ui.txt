@@ -12,9 +12,13 @@ ARM ui7-relay-unbounded caught=yes
 ARM ui7-relay-dotstar caught=yes
 ARM ui7-relay-domain caught=yes
 ARM ui7-relay-anchored-dotstar caught=yes
+ARM ui7-relay-negclass caught=yes
+ARM ui7-relay-shorthand caught=yes
+ARM ui7-relay-anychar caught=yes
+ARM ui7-relay-alt-anychar caught=yes
 ARM ui7-relay-env caught=yes
 ARM ui7-send-open caught=yes
 ARM ui8-no-429 caught=yes
 ARM dns-wrong caught=yes
 ARM list-kv-objects caught=yes
-SELFTEST: 19/19 as expected
+SELFTEST: 23/23 as expected

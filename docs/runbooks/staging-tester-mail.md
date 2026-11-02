@@ -93,7 +93,11 @@ address per alternative, every `.` escaped:
 
 - `(?i)` makes it case-insensitive; `^(` ... `)$` anchors it, so `tester1@example.com.evil.net`
   and `xtester1@example.com` do not match.
-- Never a domain-wide pattern (`@gmail\.com$`) and never `.*`: that would relay every persona.
+- Named addresses only, one per alternative. Each address is literal letters, digits, `_`, `-`,
+  `=` and one `@`, with `\.` the only escape. Never a pattern: no `.*`, no `.`, no `[...]` class,
+  no `\S`/`\w`, no quantifier, no domain-wide `@gmail\.com$`. A `+` is a quantifier in a regex,
+  so a plus-address (`name+tag@...`) cannot be listed; use the tester's plain address. The live
+  check UI-7 refuses anything outside this shape.
 - Mailpit refuses to start on a regex it cannot compile, and on an `override-from` that is not an
   address. The start script catches that: Mailpit is relaunched with the relay OFF, mail is still
   captured, and the log shows Mailpit's own `[relay] failed to compile ...` (or `override-from is
@@ -172,9 +176,9 @@ only at debug level, and the captured copy looks the same either way. So verify 
    record what you find here.
 
 The live gate `scripts/staging-mail-ui.sh --probe --context jtoye-stg-aks` (UI-7) accepts the
-relay only when the settings API reports an anchored allow-list (`^...$`, optionally `(?i)`, with
-no `.*` or `.+`) and a server on `:587`, and refuses any relay variable outside the nine named
-ones.
+relay only when the settings API reports an allow-list of named addresses only, one per
+alternative (the grammar above, judged as a whole), and a server on `:587`, and refuses any relay
+variable outside the nine named ones.
 
 ## 3. Remove a tester, or turn the relay off
 
