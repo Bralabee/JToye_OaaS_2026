@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Landing: Doors Above a Laptop's Fold, How It Works First, One Cuisine Chip Row, a Shorter Footer — 2026-11-02
+### Landing: Doors Above a Laptop's Fold, How It Works First, One Cuisine Chip Row, a Shorter Footer — 2026-11-02 (#1097)
 
 An external tester's four points about the landing (2026-10-30), measured on staging on 2026-11-02 and approved by the owner; recorded as D15 in `design/decisions.md`.
 
