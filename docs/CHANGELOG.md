@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Landing: Doors Above a Laptop's Fold, How It Works First, One Cuisine Chip Row, a Shorter Footer — 2026-11-02
+
+An external tester's four points about the landing (2026-10-30), measured on staging on 2026-11-02 and approved by the owner; recorded as D15 in `design/decisions.md`.
+
+- **Fold:** at 1366x768 the gold "Order food near you" door, "Browse shops" included, now ends at 759px (was 937). Its photo strip is hidden from `lg` up, where the collage carries the food, and kept on phones as the first food picture; from `lg` its `sizes` asks for 1px so the hidden image costs no bandwidth. The doors sit one spacing step closer, and at `lg` the door padding and hero top padding are one step tighter. The h1 fallback (56px to 48px) was not needed and not used: it would set the headline on two lines from 1280, against D14.
+- **Order:** "How it works" follows the hero, ahead of the kitchen row. Grounds read stone hero, white body, stone trust band, oxblood footer. No motion hook moved.
+- **Chips:** all six cuisine chips sit in one non-wrapping rail (24px pictures, 13px labels). From 1280 up they fit the column with no scrolling; below that the rail swipes. Every chip is still a crawlable `/shop?q=` link, and Tab scrolls each one into view with its focus ring inside the rail.
+- **Footer:** 377px on desktop (was 497) and 732px at 390 (was 955), every column and link kept. The three OGL statements run on as one paragraph, worded verbatim; both 1px rules are gone. The photo credits (160px, 260px on a phone) sit behind a native "Photo credits" disclosure and stay in the DOM.
+- **Proof:** five new `landing.test.tsx` cases were RED against origin/main's page and footer and are GREEN here. Before/after measurements, fold screenshots and gate output are in `.planning/quick/261102-q7c-feat-landing-fold-order-footer-chips/evidence/`.
+
 ### Stripe Connect: The Account-Create Idempotency Key Follows the Request Body — 2026-11-02 (#1092)
 
 Issue #1090, second observation. With #1091 deployed to staging (`40d91e0e`, parity rc 0), `--stage connect-onboard` still answered 502: Stripe had saved the 05:29Z `type=express` refusal under `connect-account-create-<tenantId>` and rejected the Managed Risk body under the same key (`idempotency_error`, 09:21Z). Stripe keeps such a key for 24 hours, and any tenant whose first create was ever refused would have been stuck the same way.

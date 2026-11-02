@@ -1,0 +1,13 @@
+TASTESKILL · LINT   2 file(s)
+
+FAIL
+  [hairline] Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields.  (2×)
+      frontend/components/public/public-footer.tsx:304  border-t
+      frontend/components/public/public-footer.tsx:322  border-t
+
+WARN
+  [em-dash] Em-dash habit. Use a full stop or a comma; keep at most one or two on a page.  (1×)
+      (all files):0  24 em dashes
+
+RESULT: 2 FAIL, 1 WARN — fix the FAILs before rendering.
+Interface fragments marked data-ui keep their own borders and shadows. Any other line that must keep a flagged pattern for a real reason can carry the comment taste-skill-ignore.

@@ -1,0 +1,2 @@
+Origin http://localhost:3437 -> 403
+Origin http://localhost:3000 -> 200

@@ -1,0 +1,7 @@
+✓ Compiled successfully in 14.1s
+  Generating static pages using 15 workers (0/7) ...
+  Generating static pages using 15 workers (1/7) 
+  Generating static pages using 15 workers (3/7) 
+  Generating static pages using 15 workers (5/7) 
+✓ Generating static pages using 15 workers (7/7) in 178ms
+build_rc=0
