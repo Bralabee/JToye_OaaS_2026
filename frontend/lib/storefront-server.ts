@@ -239,6 +239,20 @@ export const loadPublicShop = cache(async function loadPublicShop(
 })
 
 /**
+ * The featured kitchens of this environment (quick 261102-r6u, owner decisions
+ * D-02/D-03, design D17): published shops only, in configured order, [] when
+ * none are configured.
+ *
+ * OPTIONAL, like reviews and announcements: featured kitchens are decoration on
+ * top of the real listing, so a 429, a 5xx or a network failure degrades
+ * silently to [] (today's row) and never defers the page.
+ */
+export async function loadFeaturedShops(): Promise<PublicShop[]> {
+  const featured = await getOptional<PublicShop[]>("/public/featured-shops", [])
+  return Array.isArray(featured) ? featured : []
+}
+
+/**
  * Slugs for the sitemap. Deliberately separate from `loadShopList` so the
  * sitemap can ask for a larger page without changing what the index page
  * fetches, and so a sitemap failure is a distinguishable empty array rather

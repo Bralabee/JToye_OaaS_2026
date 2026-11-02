@@ -1,0 +1,48 @@
+diff --git a/k8s/goldens/production.yaml b/k8s/goldens/production.yaml
+index 4d38e493..c4e091a2 100644
+--- a/k8s/goldens/production.yaml
++++ b/k8s/goldens/production.yaml
+@@ -143,6 +143,7 @@ data:
+   storefront.cash-caps.per-ip: "5"
+   storefront.cash-caps.per-phone: "3"
+   storefront.client-ip-digest.retention-hours: "72"
++  storefront.featured-shop-slugs: ""
+   stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
+   stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
+   stripe.environment-tag: production
+@@ -764,6 +765,11 @@ spec:
+             configMapKeyRef:
+               key: storefront.client-ip-digest.retention-hours
+               name: app-config
++        - name: JTOYE_FEATURED_SHOP_SLUGS
++          valueFrom:
++            configMapKeyRef:
++              key: storefront.featured-shop-slugs
++              name: app-config
+         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+         imagePullPolicy: IfNotPresent
+         lifecycle:
+diff --git a/k8s/goldens/staging.yaml b/k8s/goldens/staging.yaml
+index 526306bc..67f7a73e 100644
+--- a/k8s/goldens/staging.yaml
++++ b/k8s/goldens/staging.yaml
+@@ -727,6 +727,7 @@ data:
+   storefront.cash-caps.per-ip: "5"
+   storefront.cash-caps.per-phone: "3"
+   storefront.client-ip-digest.retention-hours: "72"
++  storefront.featured-shop-slugs: mama-ades-kitchen,peckham-jollof-co,brixton-village-grill
+   stripe.connect.refresh-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh
+   stripe.connect.return-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/return
+   stripe.environment-tag: staging
+@@ -4307,6 +4308,11 @@ spec:
+             configMapKeyRef:
+               key: storefront.client-ip-digest.retention-hours
+               name: app-config
++        - name: JTOYE_FEATURED_SHOP_SLUGS
++          valueFrom:
++            configMapKeyRef:
++              key: storefront.featured-shop-slugs
++              name: app-config
+         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+         imagePullPolicy: IfNotPresent
+         lifecycle:

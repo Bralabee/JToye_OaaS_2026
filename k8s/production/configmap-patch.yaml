@@ -106,3 +106,11 @@ data:
   # (kubectl get pods -n ingress-nginx -o wide against the production context) and
   # declare that pod range, a private /16 or narrower, never 0.0.0.0/0.
   security.trusted-proxies: ""
+
+  # --- Featured kitchens (quick 261102-r6u, owner decision D-02, design D17) -----
+  # Stated EXPLICITLY empty, in keeping with this overlay's convention: production
+  # ships with nothing featured and the landing row exactly as it was. The owner
+  # fills it (an ordered, comma-separated list of PUBLISHED shop slugs, at most 12)
+  # as real vendors onboard. Editorial, never paid: paid placement would need the
+  # label to read "Sponsored" (design D17).
+  storefront.featured-shop-slugs: ""

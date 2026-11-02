@@ -1,0 +1,7 @@
+== real tree ==
+fetch call sites=1 gate rc=0
+== ARM: a planted second fetch ==
+fetch call sites=2 gate rc=1
+== RESTORED ==
+fetch call sites=1 gate rc=0
+featuredStandIn present: 3

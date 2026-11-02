@@ -541,6 +541,17 @@ data:
   storefront.cash-caps.per-ip: "5"
   storefront.client-ip-digest.retention-hours: "72"
 
+  # --- Featured kitchens (quick 261102-r6u, owner decision D-02, design D17) -----
+  # Consumed as core JTOYE_FEATURED_SHOP_SLUGS -> application.yml
+  # jtoye.storefront.featured-shop-slugs: an ordered, comma-separated list of shop
+  # slugs that lead the landing kitchen row before a visitor shares a location. An
+  # editorial ordering hint, never paid placement. PUBLISHED shops only: an unknown or
+  # unpublished slug is skipped with one WARN. Validated at startup (slug shape, no
+  # blanks or duplicates, at most 12; a bad value refuses to start, naming the key).
+  # EMPTY here and in production (the inert state: the landing row is unchanged);
+  # staging lists its demo kitchens in its overlay.
+  storefront.featured-shop-slugs: ""
+
   # --- Edge rate limits (37-25, D-19 / RWO-039) --------------------------------
   # Consumed by edge-go (k8s/base/edge-go-deployment.yaml) as RATE_LIMIT_RPS,
   # RATE_LIMIT_BURST, RATE_LIMIT_TENANT_RPS, RATE_LIMIT_TENANT_BURST and

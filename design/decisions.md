@@ -194,3 +194,50 @@ before/after board `runs/2026-11-02-landing-beeslens/before-after.jpg`.
   (the cut-off chip); the owner chose no change.
 - **Review when:** more owner photographs arrive for the remaining cuisines, or kitchens upload their
   own through the Phase 24 media pipeline.
+## D17 · 2026-11-02 · Featured kitchens lead the landing row; staging demo kitchens take orders
+Owner decisions D-01..D-05 (Sanmi, 2026-11-02), built in quick task 261102-r6u; the RED and GREEN of
+every check are in `.planning/quick/261102-r6u-featured-kitchens-config-staging-demo-ki/evidence/`.
+(D16 is open PR 1103's; if a merge brings it, both entries stay.)
+1. **Featured kitchens lead the landing row before location is shared** (D-03). The row is the
+   featured kitchens in their configured order, then the rest of the listing in its own name order,
+   no kitchen twice. When a visitor shares a location and nothing is inside the 3.1-mile radius, a
+   non-empty featured list stands in **alone** under "No kitchens within 3.1 miles — featured on
+   J'Toye": it names the radius that found nothing and claims nothing about where the visitor is.
+   With nothing featured, that state is today's "here is everything on J'Toye". **Nearby wins:**
+   when kitchens are inside the radius they are shown in distance order and a featured kitchen
+   never jumps ahead (it keeps its label).
+2. **The source is per environment** (D-02): `jtoye.storefront.featured-shop-slugs`
+   (`JTOYE_FEATURED_SHOP_SLUGS`, k8s app-config `storefront.featured-shop-slugs`), an ordered,
+   comma-separated list of shop slugs, at most 12, validated at startup, published shops only
+   (`GET /api/v1/public/featured-shops`). **Staging** lists the three demo kitchens; **production
+   ships empty** and Sanmi fills it as real vendors onboard; compose dev lists the dev demo slugs.
+   There is **no admin UI**: the platform has no cross-tenant operator identity (ruled), so the list
+   is configuration, changed by a deploy.
+3. **The label reads "Featured" and is editorial, never paid** (D-04): a small pill, out of flow at
+   the bottom-left of the card's picture box (same card height, no CLS), announced with the shop
+   name; a word, never a star (the card removed invented ratings on purpose). **If placement is ever
+   sold, the label becomes "Sponsored":** UK hidden-advertising rules require marketing to be
+   obviously identifiable as such (CAP Code rule 2.1; the consumer-protection rules on misleading
+   omissions), and "Featured" over paid placement would not be.
+4. **Staging has three demo kitchens, three tenants "J'Toye Demo — <kitchen>", one kitchen each**
+   (D-01 as ruled 2026-11-02). The measured cause: V43's `uq_onboarding_tenant` plus the GO_LIVE
+   side effect (it publishes `onboarding.shopId` only) let one tenant take exactly one shop live
+   through the real API; `DemoDataSeeder` bypasses that in dev only. They are seeded by
+   `scripts/staging-seed.sh --stage demo-kitchens` from `scripts/fixtures/demo-kitchens.json`, which
+   `DemoKitchensFixtureParityTest` holds equal to the dev catalogue. They are **kept apart from the
+   Phase 30 test tenant**, whose per-location billing quantity and money-loop evidence depend on its
+   shop count; they carry **no billing subscription**; each demo vendor's password is re-randomised
+   on every run and known to no one.
+5. **They take orders, on staging only, labelled "(demo)"** (D-05). Each seller of record reads
+   "<kitchen> (demo)": a customer sees it in the Seller block of the shop page, the checkout and the
+   order page. The landing card and the shop name do not carry it (D12: the card shows the name).
+   While staging runs a Stripe key every guest order is a card order (cash is unreachable for every
+   shop, `PublicStorefrontService` `paymentService.isConfigured()`), and with no ENABLED connected
+   account the intent is a plain **platform-account Stripe TEST charge** (no `transfer_data`, no
+   `Stripe-Account`; `PaymentService.createPaymentIntent`). Stale orders are cleared by
+   `--stage clear-orders` on an owner-confirmed list (refunded if paid, cancelled if not). Routing a
+   demo order's money to its kitchen would need per-tenant Connect onboarding, Sanmi's hosted
+   Stripe step: **out of scope, a follow-up.**
+- **Status: KEEP** (Sanmi, 2026-11-02; three tenants and demo ordering ruled the same day).
+- **Review when:** the first real vendor is featured in production, placement is ever offered for
+  payment, or a demo kitchen is onboarded to Connect.

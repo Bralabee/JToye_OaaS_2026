@@ -273,9 +273,40 @@ public class DemoDataSeeder implements ApplicationRunner {
      * label-emphasis spans — Natasha's Law requires allergens emboldened
      * INLINE in the ingredients list).
      */
-    private record MenuItem(String sku, String title, String category, long pricePennies,
-                            String ingredients, boolean featured, String dietaryTags,
-                            int allergenMask) {}
+    record MenuItem(String sku, String title, String category, long pricePennies,
+                    String ingredients, boolean featured, String dietaryTags,
+                    int allergenMask) {}
+
+    /**
+     * One curated storefront, as {@link #seed} upserts it (quick 261102-r6u: lifted out of three inline
+     * argument lists, behaviour-neutral, so {@code DemoKitchensFixtureParityTest} can hold the staging
+     * demo-kitchens fixture, {@code scripts/fixtures/demo-kitchens.json}, equal to THIS data and not a copy).
+     */
+    record CuratedShop(String name, String slug, String address, String description, String tags,
+                       String logoUrl, long deliveryFeePennies, long freeDeliveryThresholdPennies) {}
+
+    /** The three curated storefronts, in seed order. */
+    static final List<CuratedShop> CURATED_SHOPS = List.of(
+            new CuratedShop("Mama Ade's Kitchen", "mama-ades-kitchen", MAMA_ADES_ADDRESS,
+                    "Home-style West African cooking — jollof, egusi and pounded yam done properly.",
+                    "Nigerian, West African, Halal", "/brand/logo-mama-ades.png", 350L, 2500L),
+            new CuratedShop("Peckham Jollof Co.", "peckham-jollof-co", PECKHAM_JOLLOF_ADDRESS,
+                    "Smoky party jollof, suya and grilled tilapia to eat in or take away.",
+                    "Nigerian, Grill, Halal", "/brand/logo-peckham-jollof.png", 299L, 3000L),
+            new CuratedShop("Brixton Village Grill", "brixton-village-grill", BRIXTON_GRILL_ADDRESS,
+                    "Flame-grilled peri peri chicken, kebabs and loaded sides.",
+                    "Grill, Peri Peri, Halal", "/brand/logo-brixton-grill.png", 399L, 2000L));
+
+    /** Every curated shop's minimum order, in pennies. */
+    static final long CURATED_MINIMUM_ORDER_PENNIES = 1000L;
+    /** Every curated product's durability: fresh-prepared food, a 2-day USE_BY (V41). */
+    static final int CURATED_SHELF_LIFE_DAYS = 2;
+    static final String CURATED_DURABILITY_TYPE = "USE_BY";
+
+    /** The contact email a curated shop is given when it has none (RFC 2606 reserved, never delivered). */
+    static String curatedShopEmail(String slug) {
+        return "kitchen@" + slug + ".example.com";
+    }
 
     @Override
     public void run(ApplicationArguments args) {
@@ -366,21 +397,11 @@ public class DemoDataSeeder implements ApplicationRunner {
         SeedResult result = new SeedResult();
 
         List<Shop> shops = new ArrayList<>();
-        shops.add(upsertShop(result, "Mama Ade's Kitchen", "mama-ades-kitchen",
-                MAMA_ADES_ADDRESS,
-                "Home-style West African cooking — jollof, egusi and pounded yam done properly.",
-                "Nigerian, West African, Halal", "/brand/logo-mama-ades.png",
-                350L, 2500L));
-        shops.add(upsertShop(result, "Peckham Jollof Co.", "peckham-jollof-co",
-                PECKHAM_JOLLOF_ADDRESS,
-                "Smoky party jollof, suya and grilled tilapia to eat in or take away.",
-                "Nigerian, Grill, Halal", "/brand/logo-peckham-jollof.png",
-                299L, 3000L));
-        shops.add(upsertShop(result, "Brixton Village Grill", "brixton-village-grill",
-                BRIXTON_GRILL_ADDRESS,
-                "Flame-grilled peri peri chicken, kebabs and loaded sides.",
-                "Grill, Peri Peri, Halal", "/brand/logo-brixton-grill.png",
-                399L, 2000L));
+        for (CuratedShop curated : CURATED_SHOPS) {
+            shops.add(upsertShop(result, curated.name(), curated.slug(), curated.address(), curated.description(),
+                    curated.tags(), curated.logoUrl(), curated.deliveryFeePennies(),
+                    curated.freeDeliveryThresholdPennies()));
+        }
 
         // #789 / 31.1-12: the published demo shops are BACKFILLED with seller details, not
         // grandfathered past the TRADER_IDENTITY gate (they are published by the bypass in
@@ -425,7 +446,7 @@ public class DemoDataSeeder implements ApplicationRunner {
      * and the unit test (via {@link #curatedTitlesBySlug}). Keeping this one map
      * means the test cannot silently rot against a second literal title list.
      */
-    private static Map<String, List<MenuItem>> curatedMenusBySlug() {
+    static Map<String, List<MenuItem>> curatedMenusBySlug() {
         return Map.of(
                 "mama-ades-kitchen", shopOneMenu(),
                 "peckham-jollof-co", shopTwoMenu(),
@@ -651,7 +672,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         shop.setLogoUrl(logoUrl);
         shop.setDeliveryFeePennies(deliveryFeePennies);
         shop.setFreeDeliveryThresholdPennies(freeDeliveryThresholdPennies);
-        shop.setMinimumOrderPennies(1000L);
+        shop.setMinimumOrderPennies(CURATED_MINIMUM_ORDER_PENNIES);
         // DELIBERATE dev-only exception to the Phase-18 sole-writer rule (WR-10):
         // the onboarding state machine owns Shop.published, but the onboarding
         // aggregate is one-per-tenant (UNIQUE(tenant_id)) so it cannot take all
@@ -745,7 +766,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         }
         for (Shop shop : curatedShops) {
             if (shop.getEmail() == null || shop.getEmail().isBlank()) {
-                shop.setEmail("kitchen@" + shop.getSlug() + ".example.com");
+                shop.setEmail(curatedShopEmail(shop.getSlug()));
                 shopRepository.save(shop);
                 result.shopEmailsSet++;
             }
@@ -907,8 +928,8 @@ public class DemoDataSeeder implements ApplicationRunner {
         // demo menu (a compliant label 422s without it): fresh-prepared food
         // gets a 2-day USE_BY — plausible for kitchen-made items and safe as
         // dev/demo fixture data.
-        product.setShelfLifeDays(2);
-        product.setDurabilityType("USE_BY");
+        product.setShelfLifeDays(CURATED_SHELF_LIFE_DAYS);
+        product.setDurabilityType(CURATED_DURABILITY_TYPE);
         product.setTitle(item.title());
         product.setCategory(item.category());
         product.setPricePennies(item.pricePennies());

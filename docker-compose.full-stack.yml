@@ -308,6 +308,11 @@ services:
       ORDER_LIMIT_MAX_BASKET_UNITS: ${ORDER_LIMIT_MAX_BASKET_UNITS:-200}
       ORDER_LIMIT_MAX_LINES: ${ORDER_LIMIT_MAX_LINES:-50}
       ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES: ${ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES:-100000}
+      # Quick 261102-r6u (D-02, design D17): the featured kitchens the landing row leads with.
+      # Compose dev lists the three DemoDataSeeder kitchens (the same slugs staging seeds), so
+      # the local landing shows the feature; set it to "" to see the row with nothing featured.
+      # k8s base and production ship it empty. Published shops only; unknown slugs are skipped.
+      JTOYE_FEATURED_SHOP_SLUGS: ${JTOYE_FEATURED_SHOP_SLUGS:-mama-ades-kitchen,peckham-jollof-co,brixton-village-grill}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}

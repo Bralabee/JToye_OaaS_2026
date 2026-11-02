@@ -462,3 +462,115 @@ describe("NearYouRow — the goods it must not displace", () => {
     expect(within(live as HTMLElement).getByRole("heading")).toBeTruthy()
   })
 })
+
+/**
+ * D-03 (quick 261102-r6u, design D17): the featured kitchens. `serverShops`
+ * arrives featured-first from page.tsx; `featuredSlugs` names them in
+ * configured order. Every test above passes no `featuredSlugs` and is
+ * unedited: no prop means today's behaviour exactly.
+ */
+describe("NearYouRow — featured kitchens (D-03, D-04)", () => {
+  const PECKHAM = shop({
+    slug: "peckham-jollof-co",
+    name: "Peckham Jollof Co.",
+    latitude: 51.4655,
+    longitude: -0.0665,
+  })
+  // page.tsx's merged list: the featured kitchens (M, P) first, then the rest.
+  const MERGED = [MAMA, PECKHAM, BRIXTON]
+  const FEATURED = ["mama-ades-kitchen", "peckham-jollof-co"]
+
+  /** The slugs of the cards that carry a visible "Featured" label. */
+  function labelledSlugs(): string[] {
+    return screen
+      .queryAllByText("Featured", { exact: true })
+      .map((pill) => pill.closest("article")?.querySelector("a")?.getAttribute("href") ?? "")
+      .map((href) => href.replace("/shop/", ""))
+  }
+
+  it("idle: renders the merged order, labels only the featured cards, and claims no locality", () => {
+    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
+    expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill"])
+    expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens on J'Toye")
+  })
+
+  it("located, nothing in radius, featured non-empty: ONLY the featured kitchens, under an honest heading", async () => {
+    installGeolocation((success) => success(POSITION))
+    mockFetch.mockResolvedValue(page([]))
+
+    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
+    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+        "No kitchens within 3.1 miles — featured on J'Toye"
+      )
+    )
+    expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
+    expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
+    // It names the radius and makes no locality claim.
+    expect(headingsSayingNearYou().map((h) => h.textContent)).toEqual([])
+    // The route to the full list stays.
+    expect(screen.getByRole("link", { name: /see all kitchens/i }).getAttribute("href")).toBe("/shop")
+  })
+
+  it("located with results: distance order wins, featured never jump ahead, but keep their label", async () => {
+    installGeolocation((success) => success(POSITION))
+    // The API's distance order puts the unfeatured Brixton first.
+    mockFetch.mockResolvedValue(
+      page([
+        { ...BRIXTON, distanceKm: 0.3 },
+        { ...PECKHAM, distanceKm: 1.1 },
+      ])
+    )
+
+    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
+    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
+
+    await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens near you")
+    expect(cardSlugs()).toEqual(["brixton-village-grill", "peckham-jollof-co"])
+    expect(labelledSlugs()).toEqual(["peckham-jollof-co"])
+  })
+
+  it("denied: the featured-first server list renders under 'Kitchens on J'Toye'", async () => {
+    installGeolocation((_success, failure) => failure(geoError(1)))
+
+    render(<NearYouRow serverShops={MERGED} serverTotal={3} featuredSlugs={FEATURED} />)
+    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
+
+    await waitFor(() => expect(screen.getByText(/showing every kitchen/i)).toBeTruthy())
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Kitchens on J'Toye")
+    expect(cardSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co", "brixton-village-grill"])
+    expect(labelledSlugs()).toEqual(["mama-ades-kitchen", "peckham-jollof-co"])
+  })
+
+  it("census with a merged list: a featured shop beyond page 0 is counted once, and counted when out of radius", async () => {
+    installGeolocation((success) => success(POSITION))
+    // F is featured and NOT on the listing's page 0; page 0 is the three kitchens.
+    // serverTotal is page0.length + 1: the merged list IS every published shop.
+    const F = shop({ slug: "far-away-featured", name: "Far Away Featured", latitude: 53.48, longitude: -2.24 })
+    const page0 = [MAMA, PECKHAM, BRIXTON]
+    // In radius: Mama and Peckham only. Brixton and F are out of radius.
+    mockFetch.mockResolvedValue(
+      page([
+        { ...MAMA, distanceKm: 0.2 },
+        { ...PECKHAM, distanceKm: 0.9 },
+      ])
+    )
+
+    render(
+      <NearYouRow
+        serverShops={[F, ...page0]}
+        serverTotal={page0.length + 1}
+        featuredSlugs={["far-away-featured", "mama-ades-kitchen"]}
+      />
+    )
+    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
+
+    await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
+    // 4 published (F + three) − 2 in radius − 0 unranked = 2 further away: F and Brixton.
+    expect(screen.getByText(/2 more kitchens are further than 3\.1 miles away/)).toBeTruthy()
+  })
+})

@@ -1,0 +1,97 @@
+Task 3 break arms (b)-(h), each a modified COPY of scripts/staging-seed.sh run with --selftest beside the real file (the real file is never edited, so the restore is the committed file itself, proven below).
+
+== ARM (b) diff vs the committed script:
+3441,3443d3440
+<     if [ "$code" = 409 ]; then
+<       refuse slug-taken "$slug is held by another tenant ($(jq -r '[.type, .detail] | map(select(. != null)) | join(" | ")' "$WORKDIR/$who-shop.json" 2>/dev/null)); the stage never adopts or edits another tenant's shop"
+<     fi
+-- result: rc=1 PASS=102 FAIL=1
+FAIL demo-slug-taken stderr lacks 'REFUSED [slug-taken]': --vault-name jtoye-stg-kv -n keycloak-credentials--frontend-client-secret --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 FAIL: POST /api/v1/shops (mama-ades-kitchen) returned HTTP 409: https://jtoye.uk/errors/shop-sl
+
+== ARM (c) diff vs the committed script:
+3216,3219d3215
+<   if jq -e --arg t "$TENANT_NAME" --arg s "$SHOP_SLUG" --arg v "$VENDOR_USERNAME" \
+<        'any(.kitchens[]; .tenantName? == $t or .shop?.slug? == $s or .vendorUsername? == $v)' "$f" >/dev/null 2>&1; then
+<     refuse phase30-tenant "the demo fixture names the Phase 30 tenant \"$TENANT_NAME\", its shop $SHOP_SLUG or its vendor; the demo kitchens never touch it"
+<   fi
+-- result: rc=1 PASS=102 FAIL=1
+FAIL demo-phase30-refused tenantName: stderr lacks 'REFUSED [phase30-tenant]': DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-credentials--admin-username --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret sh
+
+== ARM (d) diff vs the committed script:
+766a767
+>   return 0  # ARM (d): the operator DELETE skipped
+-- result: rc=1 PASS=88 FAIL=15
+FAIL operator-deleted-on-failure the operator was never DELETEd: GET https://api-staging.olajay.co.uk/api/v1/products?shopId=66666666-7777-4888-9999-000000000000&size=1 -> 200|GET https://api-staging.olajay.co.uk/api/v1/products/culinary-packs -> 200|POST https://api-staging.olajay.co.uk/api/v1/prod
+FAIL operator-deleted-on-success the last call is not the operator DELETE: 'GET http://127.0.0.1:18080/admin/realms/jtoye-staging/users/vendor-0001 -> 200'
+FAIL stage-all operator DELETEs at lines '' (want exactly one)
+FAIL onboard-new the operator was not deleted after the connect POST (post=8 delete=)
+FAIL onboard-enabled the operator was not deleted exactly once
+FAIL loop-not-enabled the operator was not deleted exactly once
+FAIL loop-destination-ok the operator was not deleted before the order (delete= order=13)
+FAIL payout-ok call order is not operator-deleted<payout list<schedule<balance<payout<read:  8 9 10 11 13
+FAIL payout-other-account payout: the operator was not deleted exactly once
+FAIL demo-first-run the last call is not the operator DELETE: 'GET https://api-staging.olajay.co.uk/api/v1/public/featured-shops -> 200'
+FAIL demo-slug-taken the operator was not deleted last: 'POST https://api-staging.olajay.co.uk/api/v1/shops -> 409'
+FAIL demo-featured-mismatch the operator was not deleted last: 'GET https://api-staging.olajay.co.uk/api/v1/public/featured-shops -> 200'
+FAIL demo-seller-label-missing the operator was not deleted last: 'GET https://api-staging.olajay.co.uk/api/v1/public/shops/peckham-jollof-co -> 200'
+FAIL demo-list-open the operator was not deleted before the first order read (delete=none first_read=13)
+FAIL demo-clear-orders the operator was not deleted before the first order write (delete=none first_write=26)
+
+== ARM (d2) diff vs the committed script:
+333,337c333
+<   if [ "$OP_CREATED" -eq 1 ]; then
+<     if ! delete_operator; then
+<       [ "$rc" -ne 0 ] || rc=1
+<     fi
+<   fi
+---
+>   # ARM (d2): the EXIT-trap operator delete skipped
+-- result: rc=1 PASS=99 FAIL=4
+FAIL operator-deleted-on-failure the operator was never DELETEd: GET https://api-staging.olajay.co.uk/api/v1/products?shopId=66666666-7777-4888-9999-000000000000&size=1 -> 200|GET https://api-staging.olajay.co.uk/api/v1/products/culinary-packs -> 200|POST https://api-staging.olajay.co.uk/api/v1/prod
+FAIL operator-deleted-on-success the last call is not the operator DELETE: 'GET http://127.0.0.1:18080/admin/realms/jtoye-staging/users/vendor-0001 -> 200'
+FAIL demo-slug-taken the operator was not deleted last: 'POST https://api-staging.olajay.co.uk/api/v1/shops -> 409'
+FAIL demo-seller-label-missing the operator was not deleted last: 'GET https://api-staging.olajay.co.uk/api/v1/public/shops/peckham-jollof-co -> 200'
+
+== ARM (e) diff vs the committed script:
+3504d3503
+<   [ "$got" = "$legal" ] || { echo "FAIL [demo-label]: the public seller of $slug reads \"$got\", not \"$legal\" (D-05: a customer must see \"(demo)\" in the Seller block)" >&2; exit 1; }
+-- result: rc=1 PASS=102 FAIL=1
+FAIL demo-seller-label-missing rc=0 (want 1): -stg-kv -n keycloak-credentials--admin-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-credentials--frontend-client-secret --query value -o tsv --subs
+
+== ARM (f) diff vs the committed script:
+1428c1428
+<   code=$(stripe_api GET "/v1/payment_intents/$intent" "$WORKDIR/pi.json")
+---
+>   if [ -n "$KITCHEN" ]; then code=$(stripe_acct acct_ARMf GET "/v1/payment_intents/$intent" "$WORKDIR/pi.json"); else code=$(stripe_api GET "/v1/payment_intents/$intent" "$WORKDIR/pi.json"); fi
+-- result: rc=1 PASS=102 FAIL=1
+FAIL demo-order-card 1 Stripe call(s) carried Stripe-Account (a demo charge is on the platform account)
+
+== ARM (g) diff vs the committed script:
+3605,3608c3605
+<       code=$(api "$ORDER_WHO" POST "/api/v1/orders/$id/confirm" "$WORKDIR/cl-accept.json")
+<       st=$(jq -r '.status // ""' "$WORKDIR/cl-accept.json" 2>/dev/null || true); rm -f "$WORKDIR/cl-accept.json"
+<       [ "$code" = 200 ] && [ "$st" = CONFIRMED ] || { echo "FAIL: the accept of $n answered HTTP $code status '$st', not CONFIRMED" >&2; exit 1; }
+<       echo "OK: $n accepted (CONFIRMED) so it can be refunded"
+---
+>       # ARM (g): the accept skipped
+-- result: rc=1 PASS=102 FAIL=1
+FAIL demo-clear-orders PC: the accept (none) does not precede the refund (34)
+
+== ARM (h) diff vs the committed script:
+6523c6523
+<   list-open|clear-orders) [ -n "$KITCHEN" ] || usage_error "--stage $STAGE needs --kitchen SLUG (a demo kitchen of the fixture); it never acts on the Phase 30 tenant" ;;
+---
+>   list-open) [ -n "$KITCHEN" ] || usage_error "--stage $STAGE needs --kitchen SLUG" ;;
+-- result: rc=1 PASS=102 FAIL=1
+FAIL demo-clear-needs-kitchen clear-orders --orders ORD-DEMO-X: stderr lacks 'USAGE ERROR': DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n keycloak-credentials--admin-username --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret sh
+
+== arm-list gate, fail direction (run over ARM (e)'s output):
+missing PASS arm: demo-seller-label-missing
+arm-list gate rc=1
+== arm-list gate, pass direction (over evidence/t3-selftest.txt):
+arm-list gate rc=0
+
+== RESTORE: copies removed; the committed script is untouched:
+git diff --exit-code rc=0
+untracked arm copies left: 0
+GREEN: evidence/t3-selftest.txt (103 PASS, 0 FAIL)

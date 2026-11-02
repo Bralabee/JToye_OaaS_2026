@@ -34,6 +34,7 @@ import { generateMetadata as shopIndexMetadata } from "@/app/shop/page"
 jest.mock("@/lib/storefront-server", () => ({
   loadShopList: jest.fn(),
   loadShopDetail: jest.fn(),
+  loadFeaturedShops: jest.fn(),
 }))
 
 const ORIGIN = "https://app-staging.example.test"

@@ -1,0 +1,91 @@
+Starting a Gradle Daemon (subsequent builds will be faster)
+
+> Task :core-java:compileJava
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/customer/CustomerMapper.java:53: warning: Unmapped target properties: "phoneVerified, phoneVerifiedAt".
+    Customer toEntity(CreateCustomerRequest request);
+             ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/customer/CustomerMapper.java:65: warning: Unmapped target properties: "phoneVerified, phoneVerifiedAt".
+    Customer toEntity(UpdateCustomerRequest request);
+             ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/shop/ShopMapper.java:29: warning: Unmapped target property: "featuredProductIds".
+    Shop toEntity(CreateShopRequest request);
+         ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/shop/ShopMapper.java:43: warning: Unmapped target property: "featuredProductIds".
+    void updateEntity(CreateShopRequest request, @MappingTarget Shop shop);
+         ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/main/java/uk/jtoye/core/config/ActiveProfileValidator.java:35: warning: [removal] EnvironmentPostProcessor in org.springframework.boot.env has been deprecated and marked for removal
+public class ActiveProfileValidator implements EnvironmentPostProcessor, Ordered {
+                                               ^
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+11 warnings
+
+> Task :core-java:processResources
+> Task :core-java:classes
+
+> Task :core-java:compileTestJava
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/test/java/uk/jtoye/core/storefront/FeaturedShopsIntegrationTest.java:93: error: cannot find symbol
+    @Autowired private FeaturedShopsService featuredShopsService;
+                       ^
+  symbol:   class FeaturedShopsService
+  location: class FeaturedShopsIntegrationTest
+/home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/test/java/uk/jtoye/core/storefront/FeaturedShopsIntegrationTest.java:119: error: cannot find symbol
+        serviceLogger = (Logger) LoggerFactory.getLogger(FeaturedShopsService.class);
+                                                         ^
+  symbol:   class FeaturedShopsService
+  location: class FeaturedShopsIntegrationTest
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+2 errors
+
+> Task :core-java:compileTestJava FAILED
+
+[Incubating] Problems report is available at: file:///home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':core-java:compileTestJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').
+> Compilation failed; see the compiler output below.
+  Note: Recompile with -Xlint:deprecation for details.
+  /home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/test/java/uk/jtoye/core/storefront/FeaturedShopsIntegrationTest.java:93: error: cannot find symbol
+      @Autowired private FeaturedShopsService featuredShopsService;
+                         ^
+    symbol:   class FeaturedShopsService
+    location: class FeaturedShopsIntegrationTest
+  /home/sanmi/IdeaProjects/JToye_OaaS_2026-featured-kitchens/core-java/src/test/java/uk/jtoye/core/storefront/FeaturedShopsIntegrationTest.java:119: error: cannot find symbol
+          serviceLogger = (Logger) LoggerFactory.getLogger(FeaturedShopsService.class);
+                                                           ^
+    symbol:   class FeaturedShopsService
+    location: class FeaturedShopsIntegrationTest
+  Note: Recompile with -Xlint:unchecked for details.
+  Note: Some input files use or override a deprecated API.
+  Note: Some input files use unchecked or unsafe operations.
+  2 errors
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 19s
+3 actionable tasks: 3 executed

@@ -82,6 +82,12 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
 
     Page<Shop> findByPublishedTrue(Pageable pageable);
 
+    // The featured kitchens (quick 261102-r6u, D-02): published shops among the configured slugs, in ONE
+    // query. The published predicate is in the query itself, not left to shops_public_read, so a
+    // superuser or a tenant-pinned caller is held to the same answer as an anonymous one (T-r6u-01).
+    // Returned in no particular order; PublicStorefrontService.listPublishedShopsBySlugs re-orders.
+    List<Shop> findByPublishedTrueAndSlugIn(Collection<String> slugs);
+
     // LIKE tier of the public search (reached when the full-text tier finds nothing: a partial
     // word such as "plantai", a stopword, a very short query). Matches a shop's name or tags, OR
     // an available product of that shop (same tenant) whose title contains the fragment, so the

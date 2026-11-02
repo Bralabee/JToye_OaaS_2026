@@ -1,0 +1,65 @@
+== ARM: application.yml no longer reads JTOYE_FEATURED_SHOP_SLUGS ==
+env contract (D-07 / D-08, extended to all three services by #298)
+
+core-java
+  manifest : k8s/base/core-java-deployment.yaml
+  config   : 6 application*.yml file(s) under core-java/src/main/resources/
+  (a) injected env names                           93
+  (a) read by some application*.yml                91
+  (a) allowlisted (reasoned)                       1
+  (a) VIOLATIONS                                   1
+  (b) distinct ${} placeholders                    199
+  (b) supplied by the manifest                     91
+  (b) allowlisted (reasoned)                       3
+  (b) pass by rule (safe non-local default)        105
+  (b) VIOLATIONS (no default at all)               0
+  (b) VIOLATIONS (local-only default)              0
+  (b) VIOLATIONS (unresolved property chain)       0
+  (b) VIOLATIONS (must-supply, unsupplied)         0
+
+edge-go
+  manifest : k8s/base/edge-go-deployment.yaml
+  source   : 13 non-test .go file(s) under edge-go/
+  (a) injected env names                           9
+  (a) read by edge-go source                       9
+  (a) allowlisted (reasoned)                       0
+  (a) VIOLATIONS                                   0
+  (b) distinct env names read                      17
+  (b) supplied by the manifest                     9
+  (b) allowlisted (reasoned)                       8
+  (b) VIOLATIONS                                   0
+
+frontend
+  manifest : k8s/base/frontend-deployment.yaml (runtime channel)
+  build    : frontend/Dockerfile — 10 ARG name(s) (build-time channel)
+  source   : 328 application file(s) + 14 name(s) declared in env-validation.ts
+  (a) injected env names                           13
+  (a) read by frontend source/declaration          13
+  (a) allowlisted (reasoned)                       0
+  (a) VIOLATIONS (injected, never read)            0
+  (a) VIOLATIONS (build-time name, dead at runtime) 0
+  (b) distinct env names read                      34
+  (b) supplied at runtime (env:)                   13
+  (b) supplied at build (Dockerfile ARG)           10
+  (b2) ARG NEXT_PUBLIC_* not passed by ci-cd.yaml  0
+  (b2) ARG NEXT_PUBLIC_* not passed by k8s-local-up 0
+  (b) allowlisted (reasoned)                       11
+  (b) VIOLATIONS                                   0
+
+DIRECTION (a) VIOLATION [core-java] — env injected by the manifest but read by NO application*.yml:
+  - JTOYE_FEATURED_SHOP_SLUGS
+
+  This is exactly DEF-4: a manifest feeding an env that nothing reads.
+  The injected value reaches NOTHING and the service silently uses its own
+  literal default instead — which is why the class survived review, CI and a
+  live rehearsal. Fix the env NAME in the manifest to match the name the code
+  actually reads (do NOT rename the secret key), or add the read to the code.
+  Only add an allowlist entry if the env is genuinely runtime-native.
+
+FAIL: the env contract is broken — see the violations above. Fix the manifest, the build args or the code; only widen an allowlist when the omission is genuinely reviewed and you can state why.
+check-env-contract rc=1
+== RESTORED ==
+1
+
+PASS: core-java 93 injected / 200 read; edge-go 9 injected / 17 read; frontend 13 injected / 10 build-arg / 34 read. Both directions hold for all three services, with 23 allowlisted omission(s), of which 0 are tracked OPEN DEFECTS listed above.
+check-env-contract rc=0

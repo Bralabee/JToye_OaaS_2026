@@ -771,6 +771,15 @@ spec:
             configMapKeyRef:
               name: app-config
               key: storefront.client-ip-digest.retention-hours
+        # --- Featured kitchens (quick 261102-r6u, D-02, design D17) ---
+        # The ordered slug list the landing row leads with -> application.yml
+        # jtoye.storefront.featured-shop-slugs. Empty in base and production, the demo
+        # kitchens in staging.
+        - name: JTOYE_FEATURED_SHOP_SLUGS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: storefront.featured-shop-slugs
         resources:
           requests:
             # Issue #94 [P2-3]: memory request == limit (Guaranteed-memory QoS).

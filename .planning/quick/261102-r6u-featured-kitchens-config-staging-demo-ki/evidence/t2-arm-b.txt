@@ -1,0 +1,10 @@
+== ARM (b) ==
+ frontend/components/marketing/near-you-row.tsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  ● NearYouRow — featured kitchens (D-03, D-04) › located, nothing in radius, featured non-empty: ONLY the featured kitchens, under an honest heading
+Tests:       1 failed, 59 passed, 60 total
+jest rc=1
+== RESTORE ==
+git diff --exit-code rc=0
+Tests:       60 passed, 60 total
+GREEN jest rc=0

@@ -138,7 +138,7 @@
       "id": "controllers",
       "type": "backend",
       "label": "REST controllers",
-      "sublabel": "33 classes",
+      "sublabel": "34 classes",
       "sources": [
         {
           "path": "core-java/src/main/java/uk/jtoye/core/order/OrderController.java",
@@ -443,7 +443,7 @@
       "dot": "emerald",
       "title": "Counted, not estimated",
       "items": [
-        "33 controllers",
+        "34 controllers",
         "Schema at V89; V2 installs the RLS policies"
       ]
     }

@@ -84,8 +84,14 @@ function firstTags(tags: string | null, limit = 3): string[] {
 export function ShopCard({
   shop,
   examplePhoto,
+  featured = false,
 }: {
   shop: PublicShop
+  /**
+   * This kitchen is one of the environment's featured kitchens (quick 261102-r6u,
+   * D-04). Prints a small "Featured" label; never set for paid placement.
+   */
+  featured?: boolean
   /**
    * The credited cuisine picture this card shows when the shop has no banner
    * (D13). Required: `NearYouRow` assigns these across the whole row
@@ -117,7 +123,12 @@ export function ShopCard({
   // `outline-none`, so forced-colors mode (which drops the overlay's box-shadow ring) still paints one.
   const badgeId = useId()
   const distanceId = useId()
-  const describedBy = [badge ? badgeId : null, shop.distanceKm != null ? distanceId : null]
+  const featuredId = useId()
+  const describedBy = [
+    badge ? badgeId : null,
+    shop.distanceKm != null ? distanceId : null,
+    featured ? featuredId : null,
+  ]
     .filter(Boolean)
     .join(" ")
 
@@ -189,6 +200,26 @@ export function ShopCard({
                   two-letter unit as a word, and "point two my away" is not a
                   distance. The pill has room for it at 375px. */}
               <span className="sr-only"> away</span>
+            </span>
+          )}
+          {/* D-04 (quick 261102-r6u, design D17): the Featured label. EDITORIAL, NEVER
+              PAID: the environment lists its featured kitchens in config and no
+              vendor can buy the position. If placement is ever sold, this word must
+              become "Sponsored" (UK hidden-advertising rules require marketing to be
+              obviously identifiable; D17 records the change). A word, never a star or
+              an icon: this card removed invented ratings on purpose and a star reads
+              as one. Bottom-left, absolutely positioned inside the fixed-height
+              picture box, because the top-left is the open badge and the top-right
+              the distance: out of flow, a featured card is exactly as tall as an
+              unfeatured one. The distance pill's white-on-brand-900 treatment, AA on
+              any photograph. Announced with the shop name through aria-describedby. */}
+          {featured && (
+            <span
+              id={featuredId}
+              data-testid="shop-featured-label"
+              className="absolute bottom-2.5 left-2.5 rounded-full bg-white px-2.5 py-0.5 text-sm font-bold text-brand-900"
+            >
+              Featured
             </span>
           )}
         </div>
