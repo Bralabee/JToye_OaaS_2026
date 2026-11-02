@@ -428,7 +428,15 @@ describe("Landing elevate (D14)", () => {
       expect(chip.querySelector("img")?.getAttribute("src")).toMatch(/marketing%2Flanding|marketing\/landing/)
     }
     const door = screen.getByRole("link", { name: /Order food near you/ })
-    expect(door.querySelector("img")?.getAttribute("alt")).toBe("A plate of jollof rice with fried plantain")
+    const strip = door.querySelector("img")
+    // D16: the owner's own spaghetti photograph, with D15's LCP wiring unchanged.
+    expect(strip?.getAttribute("alt")).toBe("Spaghetti with chicken and fried plantain on a tray")
+    expect(strip?.getAttribute("src")).toContain("beeslens-spaghetti-chicken-plantain")
+    expect(strip).toHaveAttribute("fetchpriority", "high")
+    expect(strip).toHaveAttribute("loading", "eager")
+    const picture = strip?.closest("picture")
+    expect(picture).not.toBeNull()
+    expect(picture?.querySelector("source")?.getAttribute("media")).toBe("(min-width: 1024px)")
     expect(screen.getByText(/^Photographs/)).toBeTruthy()
   })
 
@@ -436,11 +444,14 @@ describe("Landing elevate (D14)", () => {
     render(await Home())
     const credits = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, "../../public/marketing/landing/credits.json"), "utf8")
-    ) as Array<{ title: string; creator: string; page: string; license: string; licenseUrl: string }>
-    expect(credits.length).toBe(8)
+    ) as Array<{ kind: string; title: string; creator: string; page: string; license: string; licenseUrl: string }>
+    const open = credits.filter((c) => c.kind === "open-collection")
+    const own = credits.filter((c) => c.kind === "own")
+    expect(open.length).toBe(8)
+    expect(own.length).toBe(1)
     const line = screen.getByText(/^Photographs/).closest("p")!
     expect(line.textContent).toMatch(/resized/i)
-    for (const c of credits) {
+    for (const c of open) {
       const title = within(line).getByRole("link", { name: c.title })
       expect(title.getAttribute("href")).toBe(c.page)
       expect(line.textContent).toContain(c.creator)
@@ -449,6 +460,21 @@ describe("Landing elevate (D14)", () => {
     }
     // Control: a name that is not in the ledger is not on the page.
     expect(line.textContent).not.toContain("Nobody In Particular")
+    // The owner's own photographs are credited by name, never as a linked CC work.
+    const details = line.closest("details") as HTMLElement
+    for (const c of own) expect(within(details).queryByRole("link", { name: c.title })).toBeNull()
+  })
+
+  it("credits the owner's own photographs in one line, apart from the CC paragraph (D16)", async () => {
+    const { container } = render(await Home())
+    const details = container.querySelector("details[data-photo-credits]") as HTMLElement
+    expect(details).not.toBeNull()
+    const exact = Array.from(details.querySelectorAll("*")).filter(
+      (el) => (el.textContent ?? "").trim() === "Photography: BeesLens"
+    )
+    expect(exact.length).toBeGreaterThan(0)
+    const cc = within(details).getByText(/^Photographs/).closest("p")!
+    expect(cc.textContent).not.toContain("BeesLens")
   })
 
   it("the How-it-works step icon still answers the data-step-active toggle HeroScene scrubs (review 1085)", async () => {
