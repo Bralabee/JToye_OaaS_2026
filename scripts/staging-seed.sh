@@ -2726,7 +2726,7 @@ STUB
   cat > "$ast/stub/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$STUB_LOG_DIR/curl.log"
-out=""; wfmt=""; hdr=""; method=""; url=""; data=0; bodyfile=""
+out=""; wfmt=""; hdr=""; method=""; url=""; data=0; bodyfile=""; acct_hdr=""; idem=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
@@ -2735,8 +2735,10 @@ while [ "$#" -gt 0 ]; do
     -X) method="$2"; shift 2 ;;
     --data-binary) data=1; case "$2" in @*) bodyfile="${2#@}"; jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
     --data-urlencode|-d) data=1; shift 2 ;;
-    -K) command grep -ho 'Stripe-Account: [^"]*' "$2" >> "$STUB_LOG_DIR/stripe-account.log" 2>/dev/null || true; shift 2 ;;
-    -H) shift 2 ;;
+    -K) acct_hdr=$(command grep -ho 'Stripe-Account: [^"]*' "$2" 2>/dev/null || true)
+        [ -z "$acct_hdr" ] || printf '%s\n' "$acct_hdr" >> "$STUB_LOG_DIR/stripe-account.log"
+        acct_hdr="${acct_hdr##*Stripe-Account: }"; shift 2 ;;
+    -H) case "$2" in "Idempotency-Key: "*) idem="${2#Idempotency-Key: }" ;; esac; shift 2 ;;
     http://*|https://*) url="$1"; shift ;;
     *) shift ;;
   esac
@@ -2745,7 +2747,34 @@ done
 rest="${url#*://}"; path="/${rest#*/}"; base="${path%%\?*}"; query=""
 case "$path" in *\?*) query="${path#*\?}" ;; esac
 key=""; code=404; location=""; respfile=""
-case "$method $base" in
+# PAY-03 (plan 30-29): every Stripe call is logged with the Stripe-Account header it
+# carried and its Idempotency-Key ("METHOD PATH acct=… key=…"). With STUB_CONNECT_ACCOUNT
+# set, the objects live on that connected account: a call without its header is answered
+# 404 resource_missing, as Stripe answers it, and the one platform-level call (POST
+# /v1/accounts/{id}) must carry no header. STUB_STRIP_ACCOUNT_ON plants a call that lost
+# its header. A refused call has no side effect (no route runs).
+denied=0
+case "$url" in
+  https://api.stripe.com/*)
+    if [ -n "${STUB_STRIP_ACCOUNT_ON:-}" ] && [[ "$method $base" =~ $STUB_STRIP_ACCOUNT_ON ]]; then acct_hdr=""; fi
+    printf '%s %s acct=%s key=%s\n' "$method" "$base" "${acct_hdr:-none}" "${idem:-none}" >> "$STUB_LOG_DIR/stripe-acct-flow.log"
+    if [ -n "${STUB_CONNECT_ACCOUNT:-}" ]; then
+      case "$method $base" in
+        "POST /v1/accounts/"*)
+          if [ -n "$acct_hdr" ]; then
+            denied=1; code=400; respfile="$STUB_LOG_DIR/stripe-error.json"
+            jq -n '{error: {type: "invalid_request_error", message: "a platform-level account update was sent with Stripe-Account"}}' > "$respfile"
+          fi ;;
+        *)
+          if [ "$acct_hdr" != "$STUB_CONNECT_ACCOUNT" ]; then
+            denied=1; code=404; respfile="$STUB_LOG_DIR/stripe-error.json"
+            jq -n --arg p "$base" '{error: {type: "invalid_request_error", code: "resource_missing",
+                message: ("No such object on the account this request was made on: " + $p)}}' > "$respfile"
+          fi ;;
+      esac
+    fi ;;
+esac
+[ "$denied" -eq 1 ] || case "$method $base" in
   "GET /health/ready") key=empty; code=200 ;;
   "POST /realms/master/protocol/openid-connect/token") key=admin-token; code=200 ;;
   "POST /realms/jtoye-staging/protocol/openid-connect/token") key=user-token; code=200 ;;
@@ -2917,6 +2946,7 @@ IDF
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
     rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
     rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted" "$ast/logs/shop-put-body.json" "$ast/logs/refunded"
+    : > "$ast/logs/stripe-acct-flow.log"; rm -f "$ast/logs/stripe-error.json" "$ast/logs/"po-reads-*
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -4441,6 +4471,218 @@ IDF
   fi
   if [ -z "$why" ]; then _st_result "PASS loop-evidence-clean rc=0 entry=modes.destination kept=1 secret_url_email_hits=0 sorted=1 mode=600 non_object=refused"
   else _st_result "FAIL loop-evidence-clean $why"; fails=$((fails + 1)); fi
+
+  # PAY-03 direct mode (plan 30-29): the order's intent, its charge and its refund live
+  # on the connected account, so every Stripe call must carry Stripe-Account. With
+  # STUB_CONNECT_ACCOUNT the stub answers resource_missing (Stripe's own answer) to any
+  # call without it and logs each call's header in stripe-acct-flow.log. The direct
+  # client secret is composed at run time and carries the STUBCSlp1 marker.
+  local md_args=("${tool_args[@]}" --stage money-loop --mode direct) md_cs
+  local md_env=("${lp_env[@]}" STUB_CONNECT_ACCOUNT="$lp_acct")
+  md_cs="pi_loopd1"; md_cs="${md_cs}_secret_STUBCSlp1d"
+  # _st_loopd_pi STATUS — the direct-charge intent: no transfer_data, the fee and the
+  # settlement mode on the intent itself.
+  _st_loopd_pi() {
+    jq -n --arg st "$1" --arg t "$tid" '{id: "pi_loopd1", object: "payment_intent", status: $st, livemode: false,
+        amount: 950, currency: "gbp", latest_charge: (if $st == "succeeded" then "ch_loopd1" else null end),
+        application_fee_amount: 48, transfer_data: null,
+        metadata: {order_number: "ORD-STUB-L001", tenant_id: $t, settlement_mode: "DIRECT_CHARGE_VENDOR_MOR"},
+        receipt_email: "piizq7@example.invalid"}'
+  }
+  # _st_loopd_fx LOCAL_STATUS [SHOP_MODE] [ORDER_ACCOUNT] — the direct loop's fixtures
+  # (ORDER_ACCOUNT "" = the 201 names no connected account: a platform intent).
+  _st_loopd_fx() {
+    _st_loop_fx ENABLED "${2:-DIRECT_CHARGE_VENDOR_MOR}" dest none
+    jq -n --arg cs "$md_cs" --arg a "${3-$lp_acct}" '{orderNumber: "ORD-STUB-L001", status: "PENDING", totalAmountPennies: 950,
+        clientSecret: $cs, stripeAccountId: (if $a == "" then null else $a end)}' > "$ast/resp/guest-order.json"
+    _st_loopd_pi requires_payment_method > "$ast/resp/pi-before.json"
+    _st_loopd_pi succeeded > "$ast/resp/pi-after.json"
+    cp "$ast/resp/pi-after.json" "$ast/resp/pi-confirm.json"
+    jq -n '{id: "ch_loopd1", object: "charge", livemode: false, captured: true, paid: true, status: "succeeded", amount: 950,
+        amount_captured: 950, amount_refunded: 0, payment_intent: "pi_loopd1", application_fee_amount: 48, transfer: null,
+        billing_details: {email: "piizq7@example.invalid", name: "Pii PIIZQ7"}, receipt_email: "piizq7@example.invalid"}' \
+      > "$ast/resp/ch-ch_loopd1.json"
+    jq '.content[0].paymentReference = "pi_loopd1"' "$ast/resp/orders-status-PENDING.json" > "$ast/resp/orders-status-PENDING.next"
+    mv "$ast/resp/orders-status-PENDING.next" "$ast/resp/orders-status-PENDING.json"
+    jq -n --arg r "$lp_rid" --arg o "$lp_oid" '{id: $r, orderId: $o, stripeRefundId: "re_loopd1", amountPennies: 100,
+        currency: "gbp", reason: "REQUESTED_BY_CUSTOMER", status: "pending"}' > "$ast/resp/refund-out.json"
+    jq -n --arg r "$lp_rid" '{object: "list", has_more: false, data: [
+        {id: "re_otherd1", object: "refund", amount: 50, status: "succeeded", charge: "ch_loopd1", payment_intent: "pi_loopd1",
+         metadata: {refund_id: "00000000-0000-4000-8000-000000000000"}},
+        {id: "re_loopd1", object: "refund", amount: 100, status: "succeeded", charge: "ch_loopd1", payment_intent: "pi_loopd1",
+         transfer_reversal: null, metadata: {refund_id: $r}}]}' > "$ast/resp/refund-list.json"
+    jq -n --arg r "$lp_rid" '{id: "re_loopd1", object: "refund", amount: 100, currency: "gbp", status: "succeeded",
+        charge: "ch_loopd1", payment_intent: "pi_loopd1", transfer_reversal: null, metadata: {refund_id: $r}}' > "$ast/resp/re-re_loopd1.json"
+    jq -n --arg o "$lp_oid" --arg r "$lp_rid" --arg ls "$1" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED",
+        paymentStatus: "CAPTURED", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid", customerName: "Pii PIIZQ7",
+        refunds: [{id: $r, orderId: $o, stripeRefundId: "re_loopd1", amountPennies: 100, status: $ls}]}' > "$ast/resp/detail-$lp_oid.json"
+  }
+  _st_acct_flow() { if [ -s "$ast/logs/stripe-acct-flow.log" ]; then command grep -c '' "$ast/logs/stripe-acct-flow.log"; else echo 0; fi; }
+  _st_acct_bad() { if [ -s "$ast/logs/stripe-acct-flow.log" ]; then command grep -vcE " acct=$lp_acct key=" "$ast/logs/stripe-acct-flow.log" || true; else echo 0; fi; }
+  _st_last() { command grep -nE "$1" "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true; }
+  local lp_steps_dest='["order","confirm","captured","intent","charge","transfer","accept","refund","refund-read","refund-charge","transfer-reversal","refund-local"]'
+  local lp_steps_direct='["order","confirm","captured","intent","charge","accept","refund","refund-read","refund-charge","refund-local"]'
+
+  # --- direct-mode-mismatch: --mode direct on a DESTINATION or null shop -> refused before
+  #     any write or Stripe call; a direct shop whose order comes back as a platform intent
+  #     -> refused after the one order, never confirmed
+  why=""
+  local mm
+  for mm in DESTINATION_CHARGE_PLATFORM_MOR null; do
+    _st_loopd_fx succeeded "$mm"
+    _st_run "${md_env[@]}" -- "${md_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$mm: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [mode-mismatch]' <<<"$ST_ERR"; then why="$mm: stderr lacks 'REFUSED [mode-mismatch]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'needs DIRECT_CHARGE_VENDOR_MOR' <<<"$ST_ERR"; then why="$mm: the refusal does not name the mode --mode direct needs"
+    elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/shops/$sid -> 200$")" -lt 1 ]; then why="$mm: the refusal was not reached through the shop read"
+    elif [ "$(_st_order_posts)" -ne 0 ]; then why="$mm: an order was placed"
+    elif [ "$(_st_acct_flow)" -ne 0 ]; then why="$mm: a Stripe call was made: $(tr '\n' '|' < "$ast/logs/stripe-acct-flow.log")"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then
+    _st_loopd_fx succeeded DIRECT_CHARGE_VENDOR_MOR ""
+    _st_run "${md_env[@]}" -- "${md_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="platform intent: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'REFUSED [mode-mismatch]' <<<"$ST_ERR"; then why="platform intent: stderr lacks 'REFUSED [mode-mismatch]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_order_posts)" -ne 1 ]; then why="platform intent: order posts=$(_st_order_posts) (want 1)"
+    elif [ "$(_st_confirms)" -ne 0 ] || [ "$(_st_refund_posts)" -ne 0 ]; then why="platform intent: the intent was confirmed or refunded"
+    elif command grep -qE "$re_loop_any" <<<"$ST_OUT"; then why="platform intent: a LOOP verdict was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS direct-mode-mismatch rc=1 tag=mode-mismatch shop_modes=DESTINATION,null order_posts=0 platform_intent=refused"
+  else _st_result "FAIL direct-mode-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- direct-ok: preflight (ENABLED, DIRECT), the order on the account, bypassPending
+  #     confirm, CAPTURED, the intent and its charge read by id, accept, a partial refund,
+  #     the refund and its charge read by id, the local row: EVERY Stripe call carries
+  #     Stripe-Account (the stub refuses one that does not); .modes.direct is added to an
+  #     evidence file that already holds .modes.destination, which is kept as it was
+  local evd="$ob_dir/evidence-direct.json" evd_dest="" evd_hits
+  rm -f "$evd"
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$evd"
+  [ "$ST_RC" -ne 0 ] || evd_dest=$(jq -c '.modes.destination' "$evd" 2>/dev/null || true)
+  _st_loopd_fx succeeded
+  _st_run "${md_env[@]}" -- "${md_args[@]}" --evidence "$evd"
+  why=""
+  local md_keys md_stamp d_order d_conf d_pi d_ch d_acc d_rf d_rl d_rid d_ch2 d_det
+  md_keys=$(command grep -oE 'Idempotency-Key: loop-[0-9]{8}T[0-9]{6}Z-[a-z]+' "$ast/logs/curl.log" | LC_ALL=C sort -u || true)
+  md_stamp=$(head -n 1 <<<"$md_keys" | command sed -E 's/^Idempotency-Key: (loop-[0-9]{8}T[0-9]{6}Z)-.*/\1/')
+  d_order=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders -> 201$')
+  d_conf=$(_st_line '^POST https://api\.stripe\.com/v1/payment_intents/pi_loopd1/confirm -> 200$')
+  d_pi=$(_st_last '^GET https://api\.stripe\.com/v1/payment_intents/pi_loopd1 -> 200$')
+  d_ch=$(_st_line '^GET https://api\.stripe\.com/v1/charges/ch_loopd1 -> 200$')
+  d_acc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/confirm -> 200$")
+  d_rf=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/refund -> 201$")
+  d_rl=$(_st_line '^GET https://api\.stripe\.com/v1/refunds\?payment_intent=pi_loopd1(&[^ ]*)? -> 200$')
+  d_rid=$(_st_line '^GET https://api\.stripe\.com/v1/refunds/re_loopd1 -> 200$')
+  d_ch2=$(_st_last '^GET https://api\.stripe\.com/v1/charges/ch_loopd1 -> 200$')
+  d_det=$(_st_last "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")
+  evd_hits=$(command grep -ciE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@|STUBCS|STUBOB|piizq7' "$evd" 2>/dev/null || true)
+  if [ -z "$evd_dest" ] || [ "$evd_dest" = null ]; then why="the destination run wrote no .modes.destination first (the kept-entry check would be vacuous)"
+  elif [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qxF "LOOP-ORDER mode=direct order=ORD-STUB-L001 intent=pi_loopd1 amount=950 application_fee=48 account=$lp_acct" <<<"$ST_OUT"; then
+    why="no direct LOOP-ORDER verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF "LOOP-CAPTURE mode=direct charge=ch_loopd1 captured=true amount=950 account=$lp_acct" <<<"$ST_OUT"; then
+    why="no direct LOOP-CAPTURE verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF 'LOOP-ACCEPT mode=direct order=ORD-STUB-L001 status=CONFIRMED' <<<"$ST_OUT"; then
+    why="no direct LOOP-ACCEPT verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF "LOOP-REFUND mode=direct refund=re_loopd1 amount=100 status=succeeded account=$lp_acct local_status=succeeded" <<<"$ST_OUT"; then
+    why="no direct LOOP-REFUND verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif command grep -q '^LOOP-TRANSFER ' <<<"$ST_OUT"; then why="a direct charge printed a LOOP-TRANSFER verdict"
+  elif [ "$(_st_acct_flow)" -lt 7 ]; then why="only $(_st_acct_flow) Stripe call(s) logged (want >= 7: intent, confirm, intent, charge, refund list, refund, charge)"
+  elif [ "$(_st_acct_bad)" -ne 0 ]; then why="Stripe call(s) without Stripe-Account $lp_acct: $(command grep -vE " acct=$lp_acct key=" "$ast/logs/stripe-acct-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_flow ' -> 404$')" -ne 0 ]; then why="a call was answered 404: $(command grep -E ' -> 404$' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/transfers/')" -ne 0 ]; then why="a transfer was read for a direct charge"
+  elif command grep -qF 'Stripe-Account' "$ast/logs/curl.log"; then why="the Stripe-Account header travelled in argv, not the config file"
+  elif [ -z "$d_order" ] || [ -z "$d_conf" ] || [ -z "$d_pi" ] || [ -z "$d_ch" ] || [ -z "$d_acc" ] || [ -z "$d_rf" ] || [ -z "$d_rl" ] \
+       || [ -z "$d_rid" ] || [ -z "$d_det" ] \
+       || ! { [ "$d_order" -lt "$d_conf" ] && [ "$d_conf" -lt "$d_pi" ] && [ "$d_pi" -lt "$d_ch" ] && [ "$d_ch" -lt "$d_acc" ] \
+              && [ "$d_acc" -lt "$d_rf" ] && [ "$d_rf" -lt "$d_rl" ] && [ "$d_rl" -lt "$d_rid" ] && [ "$d_rid" -lt "$d_ch2" ] && [ "$d_ch2" -lt "$d_det" ]; }; then
+    why="call order is not order<confirm<intent<charge<accept<refund<list<refund-by-id<charge<detail: $d_order $d_conf $d_pi $d_ch $d_acc $d_rf $d_rl $d_rid $d_ch2 $d_det"
+  elif [ "$(command grep -cxE "Idempotency-Key: ${md_stamp:-none}-(order|confirm|refund)" <<<"$md_keys" || true)" -ne 3 ]; then
+    why="the order, confirm and refund do not carry one run id's keys: $(tr '\n' '|' <<<"$md_keys")"
+  elif [ "$(_st_stripe_writes)" -ne 1 ]; then why="Stripe writes=$(_st_stripe_writes) (want 1, the confirm)"
+  elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="the client secret, a key or a customer field was printed or put in argv"
+  elif ! command grep -qxF "LOOP-EVIDENCE file=$evd mode=direct" <<<"$ST_OUT"; then why="no LOOP-EVIDENCE line for mode=direct"
+  elif [ "$(jq -c '.modes.direct | {order, intent, charge, refund, account, settlement_mode, livemode}' "$evd" 2>/dev/null)" \
+       != '{"order":"ORD-STUB-L001","intent":"pi_loopd1","charge":"ch_loopd1","refund":"re_loopd1","account":"acct_loop1","settlement_mode":"DIRECT_CHARGE_VENDOR_MOR","livemode":false}' ]; then
+    why="the direct entry's ids are not the loop's: $(jq -c '.modes.direct' "$evd" 2>/dev/null | head -c 300)"
+  elif [ "$(jq -c '.modes.direct.amounts' "$evd")" != "$(jq -cS -n '{captured: 950, application_fee: 48, refund: 100}')" ] \
+       || [ "$(jq -r '.modes.direct.statuses.refund + "/" + .modes.direct.statuses.local_refund' "$evd")" != succeeded/succeeded ]; then
+    why="the direct amounts or statuses are not the loop's: $(jq -c '.modes.direct | {amounts, statuses}' "$evd")"
+  elif [ "$(jq -c '.modes.destination' "$evd")" != "$evd_dest" ]; then why="the .modes.destination entry was changed by the direct run"
+  elif [ "$(jq -c '.modes | keys_unsorted' "$evd")" != '["destination","direct"]' ]; then why="modes are not listed destination, direct: $(jq -c '.modes | keys_unsorted' "$evd")"
+  elif [ "$evd_hits" -ne 0 ]; then why="the evidence holds $evd_hits key, secret, URL, e-mail or marker line(s)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS direct-ok rc=0 stripe_calls=$(_st_acct_flow) without_header=0 order=order<confirm<intent<charge<accept<refund<refund-by-id<charge<local evidence=destination,direct"
+  else _st_result "FAIL direct-ok $why"; fails=$((fails + 1)); fi
+
+  # --- direct-missing-header: a planted call without Stripe-Account (the charge read, then
+  #     the first intent read) is answered resource_missing -> FAIL rc 1 naming the call;
+  #     nothing is accepted, refunded or confirmed after it
+  why=""
+  local mh mh_re mh_call
+  for mh in charge intent; do
+    case "$mh" in
+      charge) mh_re='^GET /v1/charges/'; mh_call='GET /v1/charges/ch_loopd1' ;;
+      intent) mh_re='^GET /v1/payment_intents/'; mh_call='GET /v1/payment_intents/pi_loopd1' ;;
+    esac
+    _st_loopd_fx succeeded
+    _st_run "${md_env[@]}" STUB_STRIP_ACCOUNT_ON="$mh_re" -- "${md_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="$mh: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(command grep -cxF "$mh_call acct=none key=none" "$ast/logs/stripe-acct-flow.log" || true)" -lt 1 ]; then
+      why="$mh: the planted header-less call was never made, so the guard could not fire (non-vacuity): $(tr '\n' '|' < "$ast/logs/stripe-acct-flow.log")"
+    elif ! command grep -qF "$mh_call" <<<"$ST_ERR"; then why="$mh: the failure does not name the call '$mh_call': $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'resource_missing' <<<"$ST_ERR"; then why="$mh: the failure does not carry Stripe's resource_missing: $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_accept_posts)" -ne 0 ] || [ "$(_st_refund_posts)" -ne 0 ]; then why="$mh: the order was accepted or refunded after the failed read"
+    elif command grep -q '^LOOP-CAPTURE ' <<<"$ST_OUT"; then why="$mh: a LOOP-CAPTURE verdict was printed"
+    elif [ "$mh" = intent ] && [ "$(_st_confirms)" -ne 0 ]; then why="intent: the intent was confirmed after its read failed"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS direct-missing-header rc=1 planted=charge,intent answer=resource_missing named=1 accept_posts=0 refund_posts=0"
+  else _st_result "FAIL direct-missing-header $why"; fails=$((fails + 1)); fi
+
+  # --- direct-local-refund-lag: Stripe's refund on the account succeeded, the local row
+  #     stays pending past the deadline -> rc 1 naming both, no LOOP-REFUND verdict
+  _st_loopd_fx pending
+  _st_run "${md_env[@]}" STAGING_SEED_POLL_SECONDS=1 STAGING_SEED_REFUND_DEADLINE_SECONDS=2 -- "${md_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF "'pending'" <<<"$ST_ERR" || ! command grep -qF "'succeeded'" <<<"$ST_ERR"; then why="the failure does not name both statuses: $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/refunds/re_loopd1 -> 200$')" -lt 1 ]; then why="Stripe's refund was not read on the account first (non-vacuity)"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")" -lt 2 ]; then why="the local row was not polled (detail reads=$(_st_flow "/orders/$lp_oid/detail -> "))"
+  elif command grep -q '^LOOP-REFUND ' <<<"$ST_OUT"; then why="a LOOP-REFUND verdict was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS direct-local-refund-lag rc=1 local=pending stripe=succeeded verdict=none"
+  else _st_result "FAIL direct-local-refund-lag $why"; fails=$((fails + 1)); fi
+
+  # --- evidence-order: the DIRECT run first, then the destination run, into one file: the
+  #     file is jq -S (sorted keys), modes read destination then direct, each entry's steps
+  #     are in loop order, and the first run's entry is not touched by the second
+  local evo="$ob_dir/evidence-order.json" evo_rc1 evo_direct=""
+  rm -f "$evo"
+  _st_loopd_fx succeeded
+  _st_run "${md_env[@]}" -- "${md_args[@]}" --evidence "$evo"
+  evo_rc1="$ST_RC"
+  [ "$evo_rc1" -ne 0 ] || evo_direct=$(jq -c '.modes.direct' "$evo" 2>/dev/null || true)
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$evo"
+  why=""
+  if [ "$evo_rc1" -ne 0 ]; then why="the direct run: rc=$evo_rc1 (want 0)"
+  elif [ -z "$evo_direct" ] || [ "$evo_direct" = null ]; then why="the direct run wrote no .modes.direct"
+  elif [ "$ST_RC" -ne 0 ]; then why="the destination run: rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(jq -c '.modes | keys_unsorted' "$evo")" != '["destination","direct"]' ]; then why="modes are listed $(jq -c '.modes | keys_unsorted' "$evo"), not destination then direct"
+  elif [ "$(jq -S . "$evo")" != "$(cat "$evo")" ]; then why="the file is not written with jq -S"
+  elif [ "$(jq -c '.modes.direct.steps' "$evo")" != "$lp_steps_direct" ]; then why="the direct steps are not in loop order: $(jq -c '.modes.direct.steps' "$evo")"
+  elif [ "$(jq -c '.modes.destination.steps' "$evo")" != "$lp_steps_dest" ]; then why="the destination steps are not in loop order: $(jq -c '.modes.destination.steps' "$evo")"
+  elif [ "$(jq -c '.modes.direct' "$evo")" != "$evo_direct" ]; then why="the destination run changed the direct entry"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS evidence-order rc=0 sorted=1 modes=destination,direct steps=loop-order earlier_entry=kept"
+  else _st_result "FAIL evidence-order $why"; fails=$((fails + 1)); fi
+  rm -f "$ast/resp/ch-ch_loopd1.json" "$ast/resp/re-re_loopd1.json"
 
   for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition "detail-$lp_oid"; do
     if [ -f "$ast/resp/$lp_f.pre-loop" ]; then mv "$ast/resp/$lp_f.pre-loop" "$ast/resp/$lp_f.json"; else rm -f "$ast/resp/$lp_f.json"; fi
