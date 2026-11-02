@@ -302,14 +302,25 @@ would dangle. Branding the email is follow-up work, not an oversight.
 
 ```json
 "displayName"     : "J'Toye",
-"displayNameHtml" : "<span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>",
+"displayNameHtml" : "<a href=\"${PUBLIC_APP_ORIGIN}\" style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em;text-decoration:none\">J'Toye</a>",
 "loginTheme"      : "jtoye"
 ```
 
 `displayName` supplies the page title, `displayNameHtml` the login-page header. The header value
-is raw HTML rendered into the page, so it is deliberately a fixed operator-controlled literal
-containing only a `<span>` and a style attribute — no script, no interpolation, and nothing
-derived from request data. Do not build this value from user input. The realm's own
+is raw HTML rendered into the page, so it is deliberately an operator-controlled value containing
+only an `<a>` with an `href` and a style attribute — no script and nothing derived from request
+data. Do not build this value from user input.
+
+**The wordmark links home** (owner ruling 2026-11-02): a person on the email-verification,
+register or reset page otherwise had no way back to the site. The `href` is the one per-environment
+interpolation: `${PUBLIC_APP_ORIGIN}`, rendered by every compose render site's envsubst list
+(compose default `http://localhost:3000`) and by `staging-realm.jq` on staging
+(`https://app-staging.olajay.co.uk`). `scripts/verify-env.sh` refuses a value that is not one bare
+origin (a path, trailing slash, quote or list would break out of, or misdirect, the attribute).
+Keycloak's `kcSanitize` keeps the tag, `href` and `style` and adds `rel="nofollow"` — measured on
+26.8.1, so no FTL override was needed. `scripts/check-keycloak-wordmark-home.sh` (CI) fails if
+either template stops linking home or a render site drops the variable. A realm that already
+exists keeps its old header until it is updated in place: `docs/runbooks/keycloak-wordmark-home.md`. The realm's own
 Content-Security-Policy does not restrict `style-src`, so the inline style renders; it does keep
 `object-src 'none'`.
 

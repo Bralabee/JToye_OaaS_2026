@@ -1,0 +1,17 @@
+check-keycloak-wordmark-home  (root: /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/d0eb1018-7337-4baa-83f8-ca6c33e2337a/scratchpad/main-tree)
+DEFECT: infra/keycloak/realm-export.template.json displayNameHtml does not link home: <span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>
+        expected a value starting <a href=\"${PUBLIC_APP_ORIGIN}\" and ending </a>
+DEFECT: infra/keycloak/realm-export-customers.template.json displayNameHtml does not link home: <span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>
+        expected a value starting <a href=\"${PUBLIC_APP_ORIGIN}\" and ending </a>
+DEFECT: docker-compose.full-stack.yml: 2 of 2 realm envsubst line(s) omit $$PUBLIC_APP_ORIGIN; the realm would ship a literal placeholder href:
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
+        envsubst '$$CUSTOMER_STOREFRONT_REDIRECT_URIS $$CUSTOMER_STOREFRONT_WEB_ORIGINS $$CUSTOMER_VERIFY_EMAIL $$GOOGLE_CLIENT_ID $$GOOGLE_CLIENT_SECRET' \
+DEFECT: docker-compose.full-stack.yml passes no PUBLIC_APP_ORIGIN environment entry to its render service
+DEFECT: infra/docker-compose.yml: 1 of 1 realm envsubst line(s) omit $$PUBLIC_APP_ORIGIN; the realm would ship a literal placeholder href:
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
+DEFECT: infra/docker-compose.yml passes no PUBLIC_APP_ORIGIN environment entry to its render service
+DEFECT: infra/docker-compose.hostnet.yml: 1 of 1 realm envsubst line(s) omit $$PUBLIC_APP_ORIGIN; the realm would ship a literal placeholder href:
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
+DEFECT: infra/docker-compose.hostnet.yml passes no PUBLIC_APP_ORIGIN environment entry to its render service
+FAIL: 8 wordmark-home defect(s); the Keycloak header would not link home (owner ruling 2026-11-02).
+rc=1

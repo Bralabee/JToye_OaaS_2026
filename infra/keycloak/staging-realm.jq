@@ -8,7 +8,8 @@
 # template's fragment placeholders first (that template is not JSON until then),
 # substitutes the vendor client secrets as whole strings afterwards, and runs the
 # assertion suite on the result. This program never touches a secret value and
-# never rewrites a dollar-brace token: the lower-case ones are Keycloak i18n
+# rewrites exactly one dollar-brace token, the upper-case PUBLIC_APP_ORIGIN inside
+# displayNameHtml (wordmark_home below); the lower-case ones are Keycloak i18n
 # built-ins and must survive byte for byte.
 #
 # It FAILS (jq error, non-zero exit) rather than guessing when the template no
@@ -26,6 +27,19 @@ def mailpit:
 
 def app_uri: "https://" + $host + "/*";
 def app_origin: "https://" + $host;
+
+# The header wordmark links home (owner ruling 2026-11-02): both templates carry
+# displayNameHtml as an anchor whose href is the PUBLIC_APP_ORIGIN placeholder, so a
+# person stranded on the email-verification, register or reset page can get back to
+# the site. On staging the app origin IS app_origin; this is the one dollar-brace
+# token this program rewrites, and only inside displayNameHtml (an exact token, so a
+# lower-case Keycloak built-in can never match it). The assertion suite of
+# scripts/staging-realm-import.sh refuses a realm whose header does not hold
+# href="https://<host>", rendered or read back live.
+def wordmark_home:
+  if (.displayNameHtml | type) == "string"
+  then .displayNameHtml |= gsub("\\$\\{PUBLIC_APP_ORIGIN\\}"; app_origin)
+  else . end;
 
 def require_client($id):
   if ([.clients[]? | select(.clientId == $id)] | length) == 1 then .
@@ -84,6 +98,7 @@ def vendor:
   | set_client("integration-catalog-ro"; .redirectUris = [] | .webOrigins = [] | .enabled = false)
   | set_client("integration-orders-rw"; .redirectUris = [] | .webOrigins = [] | .enabled = false)
   | .smtpServer = mailpit
+  | wordmark_home
   | ensure_tenant_id_managed;
 
 def customer:
@@ -92,6 +107,7 @@ def customer:
   | set_client("storefront-client"; .redirectUris = [app_uri] | .webOrigins = [app_origin])
   | .verifyEmail = true
   | .smtpServer = mailpit
+  | wordmark_home
   # ADR-0005: Google ships disabled with empty credentials. The _note_* keys are
   # operator prose for the dev template (they quote localhost and Mailhog); they
   # stay in the template and are not copied into the staging realm.

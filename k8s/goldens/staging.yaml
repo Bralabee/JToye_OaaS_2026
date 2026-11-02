@@ -2020,10 +2020,38 @@ data:
       padding: 3.25rem 1rem 1.25rem;
     }
 
-    #kc-header-wrapper span {
+    #kc-header-wrapper span,
+    #kc-header-wrapper a {
       /* the realm's displayNameHtml already carries the brand colour; keep it from
          fighting the heading treatment above */
       letter-spacing: inherit !important;
+    }
+
+    /* The wordmark is a link home (owner ruling 2026-11-02): the realm's displayNameHtml
+       is `<a href="<public app origin>" style="…">J'Toye</a>`, so a person stranded on the
+       email-verification, register or reset page has a way back to the site. It is a
+       standalone wordmark, not a link inside a sentence, so the underline rule in the
+       links section below (SC 1.4.1: colour is the only other cue INSIDE text) does not
+       apply here; size and position already set it apart. The colour stays the inline
+       oxblood at rest. Hover moves one ramp step (oxblood -> oxblood-700); the inline
+       `style` carries the rest colour, so the hover colour needs !important to beat it.
+       The focus ring is restated here rather than left to the generic a:focus-visible
+       rule, so a later change to that rule cannot leave the wordmark with none. */
+    #kc-header-wrapper a,
+    #kc-header-wrapper a:hover,
+    #kc-header-wrapper a:focus,
+    #kc-header-wrapper a:visited {
+      text-decoration: none;
+    }
+
+    #kc-header-wrapper a:hover {
+      color: var(--jtoye-oxblood-700) !important; /* beats the inline rest colour */
+    }
+
+    #kc-header-wrapper a:focus-visible {
+      outline: 2px solid var(--jtoye-primary);
+      outline-offset: 4px;
+      border-radius: 2px;
     }
 
     /* --------------------------------------------------------------------- card */
@@ -2436,7 +2464,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
-  name: keycloak-theme-m5dt5btc4f
+  name: keycloak-theme-d92c97t89d
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -5035,7 +5063,7 @@ spec:
             path: resources/css/jtoye.css
           - key: work-sans-latin.woff2
             path: resources/fonts/work-sans-latin.woff2
-          name: keycloak-theme-m5dt5btc4f
+          name: keycloak-theme-d92c97t89d
         name: keycloak-theme
 ---
 apiVersion: apps/v1

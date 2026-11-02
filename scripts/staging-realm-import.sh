@@ -113,7 +113,7 @@ VENDOR_SECRET_PLACEHOLDERS=(KEYCLOAK_CLIENT_SECRET EDGE_API_CLIENT_SECRET INTEGR
 # Every name either template's substitution list carries. A surviving one is a
 # refusal; KC_SEED_USER_PASSWORD is listed so a seed user that escaped the
 # transform is named by its password token too.
-SUBSTITUTION_LIST=(KEYCLOAK_CLIENT_SECRET EDGE_API_CLIENT_SECRET INTEGRATION_CATALOG_RO_SECRET INTEGRATION_ORDERS_RW_SECRET KC_SEED_USER_PASSWORD CUSTOMER_STOREFRONT_REDIRECT_URIS CUSTOMER_STOREFRONT_WEB_ORIGINS CUSTOMER_VERIFY_EMAIL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET)
+SUBSTITUTION_LIST=(KEYCLOAK_CLIENT_SECRET EDGE_API_CLIENT_SECRET INTEGRATION_CATALOG_RO_SECRET INTEGRATION_ORDERS_RW_SECRET KC_SEED_USER_PASSWORD CUSTOMER_STOREFRONT_REDIRECT_URIS CUSTOMER_STOREFRONT_WEB_ORIGINS CUSTOMER_VERIFY_EMAIL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET PUBLIC_APP_ORIGIN)
 
 # Placeholder (or admin variable) -> Key Vault object. Plan 29-13's writer
 # generates every object named here; KEYCLOAK_CLIENT_SECRET is the SAME object
@@ -284,6 +284,14 @@ def jt: tojson;
       (if (($s.port // "") | tostring) != $mailpit_port then "smtpServer port is \($s.port // "<absent>"), expected \($mailpit_port)" else empty end),
       (if (($s.starttls // "") | tostring) != "true" then "smtpServer starttls is \($s.starttls // "<absent>"), expected true (D-20)" else empty end),
       (if (($s.ssl // "false") | tostring) != "false" then "smtpServer ssl is \($s.ssl), expected false (STARTTLS on the plain port)" else empty end)),
+
+  # the header wordmark links home (owner ruling 2026-11-02): both realms render
+  # displayNameHtml as an anchor to the staging app origin, so a person stranded on
+  # the email-verification page can get back to the site. Read back live too, so a
+  # realm imported before the ruling is named until its header is updated
+  # (docs/runbooks/keycloak-wordmark-home.md).
+  ((.displayNameHtml // "") as $h
+    | if ($h | contains("<a href=\"https://\($host)\"") | not) then "displayNameHtml does not link home: \($h | jt), expected an <a href=\"https://\($host)\"> wordmark" else empty end),
 
   # every remaining dollar-brace token must be a Keycloak built-in
   ([$r | .. | strings | scan("\\$\\{[^}]*\\}")] | map(select(test("^\\$\\{[a-z]") | not)) | unique[] as $t
@@ -675,12 +683,13 @@ selftest() {
   ctext=${ctext//'${CUSTOMER_VERIFY_EMAIL}'/false}
   ctext=${ctext//'${GOOGLE_CLIENT_ID}'/}
   ctext=${ctext//'${GOOGLE_CLIENT_SECRET}'/}
+  ctext=${ctext//'${PUBLIC_APP_ORIGIN}'/http://localhost:3000}
   printf '%s\n' "$ctext" > "$tmp/customer-dev.json"
   _st_child --assert "$tmp/customer-dev.json" --kind customer
   why=""
   if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
   else
-    for d in "mailhog in smtpServer" "verifyEmail is false" "storefront-client redirectUris"; do
+    for d in "mailhog in smtpServer" "verifyEmail is false" "storefront-client redirectUris" "displayNameHtml does not link home"; do
       command grep -qF -- "$d" <<<"$ST_OUT" || { why="defect not named: $d"; break; }
     done
   fi
