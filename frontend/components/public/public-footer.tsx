@@ -306,8 +306,10 @@ export function PublicFooter() {
           )}
         </div>
 
-        {/* Bottom row */}
-        <div className="mt-6 flex flex-col gap-1.5 border-t border-white/15 pt-5 sm:flex-row sm:items-center sm:justify-between">
+        {/* Bottom row. D15: separated from the columns by space alone; the 1px
+            rule above it went with the one over the attribution (taste-skill
+            hairline, the same tell D14 removed from the landing). */}
+        <div className="mt-10 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-cream/70">
             &copy; {year} J&apos;Toye Digital Ltd · Registered in England &amp; Wales · company no. 16471464
           </p>

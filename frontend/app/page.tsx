@@ -350,7 +350,7 @@ export default async function Home() {
                         already carries the food and the strip's 120px held
                         "Browse shops" below a 768px laptop fold. A hidden img
                         still downloads, so from lg `sizes` asks for 1px and the
-                        browser takes the smallest candidate — the collage
+                        browser takes the smallest candidate: the collage
                         tiles' own trick, inverted. */}
                     <Image
                       src={PHOTOS.jollofDodo.src}
@@ -417,7 +417,7 @@ export default async function Home() {
 
         {/* ── How it works (motion-hooked) ────────────────────────────────── */}
         {/* D15 (2026-11-02): directly after the hero, ahead of the kitchen
-            row — the tester read the kitchens before knowing what the site
+            row: the tester read the kitchens before knowing what the site
             does. Its hooks moved with it unchanged; HeroScene finds them by
             attribute, not position. The ground is now white: the hero is the
             stone band above it, and the kitchen row below shares this white
@@ -462,7 +462,7 @@ export default async function Home() {
 
         {/* ── The kitchen row — REAL published shops (#544, #460) ─────────── */}
         {/* D15: after How it works, on the same white field, so the band's
-            top padding is gone — How it works' own bottom padding is the gap. */}
+            top padding is gone; How it works' own bottom padding is the gap. */}
         {shops.length > 0 && (
           <section className="bg-white">
             <div
