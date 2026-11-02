@@ -302,7 +302,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Depends on: PostgreSQL JDBC driver, Flyway for schema migration
 - Used by: Service layer exclusively
 - Purpose: Multi-tenant data storage with RLS enforcement and audit trails
-- Location: Schema defined in `core-java/src/main/resources/db/migration/` (84 Flyway migrations, V1 through V84)
+- Location: Schema defined in `core-java/src/main/resources/db/migration/` (89 Flyway migrations, V1 through V89)
 - Contains: Tables (shops, products, orders, customers, financial_transactions, reviews, etc.), RLS policies per table, audit tables via Envers
 - Depends on: JDBC driver, Java code for policy setup
 - Used by: Core Java service layer via JPA, trigger functions for audit events
