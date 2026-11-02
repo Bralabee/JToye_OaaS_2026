@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 23
 waived_count: 0
 fixed_count: 34
-total_count: 54
-last_updated: 2026-11-01T11:38:29.000Z
+total_count: 57
+last_updated: 2026-11-02T20:52:07.587Z
 ---
 
 # Broken Windows Ledger
@@ -69,6 +69,9 @@ last_updated: 2026-11-01T11:38:29.000Z
 | 52 | 30 | unmet-truth | k8s/staging/ingress-hosts-patch.yaml | 56 | 30-20: /pay Referrer-Policy no-referrer is replaced at the staging edge by the ingress more_set_headers strict-origin-when-cross-origin (issue #1071); the app sends no-referrer | fixed | PR #1073 (fd01dc0c, merged 2026-11-01): Referrer-Policy left the base/staging ingress snippets, /pay declares metadata.referrer no-referrer, check-staging-edge.sh gained the pay-referrer arm; deploy run 41295872214 success incl. Staging Edge Probe; live read after the deploy: GET https://app-staging.olajay.co.uk/pay -> HTTP/2 200, referrer-policy: no-referrer, <meta name="referrer" content="no-referrer"/> | 2026-10-31T23:51:09.522Z | 2026-11-01T10:50:25.000Z |
 | 53 | 30 | unmet-truth | frontend/e2e/stripe-refund-flow.spec.ts | 304 | 30-22 must-have 1 NOT MET on PR #1065 217003b5: the refund spec asserts >= 1 refund for its PaymentIntent, not exactly one | fixed | fixed on PR #1065 by 29d419c4 (head 1f69a7f0, not yet on main; 30-24 merges it): pollRefundReadback settles only on EXACTLY one succeeded 100-pence refund with a charge id on two consecutive reads within 30 s, a second refund fails at once; the charge livemode is always read; the page must show Refunds (1) and the Refunded badge. RED b7a827ac 8/11 failed (duplicate: Expected violated, Received settled), GREEN 11/11 (evidence/30-22-fix-1065.txt) | 2026-11-01T00:34:35.236Z | 2026-11-01T01:06:26.086Z |
 | 54 | 30 | unmet-truth | frontend/playwright.config.ts | 81 | T-30-87 on PR #1065 217003b5: trace retain-on-failure keeps the Stripe spec's sk_test_ Authorization header; e2e-nightly uploads frontend/test-results/ to a PUBLIC artifact | fixed | fixed on PR #1065 by 29d419c4 (head 1f69a7f0, not yet on main; 30-24 merges it): Stripe calls via Node fetch (stripe-test-api.ts), top-level test.use trace/video off, the Stripe run's --output under $RUNNER_TEMP, and an always() check-stripe-ci-keys.sh --scan-artifacts step before the upload that deletes any file holding the sk_test_ or whsec. Probe RED 4 files held the fake key (trace.zip x2, error-context.md, the JSON report via the call log), GREEN 0; selftest 18/18 (evidence/30-22-fix-1065.txt) | 2026-11-01T00:34:35.347Z | 2026-11-01T01:06:26.199Z |
+| 55 | quick-261102-r6u | unrun-verify | frontend/e2e/near-you-row.spec.ts |  | near-you-row Playwright spec (featured-first and empty-radius assertions) NOT RUN: this lane does not own a Compose stack rebuilt from the branch; run at integration after a rebuild | open |  | 2026-11-02T20:52:07.364Z |  |
+| 56 | quick-261102-r6u | unrun-verify | scripts/check-runtime-freshness.sh |  | runtime parity (check-runtime-freshness, live featured-shops curl, landing HTML hrefs) NOT RUN for 261102-r6u: the shared Compose stack is owned by another session | open |  | 2026-11-02T20:52:07.476Z |  |
+| 57 | quick-261102-r6u | unrun-verify | scripts/openapi-gate.sh |  | openapi-gate (oasdiff) NOT RUN locally for 261102-r6u: oasdiff is not installed; OpenApiSnapshotTest byte-equality passed and the snapshot diff adds two GET paths only | open |  | 2026-11-02T20:52:07.587Z |  |
 
 ````json
 [
@@ -772,6 +775,45 @@ last_updated: 2026-11-01T11:38:29.000Z
     "reason": "fixed on PR #1065 by 29d419c4 (head 1f69a7f0, not yet on main; 30-24 merges it): Stripe calls via Node fetch (stripe-test-api.ts), top-level test.use trace/video off, the Stripe run's --output under $RUNNER_TEMP, and an always() check-stripe-ci-keys.sh --scan-artifacts step before the upload that deletes any file holding the sk_test_ or whsec. Probe RED 4 files held the fake key (trace.zip x2, error-context.md, the JSON report via the call log), GREEN 0; selftest 18/18 (evidence/30-22-fix-1065.txt)",
     "recorded_at": "2026-11-01T00:34:35.347Z",
     "resolved_at": "2026-11-01T01:06:26.199Z",
+    "milestone": "v2.3"
+  },
+  {
+    "id": 55,
+    "kind": "unrun-verify",
+    "phase": "quick-261102-r6u",
+    "file": "frontend/e2e/near-you-row.spec.ts",
+    "line": null,
+    "description": "near-you-row Playwright spec (featured-first and empty-radius assertions) NOT RUN: this lane does not own a Compose stack rebuilt from the branch; run at integration after a rebuild",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-02T20:52:07.364Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 56,
+    "kind": "unrun-verify",
+    "phase": "quick-261102-r6u",
+    "file": "scripts/check-runtime-freshness.sh",
+    "line": null,
+    "description": "runtime parity (check-runtime-freshness, live featured-shops curl, landing HTML hrefs) NOT RUN for 261102-r6u: the shared Compose stack is owned by another session",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-02T20:52:07.476Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 57,
+    "kind": "unrun-verify",
+    "phase": "quick-261102-r6u",
+    "file": "scripts/openapi-gate.sh",
+    "line": null,
+    "description": "openapi-gate (oasdiff) NOT RUN locally for 261102-r6u: oasdiff is not installed; OpenApiSnapshotTest byte-equality passed and the snapshot diff adds two GET paths only",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-02T20:52:07.587Z",
+    "resolved_at": null,
     "milestone": "v2.3"
   }
 ]

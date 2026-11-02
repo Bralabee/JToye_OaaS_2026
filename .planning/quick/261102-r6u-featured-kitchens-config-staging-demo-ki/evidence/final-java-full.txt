@@ -1,0 +1,6 @@
+BUILD SUCCESSFUL in 1m 52s
+FULL core-java:test rc=0
+BUILD SUCCESSFUL in 14m 51s
+FULL core-java:integrationTest rc=0
+unit: 231 suites, 2098 tests, 0 failures, 0 errors, 1 skipped (XML timestamps all from this run)
+integration: 235 suites, 1434 tests, 0 failures, 0 errors, 1 skipped (XML timestamps all from this run)
