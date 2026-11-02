@@ -1,0 +1,105 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/shop/__tests__/shop-discovery-client.test.tsx
+  Using tsconfig file: tsconfig.build.json
+FAIL app/shop/__tests__/shop-discovery-client.test.tsx
+  ● ShopDiscoveryClient — the search box clears cleanly (2026-11-02 tester) › renders exactly one clear affordance, and hides the browser's own cancel button
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "[&::-webkit-search-cancel-button]:appearance-none"
+    Received string:    "w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-10 text-sm text-slate-900 shadow-sm placeholder:text-slate-600 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 transition-colors"
+
+      615 |     expect(screen.getAllByRole("button", { name: /clear search/i })).toHaveLength(1)
+      616 |     // What decides whether Chrome/Safari paint a SECOND X inside the box.
+    > 617 |     expect(input().className).toContain("[&::-webkit-search-cancel-button]:appearance-none")
+          |                               ^
+      618 |   })
+      619 |
+      620 |   it("backspacing a typed query to empty fetches no fragment, flashes no empty state, and stays empty", async () => {
+
+      at Object.toContain (app/shop/__tests__/shop-discovery-client.test.tsx:617:31)
+
+  ● ShopDiscoveryClient — the search box clears cleanly (2026-11-02 tester) › backspacing a typed query to empty fetches no fragment, flashes no empty state, and stays empty
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 12
+
+    - Array []
+    + Array [
+    +   "EMPTY-STATE@\"pounded ya\"",
+    +   "EMPTY-STATE@\"pounded y\"",
+    +   "EMPTY-STATE@\"pounded \"",
+    +   "EMPTY-STATE@\"pounded\"",
+    +   "EMPTY-STATE@\"pounde\"",
+    +   "EMPTY-STATE@\"pound\"",
+    +   "EMPTY-STATE@\"poun\"",
+    +   "EMPTY-STATE@\"pou\"",
+    +   "EMPTY-STATE@\"po\"",
+    +   "EMPTY-STATE@\"p\"",
+    + ]
+
+      639 |
+      640 |     // Nothing between "pounded yam" and "" was a search, so nothing rendered "No kitchens found".
+    > 641 |     expect(seen.filter((s) => s !== "ok")).toEqual([])
+          |                                            ^
+      642 |     expect(askedFor(before)).toEqual([undefined])
+      643 |     // R-02 through a backspace: empty box, no q, no re-seed, the whole catalogue back.
+      644 |     expect(input().value).toBe("")
+
+      at Object.toEqual (app/shop/__tests__/shop-discovery-client.test.tsx:641:44)
+
+  ● ShopDiscoveryClient — the search box clears cleanly (2026-11-02 tester) › backspacing a deep-linked ?q= to empty fetches no fragment and is not re-seeded
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 7
+
+    - Array []
+    + Array [
+    +   "EMPTY-STATE@\"jollo\"",
+    +   "EMPTY-STATE@\"joll\"",
+    +   "EMPTY-STATE@\"jol\"",
+    +   "EMPTY-STATE@\"jo\"",
+    +   "EMPTY-STATE@\"j\"",
+    + ]
+
+      661 |     rerender()
+      662 |
+    > 663 |     expect(seen.filter((s) => s !== "ok")).toEqual([])
+          |                                            ^
+      664 |     expect(askedFor()).toEqual([undefined])
+      665 |     expect(input().value).toBe("")
+      666 |     expect(new URLSearchParams(window.location.search).get("q")).toBeNull()
+
+      at Object.toEqual (app/shop/__tests__/shop-discovery-client.test.tsx:663:44)
+
+  ● ShopDiscoveryClient — the search box clears cleanly (2026-11-02 tester) › CONTROL: a query the customer pauses on IS searched, once, after the debounce
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "jollof",
+    + ]
+
+      675 |     // Still inside the debounce window: no request yet, and the summary does
+      676 |     // not claim a count for a term it has not searched.
+    > 677 |     expect(askedFor()).toEqual([])
+          |                        ^
+      678 |     expect(screen.queryByText(/kitchens? for/)).toBeNull()
+      679 |
+      680 |     await act(async () => {
+
+      at Object.toEqual (app/shop/__tests__/shop-discovery-client.test.tsx:677:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 38 passed, 42 total
+Snapshots:   0 total
+Time:        1.766 s
+Ran all test suites matching app/shop/__tests__/shop-discovery-client.test.tsx.
