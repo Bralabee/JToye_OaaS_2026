@@ -840,7 +840,7 @@ stripe:
   # the Connect route refuses every request.
   connect-webhook-secret: ${STRIPE_CONNECT_WEBHOOK_SECRET:}
   # PAY-03 (plan 30-12): this runtime's environment name, written as metadata `environment` on every
-  # PaymentIntent, Refund and Express Account, and compared with every verified webhook event: an event
+  # PaymentIntent, Refund and connected Account, and compared with every verified webhook event: an event
   # from another environment sharing the Stripe account is acknowledged and ignored. EMPTY fallback on
   # purpose (the CLIENT_IP_HMAC_KEY / DSAR_ENCRYPTION_KEY precedent): blank means NOT DECLARED and is
   # written as "unset", which plan 30-17's OTP guard refuses. Declared per runtime by plan 30-13.
@@ -857,9 +857,9 @@ stripe:
   read-timeout-ms: ${STRIPE_READ_TIMEOUT_MS:20000}
   max-network-retries: ${STRIPE_MAX_NETWORK_RETRIES:2}
   connect:
-    # Country for new Express connected accounts (UK platform).
+    # Country for new connected accounts (UK platform).
     country: ${STRIPE_CONNECT_COUNTRY:GB}
-    # Where Stripe returns the vendor after Express onboarding / on link expiry.
+    # Where Stripe returns the vendor after Stripe-hosted onboarding / on link expiry.
     return-url: ${STRIPE_CONNECT_RETURN_URL:http://localhost:3000/dashboard/payments/connect/return}
     refresh-url: ${STRIPE_CONNECT_REFRESH_URL:http://localhost:3000/dashboard/payments/connect/refresh}
   # Phase 30 (GAP-GTM-05 / PAY-02 / B8 / B9 / D-B9): Plan-configurable recurring SaaS billing tiers.

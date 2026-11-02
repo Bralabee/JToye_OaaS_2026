@@ -71,11 +71,46 @@ class StripeConnectServiceTest {
     }
 
     // ------------------------------------------------------------------
-    // Express account creation + onboarding link
+    // Connected-account creation (Managed Risk) + onboarding link
     // ------------------------------------------------------------------
 
+    /**
+     * Issue #1090 (owner ruling 2026-11-02, option A): a new connected account is created under
+     * Managed Risk controller properties and never with the legacy {@code type}. Every property is
+     * read null-safely inside one {@code assertAll}, so a request with no controller reports all
+     * five failures instead of the first NullPointerException hiding the rest.
+     */
+    private static void assertManagedRiskController(AccountCreateParams params) {
+        assertAll("Managed Risk connected-account params (issue #1090)",
+                () -> assertNull(params.getType(),
+                        "no legacy type may be sent: Stripe refuses it when the platform is the losses collector"),
+                () -> assertEquals(AccountCreateParams.Controller.Losses.Payments.STRIPE,
+                        Optional.ofNullable(params.getController())
+                                .map(AccountCreateParams.Controller::getLosses)
+                                .map(AccountCreateParams.Controller.Losses::getPayments)
+                                .orElse(null),
+                        "controller.losses.payments must be stripe"),
+                () -> assertEquals(AccountCreateParams.Controller.Fees.Payer.ACCOUNT,
+                        Optional.ofNullable(params.getController())
+                                .map(AccountCreateParams.Controller::getFees)
+                                .map(AccountCreateParams.Controller.Fees::getPayer)
+                                .orElse(null),
+                        "controller.fees.payer must be account"),
+                () -> assertEquals(AccountCreateParams.Controller.RequirementCollection.STRIPE,
+                        Optional.ofNullable(params.getController())
+                                .map(AccountCreateParams.Controller::getRequirementCollection)
+                                .orElse(null),
+                        "controller.requirement_collection must be stripe"),
+                () -> assertEquals(AccountCreateParams.Controller.StripeDashboard.Type.FULL,
+                        Optional.ofNullable(params.getController())
+                                .map(AccountCreateParams.Controller::getStripeDashboard)
+                                .map(AccountCreateParams.Controller.StripeDashboard::getType)
+                                .orElse(null),
+                        "controller.stripe_dashboard.type must be full"));
+    }
+
     @Test
-    @DisplayName("createOrResumeExpressOnboarding creates an Express account, links it PENDING, returns the onboarding URL")
+    @DisplayName("createOrResumeExpressOnboarding creates a Managed Risk connected account, links it PENDING, returns the onboarding URL")
     void createExpressAccount_newAccount() throws Exception {
         when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
         when(tenantRepository.save(any(Tenant.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -111,9 +146,9 @@ class StripeConnectServiceTest {
             assertEquals(StripeConnectStatus.PENDING, tenant.getStripeConnectStatus());
             verify(tenantRepository).save(tenant);
 
-            // Account params: Express, GB, contact email, tenant_id metadata (all config/data-driven)
+            // Account params: Managed Risk controller, GB, contact email, tenant_id metadata (all config/data-driven)
             assertNotNull(created.get(), "Account.create was not called");
-            assertEquals(AccountCreateParams.Type.EXPRESS, created.get().getType());
+            assertManagedRiskController(created.get());
             assertEquals("GB", created.get().getCountry());
             assertEquals("vendor@example.com", created.get().getEmail());
             @SuppressWarnings("unchecked")
@@ -167,7 +202,7 @@ class StripeConnectServiceTest {
     // --- PAY-03 (plan 30-12) Task 3: the capabilities onboarding needs, requested explicitly ---
 
     @Test
-    @DisplayName("PAY-03: a new Express account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId>")
+    @DisplayName("PAY-03: a new Managed Risk connected account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId>")
     void createExpressAccount_requestsCapabilitiesUnderTheTenantIdempotencyKey() throws Exception {
         stripeProperties.setEnvironmentTag("staging");
         when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
@@ -199,6 +234,7 @@ class StripeConnectServiceTest {
 
         AccountCreateParams params = created.get();
         assertNotNull(params, "Account.create was not called");
+        assertManagedRiskController(params);
         assertNotNull(params.getCapabilities(), "capabilities must be requested explicitly, not left to platform defaults");
         assertNotNull(params.getCapabilities().getCardPayments(), "card_payments capability not requested");
         assertNotNull(params.getCapabilities().getTransfers(), "transfers capability not requested");

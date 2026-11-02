@@ -9,7 +9,7 @@ import uk.jtoye.core.tenant.TenantPlan;
  * Admin request to create a tenant (issue #102 AC1 — "created without an
  * engineer running SQL"). Plan defaults to STANDARD when omitted; contact
  * fields are optional but the email, when present, must be well-formed (it
- * seeds the Stripe Express account email later).
+ * seeds the Stripe connected-account email later).
  *
  * @param name         unique tenant name
  * @param plan         commercial plan/tier (null → STANDARD)

@@ -1,0 +1,126 @@
+# Evidence for quick task 261102-apf (issue #1090) — both directions of every gate
+# Captured 2026-11-02T07:53:36Z on branch fix/1090-connect-managed-risk at HEAD 0ffad575
+
+## BASELINES (untouched tree, HEAD 0ffad575)
+$ rg -uu -n -F Type.EXPRESS core-java/src
+core-java/src/test/java/uk/jtoye/core/payment/StripeConnectServiceTest.java:116:            assertEquals(AccountCreateParams.Type.EXPRESS, created.get().getType());
+core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:122:                    .setType(AccountCreateParams.Type.EXPRESS)
+type-express rc=0
+$ rg -uu -c -F Controller.Losses.Payments.STRIPE StripeConnectService.java
+controller rc=1
+$ Task 1 phrase gate (service + test)
+core-java/src/test/java/uk/jtoye/core/payment/StripeConnectServiceTest.java:74:    // Express account creation + onboarding link
+core-java/src/test/java/uk/jtoye/core/payment/StripeConnectServiceTest.java:78:    @DisplayName("createOrResumeExpressOnboarding creates an Express account, links it PENDING, returns the onboarding URL")
+core-java/src/test/java/uk/jtoye/core/payment/StripeConnectServiceTest.java:170:    @DisplayName("PAY-03: a new Express account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId>")
+core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:36: * Express connected-account creation + onboarding links, the
+core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:89:    // Express account creation + onboarding link
+core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:93:     * Create the tenant's Express connected account if none is linked yet
+core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:102:     * network retry cannot leave a second Express account. A reused account missing either
+core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:160:     * Stripe idempotency key for a tenant's Express account creation (PAY-03, plan 30-12).
+phrase rc=0
+$ Task 2 phrase gate (9 source files)
+core-java/src/test/java/uk/jtoye/core/payment/StripeConnectWebhookRouteIntegrationTest.java:38: * (docs.stripe.com/connect/webhooks). Express {@code account.updated} and every direct-charge
+core-java/src/main/java/uk/jtoye/core/tenant/StripeConnectStatus.java:18:    /** Account created; Express onboarding / KYC not complete yet. */
+core-java/src/main/resources/application.yml:843:  # PaymentIntent, Refund and Express Account, and compared with every verified webhook event: an event
+core-java/src/main/resources/application.yml:860:    # Country for new Express connected accounts (UK platform).
+core-java/src/main/resources/application.yml:862:    # Where Stripe returns the vendor after Express onboarding / on link expiry.
+core-java/src/main/java/uk/jtoye/core/payment/dto/ConnectAccountDto.java:6: * Result of creating/resuming a tenant's Stripe Express onboarding
+core-java/src/main/java/uk/jtoye/core/payment/dto/ConnectAccountDto.java:11: * @param onboardingUrl   single-use Stripe-hosted Express onboarding link
+core-java/src/main/java/uk/jtoye/core/tenant/dto/CreateTenantRequest.java:12: * seeds the Stripe Express account email later).
+core-java/src/main/java/uk/jtoye/core/payment/StripeProperties.java:22:     * delivers Express {@code account.updated} and every direct-charge {@code payment_intent.*} /
+core-java/src/main/java/uk/jtoye/core/payment/StripeProperties.java:31:     * {@code environment} on every PaymentIntent, Refund and Express Account this app creates, and
+core-java/src/main/java/uk/jtoye/core/payment/StripeProperties.java:113:        /** Country for new Express accounts (UK platform). */
+core-java/src/main/java/uk/jtoye/core/payment/StripeProperties.java:115:        /** Where Stripe sends the vendor after completing Express onboarding. */
+core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:554:     * <p>Stripe delivers Express {@code account.updated} and every direct-charge
+core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java:651:            // account.updated events short-circuit above. Express account.updated
+core-java/src/main/java/uk/jtoye/core/tenant/TenantAdminController.java:172:     * Create (or resume) the tenant's Stripe Express connected account and
+core-java/src/main/java/uk/jtoye/core/tenant/TenantAdminController.java:177:            description = "Creates an Express connected account for the tenant (idempotent: reuses an "
+core-java/src/main/java/uk/jtoye/core/payment/PaymentController.java:58:     * <p>Stripe sends Express {@code account.updated} and every direct-charge
+core-java/src/main/java/uk/jtoye/core/payment/PaymentController.java:67:            description = "Handles Stripe events from the Connected accounts scope (Express account.updated, "
+phrase rc=0
+$ rg -uu -n -F Express docs/api/openapi-snapshot.json
+6704:        "description" : "Creates an Express connected account for the tenant (idempotent: reuses an existing linked account) and returns a single-use Stripe-hosted onboarding link. Account capability state is then driven by the account.updated webhook.",
+13187:        "description" : "Handles Stripe events from the Connected accounts scope (Express account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an acco
+16593:        "description" : "Handles Stripe events from the Connected accounts scope (Express account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an acco
+snapshot-express rc=0
+$ @Test counts
+22
+47
+
+## RED (pre-fix service, HEAD 0ffad575) — test file edited, StripeConnectService.java untouched
+$ ./gradlew :core-java:cleanTest :core-java:test --tests uk.jtoye.core.payment.StripeConnectServiceTest
+gradle rc=1
+XML (core-java/build-local, fresh after cleanTest, 2026-11-02 07:54:56.903803644 +0000):
+StripeConnectServiceTest tests="22" skipped="0" failures="2" errors="0"
+Failing testcases + failure messages (verbatim from the XML):
+  <testcase name="PAY-03: a new Managed Risk connected account requests card_payments + transfers, is tagged with its environment, under connect-account-create-&lt;tenantId&gt;" classname="uk.jtoye.core.payment.StripeConnectServiceTest" time="0.099">
+    <failure message="org.opentest4j.MultipleFailuresError: Managed Risk connected-account params (issue #1090) (5 failures)&#10;&#9;org.opentest4j.AssertionFailedError: no legacy type may be sent: Stripe refuses it when the platform is the losses collector ==&gt; expected: &lt;null&gt; but was: &lt;EXPRESS&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.losses.payments must be stripe ==&gt; expected: &lt;STRIPE&gt; but was: &lt;null&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.fees.payer must be account ==&gt; expected: &lt;ACCOUNT&gt; but was: &lt;null&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.requirement_collection must be stripe ==&gt; expected: &lt;STRIPE&gt; but was: &lt;null&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.stripe_dashboard.type must be full ==&gt; expected: &lt;FULL&gt; but was: &lt;null&gt;"
+  <testcase name="createOrResumeExpressOnboarding creates a Managed Risk connected account, links it PENDING, returns the onboarding URL" classname="uk.jtoye.core.payment.StripeConnectServiceTest" time="0.017">
+    <failure message="org.opentest4j.MultipleFailuresError: Managed Risk connected-account params (issue #1090) (5 failures)&#10;&#9;org.opentest4j.AssertionFailedError: no legacy type may be sent: Stripe refuses it when the platform is the losses collector ==&gt; expected: &lt;null&gt; but was: &lt;EXPRESS&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.losses.payments must be stripe ==&gt; expected: &lt;STRIPE&gt; but was: &lt;null&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.fees.payer must be account ==&gt; expected: &lt;ACCOUNT&gt; but was: &lt;null&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.requirement_collection must be stripe ==&gt; expected: &lt;STRIPE&gt; but was: &lt;null&gt;&#10;&#9;org.opentest4j.AssertionFailedError: controller.stripe_dashboard.type must be full ==&gt; expected: &lt;FULL&gt; but was: &lt;null&gt;"
+
+## GREEN (fixed service) — full Task 1 verify command
+gradle rc=0
+BUILD SUCCESSFUL in 8s
+6 actionable tasks: 4 executed, 2 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.7.1/userguide/configuration_cache_enabling.html
+StripeConnectServiceTest tests="22" skipped="0" failures="0" errors="0" (xml mtime 2026-11-02 07:56:11.640903263 +0000)
+PaymentServiceTest tests="53" skipped="0" failures="0" errors="0" (xml mtime 2026-11-02 07:56:11.641903252 +0000)
+type-express rc=1
+1
+controller rc=0
+phrase rc=1
+@Test count: 22
+Note: PaymentServiceTest XML tests="53" = 47 @Test + 2 @ParameterizedTest x 3 @ValueSource cases (file unchanged vs origin/main, rc 0). The plan's '47' was the @Test source count; 53 is the XML count and is the pre-existing figure.
+
+## Gate summary, Task 1
+Type.EXPRESS: 2 lines rc 0 (HEAD) -> rc 1 (fixed)
+Controller.Losses.Payments.STRIPE in service: rc 1 (HEAD) -> count 1 rc 0 (fixed)
+Phrase gate (service + test): 8 lines rc 0 (HEAD) -> rc 1 (fixed)
+StripeConnectServiceTest: tests=22 failures=2 (pre-fix service) -> tests=22 failures=0 (fixed)
+
+## Task 2 — OpenApiSnapshotTest RED (after the @Operation edits, before updateOpenApiSnapshot)
+numstat before regeneration: '' (empty = 0 lines)
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests uk.jtoye.core.integration.OpenApiSnapshotTest
+snapshot-check gradle rc=1
+OpenApiSnapshotTest tests="1" skipped="0" failures="1" errors="0" (xml mtime 2026-11-02 07:58:02.037592115 +0000)
+failure message head:
+<failure message="org.opentest4j.AssertionFailedError: [The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot at docs/api/openapi-snapshot.json. If this API change is intentional, regenerate the snapshot with `./gradlew :core-java:updateOpenApiSnapshot` and commit it in the same PR so reviewers see the contract diff. The regenerated spec was written to core-java/build-local/openapi/openapi-current.json for inspection.] 
+
+## Task 2 — updateOpenApiSnapshot
+updateOpenApiSnapshot rc=0
+numstat after regeneration: 3	3	docs/api/openapi-snapshot.json
+hunks: @@ -6704 / -13187 / -16593, each a single "description" line (git diff -U0)
+
+## Task 2 — full verify block (after regeneration + CHANGELOG)
+phrase rc=1
+snapshot-express rc=1
+3	3	docs/api/openapi-snapshot.json
+migrations-untouched rc=0
+snapshot-check gradle rc=0
+6 actionable tasks: 2 executed, 4 up-to-date
+tests="1" skipped="0" failures="0" errors="0" (xml mtime 2026-11-02 07:59:47.553356325 +0000)
+docs-freshness rc=0
+docs-freshness OK: metrics match source (total logical invocations: 6996).
+doc-metrics rc=0
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+metrics-unchanged rc=0
+fetch rc=0
+Branch-behind-base gate
+  repo root    : /home/sanmi/IdeaProjects/JToye_OaaS_2026
+  head         : HEAD -> 3717d5cc (fix/1090-connect-managed-risk)
+  base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+  fetch        : refreshed refs/remotes/origin/main
+  base head    : 0ffad575
+
+PASS: HEAD contains every commit on origin/main (0ffad575); it is 1 commit(s) ahead and 0 behind.
+behind-base rc=0
+
+## Gate summary, Task 2
+Phrase gate (9 source files): 18 lines rc 0 (HEAD) -> rc 1
+Express in openapi-snapshot.json: 3 lines rc 0 (HEAD) -> rc 1
+numstat: empty (before regeneration) -> 3 3 (after)
+OpenApiSnapshotTest: tests=1 failures=1 rc 1 (after @Operation edits) -> tests=1 failures=0 rc 0 (after regeneration)
+migrations untouched rc 0; docs/metrics.json unchanged rc 0
+docs-freshness.sh rc 0, check-doc-metrics.sh rc 0, check-branch-behind-base.sh rc 0 — fail direction not re-executed here (existing CI gates with their own selftests)

@@ -551,7 +551,7 @@ public class PaymentService {
     /**
      * Process a Stripe webhook event from the "Connected accounts" endpoint (PAY-03, plan 30-12).
      *
-     * <p>Stripe delivers Express {@code account.updated} and every direct-charge
+     * <p>Stripe delivers connected-account {@code account.updated} and every direct-charge
      * {@code payment_intent.*} / {@code refund.*} event only to an endpoint registered for the
      * Connected-accounts scope, signed with that endpoint's own secret. This entry verifies against
      * {@code stripe.connect-webhook-secret} only (blank: refuse everything), requires
@@ -648,7 +648,7 @@ public class PaymentService {
                     event.getId());
             // issue #102 (ADR-0001 Decision 2) — Connect connected-account
             // capability sync. Sits AFTER the same dedup guard, so re-delivered
-            // account.updated events short-circuit above. Express account.updated
+            // account.updated events short-circuit above. Connected-account account.updated
             // events arrive on the Connected-accounts endpoint
             // (/api/v1/public/payments/webhook/connect, stripe.connect-webhook-secret);
             // the platform endpoint refuses any event carrying `account` (PAY-03, plan

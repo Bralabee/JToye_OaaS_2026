@@ -33,7 +33,7 @@ import java.util.UUID;
 /**
  * Stripe Connect integration (issue #102 [P2-11] AC2, ADR-0001 Decision 2,
  * extended by ADR-0007 / GAP-GTM-01):
- * Express connected-account creation + onboarding links, the
+ * connected-account creation (Managed Risk) + onboarding links, the
  * {@code account.updated} capability sync, and multi-model settlement routing
  * consumed by {@link PaymentService#createPaymentIntent}.
  *
@@ -86,20 +86,33 @@ public class StripeConnectService {
     }
 
     // ------------------------------------------------------------------
-    // Express account creation + onboarding link
+    // Connected-account creation (Managed Risk) + onboarding link
     // ------------------------------------------------------------------
 
     /**
-     * Create the tenant's Express connected account if none is linked yet
+     * Create the tenant's Stripe connected account if none is linked yet
      * (idempotent: an already-linked tenant reuses its account), then mint a
      * fresh single-use onboarding link. Only ACTIVE tenants may connect.
+     *
+     * <p>Issue #1090 (owner ruling 2026-11-02, option A): the account is created under Managed
+     * Risk with the Accounts v1 controller properties {@code losses.payments=stripe},
+     * {@code fees.payer=account}, {@code requirement_collection=stripe} and
+     * {@code stripe_dashboard.type=full}, and no longer sends the deprecated {@code type}, which
+     * Stripe refuses while the platform is the losses collector. The dashboard is {@code full}
+     * because the Express Dashboard with Stripe as losses collector exists only on the preview API
+     * version {@code 2026-10-28.preview}, and stripe-java 34.0.0 pins the GA version.
+     *
+     * <p>Fees: with {@code fees.payer=account}, Stripe deducts its processing fee from the
+     * connected account on a direct charge, so {@code application_fee_amount} carries only the
+     * platform's share. Destination charges are billed to the platform regardless. No fee
+     * computation changes.
      *
      * <p>PAY-03 (plan 30-12): the account is created requesting the {@code card_payments} and
      * {@code transfers} capabilities explicitly rather than relying on the platform's Connect
      * defaults (research assumption A3), so a vendor who completes the hosted onboarding ends
      * with an account that can take direct charges and receive destination transfers. The create
      * call rides the Stripe idempotency key {@link #accountCreateIdempotencyKey(UUID)}, so an SDK
-     * network retry cannot leave a second Express account. A reused account missing either
+     * network retry cannot leave a second connected account. A reused account missing either
      * capability has both requested before the link is minted. The account is tagged with
      * metadata {@code environment}, like every other Stripe object this app creates.
      */
@@ -119,7 +132,18 @@ public class StripeConnectService {
         String accountId = tenant.getStripeAccountId();
         if (accountId == null || accountId.isBlank()) {
             AccountCreateParams.Builder params = AccountCreateParams.builder()
-                    .setType(AccountCreateParams.Type.EXPRESS)
+                    .setController(AccountCreateParams.Controller.builder()
+                            .setLosses(AccountCreateParams.Controller.Losses.builder()
+                                    .setPayments(AccountCreateParams.Controller.Losses.Payments.STRIPE)
+                                    .build())
+                            .setFees(AccountCreateParams.Controller.Fees.builder()
+                                    .setPayer(AccountCreateParams.Controller.Fees.Payer.ACCOUNT)
+                                    .build())
+                            .setRequirementCollection(AccountCreateParams.Controller.RequirementCollection.STRIPE)
+                            .setStripeDashboard(AccountCreateParams.Controller.StripeDashboard.builder()
+                                    .setType(AccountCreateParams.Controller.StripeDashboard.Type.FULL)
+                                    .build())
+                            .build())
                     .setCountry(stripeProperties.getConnect().getCountry())
                     .setCapabilities(AccountCreateParams.Capabilities.builder()
                             .setCardPayments(AccountCreateParams.Capabilities.CardPayments.builder()
@@ -157,7 +181,7 @@ public class StripeConnectService {
     }
 
     /**
-     * Stripe idempotency key for a tenant's Express account creation (PAY-03, plan 30-12).
+     * Stripe idempotency key for a tenant's connected-account creation (PAY-03, plan 30-12).
      * Package-private so the test asserts the production expression, not a copy of it.
      */
     static String accountCreateIdempotencyKey(UUID tenantId) {

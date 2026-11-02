@@ -169,12 +169,14 @@ public class TenantAdminController {
     }
 
     /**
-     * Create (or resume) the tenant's Stripe Express connected account and
+     * Create (or resume) the tenant's Stripe connected account and
      * return a fresh onboarding link (issue #102 AC2, ADR-0001 Decision 2).
      */
     @PostMapping("/{tenantId}/stripe/connect")
     @Operation(summary = "Create Stripe Connect account + onboarding link",
-            description = "Creates an Express connected account for the tenant (idempotent: reuses an "
+            description = "Creates a Stripe connected account for the tenant under Managed Risk (Stripe "
+                    + "collects losses and requirements; the vendor pays Stripe's processing fees and gets "
+                    + "the full Stripe Dashboard) (idempotent: reuses an "
                     + "existing linked account) and returns a single-use Stripe-hosted onboarding link. "
                     + "Account capability state is then driven by the account.updated webhook.")
     @ApiResponses(value = {
