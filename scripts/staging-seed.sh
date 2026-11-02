@@ -235,7 +235,7 @@
 #                        has its intent cancelled first, then the order; PENDING with payment
 #                        NONE is cancelled with reasonCode OTHER; PENDING CAPTURED is accepted
 #                        then fully refunded; CONFIRMED, PREPARING or READY CAPTURED is fully
-#                        refunded (Idempotency-Key demo-clear-<order>-refund), read back
+#                        refunded (Idempotency-Key demo-clear-<order>-refund-<dead attempts>), read back
 #                        REFUNDED; anything else is REFUSED [not-clearable] with no write.
 #                        Ends CLEAR-ORDERS kitchen=… requested=… cleared=… refused=…, rc 1
 #                        when anything was refused. A paid order is refunded, not cancelled,
@@ -3540,24 +3540,29 @@ list_open_stage() {
 }
 
 # clear_full_refund ID NUMBER — a full refund of a paid, accepted order through the vendor
-# API, keyed demo-clear-<number>-refund (a re-run never refunds twice), read back REFUNDED
+# API, keyed demo-clear-<number>-refund-<failed|canceled attempts> (a re-run never refunds twice; a dead attempt gets a fresh key), read back REFUNDED
 # locally and succeeded|pending in Stripe (its charge read for livemode false).
 clear_full_refund() {
-  local id="$1" n="$2" code amount re ch st t0
+  local id="$1" n="$2" code amount dead re ch st t0
   code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/cl-detail.json")
   [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($n)" "$code" "$WORKDIR/cl-detail.json"
-  amount=$(jq -r '(.totalAmountPennies // 0) - ([.refunds[]? | select((.status // "") != "FAILED") | .amountPennies // 0] | add // 0)' "$WORKDIR/cl-detail.json")
+  # Live refunds are the ones RefundRepository.sumLiveAmountByOrderId counts: CREATING, pending,
+  # requires_action, succeeded (RefundStatus serialises lower-case). failed and canceled leave the
+  # money on the charge, so they are not owed back and each one makes the retry key new: the server
+  # replays whatever refund it holds under a key, a failed one included (review 1104 round 1).
+  amount=$(jq -r '(.totalAmountPennies // 0) - ([.refunds[]? | select((.status // "") | IN("CREATING","pending","requires_action","succeeded","SUCCEEDED")) | .amountPennies // 0] | add // 0)' "$WORKDIR/cl-detail.json")
+  dead=$(jq -r '[.refunds[]? | select((.status // "") | ascii_downcase | IN("failed","canceled"))] | length' "$WORKDIR/cl-detail.json")
   rm -f "$WORKDIR/cl-detail.json"
   [[ "$amount" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: $n has nothing left to refund ($amount)" >&2; exit 1; }
   jq -n --argjson a "$amount" --arg n "Staging demo order cleared (design D17): a full refund of a TEST charge" \
     '{amountPennies: $a, reason: "REQUESTED_BY_CUSTOMER", note: $n}' | body "$WORKDIR/cl-refund.json"
-  API_EXTRA_HEADER="Idempotency-Key: demo-clear-$n-refund"
+  API_EXTRA_HEADER="Idempotency-Key: demo-clear-$n-refund-$dead"
   code=$(api "$ORDER_WHO" POST "/api/v1/orders/$id/refund" "$WORKDIR/cl-refund-out.json" "$WORKDIR/cl-refund.json")
   API_EXTRA_HEADER=""
   rm -f "$WORKDIR/cl-refund.json"
   [ "$code" = 201 ] || fail_http "POST /api/v1/orders/{id}/refund ($n, ${amount}p)" "$code" "$WORKDIR/cl-refund-out.json"
   re=$(jq -r '.stripeRefundId // empty' "$WORKDIR/cl-refund-out.json"); rm -f "$WORKDIR/cl-refund-out.json"
-  echo "OK: full refund of ${amount}p requested for $n (Idempotency-Key demo-clear-$n-refund)"
+  echo "OK: full refund of ${amount}p requested for $n (Idempotency-Key demo-clear-$n-refund-$dead)"
   t0=$(date +%s)
   while :; do
     code=$(api "$ORDER_WHO" GET "/api/v1/orders/$id/detail" "$WORKDIR/cl-detail.json")
@@ -3674,7 +3679,7 @@ print_demo_plan() {
       else
         echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
         echo "  per order     of exactly ${ORDERS//,/ }: DRAFT -> the intent cancelled in Stripe TEST, then the order; PENDING/NONE -> cancel {reasonCode: OTHER};"
-        echo "                PENDING/CAPTURED -> accept, then a full refund; CONFIRMED|PREPARING|READY/CAPTURED -> a full refund (Idempotency-Key demo-clear-<order>-refund), read back REFUNDED"
+        echo "                PENDING/CAPTURED -> accept, then a full refund; CONFIRMED|PREPARING|READY/CAPTURED -> a full refund (Idempotency-Key demo-clear-<order>-refund-<dead attempts>), read back REFUNDED"
         echo "                anything else -> REFUSED [not-clearable], nothing written"
         echo "  last          CLEAR-ORDERS kitchen=… requested=… cleared=… refused=… (rc 1 when anything was refused)"
       fi ;;
@@ -6404,6 +6409,11 @@ IDF
   }
   _st_clear_paid_fx "$cPC" ORD-DEMO-PC PENDING 950 re_demopc ch_demopc
   _st_clear_paid_fx "$cK" ORD-DEMO-K CONFIRMED 1500 re_demok ch_demok
+  # Review 1104 round 1: K carries two DEAD earlier attempts, spelled as RefundStatus serialises them
+  # (lower-case). They leave the money on the charge, so the full 1500 is still owed, and the retry
+  # needs a fresh Idempotency-Key, or the server replays the failed refund.
+  jq '.refunds = [{amountPennies: 1500, status: "failed"}, {amountPennies: 1500, status: "canceled"}]' "$ast/resp/detail-$cK.json" > "$ast/resp/detail-$cK.tmp" \
+    && mv "$ast/resp/detail-$cK.tmp" "$ast/resp/detail-$cK.json"
   jq -n --arg id "$cC" '{id: $id, orderNumber: "ORD-DEMO-C", status: "COMPLETED", paymentStatus: "CAPTURED", totalAmountPennies: 900, refunds: []}' > "$ast/resp/detail-$cC.json"
   _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 STAGING_SEED_REFUND_DEADLINE_SECONDS=2 -- \
     "${demo_args[@]}" --stage clear-orders --kitchen brixton-village-grill --orders ORD-DEMO-D,ORD-DEMO-P0,ORD-DEMO-PC,ORD-DEMO-K,ORD-DEMO-C
@@ -6422,7 +6432,7 @@ IDF
   elif [ -z "$co_pcc" ] || [ -z "$co_pcr" ] || [ "$co_pcc" -ge "$co_pcr" ]; then why="PC: the accept (${co_pcc:-none}) does not precede the refund (${co_pcr:-none})"
   elif [ "$(_st_flow "/api/v1/orders/$cK/confirm")" -ne 0 ]; then why="K (already CONFIRMED) was accepted again"
   elif [ "$(_st_flow "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$cK/refund -> 201$")" -ne 1 ]; then why="K was not refunded once"
-  elif ! command grep -qF 'Idempotency-Key: demo-clear-ORD-DEMO-PC-refund' "$ast/logs/curl.log" || ! command grep -qF 'Idempotency-Key: demo-clear-ORD-DEMO-K-refund' "$ast/logs/curl.log"; then why="a refund lacks its demo-clear-<order>-refund Idempotency-Key"
+  elif ! command grep -qF 'Idempotency-Key: demo-clear-ORD-DEMO-PC-refund-0' "$ast/logs/curl.log" || ! command grep -qF 'Idempotency-Key: demo-clear-ORD-DEMO-K-refund-2' "$ast/logs/curl.log"; then why="a refund lacks its demo-clear-<order>-refund-<dead attempts> Idempotency-Key (PC -0, K -2)"
   elif [ "$(jq -r 'select(type == "object" and has("amountPennies")) | .amountPennies' "$ast/logs/bodies.log" | tr '\n' ' ')" != "950 1500 " ]; then why="the refunds are not full: $(jq -c 'select(type == "object" and has("amountPennies"))' "$ast/logs/bodies.log" | tr '\n' ' ')"
   elif [ "$(_st_lines stripe-account)" -ne 0 ]; then why="a Stripe call carried Stripe-Account"
   elif [ -z "$co_del" ] || [ -z "$co_w1" ] || [ "$co_del" -ge "$co_w1" ]; then why="the operator was not deleted before the first order write (delete=${co_del:-none} first_write=${co_w1:-none})"
