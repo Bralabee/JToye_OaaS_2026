@@ -1,0 +1,6 @@
+ARM extra-port caught=yes
+ARM dropped-9091 caught=yes
+ARM undeclared-policy caught=yes
+ARM undeclared-ipblock caught=yes
+ARM foreign-kind caught=yes
+CLEAN rc=0

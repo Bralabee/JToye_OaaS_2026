@@ -1,0 +1,3 @@
+OK   [staging]: render matches k8s/goldens/staging.yaml (8042 lines)
+OK   [production]: render matches k8s/goldens/production.yaml (1921 lines)
+All overlay renders match their committed goldens.

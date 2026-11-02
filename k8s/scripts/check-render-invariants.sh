@@ -415,11 +415,26 @@
 #               off) and auth-secret-type absent or auth-file;
 #            b. every Service selecting app=mailpit is ClusterIP (no LoadBalancer or
 #               NodePort ever publishes 1025 or an unauthenticated 8025);
-#            c. the mailpit container sets no MP_SMTP_RELAY_* / MP_SMTP_FORWARD_* /
+#            c. the mailpit container sets no MP_SMTP_FORWARD_* /
 #               MP_SEND_API_AUTH_ACCEPT_ANY / MP_ENABLE_CHAOS env and no envFrom, the
 #               render text names none of --smtp-relay, --smtp-forward,
 #               --send-api-auth-accept-any, --enable-chaos, and the container DOES
 #               set MP_SEND_API_AUTH_FILE as a literal (the Send API lock).
+#               MP_SMTP_RELAY_* is refused EXCEPT the tester relay (owner ruling
+#               2026-11-02, D-20 amended; mailpit.yaml TESTER RELAY), held to this exact
+#               shape: HOST, PORT, USERNAME, PASSWORD, MATCHING, ALLOWED_RECIPIENTS and
+#               OVERRIDE_FROM each ONLY a secretKeyRef to Secret mailpit-relay with
+#               optional: true (no literal, no ConfigMap: the allow-list names real
+#               people and the Secret's absence must mean "relay off");
+#               MATCHING and ALLOWED_RECIPIENTS read the SAME key (a manual release is
+#               bounded by the auto-relay list); HOST, PORT, USERNAME and PASSWORD all
+#               present (the start script keeps the relay OFF without any one of them, so
+#               a render that drops one is a dead relay every other gate passes); STARTTLS
+#               the literal true and AUTH the literal plain or login, whenever any relay
+#               variable is set; and NOTHING
+#               else (MP_SMTP_RELAY_ALL relays every recipient, _CONFIG reads a file the
+#               render cannot see, _ALLOW_INSECURE skips certificate checks, _TLS and
+#               _FWD_SMTP_ERRORS change the hop or make a relay failure the sender's).
 #          A target with a mailpit Deployment but zero Ingress backends to it, or a
 #          mailpit Service but no mailpit Deployment, is a PARSE ERROR (a blind
 #          reader never passes). Production and local print "not applicable". Shown
@@ -1209,13 +1224,20 @@ fi
 #   loadbalancer     Service mailpit becomes type LoadBalancer
 #   relay-all        the mailpit container sets MP_SMTP_RELAY_ALL=true
 #   lock-removed     the mailpit container loses MP_SEND_API_AUTH_FILE (Send API open)
+# The tester relay (owner ruling 2026-11-02, D-20 amended), each in mailpit.yaml:
+#   relay-literal    MP_SMTP_RELAY_MATCHING becomes a literal regex (an allow-list in git)
+#   relay-configmap  MP_SMTP_RELAY_MATCHING reads a ConfigMap instead of Secret mailpit-relay
+#   relay-required   MP_SMTP_RELAY_HOST's secretKeyRef loses optional: true
+#   relay-split      MP_SMTP_RELAY_ALLOWED_RECIPIENTS reads another key than MATCHING
+#   relay-cleartext  MP_SMTP_RELAY_STARTTLS becomes "false"
+#   relay-no-password the MP_SMTP_RELAY_PASSWORD entry is deleted (a relay that can never turn on)
 # INV18_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
 # ===========================================================================
 inv18_plant() {
     local arm="$1" root="$2" f before
     case "$arm" in
         no-auth|port-1025|cross-ns-secret) f="$root/components/mailpit/mailpit-ui-ingress.yaml" ;;
-        loadbalancer|relay-all|lock-removed) f="$root/components/mailpit/mailpit.yaml" ;;
+        loadbalancer|relay-all|lock-removed|relay-literal|relay-configmap|relay-required|relay-split|relay-cleartext|relay-no-password) f="$root/components/mailpit/mailpit.yaml" ;;
         *) return 1 ;;
     esac
     [[ -f "$f" ]] || return 1
@@ -1233,6 +1255,18 @@ inv18_plant() {
             awk '{ print } /^        - name: MP_SMTP_REQUIRE_STARTTLS$/ { held = 1; next } held { held = 0; print "        - name: MP_SMTP_RELAY_ALL"; print "          value: \"true\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         lock-removed)
             awk '/^        - name: MP_SEND_API_AUTH_FILE$/ { skip = 1; next } skip { skip = 0; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-literal)
+            awk '/^        - name: MP_SMTP_RELAY_MATCHING$/ { print; print "          value: \"(?i)^someone@example\\\\.invalid$\""; skip = 5; next } skip > 0 { skip--; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-configmap)
+            awk '/^        - name: MP_SMTP_RELAY_MATCHING$/ { w = 5 } w > 0 { w--; sub(/secretKeyRef:$/, "configMapKeyRef:"); sub(/name: mailpit-relay$/, "name: app-config") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-required)
+            awk '/^        - name: MP_SMTP_RELAY_HOST$/ { w = 6 } w > 0 { w--; if ($0 ~ /^              optional: true$/) next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-split)
+            awk '/^        - name: MP_SMTP_RELAY_ALLOWED_RECIPIENTS$/ { w = 5 } w > 0 { w--; sub(/key: allowlist$/, "key: allowlist-other") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-no-password)
+            awk '/^        - name: MP_SMTP_RELAY_PASSWORD$/ { skip = 6 } skip > 0 { skip--; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-cleartext)
+            awk '/^        - name: MP_SMTP_RELAY_STARTTLS$/ { w = 2 } w > 0 { w--; sub(/value: "true"$/, "value: \"false\"") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
     esac
     [[ "$(sha256sum "$f")" != "$before" ]]
 }
@@ -1243,7 +1277,7 @@ inv18_selftest() {
     # shellcheck disable=SC2064
     trap "rm -rf '$st'" EXIT
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv18 could not copy $K8S_DIR" >&2; exit 2; }
-    local -a ARMS=(no-auth port-1025 cross-ns-secret loadbalancer relay-all lock-removed)
+    local -a ARMS=(no-auth port-1025 cross-ns-secret loadbalancer relay-all lock-removed relay-literal relay-configmap relay-required relay-split relay-cleartext relay-no-password)
     declare -A WANT=(
         [no-auth]="INV-18: Ingress 'mailpit-ui' routes host 'mail-staging.olajay.co.uk' to Service mailpit without basic auth"
         [port-1025]="INV-18: Ingress 'mailpit-ui' routes host 'mail-staging.olajay.co.uk' to Service mailpit on port 1025"
@@ -1251,6 +1285,12 @@ inv18_selftest() {
         [loadbalancer]="INV-18: Service 'mailpit' selects app=mailpit and is type LoadBalancer"
         [relay-all]="INV-18: Deployment mailpit container 'mailpit' sets MP_SMTP_RELAY_ALL"
         [lock-removed]="INV-18: Deployment mailpit container 'mailpit' does not set MP_SEND_API_AUTH_FILE"
+        [relay-literal]="INV-18: Deployment mailpit container 'mailpit' MP_SMTP_RELAY_MATCHING is not a secretKeyRef to Secret mailpit-relay"
+        [relay-configmap]="INV-18: Deployment mailpit container 'mailpit' MP_SMTP_RELAY_MATCHING is not a secretKeyRef to Secret mailpit-relay"
+        [relay-required]="INV-18: Deployment mailpit container 'mailpit' MP_SMTP_RELAY_HOST reads Secret mailpit-relay without optional: true"
+        [relay-split]="INV-18: Deployment mailpit container 'mailpit' MP_SMTP_RELAY_MATCHING reads key 'allowlist' but MP_SMTP_RELAY_ALLOWED_RECIPIENTS reads 'allowlist-other'"
+        [relay-cleartext]="INV-18: Deployment mailpit container 'mailpit' MP_SMTP_RELAY_STARTTLS is 'false'"
+        [relay-no-password]="INV-18: Deployment mailpit container 'mailpit' configures a relay without MP_SMTP_RELAY_PASSWORD"
     )
     for arm in "${ARMS[@]}"; do
         n=$((n + 1))
@@ -2689,11 +2729,14 @@ declare -A NETPOL_RULES_EXPECTED=(
   [secret-sync-allow@k8s/staging]="sel:app=secret-sync types:Egress,Ingress"
   # The staging mail trap (plan 29-22, ../components/mailpit). SMTP 1025 from the
   # three senders only; the controller namespace on 8025 only, for the D-33
-  # authenticated testers' UI (Ingress mailpit-ui; INV-18 refuses a route to 1025);
-  # no egress at all (Mailpit relays and forwards nothing).
+  # authenticated testers' UI (Ingress mailpit-ui; INV-18 refuses a route to 1025).
+  # Egress (owner ruling 2026-11-02, D-20 amended): DNS and the public range on 587
+  # ONLY, for the tester relay's STARTTLS submission to Zoho (the alertmanager-allow
+  # shape); INV-18(c) bounds WHO it may relay to. No in-cluster egress, no other port.
   [mailpit-allow@k8s/staging]="sel:app=mailpit types:Egress,Ingress
       in:pod=app=core-java:1025 in:pod=app=keycloak:1025 in:pod=app=alertmanager:1025
-      in:ns=__INGRESS_NS__:8025"
+      in:ns=__INGRESS_NS__:8025
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:587"
   # The staging monitoring (plan 29-23, ../components/monitoring, D-16/D-19). Prometheus is
   # read only by Grafana (plan 29-24) and has no Ingress; it reaches each scrape target on its
   # metrics port (the target's own policy admits app=prometheus there) and Alertmanager.
@@ -2736,6 +2779,8 @@ declare -A NETPOL_RULES_EXPECTED=(
 # Plan 29-24 adds 587 to the same shape for ONE policy: Alertmanager's SMTP submission to Zoho
 # (smtp.zoho.eu, STARTTLS required by the config). Which policy may use which port is still the
 # row's business above; this table only bounds the ports the public shape may ever carry.
+# The owner ruling of 2026-11-02 (D-20 amended) gives 587 to a SECOND policy, mailpit-allow, for
+# the tester relay to the same provider; the shape and its ports are unchanged.
 declare -A NETPOL_IPBLOCK_EXPECTED=(
   ["eg|0.0.0.0/0|10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]="443 __DB_PORT__ 587"
 )
@@ -4743,13 +4788,65 @@ for dir in "${TARGETS[@]}"; do
         inv18_c=$(awk -F'\t' '$1 == "Deployment" && $2 == "mailpit" && $3 ~ /^spec::template::spec::containers::\[[0-9]+\]::name$/ && $4 == "mailpit" { p = $3; sub(/::name$/, "", p); print p; exit }' "$TMP/inv11_paths.tsv")
         [[ -n "$inv18_c" ]] || parse_fail "[$rel] INV-18 found no container named mailpit in Deployment mailpit by path."
         inv18_env=$(awk -F'\t' -v c="$inv18_c::env::" '$1 == "Deployment" && $2 == "mailpit" && index($3, c) == 1 && $3 ~ /::name$/ { print $3 "\t" $4 }' "$TMP/inv11_paths.tsv")
+        # The tester relay (owner ruling 2026-11-02, D-20 amended): see the header, (c).
+        declare -A inv18_rset=()
+        inv18_rn=0
         while IFS=$'\t' read -r epath ename; do
             [[ -n "$ename" ]] || continue
-            if [[ "$ename" =~ ^(MP_SMTP_RELAY_[A-Z_]+|MP_SMTP_FORWARD_[A-Z_]+|MP_SEND_API_AUTH_ACCEPT_ANY|MP_ENABLE_CHAOS)$ ]]; then
-                echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' sets $ename. Mailpit must send nothing: no relay, release or forward, no accept-any Send API, no chaos (D-33, T-29-110)." >&2
+            if [[ "$ename" =~ ^(MP_SMTP_FORWARD_[A-Z_]+|MP_SEND_API_AUTH_ACCEPT_ANY|MP_ENABLE_CHAOS)$ ]]; then
+                echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' sets $ename. Mailpit must send nothing beyond the tester relay: no forward, no accept-any Send API, no chaos (D-33, T-29-110)." >&2
+                inv18_bad=1
+                continue
+            fi
+            [[ "$ename" == MP_SMTP_RELAY_* ]] || continue
+            inv18_rn=$((inv18_rn + 1))
+            if [[ -n "${inv18_rset[$ename]:-}" ]]; then
+                echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' sets $ename twice; the relay shape must be read from one entry each." >&2
+                inv18_bad=1
+                continue
+            fi
+            inv18_eb="${epath%::name}"
+            case "$ename" in
+                MP_SMTP_RELAY_HOST|MP_SMTP_RELAY_PORT|MP_SMTP_RELAY_USERNAME|MP_SMTP_RELAY_PASSWORD|MP_SMTP_RELAY_MATCHING|MP_SMTP_RELAY_ALLOWED_RECIPIENTS|MP_SMTP_RELAY_OVERRIDE_FROM)
+                    unq "$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "$inv18_eb::valueFrom::secretKeyRef::name")"; inv18_sn="$UNQ"
+                    unq "$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "$inv18_eb::valueFrom::secretKeyRef::key")"; inv18_sk="$UNQ"
+                    unq "$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "$inv18_eb::valueFrom::secretKeyRef::optional")"; inv18_so="$UNQ"
+                    inv18_lit=$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "$inv18_eb::value")
+                    if [[ "$inv18_lit" != "(ABSENT)" || "$inv18_sn" != mailpit-relay || "$inv18_sk" == "(ABSENT)" || -z "$inv18_sk" ]]; then
+                        echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' $ename is not a secretKeyRef to Secret mailpit-relay (secret '$inv18_sn', key '$inv18_sk', literal ${inv18_lit:0:12}). The relay is configured ONLY from that optional Secret: a literal or a ConfigMap would put the tester allow-list (personal data) or a credential in git, and would relay with no Secret present." >&2
+                        inv18_bad=1
+                        continue
+                    fi
+                    if [[ "$inv18_so" != true ]]; then
+                        echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' $ename reads Secret mailpit-relay without optional: true. Without the Secret the pod would stick in CreateContainerConfigError instead of trapping everything." >&2
+                        inv18_bad=1
+                    fi
+                    inv18_rset[$ename]="$inv18_sk" ;;
+                MP_SMTP_RELAY_STARTTLS|MP_SMTP_RELAY_AUTH)
+                    unq "$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "$inv18_eb::value")"
+                    if [[ "$ename" == MP_SMTP_RELAY_STARTTLS && "$UNQ" != true ]] || [[ "$ename" == MP_SMTP_RELAY_AUTH && "$UNQ" != plain && "$UNQ" != login ]]; then
+                        echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' $ename is '$UNQ'. The relay hop is STARTTLS (literal true) with PLAIN or LOGIN auth, never cleartext and never a value read at runtime." >&2
+                        inv18_bad=1
+                    fi
+                    inv18_rset[$ename]="$UNQ" ;;
+                *)
+                    echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' sets $ename, which the tester relay never uses. Mailpit relays only to the allow-list (MATCHING): never relay-all, a config file, insecure TLS, implicit TLS or forwarded SMTP errors (D-33, T-29-110; ruling 2026-11-02)." >&2
+                    inv18_bad=1 ;;
+            esac
+        done <<< "$inv18_env"
+        if (( inv18_rn > 0 )); then
+            for inv18_need in MP_SMTP_RELAY_HOST MP_SMTP_RELAY_PORT MP_SMTP_RELAY_USERNAME MP_SMTP_RELAY_PASSWORD MP_SMTP_RELAY_MATCHING MP_SMTP_RELAY_ALLOWED_RECIPIENTS MP_SMTP_RELAY_STARTTLS MP_SMTP_RELAY_AUTH; do
+                if [[ -z "${inv18_rset[$inv18_need]:-}" ]]; then
+                    echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' configures a relay without $inv18_need. A relay needs its host, port and credentials (the start script keeps it OFF unless all are set, so a lost entry is a relay that is silently dead), its allow-list on both the auto-relay and the manual release (MATCHING, ALLOWED_RECIPIENTS), STARTTLS and auth." >&2
+                    inv18_bad=1
+                fi
+            done
+            if [[ -n "${inv18_rset[MP_SMTP_RELAY_MATCHING]:-}" && "${inv18_rset[MP_SMTP_RELAY_MATCHING]:-}" != "${inv18_rset[MP_SMTP_RELAY_ALLOWED_RECIPIENTS]:-}" ]]; then
+                echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' MP_SMTP_RELAY_MATCHING reads key '${inv18_rset[MP_SMTP_RELAY_MATCHING]}' but MP_SMTP_RELAY_ALLOWED_RECIPIENTS reads '${inv18_rset[MP_SMTP_RELAY_ALLOWED_RECIPIENTS]:-}'. Both must be the one allow-list, or a UI release could reach an address the owner never listed." >&2
                 inv18_bad=1
             fi
-        done <<< "$inv18_env"
+        fi
+        unset inv18_rset
         if awk -F'\t' -v c="$inv18_c::envFrom" '$1 == "Deployment" && $2 == "mailpit" && index($3, c) == 1 { f = 1 } END { exit !f }' "$TMP/inv11_paths.tsv"; then
             echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' uses envFrom, which imports env names the render cannot enumerate (a relay setting could arrive unseen)." >&2
             inv18_bad=1
@@ -4773,7 +4870,7 @@ for dir in "${TARGETS[@]}"; do
             FAILED=1
             inv18_msg="FAIL"
         else
-            inv18_msg="OK ($(grep -c . <<< "$inv18_routes") route(s) to mailpit on 8025 behind basic auth from a same-namespace auth-file Secret; $(grep -c . <<< "$inv18_svc") ClusterIP Service(s); no relay/forward/accept-any/chaos; Send API locked)"
+            inv18_msg="OK ($(grep -c . <<< "$inv18_routes") route(s) to mailpit on 8025 behind basic auth from a same-namespace auth-file Secret; $(grep -c . <<< "$inv18_svc") ClusterIP Service(s); $inv18_rn tester-relay var(s) only from optional Secret mailpit-relay, one allow-list, STARTTLS; no relay-all/forward/accept-any/chaos; Send API locked)"
         fi
     fi
 

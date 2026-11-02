@@ -79,6 +79,11 @@ data:
   # base SES endpoint is production's, and SES itself defers to Phase 32. Mailpit
   # takes no SMTP auth (smtp.auth "false", so the optional smtp-credentials
   # Secret is not needed) and listens on 1025.
+  # The one exception is Mailpit's own (owner ruling 2026-11-02, D-20 amended): it
+  # relays a COPY to the named testers on the allow-list in the optional Secret
+  # mailpit-relay, and to nobody else (k8s/components/mailpit/mailpit.yaml TESTER
+  # RELAY, docs/runbooks/staging-tester-mail.md). Nothing here changes for that:
+  # core-java still sends only to Mailpit.
   #
   # THE MAIL ORDERING, because this host exists before its server does:
   #   - smtp.starttls "true" sets JavaMail's OPPORTUNISTIC mail.smtp.starttls.enable

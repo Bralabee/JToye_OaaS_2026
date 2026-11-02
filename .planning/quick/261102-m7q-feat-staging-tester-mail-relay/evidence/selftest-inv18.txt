@@ -1,0 +1,13 @@
+ARM no-auth caught=yes
+ARM port-1025 caught=yes
+ARM cross-ns-secret caught=yes
+ARM loadbalancer caught=yes
+ARM relay-all caught=yes
+ARM lock-removed caught=yes
+ARM relay-literal caught=yes
+ARM relay-configmap caught=yes
+ARM relay-required caught=yes
+ARM relay-split caught=yes
+ARM relay-cleartext caught=yes
+ARM relay-no-password caught=yes
+CLEAN rc=0

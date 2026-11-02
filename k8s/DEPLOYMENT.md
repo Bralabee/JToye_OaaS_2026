@@ -284,6 +284,15 @@ production name resolves until Phase 32 (D-08).
   (verification, password reset, staff invitation, order and DSAR mail) is captured by an
   in-cluster Mailpit and never leaves the cluster. This host shows those captures. A
   persona's address can therefore be invented, and its mail read here.
+- **The one exception: named outside testers (owner ruling 2026-11-02, D-20 amended).**
+  Mailpit also relays a COPY of each message to a recipient on the owner's tester
+  allow-list, through the real SMTP provider, so an outside tester can finish sign-up
+  from their own inbox. Everyone else stays trapped. The list lives only in the optional
+  Secret `mailpit-relay` (never in git); with no Secret, nothing is relayed. Adding or
+  removing a tester, and the zero-code alternative (a pre-verified Keycloak account):
+  [`docs/runbooks/staging-tester-mail.md`](../docs/runbooks/staging-tester-mail.md). An
+  allow-listed tester's mail is still captured here too, so every holder of this
+  credential can read it, and Mailpit's settings view shows the allow-list itself.
 - **Who holds the credential.** One shared login, user `staging-tester`. The password is
   generated into Key Vault by `scripts/staging-secrets.sh` and nobody chooses it. The owner
   retrieves it into their own terminal and hands it to testers out of band:
@@ -298,8 +307,9 @@ production name resolves until Phase 32 (D-08).
   harmless only because every staging account belongs to a test persona.
 - **What is not exposed.** Only the web UI and API (port 8025) are published, and only
   over HTTPS with the credential. Plain http answers a redirect. SMTP (1025) is reachable
-  only inside the cluster. Mailpit relays, releases and forwards nothing, and its Send API
-  is locked.
+  only inside the cluster. Mailpit forwards nothing and relays or releases only to the
+  tester allow-list above (nothing at all while `mailpit-relay` is absent), and its Send
+  API is locked.
 - **Rotation.** `docs/runbooks/credential-rotation.md`, section "Staging mail UI
   (`mailpit-ui-credentials`)". The live checks are `scripts/staging-mail-ui.sh --probe
   --context jtoye-stg-aks`.

@@ -37,6 +37,14 @@ WHAT `check` ASSERTS (each rule is a defect class, not a style point)
       cluster-internal certificate and key cert-manager issues and renews), so its consumers need
       no SPC mount; they may read only the keys cert-manager writes (ca.crt, tls.crt, tls.key) or
       the whole Secret, and no SPC may declare the same Secret name (rule (b): two producers).
+      ONE Secret is exempt, BY NAME (owner ruling 2026-11-02, D-20 amended): mailpit-relay, the
+      tester-relay allow-list and Zoho submission credential that the owner applies by hand
+      (docs/runbooks/staging-tester-mail.md). For it, "absent = the pod starts unconfigured" is
+      the DESIGNED safe state (relay off, every message trapped), the opposite of T-29-45's
+      concern, and an SPC would make it a mount the pod cannot start without. The exemption is
+      held tight: only Deployment/mailpit may read it, only through env secretKeyRef with
+      optional: true (never envFrom, a volume or a required ref), and if an SPC ever declares it
+      the ordinary rules apply instead.
   (b) a Secret name is produced by ONE SPC. Two producers overwrite each other's keys (T-29-44).
   (c) every secretObjects objectName is one of that SPC's parameters.objects (the file the driver
       mounts and syncs from).
@@ -85,6 +93,8 @@ POD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "Cro
 # The keys cert-manager writes into a Certificate's Secret (cert-manager.io/docs/usage/certificate,
 # "the Secret ... tls.crt, tls.key and ca.crt").
 CERT_MANAGER_KEYS = ("ca.crt", "tls.crt", "tls.key")
+# Out-of-band OPTIONAL Secrets (rule (a), header): Secret name -> the one workload that may read it.
+OUT_OF_BAND_OPTIONAL = {"mailpit-relay": "Deployment/mailpit"}
 
 
 def void(msg):
@@ -203,17 +213,19 @@ def index(docs, errors):
                 for e in c.get("env") or []:
                     ref = (e.get("valueFrom") or {}).get("secretKeyRef")
                     if ref:
-                        refs.append((ref.get("name"), ref.get("key"), "env " + str(e.get("name"))))
+                        refs.append((ref.get("name"), ref.get("key"), "env " + str(e.get("name")),
+                                     ref.get("optional") is True))
                 for ef in c.get("envFrom") or []:
                     if ef.get("secretRef"):
-                        refs.append((ef["secretRef"].get("name"), "*", "envFrom"))
+                        refs.append((ef["secretRef"].get("name"), "*", "envFrom", False))
             mounts = set()
             for v in pspec.get("volumes") or []:
                 if v.get("secret"):
-                    refs.append((v["secret"].get("secretName"), "*", "volume " + str(v.get("name"))))
+                    refs.append((v["secret"].get("secretName"), "*", "volume " + str(v.get("name")), False))
                 for src in (v.get("projected") or {}).get("sources") or []:
                     if src.get("secret"):
-                        refs.append((src["secret"].get("name"), "*", "projected volume " + str(v.get("name"))))
+                        refs.append((src["secret"].get("name"), "*", "projected volume " + str(v.get("name")),
+                                     False))
                 csi = v.get("csi") or {}
                 if csi.get("driver") == DRIVER:
                     spc = (csi.get("volumeAttributes") or {}).get("secretProviderClass")
@@ -234,11 +246,15 @@ def check(docs, verbose=False):
         void("the render holds no SecretProviderClass; a chain with no producer cannot be checked "
              "(a target that includes components/azure-keyvault must render its SPCs)")
 
-    # Consumers: (workload, secret, key, how).
+    # Consumers: (workload, secret, key, how). optional_env: the refs that are an env
+    # secretKeyRef with optional: true (the out-of-band exemption reads it).
     consumers = []
+    optional_env = set()
     for wl, t in sorted(templates.items()):
-        for secret, key, how in t["refs"]:
+        for secret, key, how, optional in t["refs"]:
             consumers.append((wl, secret, key, how))
+            if optional and how.startswith("env "):
+                optional_env.add((wl, secret, key, how))
     for cr, secret in external:
         for key in RABBITMQ_EXTERNAL_SECRET_KEYS:
             consumers.append((EXTERNAL_SECRET_CONSUMER, secret, key, f"externalSecret of {cr}"))
@@ -278,6 +294,17 @@ def check(docs, verbose=False):
             if key != "*" and key not in CERT_MANAGER_KEYS:
                 errors.append(f"{wl} reads {secret}/{key} ({how}): Secret {secret} is written by cert-manager "
                               f"Certificate {', '.join(certs[secret])}, which holds only {', '.join(CERT_MANAGER_KEYS)}")
+            continue
+        if not ps and secret in OUT_OF_BAND_OPTIONAL:
+            allowed = OUT_OF_BAND_OPTIONAL[secret]
+            if wl != allowed:
+                errors.append(f"{wl} reads {secret}/{key} ({how}): Secret {secret} is out-of-band and optional "
+                              f"for {allowed} alone; no other workload may depend on a Secret the render "
+                              f"cannot vouch for")
+            elif (wl, secret, key, how) not in optional_env:
+                errors.append(f"{wl} reads {secret}/{key} ({how}) without an env secretKeyRef carrying "
+                              f"optional: true; Secret {secret} is applied by hand and may be absent, which "
+                              f"must leave the pod running unconfigured (the relay off), never stuck")
             continue
         if not ps:
             errors.append(f"{wl} reads {secret}/{key} ({how}), which no SecretProviderClass produces")

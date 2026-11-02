@@ -1,0 +1,20 @@
+[validate] Found 33 workload labels across 9 keys
+[validate] k8s/base/networkpolicies/00-default-deny.yaml: parsed OK, 1 NetworkPolicy doc(s), 0 podSelector matchLabels refs
+[validate] k8s/base/networkpolicies/10-frontend.yaml: parsed OK, 1 NetworkPolicy doc(s), 4 podSelector matchLabels refs
+[validate] k8s/base/networkpolicies/20-core-java.yaml: parsed OK, 1 NetworkPolicy doc(s), 10 podSelector matchLabels refs
+[validate] k8s/base/networkpolicies/30-edge-go.yaml: parsed OK, 1 NetworkPolicy doc(s), 5 podSelector matchLabels refs
+[validate] k8s/base/networkpolicies/40-datastores.yaml: parsed OK, 1 NetworkPolicy doc(s), 2 podSelector matchLabels refs
+[validate] k8s/base/networkpolicies/50-observability.yaml: parsed OK, 1 NetworkPolicy doc(s), 1 podSelector matchLabels refs
+[validate] k8s/base/networkpolicies/60-acme-http01-solver.yaml: parsed OK, 1 NetworkPolicy doc(s), 1 podSelector matchLabels refs
+[validate] k8s/components/azure-keyvault/secret-sync.yaml: parsed OK, 1 NetworkPolicy doc(s), 1 podSelector matchLabels refs
+[validate] k8s/components/keycloak/keycloak.yaml: parsed OK, 1 NetworkPolicy doc(s), 7 podSelector matchLabels refs
+[validate] k8s/components/mailpit/mailpit.yaml: parsed OK, 1 NetworkPolicy doc(s), 5 podSelector matchLabels refs
+[validate] k8s/components/monitoring/alertmanager.yaml: parsed OK, 1 NetworkPolicy doc(s), 5 podSelector matchLabels refs
+[validate] k8s/components/monitoring/exporters.yaml: parsed OK, 2 NetworkPolicy doc(s), 7 podSelector matchLabels refs
+[validate] k8s/components/monitoring/grafana.yaml: parsed OK, 1 NetworkPolicy doc(s), 3 podSelector matchLabels refs
+[validate] k8s/components/monitoring/prometheus.yaml: parsed OK, 1 NetworkPolicy doc(s), 11 podSelector matchLabels refs
+[validate] k8s/components/rabbitmq/rabbitmq-cluster.yaml: parsed OK, 1 NetworkPolicy doc(s), 5 podSelector matchLabels refs
+[validate] k8s/components/redis/redis.yaml: parsed OK, 1 NetworkPolicy doc(s), 4 podSelector matchLabels refs
+[validate] k8s/goldens/production.yaml: parsed OK, 7 NetworkPolicy doc(s), 23 podSelector matchLabels refs
+[validate] k8s/goldens/staging.yaml: parsed OK, 17 NetworkPolicy doc(s), 71 podSelector matchLabels refs
+[validate] PASS: 18 files (41 NetworkPolicy docs), all pod-label refs resolve.

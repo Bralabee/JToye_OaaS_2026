@@ -333,6 +333,33 @@ real app-email delivery and SES (D-13).
       same way.
     - **Fix:** a dedicated plan, test-first, deployed before 29-26 so personas see photos.
 
+- **D-35: D-20 amended narrowly, owner ruling of 2026-11-02 (after the phase closed).**
+  - **Why:** on 2026-10-30 a real outside tester registered, Keycloak said "an email has
+    been sent to" their address, and nothing arrived: D-13/D-20 trap every message, so no
+    outside tester could finish sign-up.
+  - **Ruling:** Mailpit keeps trapping everything EXCEPT recipients on an owner-maintained
+    allow-list of named tester addresses, which it relays (a copy; the capture stays) to the
+    real SMTP provider. Nothing else about staging mail changes: core-java and Keycloak still
+    send only to Mailpit, and STARTTLS stays required on every hop.
+  - **Mechanism:** Mailpit's `MP_SMTP_RELAY_MATCHING` (never `MP_SMTP_RELAY_ALL`), the same
+    regex as `MP_SMTP_RELAY_ALLOWED_RECIPIENTS` so a UI release is bounded too, Zoho
+    `smtp.zoho.eu:587` with STARTTLS and PLAIN auth, every value from the OPTIONAL Secret
+    `mailpit-relay` applied by hand. Absent or incomplete Secret = relay off. The allow-list
+    names real people, so it lives only in that Secret, never in git. Egress: DNS plus the
+    public range on 587, the Alertmanager shape. Pinned by INV-18(c), INV-7 and the
+    `keyvault-chain.py` out-of-band exemption; live check `scripts/staging-mail-ui.sh` UI-7.
+  - **Relation to D-23:** a deliberate, recorded exception. `mailpit-relay` is not synced
+    from Key Vault, because an SPC mount fails the pod when an object is missing (so the
+    relay could not be optional) and a per-tester allow-list would become a write-once deploy
+    prerequisite. Losing it with the cluster fails safe (relay off).
+  - **Relation to D-33's standing rule (no real customer data):** an allow-listed tester's
+    address is real personal data, held only in the Secret and in the captured mail every UI
+    credential holder can read; the owner names each tester deliberately.
+  - **Owner steps and the zero-code alternative** (a pre-verified `jtoye-customers` account):
+    `docs/runbooks/staging-tester-mail.md`.
+  - **Reversible:** delete the Secret and restart Mailpit (relay off at once); revert the PR
+    to remove the capability.
+
 </decisions>
 
 <canonical_refs>

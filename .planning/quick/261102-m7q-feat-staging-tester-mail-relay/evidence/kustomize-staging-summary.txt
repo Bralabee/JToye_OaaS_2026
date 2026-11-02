@@ -1,0 +1,7 @@
+# kubectl kustomize k8s/staging, origin/main 9b737e61 (before) vs this branch (after)
+before lines: 7950  after lines: 8025
+removed lines: 0  added lines: 75
+hunks:
+@@ -5081,6 +5081,12 @@
+@@ -5115,6 +5121,52 @@
+@@ -6900,6 +6952,29 @@

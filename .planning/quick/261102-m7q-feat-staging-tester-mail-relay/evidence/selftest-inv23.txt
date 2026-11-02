@@ -1,0 +1,9 @@
+ARM no-supervisor caught=yes
+ARM exec-direct caught=yes
+ARM wrong-file caught=yes
+ARM no-compare caught=yes
+ARM no-stop caught=yes
+ARM starttls-off caught=yes
+ARM sidecar-markers caught=yes
+ARM exec-quoted caught=yes
+CLEAN rc=0

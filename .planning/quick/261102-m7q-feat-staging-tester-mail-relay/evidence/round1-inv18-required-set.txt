@@ -1,0 +1,31 @@
+# Round 1 (#1096), finding 2: INV-18(c) required PORT/USERNAME/PASSWORD
+## BEFORE: committed tree with the required set reverted to HOST MATCHING ALLOWED_RECIPIENTS STARTTLS AUTH
+ARM no-auth caught=yes
+ARM port-1025 caught=yes
+ARM cross-ns-secret caught=yes
+ARM loadbalancer caught=yes
+ARM relay-all caught=yes
+ARM lock-removed caught=yes
+ARM relay-literal caught=yes
+ARM relay-configmap caught=yes
+ARM relay-required caught=yes
+ARM relay-split caught=yes
+ARM relay-cleartext caught=yes
+ARM relay-no-password caught=no
+  (expected rc 1 and 'INV-18: Deployment mailpit container 'mailpit' configures a relay without MP_SMTP_RELAY_PASSWORD'; got rc=0: OK   [k8s/base]: INV-1 OK (2 DB_PORT EnvVar(s), all valueFrom, 0 literal) | INV-2 OK (124 EnvVars, DB_PORT present, 0 with both value+valueFrom) | INV-3 OK (4 kube-dns selector block(s), each exactly 1 key) | INV-4 OK (0 localhost / 127.0.0.1 / UseDevelopmentStorage / 
+CLEAN rc=0
+
+## AFTER (committed fix)
+ARM no-auth caught=yes
+ARM port-1025 caught=yes
+ARM cross-ns-secret caught=yes
+ARM loadbalancer caught=yes
+ARM relay-all caught=yes
+ARM lock-removed caught=yes
+ARM relay-literal caught=yes
+ARM relay-configmap caught=yes
+ARM relay-required caught=yes
+ARM relay-split caught=yes
+ARM relay-cleartext caught=yes
+ARM relay-no-password caught=yes
+CLEAN rc=0

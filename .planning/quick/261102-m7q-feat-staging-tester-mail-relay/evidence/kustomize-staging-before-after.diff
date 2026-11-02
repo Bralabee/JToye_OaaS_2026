@@ -1,0 +1,98 @@
+--- staging-before.yaml	2026-11-02 14:34:19.579344169 +0000
++++ staging-after.yaml	2026-11-02 14:37:59.082148167 +0000
+@@ -5081,6 +5081,12 @@
+         - sh
+         - -c
+         - |
++          if [ -n "${MP_SMTP_RELAY_HOST:-}" ] && [ -n "${MP_SMTP_RELAY_PORT:-}" ] && [ -n "${MP_SMTP_RELAY_USERNAME:-}" ] && [ -n "${MP_SMTP_RELAY_PASSWORD:-}" ] && [ -n "${MP_SMTP_RELAY_MATCHING:-}" ] && [ -n "${MP_SMTP_RELAY_ALLOWED_RECIPIENTS:-}" ]; then
++            echo "mailpit-relay: ON via $MP_SMTP_RELAY_HOST:$MP_SMTP_RELAY_PORT (STARTTLS), ONLY to recipients on the Secret mailpit-relay allow-list; every message is still captured"
++          else
++            unset MP_SMTP_RELAY_HOST MP_SMTP_RELAY_PORT MP_SMTP_RELAY_USERNAME MP_SMTP_RELAY_PASSWORD MP_SMTP_RELAY_MATCHING MP_SMTP_RELAY_ALLOWED_RECIPIENTS MP_SMTP_RELAY_OVERRIDE_FROM MP_SMTP_RELAY_STARTTLS MP_SMTP_RELAY_AUTH
++            echo "mailpit-relay: OFF (Secret mailpit-relay absent or incomplete); every message is captured and none is delivered"
++          fi
+           fp() { sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY" 2>/dev/null; }
+           start=$(fp) || { echo "mailpit-cert-reload: cannot read $MP_SMTP_TLS_CERT / $MP_SMTP_TLS_KEY" >&2; exit 1; }
+           /mailpit &
+@@ -5115,6 +5121,52 @@
+           value: /data/mailpit.db
+         - name: MP_SEND_API_AUTH_FILE
+           value: /send-api-lock/passwords
++        - name: MP_SMTP_RELAY_HOST
++          valueFrom:
++            secretKeyRef:
++              key: host
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_PORT
++          valueFrom:
++            secretKeyRef:
++              key: port
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_USERNAME
++          valueFrom:
++            secretKeyRef:
++              key: username
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_PASSWORD
++          valueFrom:
++            secretKeyRef:
++              key: password
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_MATCHING
++          valueFrom:
++            secretKeyRef:
++              key: allowlist
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_ALLOWED_RECIPIENTS
++          valueFrom:
++            secretKeyRef:
++              key: allowlist
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_OVERRIDE_FROM
++          valueFrom:
++            secretKeyRef:
++              key: override-from
++              name: mailpit-relay
++              optional: true
++        - name: MP_SMTP_RELAY_STARTTLS
++          value: "true"
++        - name: MP_SMTP_RELAY_AUTH
++          value: plain
+         image: axllent/mailpit:v1.31.6
+         imagePullPolicy: IfNotPresent
+         livenessProbe:
+@@ -6900,6 +6952,29 @@
+   name: mailpit-allow
+   namespace: jtoye-staging
+ spec:
++  egress:
++  - ports:
++    - port: 53
++      protocol: UDP
++    - port: 53
++      protocol: TCP
++    to:
++    - namespaceSelector:
++        matchLabels:
++          kubernetes.io/metadata.name: kube-system
++      podSelector:
++        matchLabels:
++          k8s-app: kube-dns
++  - ports:
++    - port: 587
++      protocol: TCP
++    to:
++    - ipBlock:
++        cidr: 0.0.0.0/0
++        except:
++        - 10.0.0.0/8
++        - 172.16.0.0/12
++        - 192.168.0.0/16
+   ingress:
+   - from:
+     - podSelector:
