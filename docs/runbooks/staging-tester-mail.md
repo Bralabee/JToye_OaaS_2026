@@ -58,7 +58,9 @@ https://mailpit.axllent.org/docs/configuration/smtp-relay/):
 the container's start script turns the relay on only when `host`, `port`, `username`,
 `password` and `allowlist` are all non-empty; otherwise it unsets every `MP_SMTP_RELAY_*` before
 Mailpit starts. So a fresh environment traps everything, and a half-made Secret cannot crash-loop
-the pod. The first log line says which state it is in:
+the pod. A complete but MALFORMED Secret (an allow-list that does not compile, an `override-from`
+that is not an address) also ends with the relay off and the trap running (section 1). The first
+log line says which state it is in:
 
 ```
 mailpit-relay: OFF (Secret mailpit-relay absent or incomplete); every message is captured and none is delivered
@@ -92,9 +94,13 @@ address per alternative, every `.` escaped:
 - `(?i)` makes it case-insensitive; `^(` ... `)$` anchors it, so `tester1@example.com.evil.net`
   and `xtester1@example.com` do not match.
 - Never a domain-wide pattern (`@gmail\.com$`) and never `.*`: that would relay every persona.
-- Mailpit refuses to start on a regex it cannot compile. The rollout below then stalls with the
-  OLD pod still serving (the Deployment rolls with `maxUnavailable: 0`), and the new pod's log says
-  `failed to compile smtp-relay-matching regexp`. Fix the Secret and restart again.
+- Mailpit refuses to start on a regex it cannot compile, and on an `override-from` that is not an
+  address. The start script catches that: Mailpit is relaunched with the relay OFF, mail is still
+  captured, and the log shows Mailpit's own `[relay] failed to compile ...` (or `override-from is
+  not a valid email address`) line followed by
+  `mailpit-relay: OFF, Mailpit exited rc=1 at start with the relay ON (Secret mailpit-relay is
+  malformed ...)`. Fix the Secret and restart again. The rollout itself succeeds, so read the log:
+  a green rollout is not proof the relay is on.
 
 **Create or replace the Secret.** Every value goes into a mode-600 file; nothing is on a command
 line. The Zoho login and app password below are read from the Key Vault objects Alertmanager
@@ -166,8 +172,9 @@ only at debug level, and the captured copy looks the same either way. So verify 
    record what you find here.
 
 The live gate `scripts/staging-mail-ui.sh --probe --context jtoye-stg-aks` (UI-7) accepts the
-relay only when the settings API reports a non-empty allow-list and a server on `:587`, and
-refuses any relay variable outside the nine named ones.
+relay only when the settings API reports an anchored allow-list (`^...$`, optionally `(?i)`, with
+no `.*` or `.+`) and a server on `:587`, and refuses any relay variable outside the nine named
+ones.
 
 ## 3. Remove a tester, or turn the relay off
 

@@ -1,0 +1,44 @@
+# Round 1 (#1096), finding 3: UI-7 judges the allow-list BOUNDED, not just non-empty
+## BEFORE: committed tree with the bounded condition removed from judge_ui7
+ARM good caught=yes
+ARM good-relay caught=yes
+ARM ui1-open caught=yes
+ARM ui2-wrong-accepted caught=yes
+ARM ui3-missing-id caught=yes
+ARM ui4-plain-ui caught=yes
+ARM ui5-smtp-open caught=yes
+ARM ui5-loadbalancer caught=yes
+ARM ui6-default-cert caught=yes
+ARM ui7-relay caught=yes
+ARM ui7-relay-unbounded caught=yes
+ARM ui7-relay-dotstar caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk H
+ARM ui7-relay-domain caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk HT
+ARM ui7-relay-anchored-dotstar caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="staging"' ARM UI-2 PASS a random wrong password: HTTP 401 ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olaja
+ARM ui7-relay-env caught=yes
+ARM ui7-send-open caught=yes
+ARM ui8-no-429 caught=yes
+ARM dns-wrong caught=yes
+ARM list-kv-objects caught=yes
+SELFTEST: 16/19 as expected
+
+## AFTER (committed fix)
+ARM good caught=yes
+ARM good-relay caught=yes
+ARM ui1-open caught=yes
+ARM ui2-wrong-accepted caught=yes
+ARM ui3-missing-id caught=yes
+ARM ui4-plain-ui caught=yes
+ARM ui5-smtp-open caught=yes
+ARM ui5-loadbalancer caught=yes
+ARM ui6-default-cert caught=yes
+ARM ui7-relay caught=yes
+ARM ui7-relay-unbounded caught=yes
+ARM ui7-relay-dotstar caught=yes
+ARM ui7-relay-domain caught=yes
+ARM ui7-relay-anchored-dotstar caught=yes
+ARM ui7-relay-env caught=yes
+ARM ui7-send-open caught=yes
+ARM ui8-no-429 caught=yes
+ARM dns-wrong caught=yes
+ARM list-kv-objects caught=yes
+SELFTEST: 19/19 as expected

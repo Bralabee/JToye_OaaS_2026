@@ -113,4 +113,19 @@ mailpit container's start-script gate (6 lines), its env (46 lines) and the mail
 - The kcadm commands' exact output and that the bootstrap admin is still valid on the running
   realm.
 
+## Round 1 review (#1096): the three admissible findings, fixed
+
+| Finding | Before (fail direction) | After |
+|---------|-------------------------|-------|
+| 1. A complete but malformed Secret crash-loops Mailpit | pinned image + rendered start script: bad regex `exited exit=1`, bad override-from `exited exit=1` | both `running`, one `mailpit-relay: OFF, Mailpit exited rc=1 ...` line, `/api/v1/webui` MessageRelay.Enabled false; absent and good cases unchanged (evidence/docker-malformed-secret.txt) |
+| 2. INV-18(c) did not require PORT/USERNAME/PASSWORD | committed tree with the old required set: arm `relay-no-password caught=no` (rc 0) | 12/12 arms caught, CLEAN rc 0 (evidence/round1-inv18-required-set.txt) |
+| 3. UI-7 judged "bounded" by length | committed tree without the bounded condition: `ui7-relay-dotstar`, `-domain`, `-anchored-dotstar` caught=no, 16/19 | 19/19, `good-relay` (anchored named list) passes (evidence/round1-ui7-bounded.txt) |
+
+Each break arm ran on a committed tree and was restored by `git checkout --`, then verified by
+content (the fixed line counted 1). Re-run after the fixes: check-render-invariants PASS,
+--selftest-inv23 8/8 + CLEAN (the start script changed), render-golden OK (golden regenerated),
+check-gate-enforcement, docs-freshness (7001), check-doc-metrics 37/37, check-claims 56/56,
+check-doc-citations 46/46, check-branch-behind-base 0 behind 888084b1. The runbook now describes
+the malformed-Secret behaviour and the anchored-allow-list rule.
+
 ## Self-Check: PASSED

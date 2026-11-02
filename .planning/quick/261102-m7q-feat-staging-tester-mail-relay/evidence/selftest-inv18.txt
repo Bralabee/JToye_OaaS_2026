@@ -9,4 +9,5 @@ ARM relay-configmap caught=yes
 ARM relay-required caught=yes
 ARM relay-split caught=yes
 ARM relay-cleartext caught=yes
+ARM relay-no-password caught=yes
 CLEAN rc=0
