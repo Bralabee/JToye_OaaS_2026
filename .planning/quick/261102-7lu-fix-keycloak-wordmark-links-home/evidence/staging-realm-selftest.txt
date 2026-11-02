@@ -1,0 +1,13 @@
+PASS raw-template rc=1 defects=26
+PASS raw-customer-template rc=1 defects=11
+PASS transformed vendor+customer rc=0 users=["service-account-core-api","service-account-edge-api","service-account-integration-catalog-ro","service-account-integration-orders-rw"]
+PASS survived-placeholder rc=1
+PASS builtin-count template/render vendor=53/53 customer=11/11 drop-one-control=refused
+PASS apply-no-context rc=2 az_calls=0 curl_calls=0 kubectl_calls=0
+PASS apply-employer-context rc=1 az_calls=0 curl_calls=0 kubectl_calls=0 azure_guard_sourced=no
+PASS apply-stale-server rc=1 az_calls=0 curl_calls=0 kubectl_calls=1(config view) azure_guard_sourced=no
+PASS apply-kv-read-control rc=1 az_calls=7 kv_reads=6 pinned=7 port_forward=1 admin_calls=0 values_printed=0
+rc=0
+DEFECT: displayNameHtml does not link home: "<span>JToye</span>", expected an <a href="https://app-staging.olajay.co.uk"> wordmark
+REFUSED: /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/d0eb1018-7337-4baa-83f8-ca6c33e2337a/scratchpad/stg/vendor-span.json fails the vendor staging assertions (1 defect(s), mode offline)
+span-planted assert rc=1

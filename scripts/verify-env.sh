@@ -432,6 +432,28 @@ else
   fi
 fi
 
+# ---- (g) the realm header's home link: PUBLIC_APP_ORIGIN --------------------
+# Both realm templates render displayNameHtml as <a href="${PUBLIC_APP_ORIGIN}" ...>
+# (owner ruling 2026-11-02), so the wordmark on every Keycloak page links home. The
+# value lands INSIDE an HTML attribute that Keycloak serves on its login pages, so it
+# must be one bare origin: http(s)://host[:port], no path, no trailing slash, no
+# quote or angle bracket (which would break out of the attribute), and not the
+# comma-separated list shape CUSTOMER_STOREFRONT_WEB_ORIGINS uses. Optional: compose
+# defaults it to http://localhost:3000, so an UNSET value is reported, never failed.
+# The inline-comment shape is checked on the raw file for the reason given in (f1).
+echo "Checking PUBLIC_APP_ORIGIN (the realm header wordmark's link target)..."
+if [ "$(/usr/bin/grep -cE '^[[:space:]]*PUBLIC_APP_ORIGIN=[^#]*[[:space:]]+#' "$ENV_FILE" || true)" -ge 1 ]; then
+  fail "PUBLIC_APP_ORIGIN uses the trailing '# comment' shape; docker compose would render the comment TEXT into the realm header link. Put the note on its own line."
+  ERRORS=$((ERRORS + 1))
+elif [ -z "${PUBLIC_APP_ORIGIN-}" ]; then
+  info "PUBLIC_APP_ORIGIN is unset; compose renders the realm header link as http://localhost:3000."
+elif ! [[ "$PUBLIC_APP_ORIGIN" =~ ^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$ ]]; then
+  fail "PUBLIC_APP_ORIGIN must be one bare origin, http(s)://host[:port] with no path, trailing slash, quote or list (it is rendered into the realm header's href); got '${PUBLIC_APP_ORIGIN}'"
+  ERRORS=$((ERRORS + 1))
+else
+  pass "PUBLIC_APP_ORIGIN is a bare origin (${PUBLIC_APP_ORIGIN})"
+fi
+
 if [ "$ERRORS" -eq 0 ]; then
   pass "All ${#REQUIRED_VARS[@]} required credential variables are set, non-weak and long enough"
   pass "All ${PAIRS_CHECKED} same-role credential pair(s) agree"

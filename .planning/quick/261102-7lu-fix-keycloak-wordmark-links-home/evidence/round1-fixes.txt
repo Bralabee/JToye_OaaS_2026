@@ -1,0 +1,169 @@
+# Round 1 fixes on PR #1095 (2026-11-02). Verbatim tool output, rc on the last line of each block.
+
+### Finding 1a: scripts/check-k8s-copy-parity.sh BEFORE (branch head 75988c1e; twin not yet copied)
+FAIL: pair 2 has DRIFTED
+  copy     : k8s/components/keycloak/theme/jtoye.css  md5=621758c1f4b6e60bd072a3aed14560e3  bytes=16316
+  CANONICAL: infra/keycloak/themes/jtoye/login/resources/css/jtoye.css  md5=87eb027232b9f8e8b42a834d90a17b85  bytes=17556
+  The right-hand path is canonical: copy it over the copy (cp infra/keycloak/themes/jtoye/login/resources/css/jtoye.css k8s/components/keycloak/theme/jtoye.css),
+  unless the copy holds the intended edit; then copy it back first.
+check-k8s-copy-parity  (2026-11-02T14:56:18Z)  list: /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a8b6b99dd32f19319/k8s/copy-parity.conf
+  ok   k8s/components/keycloak/theme/theme.properties == infra/keycloak/themes/jtoye/login/theme.properties  md5=2813bc4ba3c3adf651148282dab9ea45  bytes=1306
+  ok   k8s/components/keycloak/theme/work-sans-latin.woff2 == infra/keycloak/themes/jtoye/login/resources/fonts/work-sans-latin.woff2  md5=4890688e64367257c794ab3ad38ce580  bytes=50524
+  ok   k8s/components/monitoring/prometheus/alerts.yml == infra/monitoring/prometheus/alerts.yml  md5=93788ba0edef6afa16a221f09015eeaa  bytes=33765
+  ok   k8s/components/monitoring/alertmanager/alertmanager.yml.tmpl == infra/monitoring/alertmanager/alertmanager.yml.tmpl  md5=f5cd3e271618efee36e530372f04c476  bytes=1752
+  ok   k8s/components/monitoring/alertmanager/entrypoint.sh == infra/monitoring/alertmanager/entrypoint.sh  md5=79b7568b4a621dda5b135f025ccbe8f2  bytes=19969
+  ok   k8s/components/monitoring/grafana/datasource-prometheus.yml == infra/monitoring/grafana/provisioning/datasources/prometheus.yml  md5=73d0c40933b746029e3fbf22d5aa6e2a  bytes=274
+  ok   k8s/components/monitoring/grafana/dashboards-provider.yml == infra/monitoring/grafana/provisioning/dashboards/dashboard.yml  md5=5ba03c44219998deee190caa829d1747  bytes=280
+  ok   k8s/components/monitoring/grafana/stomp-dashboard.json == infra/monitoring/grafana/dashboards/stomp-dashboard.json  md5=4136b0520b80e72a946b2b0cd150914f  bytes=2935
+  ok   jobs k8s/components/monitoring/prometheus/prometheus.yml ~ infra/monitoring/prometheus/prometheus.yml.tmpl  jobs=8 (core-java,edge-go,keycloak,postgres,prometheus,rabbitmq,rabbitmq-queues,redis), labels/metrics_path/params/metric_relabel_configs equal per job; 1 k8s-only job(s) declared (cert-manager)
+FAIL: 1 of 10 pairs drifted. A copy that differs from its canonical file means one runtime serves an edit the other never received.
+rc=1
+
+### Finding 1a: scripts/check-k8s-copy-parity.sh AFTER cp infra/keycloak/themes/jtoye/login/resources/css/jtoye.css k8s/components/keycloak/theme/jtoye.css
+check-k8s-copy-parity  (2026-11-02T14:56:33Z)  list: /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a8b6b99dd32f19319/k8s/copy-parity.conf
+  ok   k8s/components/keycloak/theme/theme.properties == infra/keycloak/themes/jtoye/login/theme.properties  md5=2813bc4ba3c3adf651148282dab9ea45  bytes=1306
+  ok   k8s/components/keycloak/theme/jtoye.css == infra/keycloak/themes/jtoye/login/resources/css/jtoye.css  md5=87eb027232b9f8e8b42a834d90a17b85  bytes=17556
+  ok   k8s/components/keycloak/theme/work-sans-latin.woff2 == infra/keycloak/themes/jtoye/login/resources/fonts/work-sans-latin.woff2  md5=4890688e64367257c794ab3ad38ce580  bytes=50524
+  ok   k8s/components/monitoring/prometheus/alerts.yml == infra/monitoring/prometheus/alerts.yml  md5=93788ba0edef6afa16a221f09015eeaa  bytes=33765
+  ok   k8s/components/monitoring/alertmanager/alertmanager.yml.tmpl == infra/monitoring/alertmanager/alertmanager.yml.tmpl  md5=f5cd3e271618efee36e530372f04c476  bytes=1752
+  ok   k8s/components/monitoring/alertmanager/entrypoint.sh == infra/monitoring/alertmanager/entrypoint.sh  md5=79b7568b4a621dda5b135f025ccbe8f2  bytes=19969
+  ok   k8s/components/monitoring/grafana/datasource-prometheus.yml == infra/monitoring/grafana/provisioning/datasources/prometheus.yml  md5=73d0c40933b746029e3fbf22d5aa6e2a  bytes=274
+  ok   k8s/components/monitoring/grafana/dashboards-provider.yml == infra/monitoring/grafana/provisioning/dashboards/dashboard.yml  md5=5ba03c44219998deee190caa829d1747  bytes=280
+  ok   k8s/components/monitoring/grafana/stomp-dashboard.json == infra/monitoring/grafana/dashboards/stomp-dashboard.json  md5=4136b0520b80e72a946b2b0cd150914f  bytes=2935
+  ok   jobs k8s/components/monitoring/prometheus/prometheus.yml ~ infra/monitoring/prometheus/prometheus.yml.tmpl  jobs=8 (core-java,edge-go,keycloak,postgres,prometheus,rabbitmq,rabbitmq-queues,redis), labels/metrics_path/params/metric_relabel_configs equal per job; 1 k8s-only job(s) declared (cert-manager)
+PASS: 9 pairs, all byte-equal; 1 jobs pair(s), job sets and labels equal.
+rc=0
+
+### Finding 1b: k8s/scripts/render-golden.sh on head 75988c1e, twin not yet copied (green: the twin had not changed, so the render had not either)
+OK   [staging]: render matches k8s/goldens/staging.yaml (7950 lines)
+OK   [production]: render matches k8s/goldens/production.yaml (1921 lines)
+All overlay renders match their committed goldens.
+rc=0
+
+### Finding 1b: k8s/scripts/render-golden.sh AFTER the twin copy, BEFORE --write (RED: only the keycloak-theme ConfigMap body and its hash-suffixed name drift)
+FAIL [staging]: render DRIFTED from k8s/goldens/staging.yaml
+--- k8s/goldens/staging.yaml (GOLDEN)
++++ kubectl kustomize k8s/staging (CURRENT)
+@@ -2020,12 +2020,40 @@
+       padding: 3.25rem 1rem 1.25rem;
+     }
+ 
+-    #kc-header-wrapper span {
++    #kc-header-wrapper span,
++    #kc-header-wrapper a {
+       /* the realm's displayNameHtml already carries the brand colour; keep it from
+          fighting the heading treatment above */
+       letter-spacing: inherit !important;
+     }
+ 
++    /* The wordmark is a link home (owner ruling 2026-11-02): the realm's displayNameHtml
++       is `<a href="<public app origin>" style="…">J'Toye</a>`, so a person stranded on the
++       email-verification, register or reset page has a way back to the site. It is a
++       standalone wordmark, not a link inside a sentence, so the underline rule in the
++       links section below (SC 1.4.1: colour is the only other cue INSIDE text) does not
++       apply here; size and position already set it apart. The colour stays the inline
++       oxblood at rest. Hover moves one ramp step (oxblood -> oxblood-700); the inline
++       `style` carries the rest colour, so the hover colour needs !important to beat it.
++       The focus ring is restated here rather than left to the generic a:focus-visible
++       rule, so a later change to that rule cannot leave the wordmark with none. */
++    #kc-header-wrapper a,
++    #kc-header-wrapper a:hover,
++    #kc-header-wrapper a:focus,
++    #kc-header-wrapper a:visited {
++      text-decoration: none;
++    }
++
++    #kc-header-wrapper a:hover {
++      color: var(--jtoye-oxblood-700) !important; /* beats the inline rest colour */
++    }
++
++    #kc-header-wrapper a:focus-visible {
++      outline: 2px solid var(--jtoye-primary);
++      outline-offset: 4px;
++      border-radius: 2px;
++    }
++
+     /* --------------------------------------------------------------------- card */
+ 
+     .login-pf-page .card-pf {
+@@ -2436,7 +2464,7 @@
+     app.kubernetes.io/managed-by: kustomize
+     app.kubernetes.io/part-of: jtoye-platform
+     environment: staging
+-  name: keycloak-theme-m5dt5btc4f
++  name: keycloak-theme-d92c97t89d
+   namespace: jtoye-staging
+ ---
+ apiVersion: v1
+@@ -5035,7 +5063,7 @@
+             path: resources/css/jtoye.css
+           - key: work-sans-latin.woff2
+             path: resources/fonts/work-sans-latin.woff2
+-          name: keycloak-theme-m5dt5btc4f
++          name: keycloak-theme-d92c97t89d
+         name: keycloak-theme
+ ---
+ apiVersion: apps/v1
+OK   [production]: render matches k8s/goldens/production.yaml (1921 lines)
+
+The staging/production render no longer matches its committed golden.
+If the change is INTENDED, review the diff above, then run
+  k8s/scripts/render-golden.sh --write
+and commit the regenerated golden alongside the k8s/base edit that caused it.
+rc=1
+
+### Finding 1b: k8s/scripts/render-golden.sh AFTER k8s/scripts/render-golden.sh --write
+OK   [staging]: render matches k8s/goldens/staging.yaml (7978 lines)
+OK   [production]: render matches k8s/goldens/production.yaml (1921 lines)
+All overlay renders match their committed goldens.
+rc=0
+
+### Finding 2: scripts/check-handoff-contract.sh BEFORE (HANDOFF.md says EXPECT 63)
+check-handoff-contract  (2026-11-02T14:57:04Z)
+FAIL: H-1 HANDOFF.md's resume block says 'EXPECT 63 x rc=0' but the repo has 64 gate script(s)
+  doc       : HANDOFF.md
+  config    : scripts/gates/handoff-contract.conf
+  H-1 gates : 1 claim(s), repo has 64 gate script(s)
+  H-2 state : 38 claim(s), 38 matched the forge
+  H-3 stale : 0 commit(s) behind origin/main (budget 3)
+  H-4 self  : both extractors fire and decline
+  H-5 cites : 8 path(s) checked, 8 resolve, 1 skipped (unrecognised extension)
+FAILED: HANDOFF.md states something that is no longer true (see above).
+rc=1
+
+### Finding 2: scripts/check-handoff-contract.sh AFTER (EXPECT 64; the only HANDOFF.md change)
+check-handoff-contract  (2026-11-02T14:57:31Z)
+  doc       : HANDOFF.md
+  config    : scripts/gates/handoff-contract.conf
+  H-1 gates : 1 claim(s), repo has 64 gate script(s)
+  H-2 state : 38 claim(s), 38 matched the forge
+  H-3 stale : 1 commit(s) behind origin/main (budget 3)
+  H-4 self  : both extractors fire and decline
+  H-5 cites : 8 path(s) checked, 8 resolve, 1 skipped (unrecognised extension)
+PASS: HANDOFF.md — 1 gate-count claim(s) and 38 state claim(s) hold; 1 commit(s) behind (budget 3).
+      NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+rc=0
+
+### Finding 3 (coordinator, after round 1): scripts/check-no-object-store-residue.sh BEFORE (allowlist line 61 still .env.example:584; the .env.example additions moved the kubectl delete-secret comment to 593)
+  VIOLATION .env.example:593: [R-1] #   kubectl --context jtoye -n jtoye-local delete secret s3-media-credentials s3-backup-credentials --ignore-not-found
+  ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:61: stale entry '.env.example:584' covers no current hit (hits in .env.example are now at line(s): 593 252 ) — delete it, or renumber it in the same change that moved the line
+SUMMARY files_scanned=4847 raw_hits=2213 unique_lines=2037 allowlisted=2036 violations=1 stale_entries=1 hygiene_failures=0 entries_not_judged=0
+FAIL: 1 residue line(s), 1 stale and 0 malformed allowlist entr(ies).
+rc=1
+
+### Finding 3: scripts/gates/object-store-residue-selftest.sh BEFORE (planted fixtures only, independent of the real tree, so it is rc 0 on both sides; the real-tree red is the gate run above)
+# tests 41
+# pass 41
+# fail 0
+rc=0
+
+### Finding 3: AFTER renumbering allowlist line 61 from .env.example:584 to .env.example:593 (no entry added, no other line touched)
+SUMMARY files_scanned=4847 raw_hits=2213 unique_lines=2037 allowlisted=2037 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+PASS: no retired object-store residue in 4847 tracked file(s); 2037 hit line(s) covered by 51 reasoned, live allowlist entr(ies).
+rc=0
+
+### Finding 3: scripts/gates/object-store-residue-selftest.sh AFTER
+# tests 41
+# pass 41
+# fail 0
+rc=0

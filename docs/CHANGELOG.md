@@ -18,6 +18,17 @@ An external tester searched "pounded yam" and "plantain" on `/shop` and got "No 
 - **Audit finding fixed:** every no-tenant read of `products` was listed. `ProductService`'s GROUP_ADMIN list and search branches carried no tenant predicate and relied on RLS, so after V89 a realm admin or system caller with no tenant claim would have listed every tenant's published products (proven: 1 instead of 0). With no tenant they now return an empty page, as RLS did before.
 - **Proof:** `ShopSearchMatchesDishesIntegrationTest` (7) and `ProductsPublicReadRlsIntegrationTest` (12), both as a `NOSUPERUSER NOBYPASSRLS` role; RED on `9b737e61` (and on the pre-review head for the review items), GREEN after, with break arms for the policy, the availability predicate and the tenant scope. `RlsContractTest` stays green with no exemption. Allergen and dietary filtering (#862) is not part of this change.
 
+### Keycloak: The J'Toye Wordmark Links Home on Every Keycloak Page — 2026-11-02 (#1095)
+
+Owner ruling 2026-11-02. A tester on Keycloak's "Email verification" page had no way back to the site, because the header wordmark is each realm's `displayNameHtml` and it was a `<span>`. The `jtoye` theme stays CSS-only.
+
+- **Both realms:** `displayNameHtml` is now `<a href="${PUBLIC_APP_ORIGIN}" style="…">J'Toye</a>`, keeping the inline oxblood, weight and tracking.
+- **New render variable `PUBLIC_APP_ORIGIN`:** it is in every compose realm render site's envsubst list and render-service environment (default `http://localhost:3000`), in `.env.example`, and checked by `scripts/verify-env.sh` (one bare `http(s)://host[:port]`, else FAIL). Staging writes `https://app-staging.olajay.co.uk` through `staging-realm.jq`. The staging assertion suite refuses a header that does not link there, on the render and on the live read-back.
+- **Sanitiser measured:** Keycloak 26.8.1's `kcSanitize` keeps the tag, the `href` and the `style`, and adds `rel="nofollow"`. On a throwaway container, the login, register and email-verification pages showed RED on the old realm and GREEN on the new one, and the reset page was GREEN too.
+- **Theme:** `#kc-header-wrapper a` has no underline, oxblood-700 on hover, and a primary focus-visible ring.
+- **Gate:** `scripts/check-keycloak-wordmark-home.sh` (with `--selftest`) runs in `ci-cd.yaml`. It found 8 defects on the pre-fix tree and passes here.
+- **Rollout:** existing realms keep the old header until a field-scoped `kcadm.sh update` is run; see `docs/runbooks/keycloak-wordmark-home.md`. Staging has not been updated yet.
+
 ### Kitchen Directory Search: One Clear Button, and Backspacing No Longer Searches Every Fragment — 2026-11-02 (#1094)
 
 An external tester on `/shop` reported two X buttons in the search box and "a glitch" when backspacing the query to empty instead of using the X. Both are fixed in `frontend/app/shop/shop-discovery-client.tsx`.
