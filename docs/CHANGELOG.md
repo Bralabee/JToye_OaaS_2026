@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Storefront: Server-Side Reads Carry the Visitor's Address to the Public Rate Limiter — 2026-11-02 (#PR-PENDING)
+
+Quick 261102-vwa. Raised by the #1104 and #1105 code reviews (round 1).
+
+- **What changed:** one shared server-only module, `frontend/lib/forwarded-for.ts`, is now the only place the frontend reads or names X-Forwarded-For. It forwards that ONE header, verbatim, on every server-side core read: every storefront-server loader (the landing's listing and featured list, `/shop`, `/shop/[slug]`, the basket/checkout/order step titles, `/sitemap.xml`), `loadCustomerOrders` behind `/shop/orders`, and GET `/api/customer-orders`. POST `/api/customer-orders` already forwarded it; its output is unchanged (same key, value and position) and it now goes through the same helper. Outside a request scope the loaders send no header and never throw.
+- **Why:** core's public limiter buckets per client address (`rl:public:{ip}`, 30/min + burst 10 by default), and the socket peer of a server-side read is the frontend pod. The landing makes two public reads per render, so about 15 landing views a minute across ALL visitors emptied one shared bucket, the listing got a 429 and the kitchen row disappeared; `/shop`, `/shop/[slug]` and the order-history reads shared that bucket too.
+- **Trust is unchanged:** core's `ClientIpResolver` reads X-Forwarded-For only when the socket peer is inside `jtoye.security.trusted-proxies` and walks the chain right to left to the first untrusted hop, so a client-written left part passes through untouched and is never read. The frontend computes and chooses nothing. No core-java or k8s change.
+- **Where it takes effect:** staging at once (its `10.244.0.0/16` covers the frontend pods). Compose: no change (no trusted proxies). Production: only once the owner's 37-24 `security.trusted-proxies` step declares a range that covers the frontend pods (the peer of these server-side reads) as well as the ingress controller, typically the cluster pod CIDR. The production overlay is deliberately untouched, because the pod range is not in the repo.
+- **Proof:** Jest RED then GREEN (10 new blocks; one assertion covers all 11 server-side reads across the eight callers), the POST's output pinned by a test before the refactor, eight break arms each RED and restored by hash, the route table (58 rows, all dynamic) and prerender manifest identical before and after, and the built server probed against a stub core, base vs changed: the base build sent no chain on any read but the POST, the changed build sent each request's chain byte-for-byte, and X-Forwarded-For is the only header added.
+
 ### Landing: The Owner's Own BeesLens Photographs Lead — 2026-11-02 (#1103)
 
 The owner supplied seven of his own BeesLens photographs and approved where each goes; recorded as D16 in `design/decisions.md` (amends D10), run record `design/runs/2026-11-02-landing-beeslens/`.

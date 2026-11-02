@@ -1,0 +1,44 @@
+# Task 3 step 4 — metrics (rc sequence)
+$ scripts/docs-freshness.sh (check, before --write)
+  "playwright_blocks": 197,
+  "playwright_specs": 51,
+  "mcp_test_blocks": 70,
+  "mcp_test_files": 8,
+  "total_logical_invocations": 7081
+}
+
+Fix by running: scripts/docs-freshness.sh --write   (then update README/PROJECT.md and commit)
+rc=1 (must be 1)
+$ scripts/docs-freshness.sh --write
+  "mcp_test_blocks": 70,
+  "mcp_test_files": 8,
+  "total_logical_invocations": 7081
+}
+rc=0
+$ scripts/check-doc-metrics.sh (before prose update)
+check-doc-metrics  (2026-11-02T23:29:33Z)
+  manifest : docs/metrics.json
+FAIL: README.md [total_logical_invocations]: doc says 7071, docs/metrics.json says 7081
+FAIL: README.md [total_logical_invocations]: doc says 7071, docs/metrics.json says 7081
+FAIL: README.md [jest_blocks]: doc says 3492, docs/metrics.json says 3502
+FAIL: README.md [jest_files]: doc says 293, docs/metrics.json says 294
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 7071, docs/metrics.json says 7081
+FAIL: CLAUDE.md [jest_blocks]: doc says 3492, docs/metrics.json says 3502
+FAIL: CLAUDE.md [jest_files]: doc says 293, docs/metrics.json says 294
+FAIL: AGENTS.md [total_logical_invocations]: doc says 7071, docs/metrics.json says 7081
+FAIL: AGENTS.md [jest_blocks]: doc says 3492, docs/metrics.json says 3502
+FAIL: AGENTS.md [jest_files]: doc says 293, docs/metrics.json says 294
+  rules    : 39 across 3 doc(s)
+  claims   : 39 extracted and compared
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+rc=1 (must be 1)
+$ scripts/check-doc-metrics.sh (after prose update)
+  manifest : docs/metrics.json
+  rules    : 39 across 3 doc(s)
+  claims   : 39 extracted and compared
+PASS: all 39 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+rc=0 (must be 0)
+$ scripts/docs-freshness.sh (check)
+docs-freshness OK: metrics match source (total logical invocations: 7081).
+rc=0 (must be 0)
+manifest delta: jest_blocks 3492 -> 3502 (+10 = T1-T4 4 + R1-R4 4 + E1-E2 2), jest_files 293 -> 294 (+1 forwarded-for.test.ts), total 7071 -> 7081

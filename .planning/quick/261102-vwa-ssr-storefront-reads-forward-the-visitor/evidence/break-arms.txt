@@ -1,0 +1,79 @@
+clean-before: jest rc=0 passed=44 failed=0 total=44; hash mismatches vs HEAD=none
+B1 (forwardedForHeader always returns no header) in frontend/lib/forwarded-for.ts
+   jest rc=1 failed=5/44
+   RED: R1 GET sends the chain verbatim beside the token, and no other request header
+   RED: R3 POST output is pinned: Content-Type, X-Customer-Token, Idempotency-Key, X-Forwarded-For, in that order
+   RED: T1 sends the chain exactly as received, beside cache no-store and redirect manual
+   RED: T2 sends X-Forwarded-For and no other request header
+   RED: E1 all 11 reads across the eight callers carry the chain verbatim and keep only their own headers
+   expected red: ['T1', 'T2', 'R1', 'R3', 'E1'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B2 (forwardedForHeader invents 'unknown' when the source has none) in frontend/lib/forwarded-for.ts
+   jest rc=1 failed=3/44
+   RED: R2 GET with no X-Forwarded-For sends the token alone
+   RED: R4 POST as a guest with no X-Forwarded-For sends Content-Type alone
+   RED: T3 sends no X-Forwarded-For when the request carried none
+   expected red: ['T3', 'R2', 'R4'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B3 (forwardedClientHeaders loses its try/catch) in frontend/lib/forwarded-for.ts
+   jest rc=1 failed=14/44
+   RED: returns ok with the shop and its menu
+   RED: carries the server's availability answer through untouched and computes none of its own (37-22, D-15)
+   RED: fetches every storefront call with cache: no-store, so a cached page cannot say 'Open now' for a paused shop (UI-SPEC open item 5)
+   RED: returns notfound ONLY for a real 404 on the shop itself
+   RED: still renders when the OPTIONAL sub-resources fail
+   RED: averages the review SAMPLE it fetched, to one decimal place
+   RED: returns redirect with canonicalSlug when the shop endpoint answers 301 with X-Shop-Canonical-Slug, even though /products is 404 on the old slug (39-09, RWO-028)
+   RED: falls back to the Location header's trailing segment when X-Shop-Canonical-Slug is absent on a 301 (39-09, RWO-028)
+   RED: passes page, size and a trimmed q
+   RED: omits q entirely when it is blank
+   RED: returns every slug for the sitemap
+   RED: requests /public/featured-shops uncached and returns the array on 200
+   RED: T4 outside a request scope sends no header and never throws
+   RED: E2 loadCustomerOrders outside a request scope resolves, sends its token uncached, and no chain
+   expected red: ['T4', 'E2'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B4 (forwardedForHeader forwards only the left-most hop) in frontend/lib/forwarded-for.ts
+   jest rc=1 failed=4/44
+   RED: T1 sends the chain exactly as received, beside cache no-store and redirect manual
+   RED: E1 all 11 reads across the eight callers carry the chain verbatim and keep only their own headers
+   RED: R1 GET sends the chain verbatim beside the token, and no other request header
+   RED: R3 POST output is pinned: Content-Type, X-Customer-Token, Idempotency-Key, X-Forwarded-For, in that order
+   expected red: ['T1', 'R1', 'R3', 'E1'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B5 (forwardedForHeader copies every header of its source) in frontend/lib/forwarded-for.ts
+   jest rc=1 failed=4/44
+   RED: T2 sends X-Forwarded-For and no other request header
+   RED: E1 all 11 reads across the eight callers carry the chain verbatim and keep only their own headers
+   RED: R1 GET sends the chain verbatim beside the token, and no other request header
+   RED: R3 POST output is pinned: Content-Type, X-Customer-Token, Idempotency-Key, X-Forwarded-For, in that order
+   expected red: ['T2', 'R1', 'R3', 'E1'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B6 (getJson passes only { headers }, dropping NO_STORE) in frontend/lib/storefront-server.ts
+   jest rc=1 failed=3/44
+   RED: fetches every storefront call with cache: no-store, so a cached page cannot say 'Open now' for a paused shop (UI-SPEC open item 5)
+   RED: requests /public/featured-shops uncached and returns the array on 200
+   RED: T1 sends the chain exactly as received, beside cache no-store and redirect manual
+   expected red: ['T1', 'fetches every storefront call with cache: no-store'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B7 (loadCustomerOrders sends only its token again) in frontend/lib/customer-orders-server.ts
+   jest rc=1 failed=1/44
+   RED: E1 all 11 reads across the eight callers carry the chain verbatim and keep only their own headers
+   expected red: ['E1'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+B8 (the route GET drops the helper spread) in frontend/app/api/customer-orders/route.ts
+   jest rc=1 failed=2/44
+   RED: E1 all 11 reads across the eight callers carry the chain verbatim and keep only their own headers
+   RED: R1 GET sends the chain verbatim beside the token, and no other request header
+   expected red: ['R1', 'E1'] -> ALL RED
+   restore rc=0; hash mismatches vs HEAD after restore=none
+clean-after: jest rc=0 passed=44 failed=0 total=44; hash mismatches vs HEAD=none
+arms with an expected test that stayed green: 0
+== B7: E1 diff lines, each with the caller of its entry
+   "caller": "loadCustomerOrders",  |  -       "x-forwarded-for",
+   "caller": "loadCustomerOrders",  |  -     "xff": "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9",
+   "caller": "loadCustomerOrders",  |  +     "xff": null,
+== B8: E1 diff lines, each with the caller of its entry
+   "caller": "GET /api/customer-orders",  |  -       "x-forwarded-for",
+   "caller": "GET /api/customer-orders",  |  -     "xff": "not-an-ip, 192.0.2.66, 198.51.100.7,203.0.113.9",
+   "caller": "GET /api/customer-orders",  |  +     "xff": null,
