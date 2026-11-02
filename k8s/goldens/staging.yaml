@@ -5081,10 +5081,13 @@ spec:
         - sh
         - -c
         - |
+          relay_off() { unset MP_SMTP_RELAY_HOST MP_SMTP_RELAY_PORT MP_SMTP_RELAY_USERNAME MP_SMTP_RELAY_PASSWORD MP_SMTP_RELAY_MATCHING MP_SMTP_RELAY_ALLOWED_RECIPIENTS MP_SMTP_RELAY_OVERRIDE_FROM MP_SMTP_RELAY_STARTTLS MP_SMTP_RELAY_AUTH; }
+          relay=off
           if [ -n "${MP_SMTP_RELAY_HOST:-}" ] && [ -n "${MP_SMTP_RELAY_PORT:-}" ] && [ -n "${MP_SMTP_RELAY_USERNAME:-}" ] && [ -n "${MP_SMTP_RELAY_PASSWORD:-}" ] && [ -n "${MP_SMTP_RELAY_MATCHING:-}" ] && [ -n "${MP_SMTP_RELAY_ALLOWED_RECIPIENTS:-}" ]; then
+            relay=on
             echo "mailpit-relay: ON via $MP_SMTP_RELAY_HOST:$MP_SMTP_RELAY_PORT (STARTTLS), ONLY to recipients on the Secret mailpit-relay allow-list; every message is still captured"
           else
-            unset MP_SMTP_RELAY_HOST MP_SMTP_RELAY_PORT MP_SMTP_RELAY_USERNAME MP_SMTP_RELAY_PASSWORD MP_SMTP_RELAY_MATCHING MP_SMTP_RELAY_ALLOWED_RECIPIENTS MP_SMTP_RELAY_OVERRIDE_FROM MP_SMTP_RELAY_STARTTLS MP_SMTP_RELAY_AUTH
+            relay_off
             echo "mailpit-relay: OFF (Secret mailpit-relay absent or incomplete); every message is captured and none is delivered"
           fi
           fp() { sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY" 2>/dev/null; }
@@ -5092,6 +5095,20 @@ spec:
           /mailpit &
           pid=$!
           trap 'kill -TERM "$pid" 2>/dev/null; wait "$pid"; exit 0' TERM INT
+          if [ "$relay" = on ]; then
+            sleep 5 &
+            wait $!
+            if ! kill -0 "$pid" 2>/dev/null; then
+              wait "$pid"
+              rc=$?
+              if [ "$rc" -ne 0 ]; then
+                echo "mailpit-relay: OFF, Mailpit exited rc=$rc at start with the relay ON (Secret mailpit-relay is malformed: check the allowlist regex and override-from); relaunched with every relay variable unset, every message is captured and none is delivered"
+                relay_off
+                /mailpit &
+                pid=$!
+              fi
+            fi
+          fi
           while kill -0 "$pid" 2>/dev/null; do
             sleep 15 &
             wait $!
