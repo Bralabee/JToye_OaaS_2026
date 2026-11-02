@@ -1,0 +1,26 @@
+# break arms, bracketed clean -> arm -> clean; HEAD 1fecf6f2; file sha256 at HEAD 2038415950dc1ecad0f910727f65fff5211de9fcafd3ba871f6644d2d42f6f7c
+CLEAN-1 rc=0 pass=72 fail=0
+  clean: PASS loop-plain-charge rc=1 tag=plain-charge refund_posts=0 verdicts=0
+ARM: accept an intent without transfer_data (the [plain-charge] refusal made a no-op) (anchor matches=1)
+  diff: <     refuse plain-charge "PaymentIntent $LP_INTENT has no transfer_data.destination: a plain platform charge, never recorded as a destination-charge proof (Pitfall 6); the order is not accepted or re
+  diff: >     : refuse-disabled "PaymentIntent $LP_INTENT has no transfer_data.destination: a plain platform charge, never recorded as a destination-charge proof (Pitfall 6); the order is not accepted or refu
+ARM rc=1 pass=71 fail=1
+  arm: FAIL loop-plain-charge stderr lacks 'REFUSED [plain-charge]': DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+  red arms: loop-plain-charge 
+RESTORE sha256 2038415950dc1ecad0f910727f65fff5211de9fcafd3ba871f6644d2d42f6f7c MATCHES-HEAD
+  clean: PASS loop-not-enabled rc=1 tag=connect-status order_posts=0 stripe_writes=0
+ARM: skip the connect-status preflight (its condition made false) (anchor matches=1)
+  diff: <   if [ "$AT_STATUS" != ENABLED ] || ! [[ "$AT_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]]; then
+  diff: >   if false; then
+ARM rc=1 pass=71 fail=1
+  arm: FAIL loop-not-enabled rc=0 (want 1): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+  red arms: loop-not-enabled 
+RESTORE sha256 2038415950dc1ecad0f910727f65fff5211de9fcafd3ba871f6644d2d42f6f7c MATCHES-HEAD
+  clean: PASS onboard-new rc=0 connect_posts=1 operator_deleted_after=1 file_mode=600 printed_url=0
+ARM: print the onboarding URL to stdout before it is written (anchor matches=1)
+  diff: >   echo "DEBUG onboarding url=$url"
+ARM rc=1 pass=71 fail=1
+  arm: FAIL onboard-new the onboarding URL or a customer field was printed or put in argv (1 hit(s))
+  red arms: onboard-new 
+RESTORE sha256 2038415950dc1ecad0f910727f65fff5211de9fcafd3ba871f6644d2d42f6f7c MATCHES-HEAD
+CLEAN-2 rc=0 pass=72 fail=0

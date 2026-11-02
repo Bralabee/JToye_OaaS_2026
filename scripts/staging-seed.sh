@@ -2621,10 +2621,20 @@ case "$method $base" in
   "PUT /api/v1/shops/"*)
     key=empty; code=200
     if [ -n "$bodyfile" ]; then cp "$bodyfile" "$STUB_LOG_DIR/shop-put-body.json"; respfile="$STUB_LOG_DIR/shop-put-body.json"; fi ;;
-  "GET /v1/charges/"*) key="ch-${base#/v1/charges/}"; code=200 ;;
+  # Each by-id read answers its own fixture when the loop arms wrote one, else the
+  # generic stripe-get fixture (the stripe-get arms read refunds by id too).
+  "GET /v1/charges/"*)
+    key="ch-${base#/v1/charges/}"; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
   "GET /v1/transfers/"*)
     trid="${base#/v1/transfers/}"; key="tr-$trid"
-    if [ -f "$STUB_LOG_DIR/refunded" ] && [ -f "$STUB_RESP_DIR/tr-$trid-after.json" ]; then key="tr-$trid-after"; fi; code=200 ;;
+    if [ -f "$STUB_LOG_DIR/refunded" ] && [ -f "$STUB_RESP_DIR/tr-$trid-after.json" ]; then key="tr-$trid-after"; fi
+    [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  # The vendor refund (it marks the transfer reversed), then the refund read from Stripe.
+  "POST /api/v1/orders/"*"/refund") key=refund-out; code=201; : > "$STUB_LOG_DIR/refunded" ;;
+  "GET /v1/refunds")
+    key=refund-list; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
+  "GET /v1/refunds/"*)
+    key="re-${base#/v1/refunds/}"; [ -f "$STUB_RESP_DIR/$key.json" ] || key=stripe-get; code=200 ;;
   # stripe-get: any other Stripe read answers the one generic fixture.
   "GET /v1/"*) key=stripe-get; code=200 ;;
 esac
@@ -3835,7 +3845,7 @@ IDF
   lp_cs="pi_loop1"; lp_cs="${lp_cs}_secret_STUBCSlp1"
   lp_url="https://connect.stripe.com/setup/e/${lp_acct}/STUBOBlp1"
   mkdir -p "$ob_dir"
-  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition; do
+  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition "detail-$lp_oid"; do
     rm -f "$ast/resp/$lp_f.pre-loop"; [ ! -f "$ast/resp/$lp_f.json" ] || cp "$ast/resp/$lp_f.json" "$ast/resp/$lp_f.pre-loop"
   done
   # _st_loop_pi STATUS KIND LIVEMODE — the order's intent; KIND dest (a destination
@@ -3850,6 +3860,27 @@ IDF
           + (if $k == "plain" then {} elif $k == "wrongmeta" then {settlement_mode: "SPLIT_DEPOSIT_VENDOR_MOR"}
              else {settlement_mode: "DESTINATION_CHARGE_PLATFORM_MOR"} end)),
         receipt_email: "piizq7@example.invalid"}'
+  }
+  # _st_loop_refund_fx LOCAL_STATUS REVERSAL(yes|no) — the vendor refund's 201, the
+  # intent's refund list (this run's refund and another run's), the refund by id, the
+  # transfer after the reversal, and the order detail whose refund row the loop polls.
+  local lp_rid="ffffffff-1111-4111-8111-000000000001"
+  _st_loop_refund_fx() {
+    jq -n --arg r "$lp_rid" --arg o "$lp_oid" '{id: $r, orderId: $o, stripeRefundId: "re_loop1", amountPennies: 100,
+        currency: "gbp", reason: "REQUESTED_BY_CUSTOMER", status: "pending"}' > "$ast/resp/refund-out.json"
+    jq -n --arg r "$lp_rid" --arg rv "$2" '{object: "list", has_more: false, data: [
+        {id: "re_other1", object: "refund", amount: 50, status: "succeeded", charge: "ch_loop1", payment_intent: "pi_loop1",
+         metadata: {refund_id: "00000000-0000-4000-8000-000000000000"}},
+        {id: "re_loop1", object: "refund", amount: 100, status: "succeeded", charge: "ch_loop1", payment_intent: "pi_loop1",
+         transfer_reversal: (if $rv == "yes" then "trr_loop1" else null end), metadata: {refund_id: $r}}]}' > "$ast/resp/refund-list.json"
+    jq -n --arg r "$lp_rid" --arg rv "$2" '{id: "re_loop1", object: "refund", amount: 100, currency: "gbp", status: "succeeded",
+        charge: "ch_loop1", payment_intent: "pi_loop1", transfer_reversal: (if $rv == "yes" then "trr_loop1" else null end),
+        metadata: {refund_id: $r}}' > "$ast/resp/re-re_loop1.json"
+    jq '.amount_reversed = 95 | .reversals.data = [{id: "trr_loop1", object: "transfer_reversal", amount: 95,
+        source_refund: "re_loop1", transfer: "tr_loop1"}]' "$ast/resp/tr-tr_loop1.json" > "$ast/resp/tr-tr_loop1-after.json"
+    jq -n --arg o "$lp_oid" --arg r "$lp_rid" --arg ls "$1" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED",
+        paymentStatus: "CAPTURED", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid", customerName: "Pii PIIZQ7",
+        refunds: [{id: $r, orderId: $o, stripeRefundId: "re_loop1", amountPennies: 100, status: $ls}]}' > "$ast/resp/detail-$lp_oid.json"
   }
   # _st_loop_fx CONNECT_STATUS SHOP_MODE(or null) KIND LIVE(none|pi|charge|transfer)
   _st_loop_fx() {
@@ -3887,6 +3918,7 @@ IDF
         paymentStatus: "CAPTURED", paymentReference: "pi_loop1", totalAmountPennies: 950, customerEmail: "piizq7@example.invalid"}],
         totalElements: 1, totalPages: 1, number: 0, last: true}' > "$ast/resp/orders-status-PENDING.json"
     jq -n --arg o "$lp_oid" '{id: $o, orderNumber: "ORD-STUB-L001", status: "CONFIRMED", paymentStatus: "CAPTURED"}' > "$ast/resp/transition.json"
+    _st_loop_refund_fx succeeded yes
   }
   _st_lp_leaks() { command grep -cE "$lp_leak_re" <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
   _st_order_posts() { _st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders '; }
@@ -4100,10 +4132,117 @@ IDF
     why="the order body is not the first available dish at its shown price: ${ml_body:-<none>}"
   elif [ "$(_st_lp_leaks)" -ne 0 ] || [ "$(_st_leaks)" -ne 0 ]; then why="the client secret, a key or a customer field was printed or put in argv"
   fi
-  if [ -z "$why" ]; then _st_result "PASS loop-destination-ok rc=0 order=preflight<order<confirm<intent<charge<transfer run_id=one"
+  # The refund half (Task 2): the order accepted, a PARTIAL refund through the vendor
+  # API with <run id>-refund, Stripe's refund read by id with its transfer_reversal, its
+  # charge read for livemode, the transfer's reversal, and the local row equal to Stripe's.
+  local ml_rbody l_acc l_rf l_rl l_rid l_ch2 l_tr2 l_det
+  ml_rbody=$(command grep -F '"amountPennies"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  l_acc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/confirm -> 200$")
+  l_rf=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/refund -> 201$")
+  l_rl=$(_st_line '^GET https://api\.stripe\.com/v1/refunds\?payment_intent=pi_loop1(&[^ ]*)? -> 200$')
+  l_rid=$(_st_line '^GET https://api\.stripe\.com/v1/refunds/re_loop1 -> 200$')
+  l_ch2=$(command grep -nE '^GET https://api\.stripe\.com/v1/charges/ch_loop1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_tr2=$(command grep -nE '^GET https://api\.stripe\.com/v1/transfers/tr_loop1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_det=$(_st_line "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")
+  if [ -n "$why" ]; then :
+  elif ! command grep -qxF 'LOOP-ACCEPT order=ORD-STUB-L001 status=CONFIRMED' <<<"$ST_OUT"; then why="no LOOP-ACCEPT verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif ! command grep -qxF 'LOOP-REFUND refund=re_loop1 amount=100 status=succeeded transfer_reversal=trr_loop1 local_status=succeeded' <<<"$ST_OUT"; then
+    why="no LOOP-REFUND verdict: $(command grep '^LOOP-' <<<"$ST_OUT" | tr '\n' '|')"
+  elif [ "$(_st_accept_posts)" -ne 1 ] || [ "$(_st_refund_posts)" -ne 1 ]; then why="want one accept and one refund: accept=$(_st_accept_posts) refund=$(_st_refund_posts)"
+  elif [ -z "$l_acc" ] || [ -z "$l_rf" ] || [ -z "$l_rl" ] || [ -z "$l_rid" ] || [ -z "$l_det" ] \
+       || ! { [ "$l_tr" -lt "$l_acc" ] && [ "$l_acc" -lt "$l_rf" ] && [ "$l_rf" -lt "$l_rl" ] && [ "$l_rl" -lt "$l_rid" ] \
+              && [ "$l_rid" -lt "$l_ch2" ] && [ "$l_ch2" -lt "$l_tr2" ] && [ "$l_tr2" -lt "$l_det" ]; }; then
+    why="call order is not transfer<accept<refund<list<refund-by-id<charge<transfer<detail: $l_tr $l_acc $l_rf $l_rl $l_rid $l_ch2 $l_tr2 $l_det"
+  elif [ "$(jq -cS . <<<"${ml_rbody:-null}" 2>/dev/null | jq -c '{amountPennies, reason}' 2>/dev/null)" != '{"amountPennies":100,"reason":"REQUESTED_BY_CUSTOMER"}' ]; then
+    why="the refund body is not {amountPennies: 100, reason: REQUESTED_BY_CUSTOMER}: ${ml_rbody:-<none>}"
+  elif [ "$(command grep -cxE "Idempotency-Key: ${ml_stamp:-none}-(order|confirm|refund)" <<<"$ml_keys" || true)" -ne 3 ]; then
+    why="the order, confirm and refund do not carry one run id's keys: $(tr '\n' '|' <<<"$ml_keys")"
+  elif [ "$(_st_stripe_writes)" -ne 1 ]; then why="Stripe writes=$(_st_stripe_writes) (want 1, the confirm: the refund goes through the vendor API)"
+  else
+    # A refund that did not reverse the transfer is a failure, never a pass.
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+    _st_loop_refund_fx succeeded no
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}"
+    if [ "$ST_RC" -ne 1 ]; then why="no reversal: rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF 'transfer_reversal' <<<"$ST_ERR"; then why="no reversal: the failure does not name transfer_reversal: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif command grep -q '^LOOP-REFUND ' <<<"$ST_OUT"; then why="no reversal: a LOOP-REFUND verdict was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-destination-ok rc=0 order=preflight<order<confirm<intent<charge<transfer<accept<refund<reversal<local run_id=one no_reversal=rc1"
   else _st_result "FAIL loop-destination-ok $why"; fails=$((fails + 1)); fi
 
-  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition; do
+  # --- loop-refund-full: a refund that is not strictly partial -> usage error before
+  #     any write (the full-refund edge case can never pass for the loop's proof)
+  why=""
+  local rfa
+  for rfa in 950 2000; do
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}" --refund-pennies "$rfa"
+    if [ "$ST_RC" -ne 2 ]; then why="$rfa: rc=$ST_RC (want 2): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif ! command grep -qF "USAGE ERROR: --refund-pennies $rfa is not less than the order total 950p" <<<"$ST_ERR"; then why="$rfa: stderr does not name the bound: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_flow '/api/v1/public/shops/staging-test-kitchen/products -> 200$')" -ne 1 ]; then why="$rfa: the bound was not taken from the menu read (non-vacuity)"
+    elif [ "$(_st_non_get)" -ne 0 ] || [ "$(_st_lines az)" -ne 0 ]; then why="$rfa: something was written or read from Key Vault before the refusal: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${ml_args[@]}" --refund-pennies 0
+    why=$(_st_refusal 2 "USAGE ERROR: --refund-pennies must be a positive whole number of pennies" 0 0) || true
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-refund-full rc=2 equal=refused above=refused zero=refused writes=0"
+  else _st_result "FAIL loop-refund-full $why"; fails=$((fails + 1)); fi
+
+  # --- loop-refund-mismatch: Stripe says succeeded, the local row stays pending past the
+  #     deadline -> rc 1 naming both statuses, no LOOP-REFUND verdict
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_loop_refund_fx pending yes
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=1 STAGING_SEED_READY_DEADLINE_SECONDS=5 \
+    STAGING_SEED_REFUND_DEADLINE_SECONDS=2 -- "${ml_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF "'pending'" <<<"$ST_ERR" || ! command grep -qF "'succeeded'" <<<"$ST_ERR"; then why="the failure does not name both statuses: $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$lp_oid/detail -> 200$")" -lt 2 ]; then why="the local row was not polled (detail reads=$(_st_flow "/orders/$lp_oid/detail -> "))"
+  elif command grep -q '^LOOP-REFUND ' <<<"$ST_OUT"; then why="a LOOP-REFUND verdict was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-refund-mismatch rc=1 local=pending stripe=succeeded verdict=none"
+  else _st_result "FAIL loop-refund-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- loop-evidence-clean: --evidence keeps what the file held, adds .modes.destination
+  #     (ids, amounts, statuses, livemode false; jq -S, mode 600) and nothing secret or
+  #     personal; a file that is not a JSON object is refused and left untouched
+  local ev_f="$ob_dir/evidence.json" ev_bad="$ob_dir/evidence-bad.json" ev_hits ev_mode
+  jq -n '{kept: {note: "an earlier entry"}}' > "$ev_f"
+  _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+  _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$ev_f"
+  why=""
+  ev_hits=$(command grep -ciE 'sk_|rk_|whsec_|client_secret|_secret_|https?://|@|STUBCS|STUBOB|piizq7' "$ev_f" || true)
+  ev_mode=$(stat -c %a "$ev_f" 2>/dev/null || echo none)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! jq -e '.modes.destination' "$ev_f" >/dev/null 2>&1; then why="no .modes.destination entry was written (the arm would pass vacuously)"
+  elif [ "$(jq -c '.kept' "$ev_f")" != '{"note":"an earlier entry"}' ]; then why="the file's earlier content was not kept"
+  elif [ "$(jq -c '.modes.destination | {order, intent, charge, transfer, refund, transfer_reversal, account, livemode}' "$ev_f")" \
+       != '{"order":"ORD-STUB-L001","intent":"pi_loop1","charge":"ch_loop1","transfer":"tr_loop1","refund":"re_loop1","transfer_reversal":"trr_loop1","account":"acct_loop1","livemode":false}' ]; then
+    why="the entry's ids are not the loop's: $(jq -c '.modes.destination' "$ev_f" | head -c 300)"
+  elif [ "$(jq -c '.modes.destination.amounts' "$ev_f")" != "$(jq -cS -n '{captured: 950, application_fee: 48, transfer: 902, refund: 100, transfer_reversal: 95}')" ] \
+       || [ "$(jq -r '.modes.destination.statuses.refund + "/" + .modes.destination.statuses.local_refund' "$ev_f")" != succeeded/succeeded ]; then
+    why="the amounts or statuses are not the loop's: $(jq -c '.modes.destination | {amounts, statuses}' "$ev_f")"
+  elif [ "$ev_hits" -ne 0 ]; then why="the evidence holds $ev_hits key, secret, URL, e-mail or marker line(s)"
+  elif [ "$(jq -S . "$ev_f")" != "$(cat "$ev_f")" ]; then why="the file is not written with jq -S"
+  elif [ "$ev_mode" != 600 ]; then why="the evidence file is mode $ev_mode (want 600)"
+  elif ! command grep -qxF "LOOP-EVIDENCE file=$ev_f mode=destination" <<<"$ST_OUT"; then why="no LOOP-EVIDENCE line"
+  else
+    printf '[1, 2]\n' > "$ev_bad"
+    _st_loop_fx ENABLED DESTINATION_CHARGE_PLATFORM_MOR dest none
+    _st_run "${lp_env[@]}" -- "${ml_args[@]}" --evidence "$ev_bad"
+    if [ "$ST_RC" -ne 1 ]; then why="non-object evidence: rc=$ST_RC (want 1)"
+    elif [ "$(cat "$ev_bad")" != '[1, 2]' ]; then why="non-object evidence: the file was overwritten"
+    elif ! command grep -qF 'not a JSON object' <<<"$ST_ERR"; then why="non-object evidence: the failure does not say why: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS loop-evidence-clean rc=0 entry=modes.destination kept=1 secret_url_email_hits=0 sorted=1 mode=600 non_object=refused"
+  else _st_result "FAIL loop-evidence-clean $why"; fails=$((fails + 1)); fi
+
+  for lp_f in tenants shop pub-shop pub-products guest-order tracking orders-status-PENDING transition "detail-$lp_oid"; do
     if [ -f "$ast/resp/$lp_f.pre-loop" ]; then mv "$ast/resp/$lp_f.pre-loop" "$ast/resp/$lp_f.json"; else rm -f "$ast/resp/$lp_f.json"; fi
   done
 
