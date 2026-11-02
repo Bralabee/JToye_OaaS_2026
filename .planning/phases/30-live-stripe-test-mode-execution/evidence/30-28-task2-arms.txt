@@ -1,0 +1,27 @@
+# break arms, bracketed clean -> arm -> clean; HEAD 2624be15; file sha256 at HEAD 395dca132c174398fb6708863d1819e50233bbbe0219ed26ab9fb80e3af35d4c
+CLEAN-1 rc=0 pass=75 fail=0
+  clean: PASS loop-destination-ok rc=0 order=preflight<order<confirm<intent<charge<transfer<accept<refund<reversal<local run_id=one no_reversal=rc1
+ARM: stop checking transfer_reversal (the refund check made always-true) (anchor matches=1)
+  diff: <   [[ "$trr" =~ ^trr_[A-Za-z0-9]+$ ]] \
+  diff: >   true \
+ARM rc=1 pass=74 fail=1
+  arm: FAIL loop-destination-ok no reversal: the failure does not name transfer_reversal: DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+  red arms: loop-destination-ok 
+RESTORE sha256 395dca132c174398fb6708863d1819e50233bbbe0219ed26ab9fb80e3af35d4c MATCHES-HEAD
+  clean: PASS loop-refund-full rc=2 equal=refused above=refused zero=refused writes=0
+ARM: let a refund equal to the order total through (-ge made -gt) (anchor matches=1)
+  diff: <   if [ "$LOOP_REFUND_PENNIES" -ge "$LP_TOTAL" ]; then
+  diff: >   if [ "$LOOP_REFUND_PENNIES" -gt "$LP_TOTAL" ]; then
+ARM rc=1 pass=74 fail=1
+  arm: FAIL loop-refund-full 950: rc=1 (want 2): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+  red arms: loop-refund-full 
+RESTORE sha256 395dca132c174398fb6708863d1819e50233bbbe0219ed26ab9fb80e3af35d4c MATCHES-HEAD
+  clean: PASS loop-refund-mismatch rc=1 local=pending stripe=succeeded verdict=none
+ARM: accept the first local refund read whatever its status (anchor matches=1)
+  diff: <     [ "$lst" != "$LP_REFUND_STATUS" ] || break
+  diff: >     break
+ARM rc=1 pass=74 fail=1
+  arm: FAIL loop-refund-mismatch rc=0 (want 1): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94 DRY-RUN az keyvault secret show
+  red arms: loop-refund-mismatch 
+RESTORE sha256 395dca132c174398fb6708863d1819e50233bbbe0219ed26ab9fb80e3af35d4c MATCHES-HEAD
+CLEAN-2 rc=0 pass=75 fail=0

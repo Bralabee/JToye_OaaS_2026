@@ -1,0 +1,15 @@
+# 30-28 verification record (HEAD 2624be15, 2026-11-02T03:35:56Z)
+## gitleaks over origin/main..HEAD (7 commits), repo config and .gitleaksignore
+INF 7 commits scanned.
+INF scanned ~148143 bytes (148.14 KB) in 173ms
+INF no leaks found
+rc=0
+## control: a Stripe-shaped live key (composed at run time) committed in a throwaway repo
+INF 1 commits scanned.
+WRN leaks found: 1
+rc=1
+## gitleaks dir over the HEAD script (default config)
+INF no leaks found
+rc=0
+## .gitleaksignore: unchanged over 19cc2197..HEAD (no key-shaped literal was added)
+git diff --quiet rc=0
