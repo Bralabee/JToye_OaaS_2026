@@ -1,0 +1,106 @@
+npm notice run frontend@2.3.0 lint
+npm notice run eslint .
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/customers/page.tsx
+  358:39  warning  'allergen' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/error.tsx
+  32:50  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/kitchen/__tests__/page.test.tsx
+  132:10  warning  'ordersPayload' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/marketing/page.tsx
+  706:29  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/marketing/page.tsx:706:29
+  704 |   const shopName = (shopId: string) => shops.find((s) => s.id === shopId)?.name || "Unknown"
+  705 |
+> 706 |   const watchDiscountType = promoForm.watch("discountType")
+      |                             ^^^^^^^^^ React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.
+  707 |
+  708 |   // --- Render ---
+  709 |  react-hooks/incompatible-library
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/orders/page.tsx
+  389:26  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/orders/page.tsx:389:26
+  387 |   })
+  388 |
+> 389 |   const selectedShopId = watch("shopId")
+      |                          ^^^^^ React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.
+  390 |   const selectedFulfilment = watch("fulfilmentType")
+  391 |
+  392 |   // #1016: offer only the selected shop's available products, and nothing until a shop is chosen  react-hooks/incompatible-library
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/dashboard/products/import/page.tsx
+   39:11  warning  'toast' is assigned a value but never used                                                                                                                                                                                                                                               @typescript-eslint/no-unused-vars
+  411:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  482:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/shop/[slug]/cart/page.tsx
+  21:34  warning  'removeItem' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx
+  109:9   warning  'searchParams' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  455:21  warning  'isPending' is assigned a value but never used     @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/shop/error.tsx
+  27:50  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/app/shop/orders/orders-client.tsx
+  394:9  warning  The 'orders' conditional could make the dependencies of useMemo Hook (at line 455) change on every render. To fix this, wrap the initialization of 'orders' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/components/dashboard/webhooks/WebhookCreateDialog.tsx
+  86:20  warning  Compilation Skipped: Use of incompatible library
+
+This API returns functions which cannot be memoized without leading to stale UI. To prevent this, by default React Compiler will skip memoizing this component/hook. However, you may see issues if values from this API are passed to other components/hooks that are memoized.
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/components/dashboard/webhooks/WebhookCreateDialog.tsx:86:20
+  84 |   })
+  85 |
+> 86 |   const selected = watch("eventTypes")
+     |                    ^^^^^ React Hook Form's `useForm()` API returns a `watch()` function which cannot be memoized safely.
+  87 |
+  88 |   // Reset on open so stale values/errors never bleed across sessions.
+  89 |   useEffect(() => {  react-hooks/incompatible-library
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/components/ui/image-uploader.tsx
+  569:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/components/ui/safe-image.tsx
+  56:5  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/e2e/kitchen-flow.spec.ts
+  137:7  warning  'orderSummaryResponse' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/e2e/storefront-flows.spec.ts
+  16:7  warning  'KEYCLOAK' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/e2e/unsubscribe-flow.spec.ts
+  23:7  warning  'API' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/hooks/use-toast.ts
+  15:7  warning  'actionTypes' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/lib/__tests__/vendor-logout.test.ts
+  57:38  warning  '_input' is defined but never used  @typescript-eslint/no-unused-vars
+  57:65  warning  '_init' is defined but never used   @typescript-eslint/no-unused-vars
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/lib/customer-auth.ts
+  333:3  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+  359:3  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/lib/session-lapse.ts
+  35:38  warning  Do not use `window.location.href` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b/frontend/playwright.config.ts
+  1:24  warning  'devices' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 26 problems (0 errors, 26 warnings)
+

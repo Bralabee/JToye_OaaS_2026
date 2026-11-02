@@ -1,0 +1,5 @@
+check-doc-metrics  (2026-11-02T16:27:44Z)
+  manifest : docs/metrics.json
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.

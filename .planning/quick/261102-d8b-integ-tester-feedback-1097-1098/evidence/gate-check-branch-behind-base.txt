@@ -1,0 +1,8 @@
+Branch-behind-base gate
+  repo root    : /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-add238c0bcef5ee5b
+  head         : HEAD -> c7239fa6 (integ/tester-feedback-1097-1098)
+  base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+  fetch        : refreshed refs/remotes/origin/main
+  base head    : 94c65ce0
+
+PASS: HEAD contains every commit on origin/main (94c65ce0); it is 21 commit(s) ahead and 0 behind.
