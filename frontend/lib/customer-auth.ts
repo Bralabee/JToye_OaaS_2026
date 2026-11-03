@@ -360,6 +360,23 @@ export async function customerRegister(returnTo?: string) {
 }
 
 /**
+ * Whether THIS tab started the sign-in the callback is finishing: the PKCE
+ * verifier lives in sessionStorage, which is per tab. A password-reset or
+ * verification link from an email opens in a new tab (often a new browser), so
+ * Keycloak hands that tab an authorization code it can never exchange. The
+ * callback page asks this first so it can say what happened and offer a fresh
+ * sign-in, instead of reporting a failure (SW-JRD-05 / SW-SAM-13).
+ */
+export function hasPendingLogin(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    return sessionStorage.getItem(PKCE_VERIFIER_KEY) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
  * Handle OAuth callback — exchange code for tokens, then hand them off to the
  * server to be stored as HttpOnly cookies. Returns the profile parsed from
  * the id token (profile data is not sensitive; only the raw tokens are).

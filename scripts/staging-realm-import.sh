@@ -342,7 +342,8 @@ def jt: tojson;
        | if ($c | length) != 1 then "storefront-client: \($c | length) found, expected 1"
          else $c[0] as $k
            | (if $k.redirectUris != ["https://\($host)/*"] then "storefront-client redirectUris are \($k.redirectUris | jt), expected [\"https://\($host)/*\"]" else empty end),
-             (if $k.webOrigins != ["https://\($host)"] then "storefront-client webOrigins are \($k.webOrigins | jt), expected [\"https://\($host)\"]" else empty end)
+             (if $k.webOrigins != ["https://\($host)"] then "storefront-client webOrigins are \($k.webOrigins | jt), expected [\"https://\($host)\"]" else empty end),
+             (if $k.baseUrl != "https://\($host)/shop/signin" then "storefront-client baseUrl is \($k.baseUrl | jt), expected \"https://\($host)/shop/signin\" (the way back from the info page, SW-JRD-04)" else empty end)
          end),
      (if .verifyEmail != true then "verifyEmail is \(.verifyEmail | jt), expected true (#859)" else empty end),
      ([.identityProviders[]? | select(.alias == "google")] as $g
@@ -689,7 +690,7 @@ selftest() {
   why=""
   if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
   else
-    for d in "mailhog in smtpServer" "verifyEmail is false" "storefront-client redirectUris" "displayNameHtml does not link home"; do
+    for d in "mailhog in smtpServer" "verifyEmail is false" "storefront-client redirectUris" "storefront-client baseUrl" "displayNameHtml does not link home"; do
       command grep -qF -- "$d" <<<"$ST_OUT" || { why="defect not named: $d"; break; }
     done
   fi

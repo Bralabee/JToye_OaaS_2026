@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
-import { handleCallback, getAuthReturnUrl } from "@/lib/customer-auth"
+import { handleCallback, getAuthReturnUrl, hasPendingLogin, customerLogin } from "@/lib/customer-auth"
 import { Suspense } from "react"
 
 /**
@@ -16,11 +16,22 @@ import { Suspense } from "react"
  */
 const NO_CODE = "No authorization code received."
 const AUTH_FAILED = "Authentication failed. Please try again."
+/**
+ * A code arrived but this tab never started a sign-in: there is no PKCE
+ * verifier in its sessionStorage, so the code cannot be exchanged. This is the
+ * normal ending of a password-reset or email-verification link, which an email
+ * client opens in a new tab or browser (SW-JRD-05 / SW-SAM-13). The password the
+ * person just set IS saved by then; what they need is a fresh sign-in, which
+ * usually completes without a form because Keycloak has just opened a session.
+ */
+const OTHER_TAB = "This sign-in finished in a different tab or browser."
+const OTHER_TAB_DETAIL = "If you just set a new password, it has been saved. Sign in to continue."
 
 function CallbackContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
+  const [detail, setDetail] = useState<string | null>(null)
 
   /**
    * Whether there is an authorization code to exchange is knowable DURING
@@ -54,12 +65,19 @@ function CallbackContent() {
     // The `setError` below lives in a promise continuation, which the ESLint
     // rule deliberately does not flag (measured rule shape B). The asynchronous
     // exchange genuinely belongs in an effect and stays here.
-    handleCallback(code, searchParams.get("state")).then((profile) => {
+    // No verifier means this tab never started the sign-in, so there is
+    // nothing to exchange the code with; the code is left unredeemed.
+    const pending = hasPendingLogin()
+    const exchange = pending ? handleCallback(code, searchParams.get("state")) : Promise.resolve(null)
+    exchange.then((profile) => {
       if (profile) {
         const returnTo = getAuthReturnUrl()
         router.replace(returnTo)
-      } else {
+      } else if (pending) {
         setError(AUTH_FAILED)
+      } else {
+        setError(OTHER_TAB)
+        setDetail(OTHER_TAB_DETAIL)
       }
     })
   }, [code, searchParams, router])
@@ -70,7 +88,17 @@ function CallbackContent() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-sm text-red-600">{message}</p>
+          <p className={detail ? "text-sm text-slate-800" : "text-sm text-red-600"}>{message}</p>
+          {code && detail ? <p className="mt-1 text-sm text-slate-600">{detail}</p> : null}
+          {code ? (
+            <button
+              type="button"
+              onClick={() => void customerLogin()}
+              className="mt-4 block w-full rounded-md bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
+            >
+              Sign in
+            </button>
+          ) : null}
           <Link href="/shop" className="mt-4 inline-block text-sm text-amber-700 hover:text-amber-800">
             Back to shop
           </Link>

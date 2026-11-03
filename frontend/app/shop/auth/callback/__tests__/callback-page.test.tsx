@@ -23,7 +23,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { StrictMode, type ReactElement } from "react"
 import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from "node:util"
 import { useSearchParams, useRouter } from "next/navigation"
-import { handleCallback, getAuthReturnUrl } from "@/lib/customer-auth"
+import { handleCallback, getAuthReturnUrl, hasPendingLogin, customerLogin } from "@/lib/customer-auth"
 import AuthCallbackPage from "../page"
 
 /**
@@ -84,10 +84,14 @@ async function serverRender(element: ReactElement): Promise<string> {
 jest.mock("@/lib/customer-auth", () => ({
   handleCallback: jest.fn(),
   getAuthReturnUrl: jest.fn(),
+  hasPendingLogin: jest.fn(),
+  customerLogin: jest.fn(),
 }))
 
 const mockedHandleCallback = handleCallback as jest.MockedFunction<typeof handleCallback>
 const mockedGetAuthReturnUrl = getAuthReturnUrl as jest.MockedFunction<typeof getAuthReturnUrl>
+const mockedHasPendingLogin = hasPendingLogin as jest.MockedFunction<typeof hasPendingLogin>
+const mockedCustomerLogin = customerLogin as jest.MockedFunction<typeof customerLogin>
 
 /** Drive the globally-mocked `useSearchParams` with a real URLSearchParams. */
 function setSearchParams(params: Record<string, string>) {
@@ -107,6 +111,9 @@ beforeEach(() => {
     prefetch: jest.fn(),
   })
   mockedGetAuthReturnUrl.mockReturnValue("/shop/brixton-village-grill")
+  // Default: this tab started the sign-in, so the code is exchangeable.
+  mockedHasPendingLogin.mockReturnValue(true)
+  mockedCustomerLogin.mockResolvedValue(undefined)
   // Default: a never-settling exchange, so the spinner branch is observable.
   mockedHandleCallback.mockReturnValue(new Promise(() => {}))
 })
@@ -177,6 +184,9 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
     ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Back to shop" })).toHaveAttribute("href", "/shop")
     expect(replace).not.toHaveBeenCalled()
+    // A failure is not a dead end: a fresh sign-in is one press away.
+    screen.getByRole("button", { name: "Sign in" }).click()
+    expect(mockedCustomerLogin).toHaveBeenCalledTimes(1)
   })
 
   it("exchanges a one-time code EXACTLY once under a strict-mode double mount", async () => {
@@ -195,6 +205,42 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
     )
 
     await screen.findByText("Authentication failed. Please try again.")
+    expect(mockedHandleCallback).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("OAuth callback page — a code this tab never asked for (SW-JRD-05 / SW-SAM-13)", () => {
+  it("does not exchange the code and offers a fresh sign-in, not a failure", async () => {
+    // A password-reset link opened from an email: a new tab, so no verifier.
+    mockedHasPendingLogin.mockReturnValue(false)
+    setSearchParams({ code: "reset-code", state: "state-from-the-other-tab" })
+
+    render(<AuthCallbackPage />)
+
+    expect(
+      await screen.findByText("This sign-in finished in a different tab or browser."),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("If you just set a new password, it has been saved. Sign in to continue."),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Authentication failed. Please try again.")).toBeNull()
+    expect(mockedHandleCallback).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+
+    screen.getByRole("button", { name: "Sign in" }).click()
+    expect(mockedCustomerLogin).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("link", { name: "Back to shop" })).toHaveAttribute("href", "/shop")
+  })
+
+  it("keeps the failure copy when this tab DID start the sign-in", async () => {
+    mockedHasPendingLogin.mockReturnValue(true)
+    setSearchParams({ code: "bad-code", state: "s" })
+    mockedHandleCallback.mockResolvedValue(null)
+
+    render(<AuthCallbackPage />)
+
+    expect(await screen.findByText("Authentication failed. Please try again.")).toBeInTheDocument()
+    expect(screen.queryByText("This sign-in finished in a different tab or browser.")).toBeNull()
     expect(mockedHandleCallback).toHaveBeenCalledTimes(1)
   })
 })

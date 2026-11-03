@@ -261,6 +261,8 @@ spec:
             path: resources/css/jtoye.css
           - key: work-sans-latin.woff2
             path: resources/fonts/work-sans-latin.woff2
+          - key: messages_en.properties
+            path: messages/messages_en.properties
 ---
 apiVersion: v1
 kind: Service

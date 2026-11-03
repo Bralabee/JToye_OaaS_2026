@@ -105,6 +105,7 @@
     "clientId" : "storefront-client",
     "name" : "J'Toye Customer Storefront",
     "description" : "Public PKCE storefront client for B2C customer identity (jtoye-customers realm)",
+    "baseUrl" : "${PUBLIC_APP_ORIGIN}/shop/signin",
     "enabled" : true,
     "publicClient" : true,
     "surrogateAuthRequired" : false,

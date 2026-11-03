@@ -109,6 +109,44 @@ imports the rendered files and needs no update.
 That realm is not in this repository. Run the same script against the production Keycloak with
 the production app origin, from a production operator session.
 
+## Second field: the storefront client's `baseUrl` (2026-11-03, SW-JRD-04)
+
+Keycloak's info page (for example "Email address verified" after a verification link is
+opened a second time, or "Account updated" after a password reset finished in another
+browser) links back to the application only when the client has a `baseUrl`. The
+`storefront-client` had none, so that page was a dead end. The customer template now sets
+`baseUrl` to `${PUBLIC_APP_ORIGIN}/shop/signin`, `staging-realm.jq` writes
+`https://app-staging.olajay.co.uk/shop/signin`, and the assertion suite of
+`scripts/staging-realm-import.sh` refuses a `jtoye-customers` realm without it, in the rendered
+file and in the live read-back. So the next `--apply` needs this field updated too.
+
+The same admin-CLI pattern, one argument (the app origin), on the customer realm only:
+
+```bash
+kubectl --context jtoye-stg-aks -n jtoye-staging exec -i deploy/keycloak -- \
+  bash -s -- https://app-staging.olajay.co.uk <<'KCADM'
+set -euo pipefail
+origin="$1"
+case "$origin" in http://*|https://*) ;; *) echo "origin must be http(s)://host[:port]" >&2; exit 2 ;; esac
+cfg="/tmp/kcadm-baseurl.$$"
+kc=/opt/keycloak/bin/kcadm.sh
+trap 'rm -f "$cfg"' EXIT
+"$kc" config credentials --config "$cfg" --server http://localhost:8080 --realm master \
+  --user "${KC_BOOTSTRAP_ADMIN_USERNAME:-$KEYCLOAK_ADMIN}" \
+  --password "${KC_BOOTSTRAP_ADMIN_PASSWORD:-$KEYCLOAK_ADMIN_PASSWORD}"
+id=$("$kc" get clients -r jtoye-customers --config "$cfg" -q clientId=storefront-client --fields id --format csv --noquotes)
+[ -n "$id" ] || { echo "storefront-client not found in jtoye-customers" >&2; exit 1; }
+"$kc" update "clients/$id" -r jtoye-customers --config "$cfg" -s "baseUrl=$origin/shop/signin"
+"$kc" get "clients/$id" -r jtoye-customers --config "$cfg" --fields clientId,baseUrl
+KCADM
+```
+
+It prints the client with its new `baseUrl`. On the local compose stack, save the lines
+between the `KCADM` markers as `/tmp/kcadm-baseurl.sh` and run
+`docker exec -i jtoye-keycloak bash -s -- http://localhost:3000 < /tmp/kcadm-baseurl.sh`
+(measured 2026-11-03: rc 0, `baseUrl` read back as `http://localhost:3000/shop/signin`; a
+non-URL origin exits 2 before signing in).
+
 ## How this was proven
 
 - The update script was run against a throwaway Keycloak 26.8.1 whose `jtoye-customers` realm
