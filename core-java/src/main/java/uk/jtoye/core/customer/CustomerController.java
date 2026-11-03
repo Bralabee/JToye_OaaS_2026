@@ -177,6 +177,9 @@ public class CustomerController {
             UUID id,
             UUID tenantId,
             String name,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The customer's email. Null when the "
+                    + "caller's best role on the customer's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees "
+                    + "the name and phone, not the email.")
             String email,
             String phone,
             Integer allergenRestrictions,

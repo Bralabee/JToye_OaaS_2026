@@ -17,6 +17,9 @@ public class OrderDetailDto {
     private String orderNumber;
     private OrderStatus status;
     private String customerName;
+    @Schema(description = "The customer's email. Null when the caller's best role on the order's shop is STAFF "
+            + "(#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email. May also be null "
+            + "on an order placed without one.")
     private String customerEmail;
     private String customerPhone;
     private String notes;
@@ -52,6 +55,9 @@ public class OrderDetailDto {
      * fee it charged. Scalar column on the order row: no extra query.
      */
     private Long deliveryFeePennies;
+    @Schema(description = "First address line. addressLine1, addressLine2, addressCity and addressPostcode are null "
+            + "on a non-DELIVERY order when the caller's best role on the order's shop is STAFF (#856, UK GDPR "
+            + "Art 5(1)(c)); a DELIVERY order keeps its address, because STAFF performs the hand-off.")
     private String addressLine1;
     private String addressLine2;
     private String addressCity;

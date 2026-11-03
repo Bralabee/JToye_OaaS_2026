@@ -140,7 +140,8 @@ export default function CustomersPage() {
   const openEditDialog = (customer: Customer) => {
     setEditingCustomer(customer)
     setValue("name", customer.name)
-    setValue("email", customer.email)
+    // #856: a STAFF caller receives no email; prefill blank (zod still refuses a blank submit).
+    setValue("email", customer.email ?? "")
     setValue("phone", customer.phone || "")
     setAllergenRestrictions(customer.allergenRestrictions)
     setDialogOpen(true)
@@ -335,10 +336,12 @@ export default function CustomersPage() {
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
-                            <div className="flex items-center gap-2 text-sm text-slate-600">
-                              <Mail className="h-3 w-3" />
-                              {customer.email}
-                            </div>
+                            {customer.email && (
+                              <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <Mail className="h-3 w-3" />
+                                {customer.email}
+                              </div>
+                            )}
                             {customer.phone && (
                               <div className="flex items-center gap-2 text-sm text-slate-600">
                                 <Phone className="h-3 w-3" />

@@ -708,7 +708,8 @@ export interface Customer {
   id: string
   tenantId: string
   name: string
-  email: string
+  // #856: absent (null) when the caller's role on the customer's shop is STAFF.
+  email?: string | null
   phone?: string
   allergenRestrictions: number
   createdAt: string

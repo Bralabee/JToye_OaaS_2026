@@ -1903,6 +1903,7 @@
             "type" : "string"
           },
           "email" : {
+            "description" : "The customer's email. Null when the caller's best role on the customer's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email.",
             "type" : "string"
           },
           "id" : {
@@ -3155,6 +3156,7 @@
             "type" : "string"
           },
           "addressLine1" : {
+            "description" : "First address line. addressLine1, addressLine2, addressCity and addressPostcode are null on a non-DELIVERY order when the caller's best role on the order's shop is STAFF (#856, UK GDPR Art 5(1)(c)); a DELIVERY order keeps its address, because STAFF performs the hand-off.",
             "type" : "string"
           },
           "addressLine2" : {
@@ -3216,6 +3218,7 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "description" : "The customer's email. Null when the caller's best role on the order's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email. May also be null on an order placed without one.",
             "type" : "string"
           },
           "customerName" : {
@@ -3389,6 +3392,7 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "description" : "The customer's email. Null when the caller's best role on the order's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email. May also be null on an order placed without one.",
             "type" : "string"
           },
           "customerName" : {
