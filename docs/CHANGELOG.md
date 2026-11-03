@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Storefront: Swarm Batch 3, the Medium Items — 2026-11-03
+### Storefront: Swarm Batch 3, the Medium Items — 2026-11-03 (#1111)
 
 Quick 261103-b3m. Five findings from the 2026-10-19 staging persona swarm (epic issue 964), each re-checked on main first: SW-CLR-17, SW-JRD-12, SW-JRD-09, SW-SAM-03, SW-MRC-10.
 
