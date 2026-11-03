@@ -159,6 +159,11 @@ public class CustomerService {
                 customerId, request.name(), request.email());
 
         Customer customer = findScopedCustomerOrThrow(customerId);
+        // #856 review R0-2: a caller who sees this customer minimised has never been shown the
+        // email it would overwrite; only a caller managing one of the customer's shops may edit.
+        CustomerContactRule.requireFullContact(shopAccessService.customerContactScope(), customer,
+                TenantContext.get().orElseThrow(() -> new IllegalStateException("Tenant context not set")),
+                customerRepository);
 
         // Update customer fields
         customer.setName(request.name());

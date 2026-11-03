@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.customer.Customer;
+import uk.jtoye.core.customer.CustomerContactRule;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.AwaitingPaymentException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
@@ -232,6 +233,10 @@ public class OrderService {
         // and populate denormalized fields; backfill originShopId when null (Phase 39-08).
         if (request.getCustomerId() != null) {
             Customer customer = resolveScopedCustomer(request.getCustomerId(), tenantId);
+            // #856 review R0-1: linking copies the customer's email onto an order at a shop the caller
+            // manages; a customer the caller sees minimised may not be linked (typed 403).
+            CustomerContactRule.requireFullContact(
+                    shopAccessService.customerContactScope(), customer, tenantId, customerRepository);
             if (customer.getOriginShopId() == null) {
                 customer.setOriginShopId(shop.getId());
                 customer.setUpdatedAt(OffsetDateTime.now());
@@ -469,6 +474,9 @@ public class OrderService {
         // Link customer if customerId provided (scoped to caller's granted shops under Option C)
         if (request.getCustomerId() != null) {
             Customer customer = resolveScopedCustomer(request.getCustomerId(), order.getTenantId());
+            // #856 review R0-1: as in createOrder.
+            CustomerContactRule.requireFullContact(
+                    shopAccessService.customerContactScope(), customer, order.getTenantId(), customerRepository);
             order.setCustomerId(customer.getId());
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
