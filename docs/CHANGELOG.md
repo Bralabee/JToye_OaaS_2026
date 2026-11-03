@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Sign-in: Reset and Verification Links No Longer Dead-End (Swarm Batch 2) — 2026-11-03 (#1110)
+
+Three findings from the 2026-10-19 staging persona swarm (epic issue 964): SW-JRD-05 and SW-SAM-13 (one defect), and the message half of SW-JRD-04.
+
+- **What changed:** a password-reset link opened in a new tab of the same browser made Keycloak finish the original sign-in in that tab, which holds no PKCE verifier, so `/shop/auth/callback` said "Authentication failed" while the original tab was in fact signed in. The callback now checks `hasPendingLogin()` first; without a verifier it leaves the code unredeemed and says the sign-in finished in a different tab or browser, that a new password is saved, and offers Sign in (silent, as Keycloak holds a session). Every callback error that carries a code offers Sign in. The `storefront-client` gains `baseUrl` = app origin + `/shop/signin` (template, `staging-realm.jq`, and an import assertion), so Keycloak's info pages ("Email address verified", "Account updated") link back to the site; existing realms take it through the new kcadm section of `docs/runbooks/keycloak-wordmark-home.md`. The `jtoye` login theme overrides the "already verified" and "stale link" messages: sign in, or choose "Forgot password?" to set a password (ConfigMap copy, parity pair, staging golden). Staging's register form missing its password field (the rest of SW-JRD-04) is not addressed here.
+- **Proof:** in Playwright against the local Keycloak 26.8.1, with the real "Forgot password?" email from Mailhog opened in a new tab, main shows "Authentication failed" and this branch shows the new message, then Sign in lands on `/shop` signed in. A verification link opened twice showed the stock text with no link before, and the new text with a link to `/shop/signin` after. New callback tests are red on main's page; `staging-realm-import.sh --selftest` fails its transformed arm when the jq `baseUrl` line is removed. Full Jest 3573 passing in 300 suites.
+
 ### Storefront: Swarm Batch 1, Accessibility and Privacy Fixes — 2026-11-03 (#1109)
 
 Seven findings from the 2026-10-19 staging persona swarm (epic issue 964), approved as one batch by the owner on 2026-11-03: SW-MRC-07, SW-MRC-08, SW-MRC-11, SW-SAM-10 (checkout half), SW-JRD-08, SW-SAM-06, SW-CLR-05 (remaining part).
