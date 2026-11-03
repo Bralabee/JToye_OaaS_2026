@@ -140,10 +140,12 @@ public class CustomerController {
 
     @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
     @PutMapping("/{id}")
-    @Operation(summary = "Update customer", description = "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin.")
+    @Operation(summary = "Update customer", description = "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin, "
+            + "and the caller must see the customer in full: SHOP_MANAGER on a shop the customer originated at or "
+            + "ordered from, or tenant-wide (#856).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Customer updated successfully"),
-            @ApiResponse(responseCode = "403", description = "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"),
+            @ApiResponse(responseCode = "403", description = "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin, or sees this customer minimised because it only reaches it through a shop where it is STAFF, #856)"),
             @ApiResponse(responseCode = "404", description = "Customer not found"),
             @ApiResponse(responseCode = "400", description = "Validation error")
     })

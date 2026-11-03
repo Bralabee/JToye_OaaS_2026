@@ -7801,7 +7801,7 @@
         ]
       },
       "put" : {
-        "description" : "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin.",
+        "description" : "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin, and the caller must see the customer in full: SHOP_MANAGER on a shop the customer originated at or ordered from, or tenant-wide (#856).",
         "operationId" : "update_3",
         "parameters" : [
           {
@@ -7854,7 +7854,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin, or sees this customer minimised because it only reaches it through a shop where it is STAFF, #856)"
           },
           "404" : {
             "content" : {
@@ -9476,7 +9476,7 @@
                 }
               }
             },
-            "description" : "Token lacks the orders:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied)"
+            "description" : "Token lacks the orders:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied), or the body links a customerId the caller sees minimised: one only reachable through a shop where it is STAFF (#856; errors/shop-access-denied, requiredRole SHOP_MANAGER)"
           },
           "404" : {
             "content" : {
@@ -9950,7 +9950,7 @@
         ]
       },
       "put" : {
-        "description" : "Update customer info and notes on DRAFT/PENDING orders",
+        "description" : "Update customer info and notes on DRAFT/PENDING orders. Requires SHOP_MANAGER on the order's shop; linking a customerId the caller sees minimised (one only reachable through a shop where it is STAFF) is refused 403 errors/shop-access-denied, requiredRole SHOP_MANAGER (#856).",
         "operationId" : "updateOrder",
         "parameters" : [
           {
