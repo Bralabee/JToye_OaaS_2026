@@ -438,6 +438,72 @@ test.describe("live storefront @mobile-only", () => {
     await settled(page)
     expect((await headerOverflow(page)).length, "the header probe missed a row pushed past its box").toBeGreaterThan(0)
   })
+
+  test("SW-CLR-17: an unknown kitchen answers HTTP 404 to a page load, and a live one 200; INSTRUMENT: a prefetch is not gated", async ({ request }) => {
+    // The raw status of the served document (review R1 finding 3: the unit tests never saw it).
+    const missing = await request.get("/shop/sw-clr-17-no-such-kitchen", { maxRedirects: 0 })
+    expect(missing.status(), "unknown kitchen").toBe(404)
+    expect(await missing.text()).toContain("Kitchen not found")
+    expect((await request.get(`/shop/${SHOP_SLUG}`, { maxRedirects: 0 })).status(), "live kitchen").toBe(200)
+    // A <Link> prefetch skips the core check (it would spend the visitor's rate limit), so the same
+    // missing slug is not answered 404 there: the probe can tell the two request kinds apart.
+    const prefetch = await request.get("/shop/sw-clr-17-no-such-kitchen", {
+      maxRedirects: 0,
+      headers: { RSC: "1", "Next-Router-Prefetch": "1" },
+    })
+    expect(prefetch.status(), "prefetch of an unknown kitchen").not.toBe(404)
+  })
+
+  test("SW-MRC-10: at 320px with 200% text no page scrolls sideways, dish text stays readable and Sign in is in the menu; INSTRUMENT: a widened photo column is caught", async ({ page }) => {
+    const huge = async () => {
+      await page.setViewportSize({ width: 320, height: 640 })
+      await page.addStyleTag({ content: "html { font-size: 200% !important; }" })
+      await settled(page)
+    }
+    // The narrowest line of dish-card text (each visible <p> in a card), in its own font size (em).
+    // One letter per line, the reported defect, measured 0.6em; a readable line holds a word.
+    const narrowestDishText = () =>
+      page.evaluate(() => {
+        const lines = (Array.from(document.querySelectorAll("article p")) as HTMLElement[]).filter(
+          (p) => p.getBoundingClientRect().width > 0 && (p.textContent || "").trim().length >= 8,
+        )
+        if (lines.length === 0) return -1
+        return Math.min(...lines.map((p) => p.getBoundingClientRect().width / parseFloat(getComputedStyle(p).fontSize)))
+      })
+
+    await page.goto(`/shop/${SHOP_SLUG}`)
+    const { dish, addLabel } = await firstAddableDish(page)
+    await page.locator(`button[aria-label="${addLabel}"]`).first().click()
+    await expect(page.locator(`button[aria-label="Remove ${dish} from basket"]`).first()).toBeVisible()
+
+    await huge()
+    soft(await headerOverflow(page), "the menu page at 320px / 200%").toEqual([])
+    const narrowest = await narrowestDishText()
+    soft(narrowest, "the narrowest dish-card text line, in em (-1 = no card found)").toBeGreaterThanOrEqual(3)
+
+    await page.getByRole("button", { name: /open menu/i }).click()
+    await expect(page.getByRole("link", { name: /^sign in$/i }), "Sign in is reachable from the menu").toBeVisible()
+    await page.keyboard.press("Escape")
+
+    await page.goto(`/shop/${SHOP_SLUG}/cart`)
+    await expect(page.getByRole("heading", { name: dish }).first()).toBeVisible({ timeout: 15_000 })
+    await huge()
+    soft(await headerOverflow(page), "the basket page at 320px / 200%").toEqual([])
+
+    await page.goto(`/shop/${SHOP_SLUG}/checkout`)
+    await expect(page.locator("main").getByText(dish).first()).toBeVisible({ timeout: 15_000 })
+    await huge()
+    expect(await headerOverflow(page), "the checkout page at 320px / 200%").toEqual([])
+
+    // INSTRUMENT: back on the menu, the photo column forced back to its old doubled width must be
+    // reported as an unreadable text column.
+    await page.goto(`/shop/${SHOP_SLUG}`)
+    await firstAddableDish(page)
+    await huge()
+    await page.addStyleTag({ content: "article > div > div.relative { width: 12rem !important; max-width: none !important; }" })
+    await settled(page)
+    expect(await narrowestDishText(), "the text-line probe missed a squeezed card").toBeLessThan(3)
+  })
 })
 
 test.describe("live storefront on an iPhone 13 @mobile-only", () => {

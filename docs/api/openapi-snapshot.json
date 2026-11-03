@@ -3642,6 +3642,22 @@
         ],
         "type" : "object"
       },
+      "OrderLookupRequest" : {
+        "description" : "Proof of ownership for a guest order lookup: the email address the order was placed with.",
+        "properties" : {
+          "email" : {
+            "description" : "The email address the order was placed with.",
+            "example" : "alice@example.com",
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "email"
+        ],
+        "type" : "object"
+      },
       "Outcome" : {
         "description" : "REJECTED: it was PENDING and is now CANCELLED, with the reason stored. ALREADY_ACCEPTED: the kitchen had already taken it (or it is not a placed order), so it was left as it was. ALREADY_CANCELLED: it was already cancelled, refunded or voided; nothing to do. NOT_FOUND: no such order the caller may act on (it does not exist, belongs to a shop the caller is not granted, or belongs to another tenant; these are deliberately indistinguishable).",
         "enum" : [
@@ -12868,7 +12884,8 @@
     },
     "/api/v1/public/orders/{orderNumber}" : {
       "get" : {
-        "description" : "Look up order status by order number and email. Both must match.",
+        "deprecated" : true,
+        "description" : "Look up order status by order number and email. Both must match. Deprecated because the email travels in the URL, where history and access logs keep it (SW-JRD-12); use POST /public/orders/{orderNumber}/lookup, which takes it in the body. Kept so existing API clients keep working; the frontend no longer calls it.",
         "operationId" : "trackOrder",
         "parameters" : [
           {
@@ -12900,7 +12917,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "Track a guest order",
+        "summary" : "Track a guest order (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]
@@ -12971,6 +12988,68 @@
           }
         },
         "summary" : "Create remaining-balance PaymentIntent for a deposit order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/orders/{orderNumber}/lookup" : {
+      "post" : {
+        "description" : "Look up order status by order number, with the email address the order was placed with in the request body. Both must match. Read-only: a repeated call changes nothing.",
+        "operationId" : "lookupOrder",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OrderLookupRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PublicOrderStatus"
+                }
+              }
+            },
+            "description" : "The order's current status"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or blank email"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No order with this number and email"
+          }
+        },
+        "summary" : "Track a guest order",
         "tags" : [
           "Public Storefront"
         ]
@@ -16299,7 +16378,8 @@
     },
     "/public/orders/{orderNumber}" : {
       "get" : {
-        "description" : "Look up order status by order number and email. Both must match.",
+        "deprecated" : true,
+        "description" : "Look up order status by order number and email. Both must match. Deprecated because the email travels in the URL, where history and access logs keep it (SW-JRD-12); use POST /public/orders/{orderNumber}/lookup, which takes it in the body. Kept so existing API clients keep working; the frontend no longer calls it.",
         "operationId" : "trackOrder_1",
         "parameters" : [
           {
@@ -16331,7 +16411,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "Track a guest order",
+        "summary" : "Track a guest order (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]
@@ -16402,6 +16482,68 @@
           }
         },
         "summary" : "Create remaining-balance PaymentIntent for a deposit order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/orders/{orderNumber}/lookup" : {
+      "post" : {
+        "description" : "Look up order status by order number, with the email address the order was placed with in the request body. Both must match. Read-only: a repeated call changes nothing.",
+        "operationId" : "lookupOrder_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OrderLookupRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PublicOrderStatus"
+                }
+              }
+            },
+            "description" : "The order's current status"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or blank email"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No order with this number and email"
+          }
+        },
+        "summary" : "Track a guest order",
         "tags" : [
           "Public Storefront"
         ]

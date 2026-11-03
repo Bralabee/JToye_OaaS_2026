@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, Download, Loader2, MailCheck, Trash2, UserRound } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import { DSAR_INTAKE_PATH, httpStatusOf, newIdempotencyKey, type DsarRequestType } from "@/lib/dsar-intake"
 import {
   Dialog,
   DialogContent,
@@ -36,9 +37,9 @@ import {
  * Nothing is stored client-side: no key in lib/client-storage-keys.ts belongs to this page.
  */
 
-const INTAKE_PATH = "/api/v1/public/gdpr/dsar"
+const INTAKE_PATH = DSAR_INTAKE_PATH
 
-type RequestType = "ACCESS" | "ERASURE"
+type RequestType = DsarRequestType
 type ActionState = "idle" | "busy" | "lodged" | "failed" | "limited"
 
 export const ACCOUNT_DOWNLOAD_COPY = {
@@ -91,23 +92,6 @@ export const ACCOUNT_NO_EMAIL_COPY =
   "We can't see an email address on your sign-in, so we can't send you the confirmation link these " +
   "requests need. Please sign out and sign in again, or contact us using the details in our privacy notice."
 
-/** Unguessable per-action key: crypto.randomUUID, else a v4 UUID from getRandomValues. */
-function newIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID()
-  }
-  const buf = new Uint8Array(16)
-  crypto.getRandomValues(buf)
-  buf[6] = (buf[6] & 0x0f) | 0x40
-  buf[8] = (buf[8] & 0x3f) | 0x80
-  const hex = Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("")
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
-
-function statusOf(err: unknown): number | undefined {
-  return (err as { response?: { status?: number } })?.response?.status
-}
-
 export function AccountClient({ email }: { email: string | null }) {
   const [states, setStates] = useState<Record<RequestType, ActionState>>({
     ACCESS: "idle",
@@ -138,7 +122,7 @@ export function AccountClient({ email }: { email: string | null }) {
       setState(type, "lodged")
       return true
     } catch (err) {
-      setState(type, statusOf(err) === 429 ? "limited" : "failed")
+      setState(type, httpStatusOf(err) === 429 ? "limited" : "failed")
       return false
     } finally {
       inFlight.current[type] = false

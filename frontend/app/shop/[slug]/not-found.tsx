@@ -13,8 +13,10 @@ import { ArrowLeft, Store } from "lucide-react"
  * version could not have (the page's own `generateMetadata` had already
  * published the shop's title by then). A dead storefront can now be served but
  * not INDEXED, which is the actual harm of a soft 404 — an indexed dead vendor
- * page competing with live ones. The HTTP status is still 200 and that is a
- * measured limitation, not an oversight: see the note in page.tsx.
+ * page competing with live ones. Since SW-CLR-17 the HTTP status is a real 404 as
+ * well: middleware.ts checks the slug before the page streams
+ * (lib/shop-slug-gate.ts) and rewrites to this screen with status 404. If that
+ * check cannot reach core it fails open, and this screen is then served with 200.
  *
  * Scoped to this route segment, so nothing else inherits it.
  */

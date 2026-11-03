@@ -4,6 +4,7 @@ import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { AlertTriangle, ArrowLeft, ShoppingBag, Loader2, CreditCard, Bike, Store, Banknote } from "lucide-react"
+import { CollectFrom } from "@/components/storefront/collect-from"
 // #793: Stripe is loaded through lib/stripe-loader, which imports the `/pure` entry, NEVER the
 // package default. The default entry injects js.stripe.com as a module side effect, so merely
 // importing it put Stripe's script — and its `__stripe_mid` / `__stripe_sid` cookies and
@@ -1244,7 +1245,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 <span className="text-slate-900">{formatPrice(paymentState.deliveryFeePennies)}</span>
               </div>
             )}
-            {paymentState.deliveryFeePennies === 0 && (
+            {/* SW-JRD-09: no Delivery row on a Collection order; there is no delivery to be free. */}
+            {paymentState.deliveryFeePennies === 0 && fulfilmentType !== "COLLECTION" && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">Delivery</span>
                 <span className="text-emerald-700 font-medium">Free</span>
@@ -1513,6 +1515,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         )}
 
+        {/* SW-JRD-09: a Collection order says where to collect, from what the shop published. */}
+        {fulfilmentType === "COLLECTION" && shop && (
+          <CollectFrom shopName={shop.name} address={shop.address} phone={shop.phone} />
+        )}
+
         {/* Conditional UK delivery address — only for DELIVERY */}
         {fulfilmentType === "DELIVERY" && (
           <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm space-y-4">
@@ -1727,14 +1734,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
             {/* Delivery — mirrors the server waiver exactly (COLLECTION or above
                 the free-delivery threshold => Free). */}
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Delivery</span>
-              {deliveryIsFree ? (
-                <span className="text-emerald-700 font-semibold">Free</span>
-              ) : (
-                <span className="text-slate-900">{formatPrice(deliveryFeePennies)}</span>
-              )}
-            </div>
+            {/* SW-JRD-09: a Collection order has no Delivery row (the waiver makes it 0). */}
+            {fulfilmentType !== "COLLECTION" && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Delivery</span>
+                {deliveryIsFree ? (
+                  <span className="text-emerald-700 font-semibold">Free</span>
+                ) : (
+                  <span className="text-slate-900">{formatPrice(deliveryFeePennies)}</span>
+                )}
+              </div>
+            )}
             {/* UXT-047 (B7): only for a seller who declared a VAT registration. */}
             {sellerVatRegistered && (
               <div className="flex items-center justify-between text-sm">

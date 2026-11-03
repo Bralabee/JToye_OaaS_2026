@@ -26,10 +26,11 @@ import { Suspense } from "react"
 import { act, render, screen, waitFor } from "@testing-library/react"
 import OrderTrackingPage from "@/app/shop/[slug]/orders/[orderNumber]/page"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  default: { get: (...args: unknown[]) => mockLookup(...args),
+    post: (...args: unknown[]) => mockLookup(...args) },
 }))
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -58,8 +59,8 @@ const ORDER = {
 let trackingAnswer: Record<string, unknown> | "fail" = ORDER
 
 function mockEndpoints() {
-  mockGet.mockImplementation((url: string) => {
-    if (url === `/public/orders/${ORDER_NUMBER}`) {
+  mockLookup.mockImplementation((url: string) => {
+    if (url === `/public/orders/${ORDER_NUMBER}/lookup`) {
       return trackingAnswer === "fail"
         ? Promise.reject(new Error("network"))
         : Promise.resolve({ data: trackingAnswer })
@@ -104,12 +105,12 @@ function currentPoll(): () => unknown {
 /** One real poll: the tracking endpoint answers `next`, and the page's own poll callback runs. */
 async function poll(next: Record<string, unknown> | "fail") {
   trackingAnswer = next
-  const calls = mockGet.mock.calls.length
+  const calls = mockLookup.mock.calls.length
   await act(async () => {
     await currentPoll()()
   })
   // Non-vacuity: the poll really went through the tracking read.
-  expect(mockGet.mock.calls.length).toBeGreaterThan(calls)
+  expect(mockLookup.mock.calls.length).toBeGreaterThan(calls)
 }
 
 /** Records every DOM mutation inside `el` from now on. */
@@ -128,7 +129,7 @@ function recordMutations(el: HTMLElement) {
 }
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockLookup.mockReset()
   trackingAnswer = ORDER
   mockEndpoints()
   localStorage.clear()
@@ -308,7 +309,7 @@ describe("37-F review F5: only the LATEST read is applied", () => {
 
     // The older read: issued first, answered last.
     let releaseOld: () => void = () => {}
-    mockGet.mockImplementationOnce(
+    mockLookup.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           releaseOld = () => resolve({ data: { ...ORDER, status: "PREPARING" } })

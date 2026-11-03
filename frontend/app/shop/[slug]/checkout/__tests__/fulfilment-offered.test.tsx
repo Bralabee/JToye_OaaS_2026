@@ -164,7 +164,10 @@ describe("checkout renders only the fulfilment types the shop offers (UI-SPEC G1
     expect(screen.queryByRole("button", { name: /^collection$/i })).not.toBeInTheDocument()
     expect(screen.queryByText("Delivery address")).not.toBeInTheDocument()
     // Collection pays no delivery fee, so the preview cannot show the £2.99 a delivery would.
-    expect(summaryRow("Delivery")).toHaveTextContent("Free")
+    // SW-JRD-09: a Collection order has no Delivery row, and says where to collect instead.
+    const summary = screen.getByText("Subtotal").closest("div")?.parentElement as HTMLElement
+    expect(within(summary).queryByText("Delivery")).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Collect from" })).toBeInTheDocument()
 
     fillContact()
     acknowledgeAndPlace()

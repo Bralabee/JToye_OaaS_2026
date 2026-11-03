@@ -130,7 +130,9 @@ export function PublicFooter() {
             columns into a 955px footer at 390. Every column and link is kept;
             the long Legal labels wrap inside their ~170px track. The rhythm is
             tighter at every width (padding, column and list spacing). */}
-        <div className="grid grid-cols-2 gap-x-6 gap-y-7 lg:grid-cols-4 lg:gap-8">
+        {/* SW-MRC-10: a long word ("information", "Accessibility") may break rather than run
+            past the screen edge at 200% text on a 320px phone; at normal sizes nothing breaks. */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-7 lg:grid-cols-4 lg:gap-8 [overflow-wrap:anywhere]">
           {/* Brand */}
           <div className="col-span-2 space-y-2.5 sm:col-span-1">
             <Link

@@ -81,7 +81,8 @@ export default function StorefrontLayout({
               <span aria-hidden="true" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-oxblood text-sm font-bold text-white">
                 J
               </span>
-              <span>J&apos;Toye</span><span className="sr-only"> home</span>
+              {/* SW-MRC-10: below 12rem of row the wordmark is read, not shown; the J mark stays. */}
+              <span className="[@container_(max-width:12rem)]:sr-only">J&apos;Toye</span><span className="sr-only"> home</span>
             </Link>
             <StorefrontNav />
           </div>

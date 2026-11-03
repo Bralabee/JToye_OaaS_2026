@@ -16,6 +16,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -29,6 +30,7 @@ import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.storefront.dto.CustomerOrderStatus;
+import uk.jtoye.core.storefront.dto.OrderLookupRequest;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicProductDto;
@@ -367,11 +369,38 @@ public class PublicStorefrontController {
     }
 
     @GetMapping("/orders/{orderNumber}")
-    @Operation(summary = "Track a guest order", description = "Look up order status by order number and email. Both must match.")
+    @Operation(summary = "Track a guest order (email in the query string)", deprecated = true,
+            description = "Look up order status by order number and email. Both must match. Deprecated "
+                    + "because the email travels in the URL, where history and access logs keep it (SW-JRD-12); "
+                    + "use POST /public/orders/{orderNumber}/lookup, which takes it in the body. Kept so existing "
+                    + "API clients keep working; the frontend no longer calls it.")
     public ResponseEntity<PublicOrderStatus> trackOrder(
             @PathVariable String orderNumber,
             @RequestParam String email) {
         return ResponseEntity.ok(storefrontService.trackOrder(orderNumber, email));
+    }
+
+    /**
+     * SW-JRD-12 (swarm epic #964): the same guest lookup as {@link #trackOrder}, with the email in the
+     * JSON body instead of the URL. A read, so it changes nothing and needs no Idempotency-Key: a repeat
+     * returns the order's current status. The answer carries the customer's name and address, so it is
+     * {@code no-store}.
+     */
+    @PostMapping(value = "/orders/{orderNumber}/lookup", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Track a guest order",
+            description = "Look up order status by order number, with the email address the order was placed "
+                    + "with in the request body. Both must match. Read-only: a repeated call changes nothing.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "The order's current status"),
+            @ApiResponse(responseCode = "400", description = "Missing or blank email"),
+            @ApiResponse(responseCode = "404", description = "No order with this number and email")
+    })
+    public ResponseEntity<PublicOrderStatus> lookupOrder(
+            @PathVariable String orderNumber,
+            @Valid @RequestBody OrderLookupRequest request) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(storefrontService.trackOrder(orderNumber, request.email()));
     }
 
     @PostMapping("/orders/{orderNumber}/balance-payment-intent")

@@ -75,7 +75,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // the route renders not-found.tsx, whose metadata carries `robots: noindex`
   // and its own title. A dead storefront therefore cannot enter the index and
   // cannot compete with the live ones — which is the harm a soft 404 causes.
-  // The status code remains a known gap, recorded here rather than papered over.
+  // SW-CLR-17 (2026-11-03) closed the status gap where the docs say to: middleware.ts asks core
+  // for the slug before the body streams (lib/shop-slug-gate.ts) and answers 404 for an unknown
+  // kitchen, 301 for a retired slug. The calls below stay as the fallback when that check fails
+  // open (core slow or down), which is the noindex soft 404 described above.
   if (result.state === "notfound") notFound()
 
   if (result.state !== "ok") {

@@ -5,7 +5,8 @@
  *  - `/track` is a GUEST lookup — two inputs (order number + email), NO forced
  *    sign-in wall (RequireCustomerAuth absent).
  *  - Submitting order# + email calls the IDOR-hardened guest endpoint
- *    GET /public/orders/{orderNumber}?email= and renders the progress stepper.
+ *    POST /public/orders/{orderNumber}/lookup with the email in the body
+ *    (SW-JRD-12: never in the URL) and renders the progress stepper.
  *  - A customer session pre-fills the email but never requires it.
  *  - Not-found renders the exact copywriting-contract message.
  *  - The page is wrapped in the shared PublicShell.
@@ -25,10 +26,11 @@ import {
   ALLERGY_NOTE_UNREAD_COPY,
 } from "@/components/storefront/recorded-allergen-set"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  default: { get: (...args: unknown[]) => mockLookup(...args),
+    post: (...args: unknown[]) => mockLookup(...args) },
 }))
 
 const mockGetSession = jest.fn()
@@ -49,7 +51,7 @@ const activeOrder = {
 
 describe("Track page (guest lookup, Surface H)", () => {
   beforeEach(() => {
-    mockGet.mockReset()
+    mockLookup.mockReset()
     mockGetSession.mockReset()
     mockGetSession.mockResolvedValue(null)
   })
@@ -65,7 +67,7 @@ describe("Track page (guest lookup, Surface H)", () => {
   })
 
   it("submits order# + email to the IDOR-hardened guest endpoint and renders the stepper", async () => {
-    mockGet.mockResolvedValue({ data: activeOrder })
+    mockLookup.mockResolvedValue({ data: activeOrder })
     render(<TrackOrderPage />)
 
     fireEvent.change(await screen.findByLabelText(/order number/i), {
@@ -77,13 +79,38 @@ describe("Track page (guest lookup, Surface H)", () => {
     fireEvent.click(screen.getByRole("button", { name: /track order/i }))
 
     await waitFor(() =>
-      expect(mockGet).toHaveBeenCalledWith("/public/orders/ORD-12345678", {
-        params: { email: "guest@example.com" },
+      expect(mockLookup).toHaveBeenCalledWith("/public/orders/ORD-12345678/lookup", {
+        email: "guest@example.com",
       })
     )
     // Stepper renders: "Received" is unique to the progress tracker.
     expect(await screen.findByText("Received")).toBeInTheDocument()
     expect(screen.getByText("Ada's Kitchen")).toBeInTheDocument()
+  })
+
+  it("SW-JRD-12: an old bookmark's ?email= is used for the lookup, then removed from the address bar", async () => {
+    mockLookup.mockResolvedValue({ data: activeOrder })
+    window.history.replaceState(null, "", "/track?order=ORD-12345678&email=old%40example.com")
+    const searchParams = useSearchParams as jest.Mock
+    const before = searchParams.getMockImplementation()
+    searchParams.mockReturnValue({
+      get: (k: string) => (k === "order" ? "ORD-12345678" : k === "email" ? "old@example.com" : null),
+    })
+    render(<TrackOrderPage />)
+
+    await waitFor(() =>
+      expect(mockLookup).toHaveBeenCalledWith("/public/orders/ORD-12345678/lookup", { email: "old@example.com" })
+    )
+    await waitFor(() => expect(window.location.search).toBe("?order=ORD-12345678"))
+    // PR #1111 review R1 finding 5: the address moves to the tab's out-of-band handoff, so a refresh
+    // of the cleaned URL still finds the order instead of an empty form.
+    expect(sessionStorage.getItem("jtoye-track-email")).toBe("old@example.com")
+    sessionStorage.removeItem("jtoye-track-email")
+    // No lookup ever carried the address in its URL.
+    for (const [url] of mockLookup.mock.calls) expect(String(url)).not.toContain("@")
+    window.history.replaceState(null, "", "/")
+    if (before) searchParams.mockImplementation(before)
+    else searchParams.mockReturnValue({ get: () => null })
   })
 
   it("pre-fills the email from a customer session but never requires it", async () => {
@@ -97,7 +124,7 @@ describe("Track page (guest lookup, Surface H)", () => {
   })
 
   it("shows the copywriting-contract not-found message", async () => {
-    mockGet.mockRejectedValue(new Error("404"))
+    mockLookup.mockRejectedValue(new Error("404"))
     render(<TrackOrderPage />)
 
     fireEvent.change(await screen.findByLabelText(/order number/i), {
@@ -153,7 +180,7 @@ const ALLERGEN_RECORD = {
 }
 
 async function guestLookup(response: Record<string, unknown>) {
-  mockGet.mockResolvedValue({ data: { ...activeOrder, ...response } })
+  mockLookup.mockResolvedValue({ data: { ...activeOrder, ...response } })
   render(<TrackOrderPage />)
   fireEvent.change(await screen.findByLabelText(/order number/i), { target: { value: "ORD-12345678" } })
   fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "guest@example.com" } })
@@ -165,7 +192,7 @@ describe("Track page — the order's allergen record (31.1-18)", () => {
   const mockedSearchParams = useSearchParams as jest.Mock
 
   beforeEach(() => {
-    mockGet.mockReset()
+    mockLookup.mockReset()
     mockGetSession.mockReset()
     mockGetSession.mockResolvedValue(null)
     mockedSearchParams.mockReturnValue({ get: () => null })
@@ -223,22 +250,22 @@ describe("Track page — the order's allergen record (31.1-18)", () => {
       expect(set).not.toHaveTextContent(/not recorded/i)
       expect(screen.getByTestId("recorded-ack")).toHaveTextContent("You confirmed you had read: Milk")
       // The auto path still never looks an order up by number on its own (#458 guard).
-      expect(mockGet).not.toHaveBeenCalled()
+      expect(mockLookup).not.toHaveBeenCalled()
 
-      mockGet.mockResolvedValue({ data: { ...activeOrder, ...ALLERGEN_RECORD } })
+      mockLookup.mockResolvedValue({ data: { ...activeOrder, ...ALLERGEN_RECORD } })
       fireEvent.click(screen.getByRole("button", { name: RECORDED_SET_SHOW_COPY }))
 
       await waitFor(() => expect(screen.getByTestId("recorded-set")).toHaveTextContent("Recorded on your order: Milk"))
       // Through the number + email endpoint, with the signed-in customer's own email.
-      expect(mockGet).toHaveBeenCalledWith("/public/orders/ORD-12345678", {
-        params: { email: "member@example.com" },
+      expect(mockLookup).toHaveBeenCalledWith("/public/orders/ORD-12345678/lookup", {
+        email: "member@example.com",
       })
     })
 
     it("arriving from My Orders, the full record looked up by number is not replaced by the list entry", async () => {
       mockedSearchParams.mockReturnValue({ get: (k: string) => (k === "order" ? "ORD-12345678" : null) })
       sessionStorage.setItem("jtoye-track-email", "member@example.com")
-      mockGet.mockResolvedValue({ data: { ...activeOrder, ...ALLERGEN_RECORD } })
+      mockLookup.mockResolvedValue({ data: { ...activeOrder, ...ALLERGEN_RECORD } })
       // The session (and so the list) resolves AFTER the by-number lookup.
       let releaseSession: (v: unknown) => void = () => {}
       mockGetSession.mockReturnValue(new Promise((r) => (releaseSession = r)))
