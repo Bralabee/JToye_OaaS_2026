@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next"
 import { resolvePublicOrigin } from "@/lib/public-origin"
 import { loadAllShopSlugs } from "@/lib/storefront-server"
+import { PUBLIC_STATIC_ROUTES } from "@/lib/public-routes"
 
 // Machine-readable sitemap for the PUBLIC surface only (served at /sitemap.xml).
 //
@@ -75,44 +76,6 @@ function siteOrigin(): string | null {
   return resolvePublicOrigin()
 }
 
-const STATIC_ROUTES: Array<{
-  path: string
-  changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"]
-  priority: number
-}> = [
-  { path: "/", changeFrequency: "weekly", priority: 1 },
-  { path: "/shop", changeFrequency: "daily", priority: 0.9 },
-  { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
-  // `/business-model-guide` is NOT here (SW-CLR-05): it is `noindex` and out of the footer since
-  // PR 1080, and a sitemap must not offer crawlers a page that tells them not to index it.
-  // FE-6 (RESOLVED, was: "a pre-existing inconsistency, left alone"): `/track`
-  // used to be listed here AND in `app/robots.ts`'s DISALLOW list — telling
-  // crawlers to index a page they were also told not to fetch. It is now
-  // absent from this file entirely, resolved on the disallow side: a guest
-  // order-lookup form is a state, not a destination, matching every other
-  // mid-journey route already excluded (`/unsubscribe`, `/shop/*/cart`,
-  // `/shop/*/checkout`). `app/track/layout.tsx` carries the matching
-  // `robots.index=false` belt-and-braces meta.
-  //
-  // The published policy set (LGL-01). None of these was here, so a crawler
-  // reaching the sitemap was told about five pages fewer than the site has.
-  //
-  // THEY ARE IN THE SITEMAP AND NOT DISALLOWED, WHICH WAS CHECKED RATHER THAN
-  // ASSUMED: `app/robots.ts`'s DISALLOW list is /api/, /auth/, /dashboard,
-  // /shop/orders, /shop/signin, /shop/auth/, /shop/*/cart, /shop/*/checkout,
-  // /shop/*/orders/, /track and /unsubscribe. No /legal prefix appears in it,
-  // so no robots change is needed.
-  //
-  // Priority sits at 0.3: these pages must be indexable and findable, but they
-  // must not outrank a storefront, which is what the product actually sells.
-  // `yearly` because a policy that changed weekly would be a different problem.
-  { path: "/legal", changeFrequency: "yearly", priority: 0.3 },
-  { path: "/legal/privacy", changeFrequency: "yearly", priority: 0.3 },
-  { path: "/legal/cookies", changeFrequency: "yearly", priority: 0.3 },
-  { path: "/legal/retention", changeFrequency: "yearly", priority: 0.3 },
-  { path: "/legal/accessibility", changeFrequency: "yearly", priority: 0.3 },
-]
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
   const origin = siteOrigin()
@@ -128,7 +91,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const slugs = await loadAllShopSlugs()
 
   return [
-    ...STATIC_ROUTES.map((r) => ({
+    ...PUBLIC_STATIC_ROUTES.map((r) => ({
       url: `${origin}${r.path}`,
       lastModified: now,
       changeFrequency: r.changeFrequency,

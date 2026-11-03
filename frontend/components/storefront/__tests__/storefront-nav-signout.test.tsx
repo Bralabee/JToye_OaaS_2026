@@ -14,7 +14,7 @@
  */
 
 import { render, screen, fireEvent, act } from "@testing-library/react"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
 import { customerLogout, getCustomerSession } from "@/lib/customer-auth"
 
@@ -28,6 +28,7 @@ jest.mock("@/lib/customer-auth", () => ({
 const mockedSession = getCustomerSession as jest.Mock
 const mockedLogout = customerLogout as jest.Mock
 const mockedPathname = usePathname as jest.Mock
+const mockedSearchParams = useSearchParams as jest.Mock
 
 async function renderNavAt(pathname: string) {
   mockedPathname.mockReturnValue(pathname)
@@ -44,6 +45,7 @@ beforeEach(() => {
   mockedSession.mockResolvedValue(null)
   mockedLogout.mockReset()
   mockedLogout.mockResolvedValue(undefined)
+  mockedSearchParams.mockReturnValue(new URLSearchParams(""))
 })
 
 afterAll(() => {
@@ -66,8 +68,8 @@ describe("SW-JRD-08 — sign-out returns to the public page the customer was on"
   it.each([
     ["/shop", "/shop"],
     ["/shop/rosies-kitchen", "/shop/rosies-kitchen"],
-    ["/shop/rosies-kitchen/checkout", "/shop"],
-    ["/shop/rosies-kitchen/cart", "/shop"],
+    ["/shop/rosies-kitchen/checkout", "/shop/rosies-kitchen"],
+    ["/shop/rosies-kitchen/cart", "/shop/rosies-kitchen"],
     ["/shop/rosies-kitchen/orders/ORD-1", "/shop"],
     ["/shop/account", "/shop"],
     ["/shop/orders", "/shop"],
@@ -86,6 +88,21 @@ describe("SW-JRD-08 — the Sign in link does not point at itself", () => {
   it("omits next= on /shop/signin", async () => {
     await renderNavAt("/shop/signin")
     expect(screen.getByRole("link", { name: /^sign in$/i })).toHaveAttribute("href", "/shop/signin")
+  })
+
+  it("keeps the page's own next= on /shop/signin?next=... (#1109 review round 1)", async () => {
+    mockedSearchParams.mockReturnValue(new URLSearchParams("next=/shop/rosies-kitchen"))
+    await renderNavAt("/shop/signin")
+    expect(screen.getByRole("link", { name: /^sign in$/i })).toHaveAttribute(
+      "href",
+      "/shop/signin?next=%2Fshop%2Frosies-kitchen"
+    )
+  })
+
+  it("narrows that next= with the sign-in page's own rule (an off-site value becomes /shop)", async () => {
+    mockedSearchParams.mockReturnValue(new URLSearchParams("next=//evil.example/x"))
+    await renderNavAt("/shop/signin")
+    expect(screen.getByRole("link", { name: /^sign in$/i })).toHaveAttribute("href", "/shop/signin?next=%2Fshop")
   })
 
   it("still carries next= from a shop page (control)", async () => {

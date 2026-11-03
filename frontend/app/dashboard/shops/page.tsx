@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
 import { shopAdminCapabilities } from "@/lib/shop-admin-capabilities"
+import { SHOP_SLUG_PATTERN } from "@/lib/shop-slug"
 import {
   Card,
   CardContent,
@@ -144,7 +145,7 @@ function finalSlug(value: string): string {
 }
 
 /** `CreateShopRequest.slug`'s @Pattern (non-blank arm) and @Size(max = 100). */
-const SERVER_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const SERVER_SLUG_PATTERN = SHOP_SLUG_PATTERN
 
 /**
  * 37-G review: the stored slug an ordinary save re-sends, or null when the server's own request validation

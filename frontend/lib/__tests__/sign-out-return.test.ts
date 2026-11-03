@@ -1,13 +1,19 @@
 /**
- * SW-JRD-08 — where a storefront sign-out lands, and that `customerLogout` carries it.
+ * SW-JRD-08 — where a customer sign-out lands, and that `customerLogout` carries it.
  *
- * Allow-list, not deny-list: only /shop and a shop's own page (/shop/<slug>) are returned to. Every
- * other path — account, my orders, sign-in, the auth callback, a basket, a checkout, an order page —
- * falls back to /shop, because each is personal or mid-journey and the sign-out has just removed
- * the session and the baskets it depended on.
+ * A sign-out returns to the page it was made on when that page is PUBLIC, and to /shop otherwise:
+ *  - a page `sitemap.xml` lists (lib/public-routes.ts, the same list) returns to itself;
+ *  - anything under a shop's own path returns to that shop's page (/shop/<slug>): its basket and
+ *    checkout included, so the customer stays at that kitchen (#1109 review round 1);
+ *  - a shop's order page and every customer-private route (account, my orders, sign-in, the auth
+ *    callback, /track) falls back to /shop.
  */
 
-import { signOutReturnPath } from "@/lib/sign-out-return"
+import fs from "fs"
+import path from "path"
+import { RESERVED_SHOP_SEGMENTS, signOutReturnPath } from "@/lib/sign-out-return"
+import { PUBLIC_STATIC_ROUTES } from "@/lib/public-routes"
+import { SHOP_SLUG_PATTERN } from "@/lib/shop-slug"
 import { customerLogout } from "@/lib/customer-auth"
 
 describe("signOutReturnPath", () => {
@@ -16,6 +22,12 @@ describe("signOutReturnPath", () => {
     ["/shop/", "/shop"],
     ["/shop/rosies-kitchen", "/shop/rosies-kitchen"],
     ["/shop/peckham-jollof-co", "/shop/peckham-jollof-co"],
+    ["/shop/rosies-kitchen/cart", "/shop/rosies-kitchen"],
+    ["/shop/rosies-kitchen/checkout", "/shop/rosies-kitchen"],
+    ["/", "/"],
+    ["/for-operators", "/for-operators"],
+    ["/legal/cookies", "/legal/cookies"],
+    ["/legal/privacy/", "/legal/privacy"],
   ])("returns to the public page %s -> %s", (input, expected) => {
     expect(signOutReturnPath(input)).toBe(expected)
   })
@@ -25,11 +37,11 @@ describe("signOutReturnPath", () => {
     "/shop/orders",
     "/shop/signin",
     "/shop/auth/callback",
-    "/shop/rosies-kitchen/cart",
-    "/shop/rosies-kitchen/checkout",
     "/shop/rosies-kitchen/orders/ORD-1",
+    "/shop/Rosies-Kitchen",
+    "/track",
     "/dashboard",
-    "/",
+    "/unsubscribe",
     "//evil.example",
     "/shop/%2F%2Fevil.example",
     "",
@@ -40,6 +52,33 @@ describe("signOutReturnPath", () => {
   it("falls back to /shop with no pathname at all", () => {
     expect(signOutReturnPath(null)).toBe("/shop")
     expect(signOutReturnPath(undefined)).toBe("/shop")
+  })
+
+  it("every public static route returns to itself (control: the list is not empty)", () => {
+    expect(PUBLIC_STATIC_ROUTES.length).toBeGreaterThan(3)
+    for (const { path: p } of PUBLIC_STATIC_ROUTES) expect(signOutReturnPath(p)).toBe(p)
+  })
+})
+
+describe("the copies that could drift", () => {
+  it("RESERVED_SHOP_SEGMENTS is exactly the static route directories under app/shop", () => {
+    const shopDir = path.join(__dirname, "..", "..", "app", "shop")
+    const routeDirs = fs
+      .readdirSync(shopDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith("[") && !d.name.startsWith("_"))
+      .map((d) => d.name)
+      .sort()
+    // Floor: the four that exist today, so an unreadable directory cannot pass as "no routes".
+    expect(routeDirs.length).toBeGreaterThanOrEqual(4)
+    expect([...RESERVED_SHOP_SEGMENTS].sort()).toEqual(routeDirs)
+  })
+
+  it("the shop slug pattern is lowercase only, as CreateShopRequest's @Pattern is", () => {
+    expect(SHOP_SLUG_PATTERN.test("rosies-kitchen")).toBe(true)
+    expect(SHOP_SLUG_PATTERN.flags).not.toContain("i")
+    expect(SHOP_SLUG_PATTERN.test("Rosies-Kitchen")).toBe(false)
+    expect(SHOP_SLUG_PATTERN.test("a--b")).toBe(false)
+    expect(SHOP_SLUG_PATTERN.test("-a")).toBe(false)
   })
 })
 

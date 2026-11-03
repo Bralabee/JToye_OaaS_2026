@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { Suspense, useEffect, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
-import { useParams, usePathname } from "next/navigation"
+import { useParams, usePathname, useSearchParams } from "next/navigation"
 import { m } from "framer-motion"
 import { User, LogOut, Package, MapPin, Menu, X, ShoppingBag } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -12,6 +12,7 @@ import { useCustomerSession } from "@/hooks/use-customer-session"
 import { customerIdpSignOut, customerLogout } from "@/lib/customer-auth"
 import { hasRememberedSignIn } from "@/lib/cart-identity"
 import { signOutReturnPath } from "@/lib/sign-out-return"
+import { safeReturnTo } from "@/lib/safe-return-to"
 import { basketAnnouncement, basketCountPhrase, type BasketEdit } from "@/lib/basket-announcement"
 
 /**
@@ -37,6 +38,36 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+
+/**
+ * SW-JRD-08: where the header's "Sign in" goes. From any page it carries that page as `next`. On
+ * the sign-in page itself `next` would point back at that page, so it carries the page's OWN `next`
+ * instead (narrowed by `safeReturnTo`, the rule the sign-in card applies to the same value), or none.
+ */
+function signInHref(pathname: string | null, currentNext: string | null): string {
+  if (pathname === "/shop/signin") {
+    return currentNext ? `/shop/signin?next=${encodeURIComponent(safeReturnTo(currentNext))}` : "/shop/signin"
+  }
+  return `/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`
+}
+
+function SignInLink({ pathname }: { pathname: string | null }) {
+  const searchParams = useSearchParams()
+  return <SignInLinkView href={signInHref(pathname, searchParams?.get("next") ?? null)} />
+}
+
+function SignInLinkView({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors [@container_(max-width:17.5rem)]:px-2"
+    >
+      {/* Decorative: the word carries the meaning, so the compact row drops the icon first. */}
+      <User className="h-3 w-3 [@container_(max-width:17.5rem)]:hidden" aria-hidden="true" />
+      Sign in
+    </Link>
+  )
+}
 
 export function StorefrontNav() {
   // Session state comes from the shared hook, not a local copy — PublicHeader
@@ -311,19 +342,11 @@ export function StorefrontNav() {
               nothing to bookmark, nothing to come back to when a session expired, and
               no visible route to the vendor page if they had guessed wrong. `pathname`
               comes from usePathname() rather than window so it is stable during SSR. */}
-          <Link
-            href={
-              // SW-JRD-08: on the sign-in page itself, `next` would point back at that page.
-              pathname === "/shop/signin"
-                ? "/shop/signin"
-                : `/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`
-            }
-            className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors [@container_(max-width:17.5rem)]:px-2"
-          >
-            {/* Decorative: the word carries the meaning, so the compact row drops the icon first. */}
-            <User className="h-3 w-3 [@container_(max-width:17.5rem)]:hidden" aria-hidden="true" />
-            Sign in
-          </Link>
+          {/* useSearchParams needs a Suspense boundary; the fallback is the same link without the
+              sign-in page's own `next`, so nothing shifts when the real one mounts. */}
+          <Suspense fallback={<SignInLinkView href={signInHref(pathname, null)} />}>
+            <SignInLink pathname={pathname} />
+          </Suspense>
         </div>
       )}
 

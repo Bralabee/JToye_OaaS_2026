@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useCustomerSession } from "@/hooks/use-customer-session"
 import { customerLogout } from "@/lib/customer-auth"
+import { signOutReturnPath } from "@/lib/sign-out-return"
 import {
   Sheet,
   SheetClose,
@@ -71,7 +72,9 @@ export function PublicHeader() {
   const [signingOut, setSigningOut] = useState(false)
   const handleSignOut = async () => {
     setSigningOut(true)
-    await customerLogout()
+    // SW-JRD-08 (#1109 review round 1): the same destination rule as the storefront header, so a
+    // public page the sitemap lists returns to itself and anything else lands on /shop.
+    await customerLogout(signOutReturnPath(pathname))
   }
 
   const isActive = (href: string) =>
