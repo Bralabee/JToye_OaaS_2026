@@ -10,3 +10,10 @@ status: complete
 - Fail arm (main's page.tsx on the same server): no arrow at 1024/1152.
 - Reduced-motion parity main vs branch: rail 524-564 / 494-534 and door 836 / 784 / 759 / 759 at 1024 / 1152 / 1280 / 1440, identical.
 - Records: D18 in design/decisions.md; HANDOFF item 4 closed; CHANGELOG entry.
+
+## Review round 1 (PR #1108)
+
+- Admissible 2, both reproduced on the running container and fixed: (1) chips widened 169px inside an unchanged rail showed no arrow (only the rail box was observed); (2) the right arrow covered 32px of a keyboard-focused "Vegan" at 1024 (Chrome does not scroll a partly visible focused chip).
+- Fix: shared hook `use-scroll-edges.ts` (DishScroller + CuisineRail), children observed at border-box, resize + fonts.ready fallback, data attributes, arrows always mounted; fine pointer: scroll-px-10, snap-none, focus -> scrollIntoView nearest.
+- After: widened rail shows its arrow (reverted: hides); keyboard overlap 0px on every chip at 1024 and 1152; arrows absent from 1279 up and on touch; rail/door positions identical (759 from 1280).
+- Break arms: children not observed -> 1 red; no resize fallback -> 1 red; no onFocus -> 1 red. Jest full: 295 suites, 3511 tests green. docs metrics regenerated (7090).
