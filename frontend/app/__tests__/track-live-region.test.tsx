@@ -23,10 +23,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useSearchParams } from "next/navigation"
 import TrackOrderPage from "@/app/track/page"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  default: { get: (...args: unknown[]) => mockLookup(...args),
+    post: (...args: unknown[]) => mockLookup(...args) },
 }))
 
 const mockGetSession = jest.fn()
@@ -73,13 +74,13 @@ function currentPoll(): () => unknown {
 
 async function poll(next: Record<string, unknown> | "fail") {
   trackingAnswer = next
-  const calls = mockGet.mock.calls.length
+  const calls = mockLookup.mock.calls.length
   await act(async () => {
     await currentPoll()()
   })
-  expect(mockGet.mock.calls.length).toBeGreaterThan(calls)
+  expect(mockLookup.mock.calls.length).toBeGreaterThan(calls)
   // F3: the poll is still the number + email read.
-  expect(mockGet).toHaveBeenLastCalledWith(`/public/orders/${ORDER_NUMBER}`, { params: { email: EMAIL } })
+  expect(mockLookup).toHaveBeenLastCalledWith(`/public/orders/${ORDER_NUMBER}/lookup`, { email: EMAIL })
 }
 
 function recordMutations(el: HTMLElement) {
@@ -104,14 +105,14 @@ async function guestLookup() {
 }
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockLookup.mockReset()
   mockGetSession.mockReset()
   mockGetSession.mockResolvedValue(null)
   mockedSearchParams.mockReturnValue({ get: () => null })
   sessionStorage.clear()
   trackingAnswer = ORDER
-  mockGet.mockImplementation((url: string) => {
-    if (url === `/public/orders/${ORDER_NUMBER}`) {
+  mockLookup.mockImplementation((url: string) => {
+    if (url === `/public/orders/${ORDER_NUMBER}/lookup`) {
       return trackingAnswer === "fail"
         ? Promise.reject(new Error("network"))
         : Promise.resolve({ data: trackingAnswer })
@@ -257,7 +258,7 @@ describe("37-F review F5 on /track: only the LATEST read is applied", () => {
     await guestLookup()
 
     let releaseOld: () => void = () => {}
-    mockGet.mockImplementationOnce(
+    mockLookup.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           releaseOld = () => resolve({ data: { ...ORDER, status: "PREPARING" } })

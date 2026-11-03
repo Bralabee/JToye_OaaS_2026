@@ -24,10 +24,11 @@ import {
 } from "@/components/storefront/recorded-allergen-set"
 import { allergenFlagCopy } from "@/components/storefront/order-allergen-panel"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  default: { get: (...args: unknown[]) => mockLookup(...args),
+    post: (...args: unknown[]) => mockLookup(...args) },
 }))
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -57,7 +58,7 @@ function resolvedThenable<T>(value: T): Promise<T> {
 }
 
 async function renderWith(response: Record<string, unknown>) {
-  mockGet.mockResolvedValue({ data: { ...BASE, ...response } })
+  mockLookup.mockResolvedValue({ data: { ...BASE, ...response } })
   render(
     <Suspense fallback={<div>loading</div>}>
       <OrderTrackingPage params={resolvedThenable({ slug: SLUG, orderNumber: ORDER_NUMBER })} />
@@ -67,7 +68,7 @@ async function renderWith(response: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockLookup.mockReset()
   localStorage.clear()
   localStorage.setItem(`jtoye-checkout-email-${SLUG}`, EMAIL)
 })
@@ -85,7 +86,7 @@ describe("the per-shop order page shows the order's allergen record (#785, D-08)
     expect(within(block).getByTestId("recorded-ack")).toHaveTextContent("You confirmed you had read: Milk")
     expect(within(block).getByTestId("recorded-set")).toHaveTextContent("Recorded on your order: Milk")
     // Still bound to number + email (goods F3 / P2-KYL-P5).
-    expect(mockGet).toHaveBeenCalledWith(`/public/orders/${ORDER_NUMBER}`, { params: { email: EMAIL } })
+    expect(mockLookup).toHaveBeenCalledWith(`/public/orders/${ORDER_NUMBER}/lookup`, { email: EMAIL })
   })
 
   it("a vendor-placed order states that the shop placed it — and still shows the recorded set (D-07)", async () => {

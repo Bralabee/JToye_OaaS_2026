@@ -13,7 +13,8 @@ import { ORDER_STATUS_COPY } from "@/lib/order-status-announcement"
 const mockGet = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  // SW-JRD-12: the guest lookup is a POST to …/lookup with the email in the body.
+  default: { get: (...args: unknown[]) => mockGet(...args), post: (...args: unknown[]) => mockGet(...args) },
 }))
 
 const mockGetSession = jest.fn()

@@ -340,7 +340,10 @@ function ProductCard({
           </div>
 
           {/* Product image with multi-image indicator */}
-          <div className="relative w-24 sm:w-28 flex-shrink-0">
+          {/* SW-MRC-10 (reconfirms UXT-080): the photo column is sized in rem, so 200% text doubled
+              it (192px of a 256px card) and the text column wrapped one letter per line. Capped at 35%
+              of the card; at 100% text at 320px the rem width (96px) is the smaller, so nothing moves. */}
+          <div className="relative w-24 max-w-[35%] sm:w-28 flex-shrink-0">
             <SafeImage
               src={primaryImage}
               alt={product.title}
@@ -826,7 +829,9 @@ export function ShopDetailClient({
                 </summary>
                 <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                   {rows.map((row) => (
-                    <div key={row.day} className="flex justify-between gap-2">
+                    // SW-MRC-10: wraps the hours under the day when the column is too narrow
+                    // (200% text at 320px ran "Open 24 hours" off the screen); a no-op when it fits.
+                    <div key={row.day} className="flex flex-wrap justify-between gap-x-2">
                       <span className="text-slate-600">{row.label}</span>
                       <span className="font-medium text-slate-700">{row.text}</span>
                     </div>

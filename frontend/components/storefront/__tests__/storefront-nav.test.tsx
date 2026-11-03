@@ -84,6 +84,29 @@ describe("StorefrontNav (shop storefront header) — signed OUT", () => {
   })
 })
 
+describe("StorefrontNav — SW-MRC-10: signing in never depends on the header pill fitting", () => {
+  it("the menu sheet carries 'Sign in' for a signed-out visitor", async () => {
+    await renderNav()
+    fireEvent.click(screen.getByRole("button", { name: /open menu/i }))
+    // Radix hides everything outside the open sheet, so this is the sheet's own link.
+    const signIn = screen.getByRole("link", { name: /^sign in$/i })
+    expect(signIn.getAttribute("href")).toMatch(/^\/shop\/signin\?next=/)
+  })
+
+  it("the sheet offers no 'Sign in' once signed in", async () => {
+    signedIn()
+    await renderNav()
+    fireEvent.click(screen.getByRole("button", { name: /open menu/i }))
+    expect(screen.queryByRole("link", { name: /^sign in$/i })).toBeNull()
+  })
+
+  it("the header pill drops out only below 12rem of row, through the container query", async () => {
+    await renderNav()
+    const pill = screen.getAllByRole("link", { name: /^sign in$/i })[0]
+    expect(pill.className).toContain("[@container_(max-width:12rem)]:hidden")
+  })
+})
+
 describe("StorefrontNav (shop storefront header) — signed IN as a customer (#458)", () => {
   it("does not render 'For operators' on the desktop row", async () => {
     signedIn()

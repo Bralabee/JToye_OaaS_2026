@@ -269,6 +269,21 @@ describe("privacy notice — the rights section points somewhere that exists", (
     expect(text).toMatch(/Information Commissioner/i)
   })
 
+  it("SW-SAM-03: offers the online data request form to a guest in both configuration states", () => {
+    for (const configured of [true, false]) {
+      if (configured) process.env[DPO_VAR] = SAMPLE_EMAIL
+      else delete process.env[DPO_VAR]
+      delete process.env[OFFICE_VAR]
+
+      const { main, unmount } = renderNotice()
+      const rights = sectionByAnchor(main, "your-rights-and-how-to-exercise-them")
+      expect(rights.querySelector('a[href="/data-request"]')).toBeInTheDocument()
+      const emails = sectionByAnchor(main, "emails")
+      expect(emails.querySelector('a[href="/data-request"]')).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it("still offers the ICO as a complaint route in both configuration states", () => {
     for (const configured of [true, false]) {
       if (configured) process.env[DPO_VAR] = SAMPLE_EMAIL

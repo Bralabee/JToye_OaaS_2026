@@ -16,7 +16,7 @@
  */
 
 import { Suspense } from "react"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { useRouter } from "next/navigation"
 import CheckoutPage, { isValidUkPostcode } from "@/app/shop/[slug]/checkout/page"
 import { saveLocalOrder } from "@/lib/order-history"
@@ -258,7 +258,8 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     expect(screen.queryByText(/Final total confirmed/i)).toBeNull()
   })
 
-  it("shows Free delivery for Collection (delivery fee waived)", async () => {
+  it("SW-JRD-09: Collection drops the delivery fee and its Delivery row, and says where to collect", async () => {
+    mockShop({ ...SHOP, address: "12 Rye Lane, London SE15 5BY", phone: "020 7946 0000" })
     seedCart(1000)
     renderCheckout()
 
@@ -267,9 +268,23 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /collection/i }))
 
-    // Delivery is now Free and the £3.00 fee is no longer rendered
-    expect(await screen.findByText("Free")).toBeTruthy()
-    expect(screen.queryByText("£3.00")).toBeNull()
+    // The £3.00 fee is gone, and so is the Delivery row: no "Delivery: Free" on a Collection order.
+    await waitFor(() => expect(screen.queryByText("£3.00")).toBeNull())
+    expect(screen.queryByText("Free")).toBeNull()
+    const collect = await screen.findByTestId("collect-from")
+    expect(collect).toHaveTextContent("Jollof Express")
+    expect(collect).toHaveTextContent("12 Rye Lane, London SE15 5BY")
+    expect(within(collect).getByRole("link", { name: /020 7946 0000/ })).toHaveAttribute("href", "tel:02079460000")
+  })
+
+  it("SW-JRD-09: a shop with no published address or phone shows only its name, nothing invented", async () => {
+    seedCart(1000)
+    renderCheckout()
+    expect(await screen.findByText("£3.00")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+    const collect = await screen.findByTestId("collect-from")
+    expect(collect).toHaveTextContent("Jollof Express")
+    expect(within(collect).queryByRole("link")).toBeNull()
   })
 
   it("disables Place order below the shop's minimum order value with a hint (WR-01)", async () => {

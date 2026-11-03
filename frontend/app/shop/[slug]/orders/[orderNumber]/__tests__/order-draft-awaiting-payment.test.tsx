@@ -14,10 +14,11 @@ import { render, screen } from "@testing-library/react"
 import OrderTrackingPage from "@/app/shop/[slug]/orders/[orderNumber]/page"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  default: { get: (...args: unknown[]) => mockLookup(...args),
+    post: (...args: unknown[]) => mockLookup(...args) },
 }))
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -46,7 +47,7 @@ function resolvedThenable<T>(value: T): Promise<T> {
 }
 
 async function renderWithStatus(status: string) {
-  mockGet.mockResolvedValue({ data: { ...BASE, status } })
+  mockLookup.mockResolvedValue({ data: { ...BASE, status } })
   render(
     <Suspense fallback={<div>loading</div>}>
       <OrderTrackingPage params={resolvedThenable({ slug: SLUG, orderNumber: ORDER_NUMBER })} />
@@ -57,7 +58,7 @@ async function renderWithStatus(status: string) {
 }
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockLookup.mockReset()
   localStorage.clear()
   localStorage.setItem(`jtoye-checkout-email-${SLUG}`, EMAIL)
 })
@@ -68,7 +69,7 @@ describe("the customer order page for an unpaid DRAFT (#957)", () => {
     expect(screen.getByText("Awaiting payment")).toBeInTheDocument()
     expect(screen.queryByText("Order in Progress")).toBeNull()
     // Still bound to number + email (goods F3 / P2-KYL-P5).
-    expect(mockGet).toHaveBeenCalledWith(`/public/orders/${ORDER_NUMBER}`, { params: { email: EMAIL } })
+    expect(mockLookup).toHaveBeenCalledWith(`/public/orders/${ORDER_NUMBER}/lookup`, { email: EMAIL })
   })
 
   it("a PENDING order still reads 'Order in Progress' (unchanged)", async () => {

@@ -4,6 +4,7 @@ import { getCompanyInfo, resolveControllerContact } from "@/lib/company"
 import { PolicyPage, PolicySection } from "@/components/legal/policy-page"
 import { ACCOUNT_HREF, EMAIL_SCOPE_STATEMENT, NO_MARKETING_STATEMENT } from "@/lib/email-scope-copy"
 
+
 export const metadata: Metadata = {
   title: "Privacy notice — J'Toye",
   description:
@@ -367,7 +368,11 @@ export default function PrivacyNoticePage() {
           <Link href={ACCOUNT_HREF} className={LINK}>
             My account
           </Link>{" "}
-          if you have a J&apos;Toye account, or the routes in the next section.
+          if you have a J&apos;Toye account, or the{" "}
+          <Link href="/data-request" className={LINK}>
+            data request form
+          </Link>{" "}
+          if you do not.
         </p>
       </PolicySection>
 
@@ -412,6 +417,15 @@ export default function PrivacyNoticePage() {
         {contact.anyRoute ? (
           <>
             <h3 className={SUB_HEADING}>How to make a request</h3>
+            {/* SW-SAM-03: the online route for everyone, with or without an account. */}
+            <p>
+              Use our{" "}
+              <Link href="/data-request" className={LINK}>
+                data request form
+              </Link>{" "}
+              to ask for a copy of your data or to have it erased. You do not
+              need an account; we email you a link to confirm the request.
+            </p>
             {contact.emailHref ? (
               <p>
                 Write to{" "}
@@ -433,6 +447,15 @@ export default function PrivacyNoticePage() {
         ) : (
           <>
             <h3 className={SUB_HEADING}>How to make a request</h3>
+            {/* SW-SAM-03: the online route for everyone, with or without an account. */}
+            <p>
+              Use our{" "}
+              <Link href="/data-request" className={LINK}>
+                data request form
+              </Link>{" "}
+              to ask for a copy of your data or to have it erased. You do not
+              need an account; we email you a link to confirm the request.
+            </p>
             <p>
               We do not currently publish a data protection contact address on
               this site. Until we do, you can make a request to the shop you

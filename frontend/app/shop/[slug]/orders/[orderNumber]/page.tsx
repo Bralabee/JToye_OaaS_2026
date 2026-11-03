@@ -10,6 +10,7 @@ import {
   ChefHat, Package, CircleDot, XCircle, Loader2, RefreshCw
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import { lookupGuestOrder } from "@/lib/order-lookup"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
 import { SellerBlock } from "@/components/storefront/seller-block"
@@ -178,10 +179,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       return
     }
     try {
-      const res = await publicApiClient.get<OrderStatus>(
-        `/public/orders/${orderNumber}`,
-        { params: { email } }
-      )
+      const res = await lookupGuestOrder<OrderStatus>(orderNumber, email)
       if (seq !== readSeqRef.current) return
       const previous = lastStatusRef.current
       lastStatusRef.current = res.data.status

@@ -9,7 +9,7 @@ import {
   Package, Search, Loader2, CheckCircle2, Clock,
   ChefHat, CircleDot, XCircle, Store, RefreshCw
 } from "lucide-react"
-import publicApiClient from "@/lib/public-api-client"
+import { lookupGuestOrder } from "@/lib/order-lookup"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
@@ -133,7 +133,9 @@ function TrackOrderContent() {
   // by the confirmation/My-Orders links, or the customer-session pre-fill
   // below — never minted into our own URLs (PII in query strings persists in
   // history and access logs). A legacy ?email= param is still honoured so old
-  // bookmarks keep working, but no page links with it any more.
+  // bookmarks keep working, but no page links with it any more. SW-JRD-12: the
+  // lookup itself sends the email in the request body (lib/order-lookup.ts), and
+  // a legacy ?email= is removed from the address bar once read (effect below).
   const [email, setEmail] = useState(() => {
     const fromParam = searchParams.get("email") || ""
     if (fromParam) return fromParam
@@ -144,6 +146,15 @@ function TrackOrderContent() {
       return ""
     }
   })
+
+  // SW-JRD-12: an old bookmark's ?email= has been read into state above; take it out of the
+  // address bar so it is not kept in this tab's history entry or copied with the link.
+  useEffect(() => {
+    if (!searchParams.get("email")) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete("email")
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+  }, [searchParams])
 
   const [order, setOrder] = useState<OrderStatus | null>(null)
   // 37-51 (UI-SPEC F1, UXT-081): the one status region's text, and the last order + status a read
@@ -267,10 +278,7 @@ function TrackOrderContent() {
     lastSeen.current = null
 
     try {
-      const res = await publicApiClient.get<OrderStatus>(
-        `/public/orders/${orderNumber.trim()}`,
-        { params: { email: email.trim() } }
-      )
+      const res = await lookupGuestOrder<OrderStatus>(orderNumber.trim(), email.trim())
       if (seq !== readSeq.current) return
       trackedByNumber.current = res.data.orderNumber
       showOrder(res.data)
@@ -303,10 +311,7 @@ function TrackOrderContent() {
     const interval = setInterval(async () => {
       const seq = ++readSeq.current
       try {
-        const res = await publicApiClient.get<OrderStatus>(
-          `/public/orders/${order.orderNumber}`,
-          { params: { email: email.trim() } }
-        )
+        const res = await lookupGuestOrder<OrderStatus>(order.orderNumber, email.trim())
         if (seq !== readSeq.current) return
         trackedByNumber.current = res.data.orderNumber
         showOrder(res.data)
@@ -324,10 +329,7 @@ function TrackOrderContent() {
     setLoadingRecorded(true)
     const seq = ++readSeq.current
     try {
-      const res = await publicApiClient.get<OrderStatus>(
-        `/public/orders/${order.orderNumber}`,
-        { params: { email: email.trim() } }
-      )
+      const res = await lookupGuestOrder<OrderStatus>(order.orderNumber, email.trim())
       if (seq !== readSeq.current) return
       trackedByNumber.current = res.data.orderNumber
       showOrder(res.data)

@@ -28,13 +28,15 @@ import {
   PLATFORM_NOT_SELLER_COPY,
 } from "@/components/storefront/seller-block"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 const mockPost = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
   default: {
-    get: (...args: unknown[]) => mockGet(...args),
-    post: (...args: unknown[]) => mockPost(...args),
+    get: (...args: unknown[]) => mockLookup(...args),
+    // SW-JRD-12: the tracking read is a POST to …/lookup; every other POST is what F16 forbids.
+    post: (url: string, ...rest: unknown[]) =>
+      url.endsWith("/lookup") ? mockLookup(url, ...rest) : mockPost(url, ...rest),
   },
 }))
 
@@ -97,8 +99,8 @@ const ORDER = {
 type Endpoint = Record<string, unknown> | "fail"
 
 function mockEndpoints({ order = ORDER, shop = SHOP }: { order?: Endpoint; shop?: Endpoint } = {}) {
-  mockGet.mockImplementation((url: string) => {
-    if (url === `/public/orders/${ORDER_NUMBER}`) {
+  mockLookup.mockImplementation((url: string) => {
+    if (url === `/public/orders/${ORDER_NUMBER}/lookup`) {
       return order === "fail" ? Promise.reject(new Error("network")) : Promise.resolve({ data: order })
     }
     if (url === `/public/shops/${SLUG}`) {
@@ -146,7 +148,7 @@ function expectNoPost() {
 }
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockLookup.mockReset()
   mockPost.mockReset()
   fetchSpy.mockClear()
   globalThis.fetch = fetchSpy as unknown as typeof fetch
@@ -222,9 +224,9 @@ describe("C3 later views: a refresh shows the plain heading and title, and nothi
     await screen.findByRole("heading", { level: 1, name: `Order ${ORDER_NUMBER}` })
 
     // Non-vacuity: the tracking read DID happen in both views, bound to the email (F3).
-    const trackingReads = mockGet.mock.calls.filter(([url]) => url === `/public/orders/${ORDER_NUMBER}`)
+    const trackingReads = mockLookup.mock.calls.filter(([url]) => url === `/public/orders/${ORDER_NUMBER}/lookup`)
     expect(trackingReads.length).toBeGreaterThanOrEqual(2)
-    for (const [, config] of trackingReads) expect(config).toEqual({ params: { email: EMAIL } })
+    for (const [, config] of trackingReads) expect(config).toEqual({ email: EMAIL })
     expectNoPost()
   })
 
@@ -296,7 +298,7 @@ describe("C3 content carried over from the in-place confirmation (P2-REG-17, P2-
     mockEndpoints({ shop: "fail" })
     renderOrderPage()
     const breakdown = await screen.findByTestId("order-breakdown")
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(`/public/shops/${SLUG}`))
+    await waitFor(() => expect(mockLookup).toHaveBeenCalledWith(`/public/shops/${SLUG}`))
 
     expect(breakdown.textContent).not.toMatch(/VAT/)
     expect(screen.queryByRole("region", { name: /who you are buying from/i })).not.toBeInTheDocument()
@@ -324,8 +326,8 @@ describe("C3 loading and error states", () => {
   it("loading: the existing spinner shows while the tracking data loads", async () => {
     sessionStorage.setItem(MARKER, ORDER_NUMBER)
     let release: (v: unknown) => void = () => {}
-    mockGet.mockImplementation((url: string) =>
-      url === `/public/orders/${ORDER_NUMBER}`
+    mockLookup.mockImplementation((url: string) =>
+      url === `/public/orders/${ORDER_NUMBER}/lookup`
         ? new Promise((resolve) => { release = resolve })
         : Promise.resolve({ data: SHOP })
     )

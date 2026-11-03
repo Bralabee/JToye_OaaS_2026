@@ -60,7 +60,10 @@ function SignInLinkView({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors [@container_(max-width:17.5rem)]:px-2"
+      // SW-MRC-10: below 12rem of header row (200% text at 320px) the pill no longer fits beside
+      // the basket and the menu button and pushed the row off-screen; it moves into the menu sheet,
+      // which carries "Sign in" for a signed-out visitor at every size below sm.
+      className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors [@container_(max-width:17.5rem)]:px-2 [@container_(max-width:12rem)]:hidden"
     >
       {/* Decorative: the word carries the meaning, so the compact row drops the icon first. */}
       <User className="h-3 w-3 [@container_(max-width:17.5rem)]:hidden" aria-hidden="true" />
@@ -435,6 +438,15 @@ export function StorefrontNav() {
                   className={mobileLink(isActive("/shop/account"))}
                 >
                   My account
+                </Link>
+              </SheetClose>
+            )}
+            {/* SW-MRC-10: the menu's own way in for a signed-out visitor, so signing in never
+                depends on the header pill fitting the row. */}
+            {!profile && (
+              <SheetClose asChild>
+                <Link href={signInHref(pathname, null)} className={mobileLink(isActive("/shop/signin"))}>
+                  Sign in
                 </Link>
               </SheetClose>
             )}

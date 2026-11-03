@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { buildCsp } from "@/lib/security-headers"
+import { checkShopSlug, shopSlugOf } from "@/lib/shop-slug-gate"
 
 // Per-request Content-Security-Policy with a nonce (issue #89 P1-7 / SEC-02).
 //
@@ -15,7 +16,7 @@ import { buildCsp } from "@/lib/security-headers"
 // (the /dashboard route is additionally gated server-side in its layout — there
 // is no `authorized` callback, so the broadened matcher below cannot gate public
 // routes). Enforcing by default; set CSP_REPORT_ONLY=true to observe first.
-export default auth((req) => {
+export default auth(async (req) => {
   const nonce = btoa(crypto.randomUUID())
 
   const csp = buildCsp({
@@ -37,7 +38,21 @@ export default auth((req) => {
   requestHeaders.set("x-nonce", nonce)
   requestHeaders.set("Content-Security-Policy", csp)
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } })
+  // SW-CLR-17: an unknown kitchen gets a real 404 and a retired slug a real 301. Decided here
+  // because a streamed page has already sent 200 by the time it can call notFound() (see
+  // lib/shop-slug-gate.ts). Anything but core's own answer passes through unchanged.
+  const slug = shopSlugOf(req.nextUrl.pathname)
+  const verdict = slug ? await checkShopSlug(slug, req.headers) : { kind: "pass" as const }
+  if (verdict.kind === "redirect") {
+    const target = new URL(`/shop/${encodeURIComponent(verdict.canonicalSlug)}`, req.nextUrl)
+    target.search = req.nextUrl.search
+    return NextResponse.redirect(target, 301)
+  }
+
+  const response =
+    verdict.kind === "notfound"
+      ? NextResponse.rewrite(req.nextUrl, { status: 404, request: { headers: requestHeaders } })
+      : NextResponse.next({ request: { headers: requestHeaders } })
   response.headers.set(
     reportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
     csp,

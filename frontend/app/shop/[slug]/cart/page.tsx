@@ -131,14 +131,19 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
       </div>
 
       {/* Items */}
-      <div className="space-y-3">
+      {/* SW-MRC-10 (reconfirms UXT-080): an inline-size container, so a line can reflow when the
+          list is narrow IN REM. rem in a container query follows the root font size, so 200% text
+          at 320px (264px = 8.25rem) switches and 100% text at 320px (16.5rem) does not: the normal
+          layout is unchanged. Below 12rem the thumbnail (decorative: the name is the heading beside
+          it) is dropped and the quantity controls take their own row instead of running off-screen. */}
+      <div className="space-y-3 [container-type:inline-size]">
         {items.map((item) => (
           <div
             key={item.productId}
-            className="flex items-center gap-3 rounded-xl bg-white border border-cream-100 p-3 shadow-sm"
+            className="flex items-center gap-3 rounded-xl bg-white border border-cream-100 p-3 shadow-sm [@container_(max-width:12rem)]:flex-wrap"
           >
             {/* Image with branded fallback — no broken <img> ever renders */}
-            <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden">
+            <div className="h-16 w-16 flex-shrink-0 rounded-lg overflow-hidden [@container_(max-width:12rem)]:hidden">
               <SafeImage
                 src={item.imageUrl}
                 alt={item.title}
@@ -149,7 +154,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             </div>
 
             {/* Details */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 [@container_(max-width:12rem)]:basis-full">
               {/* 37-52 (UI-SPEC F6, UXT-080): wraps, never an ellipsis: at 360px with 130% text the
                   customer could not read what was in their basket.
                   SW-MRC-13 (swarm epic #964): H2, not H3 — the page's H1 is "Your basket" and there is
@@ -167,7 +172,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             </div>
 
             {/* Quantity controls */}
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-0 [@container_(max-width:12rem)]:ml-auto">
               <button
                 onClick={() => updateQuantity(item.productId, item.quantity - 1)}
                 aria-label={

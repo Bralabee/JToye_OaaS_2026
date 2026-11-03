@@ -25,10 +25,11 @@ import "@testing-library/jest-dom"
 import { useSearchParams } from "next/navigation"
 import TrackOrderPage from "@/app/track/page"
 
-const mockGet = jest.fn()
+const mockLookup = jest.fn()
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
-  default: { get: (...args: unknown[]) => mockGet(...args) },
+  default: { get: (...args: unknown[]) => mockLookup(...args),
+    post: (...args: unknown[]) => mockLookup(...args) },
 }))
 
 const mockGetSession = jest.fn()
@@ -65,7 +66,7 @@ function mockOwnOrders(content: unknown[]) {
 }
 
 beforeEach(() => {
-  mockGet.mockReset()
+  mockLookup.mockReset()
   mockGetSession.mockReset()
   mockedSearchParams.mockReturnValue({ get: () => null })
   global.fetch = jest.fn().mockResolvedValue({
@@ -102,7 +103,7 @@ describe("/track for a signed-in customer WITH an order (#458 item 4)", () => {
 
     // publicApiClient is the by-number guest endpoint. The auto path must not use
     // it, or a `?order=` deep link would become a lookup for somebody else's order.
-    expect(mockGet).not.toHaveBeenCalled()
+    expect(mockLookup).not.toHaveBeenCalled()
   })
 })
 
