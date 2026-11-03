@@ -241,3 +241,21 @@ every check are in `.planning/quick/261102-r6u-featured-kitchens-config-staging-
 - **Status: KEEP** (Sanmi, 2026-11-02; three tenants and demo ordering ruled the same day).
 - **Review when:** the first real vendor is featured in production, placement is ever offered for
   payment, or a demo kitchen is onboarded to Connect.
+## D18 · 2026-11-03 · The cuisine chip rail gets mouse-only arrows
+Owner ruling (Sanmi, 2026-11-03), reversing the 2026-11-02 "peek, no change" recorded under D16.
+Raised by PR #1097's round-1 review (item 2: between 1024 and 1279px the rail overflows behind a
+hidden scrollbar, and a mouse has no way to reach the last chips except a trackpad).
+1. **Prev/next arrows, for a hovering fine pointer only** (`(hover:hover) and (pointer:fine)`):
+   touch keeps the swipe and the peek, and from 1280 up the six chips fit, so no arrow renders.
+   Each arrow renders only while its side has hidden chips, and scrolls the rail by 80% of its
+   width (instant under reduced motion). `frontend/components/marketing/cuisine-rail.tsx`.
+2. **Flat, by identity.md:** a 32px white pill with a warm-300 ring (to part it from the white chips
+   it sits over) and a warm-900 chevron; hover warm-200; no shadow, no gradient (rulings.tsv). The
+   right-edge fade was offered and not chosen: it is a gradient under `gradient-decoration` = ban.
+3. **Out of the tab order** (`tabindex=-1`) but named ("Scroll cuisines left/right"): a keyboard
+   already reaches every chip, and the browser scrolls the focused chip into view.
+4. **No layout change:** measured with reduced motion on main and on this change, the rail is at
+   494-534 and the gold door bottom at 759 from 1280 up (836 at 1024x768, 784 at 1152x800) on both.
+- **Status: KEEP** (Sanmi, 2026-11-03).
+- **Review when:** the chip set grows past what one row holds at 1280, or the kitchen row's peek
+  (D14 item 4) is revisited.
