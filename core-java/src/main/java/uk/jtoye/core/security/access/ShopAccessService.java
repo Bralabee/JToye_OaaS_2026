@@ -485,6 +485,49 @@ public class ShopAccessService {
     }
 
     /**
+     * Which shops' customer contact the current caller sees in full (issue #856 / SW-TND-08, owner
+     * ruling 2026-11-03; see {@link CustomerContactScope} for the rule and its Art 5(1)(c) basis).
+     *
+     * <p>Decided with the SAME ladder {@link #require} uses, so what is shown can never disagree with
+     * what is enforced: {@link #isGroupAdmin()} (realm admin via the D-03 bridge, declared system
+     * caller, allowlisted machine client, honoured tenant-wide GROUP_ADMIN, strict-OFF implicit admin)
+     * sees everything; a tenant-wide SHOP_MANAGER manages every shop of this tenant (reads are already
+     * tenant-scoped) and sees everything; otherwise the per-shop grants of SHOP_MANAGER or above are
+     * the managed shops. A tenant-wide STAFF plus a per-shop SHOP_MANAGER on A therefore yields
+     * {A}, the same answer as {@link Membership#roleOn}.
+     *
+     * <p>Called AFTER the method's access gate, so it never decides access and never throws: an
+     * unidentifiable caller gets {@link CustomerContactScope#NONE} (fail closed). Not cached and does
+     * not call {@code onRequest()}: the membership itself is cached per user through
+     * {@code self().resolveMembership}.
+     */
+    public CustomerContactScope customerContactScope() {
+        try {
+            if (isGroupAdmin()) {
+                return CustomerContactScope.ALL_SHOPS;
+            }
+        } catch (ShopAccessDeniedException unidentifiable) {
+            return CustomerContactScope.NONE;
+        }
+        Optional<UUID> userId = currentVendorUserId();
+        if (userId.isEmpty()) {
+            return CustomerContactScope.NONE;
+        }
+        Membership membership = self().resolveMembership(userId.get());
+        ShopRole tenantWide = membership.tenantWideRole();
+        if (tenantWide != null && tenantWide.satisfies(ShopRole.SHOP_MANAGER)) {
+            return CustomerContactScope.ALL_SHOPS;
+        }
+        Set<UUID> managed = new HashSet<>();
+        membership.perShopRole().forEach((shopId, role) -> {
+            if (shopId != null && role != null && role.satisfies(ShopRole.SHOP_MANAGER)) {
+                managed.add(shopId);
+            }
+        });
+        return new CustomerContactScope(false, managed);
+    }
+
+    /**
      * True for a realm-admin (D-03 bridge), a DECLARED internal system caller
      * ({@link SystemPrincipal#asSystem}), a declared machine client (CR-03 allowlist), or a
      * tenant-wide GROUP_ADMIN grant. Every OTHER caller — anonymous, non-{@code Jwt}, a JWT

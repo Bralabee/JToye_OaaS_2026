@@ -17,6 +17,7 @@ import uk.jtoye.core.customer.CustomerController.CustomerDto;
 import uk.jtoye.core.customer.CustomerController.UpdateCustomerRequest;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.CustomerContactScope;
 import uk.jtoye.core.security.access.ShopAccessService;
 
 import java.lang.reflect.Field;
@@ -77,6 +78,8 @@ class CustomerServiceTest {
         TenantContext.set(tenantId);
 
         lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
+        // #856: the same Group-admin premise, for the contact decision (a mocked null would minimise).
+        lenient().when(shopAccessService.customerContactScope()).thenReturn(CustomerContactScope.ALL_SHOPS);
 
         // Create test customer (using reflection to set auto-generated fields)
         testCustomer = new Customer();

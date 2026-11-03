@@ -24,6 +24,7 @@ import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.CustomerContactScope;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
@@ -141,6 +142,8 @@ class OrderServiceTest {
         // full-tenant query path (existing assertions unchanged). Lenient: not every test
         // exercises a gated method.
         lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
+        // #856: the same Group-admin premise, for the contact decision (a mocked null would minimise).
+        lenient().when(shopAccessService.customerContactScope()).thenReturn(CustomerContactScope.ALL_SHOPS);
 
         // Create test shop (using reflection to set auto-generated fields)
         testShop = new Shop();

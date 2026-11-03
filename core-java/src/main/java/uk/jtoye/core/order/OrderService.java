@@ -39,6 +39,7 @@ import uk.jtoye.core.payment.dto.RefundDto;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.CustomerContactScope;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.Shop;
@@ -419,7 +420,17 @@ public class OrderService {
                     // VSA-02 (D-02): a by-id order read requires at least STAFF on the
                     // order's shop (parent-lookup) — cross-shop hit → typed shop 403.
                     shopAccessService.require(order.getShopId(), ShopRole.STAFF);
-                    return orderMapper.toDto(order);
+                    // #856 / SW-TND-08 (owner ruling 2026-11-03, UK GDPR Art 5(1)(c)): a caller
+                    // whose best role on the order's shop is STAFF gets no customer email and no
+                    // address on a non-DELIVERY order. Decided AFTER the gate (a denied caller still
+                    // gets the gate's typed 403/404), once per method, by the row's shop. Applied at
+                    // every STAFF-reachable exit: the reads, the six transitions and the allergy-note
+                    // acknowledgement. createOrder, updateOrder and voidOrder are exempt: they already
+                    // require SHOP_MANAGER on the same shop or GROUP_ADMIN, so it would always be a
+                    // no-op there, and leaving createOrder alone keeps the stored orders.create
+                    // idempotency body unchanged.
+                    CustomerContactScope contactScope = shopAccessService.customerContactScope();
+                    return CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope);
                 });
     }
 
@@ -433,9 +444,10 @@ public class OrderService {
                 .map(order -> {
                     // VSA-02 (D-02): detail read requires at least STAFF on the shop.
                     shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+                    CustomerContactScope contactScope = shopAccessService.customerContactScope();
                     OrderDetailDto dto = orderMapper.toDetailDto(order);
                     dto.setRefunds(refundService.findByOrderId(orderId));
-                    return dto;
+                    return CustomerContactMinimiser.apply(dto, contactScope);
                 });
     }
 
@@ -504,7 +516,8 @@ public class OrderService {
                 .map(order -> {
                     // VSA-02 (D-02): by-number read requires at least STAFF on the shop.
                     shopAccessService.require(order.getShopId(), ShopRole.STAFF);
-                    return orderMapper.toDto(order);
+                    CustomerContactScope contactScope = shopAccessService.customerContactScope();
+                    return CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope);
                 });
     }
 
@@ -516,15 +529,17 @@ public class OrderService {
         // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
         // sees the whole tenant; a scoped user only granted-shop orders; ungranted → none.
         if (shopAccessService.isGroupAdmin()) {
+            CustomerContactScope contactScope = shopAccessService.customerContactScope();
             return orderRepository.findAll(pageable)
-                    .map(orderMapper::toDto);
+                    .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
         if (granted.isEmpty()) {
             return Page.empty(pageable);
         }
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return orderRepository.findByShopIdIn(granted, pageable)
-                .map(orderMapper::toDto);
+                .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
     }
 
     /**
@@ -534,15 +549,17 @@ public class OrderService {
     public Page<OrderDto> getOrdersByStatus(OrderStatus status, Pageable pageable) {
         // VSA-02 (D-01): read-scope by grant set, mirroring getAllOrders.
         if (shopAccessService.isGroupAdmin()) {
+            CustomerContactScope contactScope = shopAccessService.customerContactScope();
             return orderRepository.findByStatus(status, pageable)
-                    .map(orderMapper::toDto);
+                    .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
         if (granted.isEmpty()) {
             return Page.empty(pageable);
         }
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return orderRepository.findByStatusAndShopIdIn(status, granted, pageable)
-                .map(orderMapper::toDto);
+                .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
     }
 
     /**
@@ -552,8 +569,9 @@ public class OrderService {
     public Page<OrderDto> getOrdersByShop(UUID shopId, Pageable pageable) {
         // VSA-02 (D-02): explicit shop-scoped read requires at least STAFF on that shop.
         shopAccessService.require(shopId, ShopRole.STAFF);
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return orderRepository.findByShopId(shopId, pageable)
-                .map(orderMapper::toDto);
+                .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
     }
 
     /**
@@ -601,10 +619,11 @@ public class OrderService {
         // nobody filled it is a lie the next consumer inherits.
         Map<UUID, List<RefundDto>> refundsByOrder = refundService.findByOrderIds(ids);
 
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return page.map(order -> {
             OrderDetailDto dto = orderMapper.toDetailDto(withItems.getOrDefault(order.getId(), order));
             dto.setRefunds(refundsByOrder.getOrDefault(order.getId(), List.of()));
-            return dto;
+            return CustomerContactMinimiser.apply(dto, contactScope);
         });
     }
 
@@ -615,15 +634,17 @@ public class OrderService {
     public Page<OrderDto> getOrdersByCustomer(UUID customerId, Pageable pageable) {
         // VSA-02 (D-01): read-scope by grant set, mirroring getAllOrders.
         if (shopAccessService.isGroupAdmin()) {
+            CustomerContactScope contactScope = shopAccessService.customerContactScope();
             return orderRepository.findByCustomerId(customerId, pageable)
-                    .map(orderMapper::toDto);
+                    .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
         if (granted.isEmpty()) {
             return Page.empty(pageable);
         }
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return orderRepository.findByCustomerIdAndShopIdIn(customerId, granted, pageable)
-                .map(orderMapper::toDto);
+                .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
     }
 
     /**
@@ -781,6 +802,8 @@ public class OrderService {
         // catalogue writes elsewhere. Gating once here (single load) covers all six
         // public transition entry points, which each delegate to this method.
         shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+        // #856: decided once, after the gate; applied to the response below.
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
 
         // Phase 37-10 (D-10): a voided order is out of the books and off the kitchen board, so it does not
         // move again. Above all it must not reach COMPLETED: completion writes the order's SALE, and a sale
@@ -880,7 +903,7 @@ public class OrderService {
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }
 
-        return orderMapper.toDto(order);
+        return CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope);
     }
 
     /**
@@ -901,6 +924,7 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
 
         if (order.getAllergyNote() == null) {
             throw new InvalidStateTransitionException("This order has no allergy note to acknowledge");
@@ -918,7 +942,7 @@ public class OrderService {
 
         OrderDetailDto dto = orderMapper.toDetailDto(order);
         dto.setRefunds(refundService.findByOrderId(orderId));
-        return dto;
+        return CustomerContactMinimiser.apply(dto, contactScope);
     }
 
     /**
