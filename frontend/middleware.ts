@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { buildCsp } from "@/lib/security-headers"
-import { checkShopSlug, shopSlugOf } from "@/lib/shop-slug-gate"
+import { checkShopSlug, isDocumentRequest, shopSlugOf } from "@/lib/shop-slug-gate"
 
 // Per-request Content-Security-Policy with a nonce (issue #89 P1-7 / SEC-02).
 //
@@ -41,7 +41,10 @@ export default auth(async (req) => {
   // SW-CLR-17: an unknown kitchen gets a real 404 and a retired slug a real 301. Decided here
   // because a streamed page has already sent 200 by the time it can call notFound() (see
   // lib/shop-slug-gate.ts). Anything but core's own answer passes through unchanged.
-  const slug = shopSlugOf(req.nextUrl.pathname)
+  // Document requests only (review R1): never a prefetch or an RSC navigation.
+  const slug = isDocumentRequest(req.headers, req.nextUrl.searchParams)
+    ? shopSlugOf(req.nextUrl.pathname)
+    : null
   const verdict = slug ? await checkShopSlug(slug, req.headers) : { kind: "pass" as const }
   if (verdict.kind === "redirect") {
     const target = new URL(`/shop/${encodeURIComponent(verdict.canonicalSlug)}`, req.nextUrl)

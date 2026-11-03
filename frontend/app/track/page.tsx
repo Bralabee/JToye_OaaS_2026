@@ -150,7 +150,15 @@ function TrackOrderContent() {
   // SW-JRD-12: an old bookmark's ?email= has been read into state above; take it out of the
   // address bar so it is not kept in this tab's history entry or copied with the link.
   useEffect(() => {
-    if (!searchParams.get("email")) return
+    const fromParam = searchParams.get("email")
+    if (!fromParam) return
+    // Review R1: keep it in the tab's out-of-band handoff (the key the confirmation and My orders
+    // links use), so a refresh of the cleaned URL still looks the order up.
+    try {
+      sessionStorage.setItem("jtoye-track-email", fromParam)
+    } catch {
+      /* storage unavailable: the lookup already ran; only a refresh would lose it */
+    }
     const url = new URL(window.location.href)
     url.searchParams.delete("email")
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)

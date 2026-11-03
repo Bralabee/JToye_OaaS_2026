@@ -439,6 +439,21 @@ test.describe("live storefront @mobile-only", () => {
     expect((await headerOverflow(page)).length, "the header probe missed a row pushed past its box").toBeGreaterThan(0)
   })
 
+  test("SW-CLR-17: an unknown kitchen answers HTTP 404 to a page load, and a live one 200; INSTRUMENT: a prefetch is not gated", async ({ request }) => {
+    // The raw status of the served document (review R1 finding 3: the unit tests never saw it).
+    const missing = await request.get("/shop/sw-clr-17-no-such-kitchen", { maxRedirects: 0 })
+    expect(missing.status(), "unknown kitchen").toBe(404)
+    expect(await missing.text()).toContain("Kitchen not found")
+    expect((await request.get(`/shop/${SHOP_SLUG}`, { maxRedirects: 0 })).status(), "live kitchen").toBe(200)
+    // A <Link> prefetch skips the core check (it would spend the visitor's rate limit), so the same
+    // missing slug is not answered 404 there: the probe can tell the two request kinds apart.
+    const prefetch = await request.get("/shop/sw-clr-17-no-such-kitchen", {
+      maxRedirects: 0,
+      headers: { RSC: "1", "Next-Router-Prefetch": "1" },
+    })
+    expect(prefetch.status(), "prefetch of an unknown kitchen").not.toBe(404)
+  })
+
   test("SW-MRC-10: at 320px with 200% text no page scrolls sideways, dish text stays readable and Sign in is in the menu; INSTRUMENT: a widened photo column is caught", async ({ page }) => {
     const huge = async () => {
       await page.setViewportSize({ width: 320, height: 640 })

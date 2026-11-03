@@ -33,6 +33,25 @@ export const RESERVED_SHOP_SEGMENTS: ReadonlySet<string> = new Set([
   "signin",
 ])
 
+/**
+ * PR #1111 review round 1: only a full DOCUMENT request is checked. Next sends `RSC: 1` on a client
+ * navigation and `Next-Router-Prefetch: 1` on a <Link> prefetch (measured: viewing /shop alone sent
+ * 9 prefetches of /shop/{slug} through the proxy). Checking those spent the visitor's public rate
+ * limit (30/min + 10) on kitchens they never opened, and a status code on an RSC payload helps no
+ * one: the HTTP status matters to a crawler or a direct visit, which is a document request. A client
+ * navigation to a missing kitchen still renders "Kitchen not found" from the page's own notFound().
+ */
+export function isDocumentRequest(
+  requestHeaders: HeaderSource,
+  searchParams: { has(name: string): boolean }
+): boolean {
+  return (
+    !requestHeaders.get("rsc") &&
+    !requestHeaders.get("next-router-prefetch") &&
+    !searchParams.has("_rsc")
+  )
+}
+
 /** How long the proxy waits for core before it lets the page decide. */
 export const SHOP_SLUG_GATE_TIMEOUT_MS = 1500
 

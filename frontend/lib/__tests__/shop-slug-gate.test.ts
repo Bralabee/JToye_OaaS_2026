@@ -5,7 +5,7 @@
  * SW-CLR-17: the proxy's kitchen check (lib/shop-slug-gate.ts). Only core's own 404 is a verdict;
  * every other answer, and every failure, passes the request to the page unchanged (fail open).
  */
-import { checkShopSlug, shopSlugOf } from "@/lib/shop-slug-gate"
+import { checkShopSlug, isDocumentRequest, shopSlugOf } from "@/lib/shop-slug-gate"
 
 function res(status: number, headers: Record<string, string> = {}): Response {
   return new Response(status === 204 || status === 301 ? null : "{}", { status, headers })
@@ -88,5 +88,18 @@ describe("checkShopSlug", () => {
     expect(init.redirect).toBe("manual")
     expect(init.headers).toEqual({ "X-Forwarded-For": "203.0.113.7" })
     expect(init.signal).toBeDefined()
+  })
+})
+
+describe("isDocumentRequest (PR #1111 review R1)", () => {
+  const none = new URLSearchParams()
+  it("is true for a plain page load", () => {
+    expect(isDocumentRequest(new Headers({ accept: "text/html" }), none)).toBe(true)
+  })
+  it("is false for a <Link> prefetch, an RSC navigation, or an _rsc request", () => {
+    expect(isDocumentRequest(new Headers({ rsc: "1", "next-router-prefetch": "1" }), none)).toBe(false)
+    expect(isDocumentRequest(new Headers({ rsc: "1" }), none)).toBe(false)
+    expect(isDocumentRequest(new Headers({ "next-router-prefetch": "1" }), none)).toBe(false)
+    expect(isDocumentRequest(new Headers(), new URLSearchParams("_rsc=abc"))).toBe(false)
   })
 })

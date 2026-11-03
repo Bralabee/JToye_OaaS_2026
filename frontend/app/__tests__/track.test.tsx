@@ -102,6 +102,10 @@ describe("Track page (guest lookup, Surface H)", () => {
       expect(mockLookup).toHaveBeenCalledWith("/public/orders/ORD-12345678/lookup", { email: "old@example.com" })
     )
     await waitFor(() => expect(window.location.search).toBe("?order=ORD-12345678"))
+    // PR #1111 review R1 finding 5: the address moves to the tab's out-of-band handoff, so a refresh
+    // of the cleaned URL still finds the order instead of an empty form.
+    expect(sessionStorage.getItem("jtoye-track-email")).toBe("old@example.com")
+    sessionStorage.removeItem("jtoye-track-email")
     // No lookup ever carried the address in its URL.
     for (const [url] of mockLookup.mock.calls) expect(String(url)).not.toContain("@")
     window.history.replaceState(null, "", "/")
