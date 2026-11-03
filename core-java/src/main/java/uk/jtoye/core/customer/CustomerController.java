@@ -140,10 +140,12 @@ public class CustomerController {
 
     @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)
     @PutMapping("/{id}")
-    @Operation(summary = "Update customer", description = "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin.")
+    @Operation(summary = "Update customer", description = "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin, "
+            + "and the caller must see the customer in full: SHOP_MANAGER on a shop the customer originated at or "
+            + "ordered from, or tenant-wide (#856).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Customer updated successfully"),
-            @ApiResponse(responseCode = "403", description = "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"),
+            @ApiResponse(responseCode = "403", description = "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin, or sees this customer minimised because it only reaches it through a shop where it is STAFF, #856)"),
             @ApiResponse(responseCode = "404", description = "Customer not found"),
             @ApiResponse(responseCode = "400", description = "Validation error")
     })
@@ -177,6 +179,9 @@ public class CustomerController {
             UUID id,
             UUID tenantId,
             String name,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "The customer's email. Null when the "
+                    + "caller's best role on the customer's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees "
+                    + "the name and phone, not the email.")
             String email,
             String phone,
             Integer allergenRestrictions,

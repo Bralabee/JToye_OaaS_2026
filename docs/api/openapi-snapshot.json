@@ -1903,6 +1903,7 @@
             "type" : "string"
           },
           "email" : {
+            "description" : "The customer's email. Null when the caller's best role on the customer's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email.",
             "type" : "string"
           },
           "id" : {
@@ -3155,6 +3156,7 @@
             "type" : "string"
           },
           "addressLine1" : {
+            "description" : "First address line. addressLine1, addressLine2, addressCity and addressPostcode are null on a non-DELIVERY order when the caller's best role on the order's shop is STAFF (#856, UK GDPR Art 5(1)(c)); a DELIVERY order keeps its address, because STAFF performs the hand-off.",
             "type" : "string"
           },
           "addressLine2" : {
@@ -3216,6 +3218,7 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "description" : "The customer's email. Null when the caller's best role on the order's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email. May also be null on an order placed without one.",
             "type" : "string"
           },
           "customerName" : {
@@ -3389,6 +3392,7 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "description" : "The customer's email. Null when the caller's best role on the order's shop is STAFF (#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email. May also be null on an order placed without one.",
             "type" : "string"
           },
           "customerName" : {
@@ -7797,7 +7801,7 @@
         ]
       },
       "put" : {
-        "description" : "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin.",
+        "description" : "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin, and the caller must see the customer in full: SHOP_MANAGER on a shop the customer originated at or ordered from, or tenant-wide (#856).",
         "operationId" : "update_3",
         "parameters" : [
           {
@@ -7850,7 +7854,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin, or sees this customer minimised because it only reaches it through a shop where it is STAFF, #856)"
           },
           "404" : {
             "content" : {
@@ -9472,7 +9476,7 @@
                 }
               }
             },
-            "description" : "Token lacks the orders:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied)"
+            "description" : "Token lacks the orders:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied), or the body links a customerId the caller sees minimised: one only reachable through a shop where it is STAFF (#856; errors/shop-access-denied, requiredRole SHOP_MANAGER)"
           },
           "404" : {
             "content" : {
@@ -9946,7 +9950,7 @@
         ]
       },
       "put" : {
-        "description" : "Update customer info and notes on DRAFT/PENDING orders",
+        "description" : "Update customer info and notes on DRAFT/PENDING orders. Requires SHOP_MANAGER on the order's shop; linking a customerId the caller sees minimised (one only reachable through a shop where it is STAFF) is refused 403 errors/shop-access-denied, requiredRole SHOP_MANAGER (#856).",
         "operationId" : "updateOrder",
         "parameters" : [
           {

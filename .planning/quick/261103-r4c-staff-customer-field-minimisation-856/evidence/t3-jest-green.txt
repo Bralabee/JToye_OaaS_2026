@@ -1,0 +1,11 @@
+# Task 3 jest GREEN — app/dashboard/customers after the page.tsx/api.ts fix
+npm notice run frontend@2.3.0 test
+npm notice run jest --ci app/dashboard/customers
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 3 passed, 3 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        1.219 s
+Ran all test suites matching app/dashboard/customers.
+jest rc=0

@@ -17,6 +17,9 @@ public class OrderDto {
     private String orderNumber;
     private OrderStatus status;
     private String customerName;
+    @Schema(description = "The customer's email. Null when the caller's best role on the order's shop is STAFF "
+            + "(#856, UK GDPR Art 5(1)(c)): STAFF sees the name and phone, not the email. May also be null "
+            + "on an order placed without one.")
     private String customerEmail;
     private String customerPhone;
     private String notes;

@@ -84,6 +84,29 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
                                                          @Param("shopIds") Collection<UUID> shopIds);
 
     /**
+     * Issue #856 / SW-TND-08: the ids among {@code ids} of customers in {@code tenantId} that a caller
+     * managing {@code shopIds} sees in full contact — the SAME predicate as
+     * {@link #findTenantScopedInGrantSet} (origin shop in the set, or an order at a shop in the set),
+     * with an explicit tenant predicate on both the customer and the order. One batch query per page,
+     * run only for a caller who manages some but not all shops.
+     */
+    @Query("""
+            SELECT c.id FROM Customer c
+            WHERE c.tenantId = :tenantId
+              AND c.id IN :ids
+              AND (c.originShopId IN :shopIds
+                   OR EXISTS (
+                       SELECT 1 FROM Order o
+                       WHERE o.tenantId = :tenantId
+                         AND o.customerId = c.id
+                         AND o.shopId IN :shopIds
+                   ))
+            """)
+    List<UUID> findIdsInShopSet(@Param("tenantId") UUID tenantId,
+                                @Param("ids") Collection<UUID> ids,
+                                @Param("shopIds") Collection<UUID> shopIds);
+
+    /**
      * Every customer id + email for ONE tenant — the projection the DSAR fan-out matches subject
      * digests against (Phase 31, plan 31-09).
      *

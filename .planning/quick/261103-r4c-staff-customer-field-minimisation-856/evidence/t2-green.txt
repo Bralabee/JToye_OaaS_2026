@@ -1,0 +1,13 @@
+IT gradle rc=0
+order.StaffCustomerFieldMinimisationIntegrationTest tests="5" skipped="0" failures="0" errors="0"
+security.access.ShopAccessEnforcementIntegrationTest tests="14" skipped="0" failures="0" errors="0"
+customer.CustomerOriginShopScopeIntegrationTest tests="5" skipped="0" failures="0" errors="0"
+order.AllergyNoteAckIntegrationTest tests="14" skipped="0" failures="0" errors="0"
+order.OrderVoidIntegrationTest tests="25" skipped="0" failures="0" errors="0"
+order.OrderCreateSubmitIntegrationTest tests="5" skipped="0" failures="0" errors="0"
+order.OrderBulkCancelIntegrationTest tests="8" skipped="0" failures="0" errors="0"
+common.IntegrityViolationDiscriminationIntegrationTest tests="4" skipped="0" failures="0" errors="0"
+integration.VanishedRowStatusIntegrationTest tests="9" skipped="0" failures="0" errors="0"
+integration.OpenApiSnapshotTest tests="1" skipped="0" failures="0" errors="0"
+unit rc=0 xml-files=233 failing-grep rc=1 (1 = no failing file; n must be > 0)
+errors=0 tests=2105 failures=0 skipped=1 

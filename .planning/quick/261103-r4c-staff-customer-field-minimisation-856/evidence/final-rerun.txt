@@ -1,0 +1,7 @@
+# Final re-run on HEAD 25e4e4e0 (after the Task 3 DTO annotations and regenerated snapshot)
+IT gradle rc=0
+integration.OpenApiSnapshotTest tests="1" skipped="0" failures="0" errors="0"
+order.StaffCustomerFieldMinimisationIntegrationTest tests="5" skipped="0" failures="0" errors="0"
+unit gradle rc=0
+TEST-uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest.xml tests="15" skipped="0" failures="0" errors="0"
+TEST-uk.jtoye.core.order.OrderStateChangeEventCarriesNoCustomerContactTest.xml tests="2" skipped="0" failures="0" errors="0"

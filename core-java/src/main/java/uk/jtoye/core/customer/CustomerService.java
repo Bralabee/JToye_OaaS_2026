@@ -15,13 +15,17 @@ import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.CustomerContactScope;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 
 import java.time.OffsetDateTime;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Service for customer management operations.
@@ -101,18 +105,21 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public Optional<CustomerDto> getCustomerById(UUID customerId) {
         log.debug("Fetching customer by ID: {}", customerId);
+        Optional<CustomerDto> found;
         if (hasAllShopsAccess()) {
-            return customerRepository.findById(customerId)
+            found = customerRepository.findById(customerId)
+                    .map(customerMapper::toDto);
+        } else {
+            UUID tenantId = TenantContext.get()
+                    .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+            Set<UUID> granted = shopAccessService.grantedShopIds();
+            if (granted.isEmpty()) {
+                return Optional.empty();
+            }
+            found = customerRepository.findByIdAndTenantScopedInGrantSet(customerId, tenantId, granted)
                     .map(customerMapper::toDto);
         }
-        UUID tenantId = TenantContext.get()
-                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
-        Set<UUID> granted = shopAccessService.grantedShopIds();
-        if (granted.isEmpty()) {
-            return Optional.empty();
-        }
-        return customerRepository.findByIdAndTenantScopedInGrantSet(customerId, tenantId, granted)
-                .map(customerMapper::toDto);
+        return found.map(contactMinimiser(found.stream().toList()));
     }
 
     /**
@@ -123,18 +130,22 @@ public class CustomerService {
     public Page<CustomerDto> getAllCustomers(Pageable pageable) {
         log.debug("Fetching all customers with pagination: page={}, size={}",
                 pageable.getPageNumber(), pageable.getPageSize());
+        Page<CustomerDto> page;
         if (hasAllShopsAccess()) {
-            return customerRepository.findAll(pageable)
+            page = customerRepository.findAll(pageable)
+                    .map(customerMapper::toDto);
+        } else {
+            UUID tenantId = TenantContext.get()
+                    .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+            Set<UUID> granted = shopAccessService.grantedShopIds();
+            if (granted.isEmpty()) {
+                return Page.empty(pageable);
+            }
+            page = customerRepository.findTenantScopedInGrantSet(tenantId, granted, pageable)
                     .map(customerMapper::toDto);
         }
-        UUID tenantId = TenantContext.get()
-                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
-        Set<UUID> granted = shopAccessService.grantedShopIds();
-        if (granted.isEmpty()) {
-            return Page.empty(pageable);
-        }
-        return customerRepository.findTenantScopedInGrantSet(tenantId, granted, pageable)
-                .map(customerMapper::toDto);
+        // Page.map keeps the page's own total; a rebuilt PageImpl could recompute it.
+        return page.map(contactMinimiser(page.getContent()));
     }
 
     /**
@@ -148,6 +159,11 @@ public class CustomerService {
                 customerId, request.name(), request.email());
 
         Customer customer = findScopedCustomerOrThrow(customerId);
+        // #856 review R0-2: a caller who sees this customer minimised has never been shown the
+        // email it would overwrite; only a caller managing one of the customer's shops may edit.
+        CustomerContactRule.requireFullContact(shopAccessService.customerContactScope(), customer,
+                TenantContext.get().orElseThrow(() -> new IllegalStateException("Tenant context not set")),
+                customerRepository);
 
         // Update customer fields
         customer.setName(request.name());
@@ -166,7 +182,42 @@ public class CustomerService {
         log.info("Updated customer {} with email '{}', allergen restrictions: {}",
                 customer.getId(), customer.getEmail(), customer.getAllergenRestrictions());
 
-        return customerMapper.toDto(customer);
+        CustomerDto updated = customerMapper.toDto(customer);
+        return contactMinimiser(List.of(updated)).apply(updated);
+    }
+
+    /**
+     * Issue #856 / SW-TND-08 (owner ruling 2026-11-03, UK GDPR Art 5(1)(c)): a caller whose best role
+     * on a customer's shop is STAFF sees the customer's name and phone but not the email. Option B
+     * (WINDOWS #29) is unchanged: who may READ a customer is decided by the narrowing above, and this
+     * only decides which fields the response carries. Called once per method, after that narrowing.
+     *
+     * <p>A Group admin, realm admin or tenant-wide SHOP_MANAGER keeps every email. A caller who
+     * manages no shop (STAFF only, per-shop or tenant-wide), or a missing decision, loses every email
+     * (fail closed). A caller who manages SOME shops keeps the email of exactly the customers the
+     * SAME Option C predicate places in a managed shop, decided by ONE batch query for the page.
+     * createCustomer is exempt: its origin shop is always a managed one, and leaving it alone keeps
+     * the stored customers.create idempotency body unchanged.
+     */
+    private Function<CustomerDto, CustomerDto> contactMinimiser(List<CustomerDto> dtos) {
+        CustomerContactScope scope = shopAccessService.customerContactScope();
+        if (scope != null && scope.allShops()) {
+            return Function.identity();
+        }
+        if (scope == null || scope.managedShopIds().isEmpty() || dtos.isEmpty()) {
+            return CustomerService::withoutEmail;
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        List<UUID> ids = dtos.stream().map(CustomerDto::id).toList();
+        Set<UUID> fullContact = new HashSet<>(
+                customerRepository.findIdsInShopSet(tenantId, ids, scope.managedShopIds()));
+        return dto -> fullContact.contains(dto.id()) ? dto : withoutEmail(dto);
+    }
+
+    private static CustomerDto withoutEmail(CustomerDto dto) {
+        return new CustomerDto(dto.id(), dto.tenantId(), dto.name(), null, dto.phone(),
+                dto.allergenRestrictions(), dto.createdAt(), dto.updatedAt(), dto.originShopId());
     }
 
     private Customer findScopedCustomerOrThrow(UUID customerId) {

@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 Phase: 30 (The Money Path, Executed) — EXECUTING
 Status: Executing Phase 30
-Last activity: 2026-11-02 - 30-30 complete (PR 8 merged, #1090 fixed by #1091 + #1092, staging connected account acct_1UXIfkDK5xypxMXe PENDING, onboarding link ready for the owner); next 30-31
+Last activity: 2026-11-03 - Completed quick task 261103-r4c: #856 STAFF customer-field minimisation (branch feature/856-staff-field-minimisation, PR pending)
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1497,6 +1497,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261103-r4c | #856 / SW-TND-08: STAFF customer-field minimisation, server-side (owner ruling 2026-11-03, UK GDPR Art 5(1)(c)). A caller whose best role on the row's shop is STAFF gets customer name + phone but no email, and no address on a non-DELIVERY order, on every order read, transition and the allergy-note ack, and on customer reads; SHOP_MANAGER+ unchanged. STAFF-signed IT red 4/5 before, green after; three break arms. | 2026-11-03 | 25e4e4e0 | [261103-r4c](./quick/261103-r4c-staff-customer-field-minimisation-856/) |
 | 261103-b2s | Swarm batch 2: a reset link opened in a new tab no longer ends on "Authentication failed" (callback explains and offers Sign in; SW-JRD-05 / SW-SAM-13); Keycloak's info page links back through the storefront client's baseUrl, and the theme says what to do after an already-used verification link (SW-JRD-04). | 2026-11-03 | #1110 | [261103-b2s](./quick/261103-b2s-swarm-batch2-signin-dead-ends/) |
 | 261103-b3m | Swarm batch 3: unknown kitchen is a real 404 (SW-CLR-17); guest order lookup takes the email in a POST body (SW-JRD-12); Collection checkout says where to collect (SW-JRD-09); guest /data-request form (SW-SAM-03); no sideways scroll at 320px / 200% text (SW-MRC-10). | 2026-11-03 | — | [261103-b3m](./quick/261103-b3m-swarm-batch3-medium/) |
 | 261103-cnn | Landing cuisine chip rail: mouse-only prev/next arrows (owner ruling D18, reversing D16's peek-only). Shown for a hovering fine pointer while that side has hidden chips (1024-1279px); no layout change (door 759 from 1280 up on both). | 2026-11-03 | #1108 | [261103-cnn](./quick/261103-cnn-landing-chip-rail-mouse-arrows/) |

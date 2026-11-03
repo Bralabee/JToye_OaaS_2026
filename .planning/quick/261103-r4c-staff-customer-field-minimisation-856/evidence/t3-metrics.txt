@@ -1,0 +1,22 @@
+# Task 3 doc metrics
+docs-freshness --write rc=0; docs/metrics.json: java_test_methods 3205->3212, java_test_files 442->444, jest_blocks 3602->3603, jest_files 302->303, total 7188->7196
+check-doc-metrics BEFORE the prose edit rc=1 (fail direction):
+FAIL: README.md [total_logical_invocations]: doc says 7188, docs/metrics.json says 7196
+FAIL: README.md [total_logical_invocations]: doc says 7188, docs/metrics.json says 7196
+FAIL: README.md [java_test_methods]: doc says 3205, docs/metrics.json says 3212
+FAIL: README.md [java_test_files]: doc says 442, docs/metrics.json says 444
+FAIL: README.md [jest_blocks]: doc says 3602, docs/metrics.json says 3603
+FAIL: README.md [jest_files]: doc says 302, docs/metrics.json says 303
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 7188, docs/metrics.json says 7196
+FAIL: CLAUDE.md [java_test_methods]: doc says 3205, docs/metrics.json says 3212
+FAIL: CLAUDE.md [java_test_files]: doc says 442, docs/metrics.json says 444
+FAIL: CLAUDE.md [jest_blocks]: doc says 3602, docs/metrics.json says 3603
+FAIL: CLAUDE.md [jest_files]: doc says 302, docs/metrics.json says 303
+FAIL: AGENTS.md [total_logical_invocations]: doc says 7188, docs/metrics.json says 7196
+FAIL: AGENTS.md [java_test_methods]: doc says 3205, docs/metrics.json says 3212
+FAIL: AGENTS.md [java_test_files]: doc says 442, docs/metrics.json says 444
+FAIL: AGENTS.md [jest_blocks]: doc says 3602, docs/metrics.json says 3603
+FAIL: AGENTS.md [jest_files]: doc says 302, docs/metrics.json says 303
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+AFTER editing CLAUDE.md:15, AGENTS.md:15, README.md:7/291/293/296:
+docs-freshness rc=0 doc-metrics rc=0

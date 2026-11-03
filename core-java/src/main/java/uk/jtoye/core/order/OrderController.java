@@ -96,7 +96,9 @@ public class OrderController {
             @ApiResponse(responseCode = "403",
                     description = "Token lacks the orders:write scope (errors/forbidden), or the caller "
                             + "holds no SHOP_MANAGER grant on the target shop "
-                            + "(errors/shop-access-denied)"),
+                            + "(errors/shop-access-denied), or the body links a customerId the caller sees "
+                            + "minimised: one only reachable through a shop where it is STAFF (#856; "
+                            + "errors/shop-access-denied, requiredRole SHOP_MANAGER)"),
             @ApiResponse(responseCode = "404",
                     description = "The shop, customer or a product in the basket does not exist for "
                             + "this tenant (errors/not-found)"),
@@ -252,7 +254,10 @@ public class OrderController {
      */
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PutMapping("/{id}")
-    @Operation(summary = "Update order", description = "Update customer info and notes on DRAFT/PENDING orders")
+    @Operation(summary = "Update order", description = "Update customer info and notes on DRAFT/PENDING orders. "
+            + "Requires SHOP_MANAGER on the order's shop; linking a customerId the caller sees minimised (one "
+            + "only reachable through a shop where it is STAFF) is refused 403 errors/shop-access-denied, "
+            + "requiredRole SHOP_MANAGER (#856).")
     public ResponseEntity<OrderDto> updateOrder(@PathVariable UUID id, @Valid @RequestBody UpdateOrderRequest request) {
         OrderDto order = orderService.updateOrder(id, request);
         return ResponseEntity.ok(order);

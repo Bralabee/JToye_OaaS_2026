@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
+
+Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.
+
+- **What changed:** a caller whose best role on the row's shop is STAFF gets the customer's name and phone but no email, and no address on a non-DELIVERY order. This covers every order read, the kitchen board, the six transitions, the allergy-note acknowledgement and the customer reads. `ShopAccessService.customerContactScope()` decides with the same ladder as `require()`, per shop for a caller who manages some shops and not others, and a missing decision minimises. A DELIVERY address is kept, because STAFF hands the order over. SHOP_MANAGER and above, tenant-wide SHOP_MANAGER, Group admin and realm admin are unchanged. Fields are nulled, not dropped, so the response shapes and the stored idempotency bytes do not change; the OpenAPI diff is descriptions only. The SSE/STOMP payload already carried no contact data, and a guard test keeps it that way. MCP `read_orders` and the dashboard landing use these endpoints, so they apply the rule too.
+- **Tenancy review fixes:** a caller who was SHOP_MANAGER on one shop and STAFF on another could reveal a customer's email, which it only reached through the STAFF shop, by linking that customer to an order at the managed shop. It could also overwrite that customer's email through `PUT /customers` without ever seeing it. `CustomerContactRule` refuses both with the typed `shop-access-denied` 403 (requiredRole SHOP_MANAGER), and the Customers page shows no Edit button on such a row. Displaced deliberately: that caller can no longer edit or link a customer it only reaches through a STAFF shop. It can still place the order by entering the name and phone directly.
+- **Proof:**
+  - The STAFF-signed acceptance IT was red 4 of 5 before the fix, and the two review-fix tests were red 2 of 2. It now passes 7 of 7.
+  - Four break arms each turned it red.
+  - Full integrationTest: 1441 tests, 0 failures. Unit tests: 2105, 0 failures.
+  - Jest: the new Customers test was red first.
+  - Live on the rebuilt Compose stack, the same 50 orders were read as STAFF and as SHOP_MANAGER: STAFF got 0 emails and 50 phones, SHOP_MANAGER got 50 emails.
+
 ### Storefront: Swarm Batch 3, the Medium Items — 2026-11-03 (#1111)
 
 Quick 261103-b3m. Five findings from the 2026-10-19 staging persona swarm (epic issue 964), each re-checked on main first: SW-CLR-17, SW-JRD-12, SW-JRD-09, SW-SAM-03, SW-MRC-10.
