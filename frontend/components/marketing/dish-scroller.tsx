@@ -1,7 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useRef, type ReactNode } from "react"
+import { useRef, type ReactNode } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { useScrollEdges } from "@/components/marketing/use-scroll-edges"
 
 /**
  * DishScroller — horizontal card row with a real scroll affordance.
@@ -53,14 +54,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
  * runs the user gets exactly the old behaviour — never a masked or frozen row.
  */
 
-// Subpixel tolerance. `scrollLeft` is fractional under browser zoom and on
-// HiDPI, so an exact `=== scrollWidth - clientWidth` end test never fires and
-// the right-hand arrow would stay on forever at the end of the row.
-const EDGE_EPSILON_PX = 2
-
-// Nudge just under a viewport so a sliver of the outgoing card stays visible —
-// a full-width page means losing your place.
-const NUDGE_RATIO = 0.8
+// EDGE_EPSILON_PX, NUDGE_RATIO and the measuring live in use-scroll-edges.ts,
+// shared with CuisineRail (PR 1108 review, finding 3).
 
 type DishScrollerProps = {
   children: ReactNode
@@ -72,91 +67,7 @@ export function DishScroller({ children, label }: DishScrollerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
 
-  /** Reflect scroll position onto the wrapper so CSS can drive the arrows. */
-  const syncEdges = useCallback(() => {
-    const wrapper = wrapperRef.current
-    const scroller = scrollerRef.current
-    if (!wrapper || !scroller) return
-
-    const maxScroll = scroller.scrollWidth - scroller.clientWidth
-    // A row that fits entirely has nothing to disclose in either direction;
-    // showing the affordance anyway would be a false promise.
-    const overflows = maxScroll > EDGE_EPSILON_PX
-
-    wrapper.dataset.canLeft = String(overflows && scroller.scrollLeft > EDGE_EPSILON_PX)
-    wrapper.dataset.canRight = String(overflows && scroller.scrollLeft < maxScroll - EDGE_EPSILON_PX)
-  }, [])
-
-  useEffect(() => {
-    const scroller = scrollerRef.current
-    if (!scroller) return
-
-    syncEdges()
-    scroller.addEventListener("scroll", syncEdges, { passive: true })
-
-    // Card widths change with the font and the viewport, so the end position
-    // moves without a scroll event ever firing. Observe the box rather than
-    // listening for resize, which misses in-place layout shifts.
-    //
-    // Feature-detected, not assumed: jsdom has no ResizeObserver, so calling it
-    // unguarded threw during the passive-effect flush and took down all five
-    // rendering assertions in app/__tests__/landing.test.tsx. `reveal.tsx`
-    // guards its matchMedia use the same way and for the same reason. Where the
-    // observer is missing we fall back to window resize — coarser, but the
-    // affordance degrades rather than disappearing.
-    let disconnect: () => void
-    if (typeof ResizeObserver === "function") {
-      const observer = new ResizeObserver(syncEdges)
-      observer.observe(scroller)
-      disconnect = () => observer.disconnect()
-    } else {
-      window.addEventListener("resize", syncEdges)
-      disconnect = () => window.removeEventListener("resize", syncEdges)
-    }
-
-    return () => {
-      scroller.removeEventListener("scroll", syncEdges)
-      disconnect()
-    }
-  }, [syncEdges])
-
-  // Pointer type is resolved in JS, not in a Tailwind variant, because the two
-  // conditions the arrows need — "fine pointer" AND "there is somewhere to go"
-  // — cannot be stacked as arbitrary variants. Tailwind emits the media query
-  // into the CLASS NAME rather than wrapping the rule, producing
-  // `[data-can-right=true] > .\[\@media\(hover\:hover\)...\] { display: grid }`
-  // with no @media at all — the arrows would then show on touch. Verified
-  // against the dev build 2026-08-02. `reveal.tsx` resolves its media query in
-  // JS for the same reason, so this stays consistent with the file next door.
-  useEffect(() => {
-    const wrapper = wrapperRef.current
-    if (!wrapper || typeof window === "undefined" || typeof window.matchMedia !== "function") return
-
-    const mql = window.matchMedia("(hover: hover) and (pointer: fine)")
-    const apply = () => {
-      wrapper.dataset.finePointer = String(mql.matches)
-    }
-    apply()
-    mql.addEventListener("change", apply)
-    return () => mql.removeEventListener("change", apply)
-  }, [])
-
-  const nudge = useCallback((direction: 1 | -1) => {
-    const scroller = scrollerRef.current
-    if (!scroller) return
-
-    // Reduced motion means less movement, not less function: the row still
-    // moves the same distance, it just arrives without the travel animation.
-    const reduced =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-
-    scroller.scrollBy({
-      left: direction * scroller.clientWidth * NUDGE_RATIO,
-      behavior: reduced ? "auto" : "smooth",
-    })
-  }, [])
+  const { nudge } = useScrollEdges(wrapperRef, scrollerRef)
 
   return (
     <div

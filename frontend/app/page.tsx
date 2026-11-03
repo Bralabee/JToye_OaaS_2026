@@ -15,6 +15,7 @@ import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { cn } from "@/lib/utils"
 import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
+import { CuisineRail } from "@/components/marketing/cuisine-rail"
 import { Reveal } from "@/components/marketing/reveal"
 import { NearYouRow } from "@/components/marketing/near-you-row"
 import {
@@ -350,14 +351,13 @@ export default async function Home() {
                     picture, 13px label) fit the column from 1280 up with no
                     scrolling, and below that the rail swipes. No edge fade: the
                     cut-off chip is the peek, the device D14 item 4 chose over a
-                    gradient fade for the kitchen row. The 4px padding (cancelled
-                    by the negative margin) keeps every focus ring inside the
-                    rail's clip, and a tabbed-to chip is scrolled into view by the
-                    browser itself, so the sixth stays reachable by keyboard. */}
-                <div
-                  data-cuisine-rail
-                  className="-mx-1 -mb-1 mt-3 flex snap-x flex-nowrap gap-1 overflow-x-auto scroll-px-1 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                >
+                    gradient fade for the kitchen row. D18 (2026-11-03): a mouse
+                    also gets prev/next arrows while that side has hidden chips
+                    (CuisineRail). The 4px padding (cancelled by the negative
+                    margin) keeps every focus ring inside the rail's clip, and a
+                    tabbed-to chip is scrolled into view by the browser itself,
+                    so the sixth stays reachable by keyboard. */}
+                <CuisineRail>
                   {categories.map((c) => (
                     <Link
                       key={c.label}
@@ -375,7 +375,7 @@ export default async function Home() {
                       {c.label}
                     </Link>
                   ))}
-                </div>
+                </CuisineRail>
 
                 {/* Two persona doors (motion-hooked). D14: two FLAT fields, gold
                     for ordering (the action accent) and oxblood for operators;
