@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Landing: Mouse-Only Arrows on the Cuisine Chip Rail — 2026-11-03 (#PRNUM)
+### Landing: Mouse-Only Arrows on the Cuisine Chip Rail — 2026-11-03 (#1108)
 
 Quick 261103-cnn. Owner ruling D18 (`design/decisions.md`), raised by PR #1097's round-1 review.
 
