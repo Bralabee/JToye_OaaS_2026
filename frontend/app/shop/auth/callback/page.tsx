@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
-import { handleCallback, getAuthReturnUrl, hasPendingLogin, customerLogin } from "@/lib/customer-auth"
+import { exchangeCallback, getAuthReturnUrl, customerLogin } from "@/lib/customer-auth"
 import { Suspense } from "react"
 
 /**
@@ -17,8 +17,9 @@ import { Suspense } from "react"
 const NO_CODE = "No authorization code received."
 const AUTH_FAILED = "Authentication failed. Please try again."
 /**
- * A code arrived but this tab never started a sign-in: there is no PKCE
- * verifier in its sessionStorage, so the code cannot be exchanged. This is the
+ * A code arrived for a sign-in this tab did not start: it holds no PKCE
+ * verifier, or one whose state does not match the returned one (an earlier,
+ * abandoned sign-in of its own), so the code cannot be exchanged. This is the
  * normal ending of a password-reset or email-verification link, which an email
  * client opens in a new tab or browser (SW-JRD-05 / SW-SAM-13). The password the
  * person just set IS saved by then; what they need is a fresh sign-in, which
@@ -31,7 +32,6 @@ function CallbackContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
-  const [detail, setDetail] = useState<string | null>(null)
 
   /**
    * Whether there is an authorization code to exchange is knowable DURING
@@ -65,31 +65,26 @@ function CallbackContent() {
     // The `setError` below lives in a promise continuation, which the ESLint
     // rule deliberately does not flag (measured rule shape B). The asynchronous
     // exchange genuinely belongs in an effect and stays here.
-    // No verifier means this tab never started the sign-in, so there is
-    // nothing to exchange the code with; the code is left unredeemed.
-    const pending = hasPendingLogin()
-    const exchange = pending ? handleCallback(code, searchParams.get("state")) : Promise.resolve(null)
-    exchange.then((profile) => {
-      if (profile) {
+    // A code for another tab's sign-in is left unredeemed (exchangeCallback).
+    exchangeCallback(code, searchParams.get("state")).then((outcome) => {
+      if (outcome.kind === "signed-in") {
         const returnTo = getAuthReturnUrl()
         router.replace(returnTo)
-      } else if (pending) {
-        setError(AUTH_FAILED)
       } else {
-        setError(OTHER_TAB)
-        setDetail(OTHER_TAB_DETAIL)
+        setError(outcome.kind === "not-this-tab" ? OTHER_TAB : AUTH_FAILED)
       }
     })
   }, [code, searchParams, router])
 
   const message = code ? error : NO_CODE
+  const detail = message === OTHER_TAB ? OTHER_TAB_DETAIL : null
 
   if (message) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className={detail ? "text-sm text-slate-800" : "text-sm text-red-600"}>{message}</p>
-          {code && detail ? <p className="mt-1 text-sm text-slate-600">{detail}</p> : null}
+          {detail ? <p className="mt-1 text-sm text-slate-600">{detail}</p> : null}
           {code ? (
             <button
               type="button"
