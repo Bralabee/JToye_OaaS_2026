@@ -83,7 +83,8 @@ const STATIC_ROUTES: Array<{
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/shop", changeFrequency: "daily", priority: 0.9 },
   { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
-  { path: "/business-model-guide", changeFrequency: "monthly", priority: 0.5 },
+  // `/business-model-guide` is NOT here (SW-CLR-05): it is `noindex` and out of the footer since
+  // PR 1080, and a sitemap must not offer crawlers a page that tells them not to index it.
   // FE-6 (RESOLVED, was: "a pre-existing inconsistency, left alone"): `/track`
   // used to be listed here AND in `app/robots.ts`'s DISALLOW list — telling
   // crawlers to index a page they were also told not to fetch. It is now

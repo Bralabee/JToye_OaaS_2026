@@ -539,18 +539,26 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
  * network did. Neither is reachable-only-on-success any more, and there is no
  * longer a second copy to drift from the first.
  */
-export async function customerLogout() {
+export async function customerLogout(returnTo: string = "/shop"): Promise<void> {
+  // SW-JRD-08: where to land afterwards. Was always /shop; the storefront header now passes the
+  // public page the customer was on (lib/sign-out-return.ts). Narrowed to a same-origin path here
+  // too, so no caller can turn a sign-out into an open redirect. The teardown below does not depend
+  // on it in any way.
+  const destination = safeReturnTo(returnTo, "/shop")
   // Declared outside the try so the `finally` can read it. The inner try/catch
-  // degrading it to "/shop" is preserved verbatim: a failed end-session lookup
+  // degrading it to the destination path is preserved: a failed end-session lookup
   // should cost the return journey to Keycloak, never the sign-out itself.
-  let logoutUrl = "/shop"
+  let logoutUrl = destination
   try {
     // Get the Keycloak logout URL while the cookie still exists.
     try {
-      const urlRes = await fetchWithTimeout("/api/customer-auth/logout-url?redirect=/shop", {
-        credentials: "include",
-        cache: "no-store",
-      })
+      const urlRes = await fetchWithTimeout(
+        `/api/customer-auth/logout-url?redirect=${encodeURIComponent(destination)}`,
+        {
+          credentials: "include",
+          cache: "no-store",
+        }
+      )
       if (urlRes.ok) {
         const data = (await urlRes.json()) as { url?: string }
         if (data.url) logoutUrl = data.url

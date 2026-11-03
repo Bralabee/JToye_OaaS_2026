@@ -104,9 +104,30 @@ export function allergyNoteHelpCopy(shopName: string): string {
   return `Goes to ${shopName} so they can prepare your order. Only write what the kitchen needs to know.`
 }
 
-/** The live character count under the note. */
+/**
+ * The visible character count under the note. NOT a live region (SW-MRC-08): read with the field
+ * through aria-describedby, it no longer speaks on every keystroke.
+ */
 export function allergyNoteCountCopy(length: number): string {
   return `${length} of ${ALLERGY_NOTE_MAX_LENGTH}`
+}
+
+/** From here the note is close enough to the limit to be worth saying so once. */
+export const ALLERGY_NOTE_WARN_AT = 450
+
+/**
+ * What the note's status region says (SW-MRC-08). A step function of the length: the text changes
+ * only when the length crosses 450 or 500, so a screen reader hears it once per crossing and not on
+ * every keystroke the way the old live count did. Empty below the warning mark.
+ */
+export function allergyNoteLimitAnnouncement(length: number): string {
+  if (length >= ALLERGY_NOTE_MAX_LENGTH) {
+    return `Allergy note limit reached: ${ALLERGY_NOTE_MAX_LENGTH} characters.`
+  }
+  if (length >= ALLERGY_NOTE_WARN_AT) {
+    return `Allergy note: ${ALLERGY_NOTE_MAX_LENGTH - ALLERGY_NOTE_WARN_AT} characters or fewer left.`
+  }
+  return ""
 }
 
 /** Which refusal the alert region is announcing. */

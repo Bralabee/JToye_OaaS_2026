@@ -581,3 +581,43 @@ describe("cookie policy — document structure and metadata", () => {
     }
   })
 })
+
+/**
+ * SW-SAM-06 (2026-10-19 staging persona swarm, epic issue 964). The authjs row said these cookies
+ * were "set only on the dashboard, never while you shop". Measured: `authjs.csrf-token` and
+ * `authjs.callback-url` are set on every page, / and /shop included (the middleware that runs on
+ * every route is Auth.js's), and on the HTTPS deployment they are named `__Host-authjs.csrf-token`
+ * and `__Secure-authjs.callback-url`. The row must say what is set, where, and why.
+ */
+describe("cookie policy — the sign-in cookies set on every page (SW-SAM-06)", () => {
+  function authjsRow(): HTMLTableRowElement {
+    const { main } = renderPolicy()
+    const row = rowFor(main, "authjs")
+    if (!row) throw new Error("no authjs row")
+    return row
+  }
+
+  it("no longer claims the authjs cookies are never set while shopping", () => {
+    const { main } = renderPolicy()
+    // CONTROL: the row exists, so the absence below is about its words and not a missing row.
+    expect(rowFor(main, "authjs")).not.toBeNull()
+    expect(normalisedText(main)).not.toMatch(/never while you shop/i)
+    expect(normalisedText(main)).not.toMatch(/set only on the dashboard/i)
+  })
+
+  it("says the CSRF and callback cookies are set on every page, and why", () => {
+    const text = (authjsRow().textContent || "").replace(/\s+/g, " ")
+    expect(text).toMatch(/every page/i)
+    expect(text).toMatch(/while you shop/i)
+    expect(text).toMatch(/authjs\.csrf-token[^.]*forgery/i)
+    expect(text).toMatch(/authjs\.callback-url[^.]*return/i)
+    expect(text).toMatch(/strictly necessary/i)
+  })
+
+  it("gives the prefixed names the live site uses", () => {
+    const text = authjsRow().textContent || ""
+    for (const name of ["__Host-authjs.csrf-token", "__Secure-authjs.callback-url", "__Secure-authjs.session-token"]) {
+      expect(text).toContain(name)
+    }
+  })
+})
