@@ -23,7 +23,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { StrictMode, type ReactElement } from "react"
 import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from "node:util"
 import { useSearchParams, useRouter } from "next/navigation"
-import { handleCallback, getAuthReturnUrl } from "@/lib/customer-auth"
+import { exchangeCallback, getAuthReturnUrl, customerLogin } from "@/lib/customer-auth"
 import AuthCallbackPage from "../page"
 
 /**
@@ -82,12 +82,14 @@ async function serverRender(element: ReactElement): Promise<string> {
 }
 
 jest.mock("@/lib/customer-auth", () => ({
-  handleCallback: jest.fn(),
+  exchangeCallback: jest.fn(),
   getAuthReturnUrl: jest.fn(),
+  customerLogin: jest.fn(),
 }))
 
-const mockedHandleCallback = handleCallback as jest.MockedFunction<typeof handleCallback>
+const mockedHandleCallback = exchangeCallback as jest.MockedFunction<typeof exchangeCallback>
 const mockedGetAuthReturnUrl = getAuthReturnUrl as jest.MockedFunction<typeof getAuthReturnUrl>
+const mockedCustomerLogin = customerLogin as jest.MockedFunction<typeof customerLogin>
 
 /** Drive the globally-mocked `useSearchParams` with a real URLSearchParams. */
 function setSearchParams(params: Record<string, string>) {
@@ -107,6 +109,7 @@ beforeEach(() => {
     prefetch: jest.fn(),
   })
   mockedGetAuthReturnUrl.mockReturnValue("/shop/brixton-village-grill")
+  mockedCustomerLogin.mockResolvedValue(undefined)
   // Default: a never-settling exchange, so the spinner branch is observable.
   mockedHandleCallback.mockReturnValue(new Promise(() => {}))
 })
@@ -154,10 +157,13 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
     // incomplete literal type-checks under jest's babel transform (which strips
     // types without checking them) and is caught only by `tsc --noEmit`.
     mockedHandleCallback.mockResolvedValue({
-      sub: "cust-1",
-      email: "shopper@example.com",
-      name: "Shopper",
-      emailVerified: true,
+      kind: "signed-in",
+      profile: {
+        sub: "cust-1",
+        email: "shopper@example.com",
+        name: "Shopper",
+        emailVerified: true,
+      },
     })
 
     render(<AuthCallbackPage />)
@@ -168,7 +174,7 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
 
   it("shows the failure copy when the exchange resolves without a profile", async () => {
     setSearchParams({ code: "auth-code-3", state: "state-3" })
-    mockedHandleCallback.mockResolvedValue(null)
+    mockedHandleCallback.mockResolvedValue({ kind: "failed" })
 
     render(<AuthCallbackPage />)
 
@@ -177,6 +183,9 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
     ).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Back to shop" })).toHaveAttribute("href", "/shop")
     expect(replace).not.toHaveBeenCalled()
+    // A failure is not a dead end: a fresh sign-in is one press away.
+    screen.getByRole("button", { name: "Sign in" }).click()
+    expect(mockedCustomerLogin).toHaveBeenCalledTimes(1)
   })
 
   it("exchanges a one-time code EXACTLY once under a strict-mode double mount", async () => {
@@ -186,7 +195,7 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
     // unmounts and remounts every effect in development, which is the exact
     // shape that burns the code.
     setSearchParams({ code: "one-time-code", state: "state-4" })
-    mockedHandleCallback.mockResolvedValue(null)
+    mockedHandleCallback.mockResolvedValue({ kind: "failed" })
 
     render(
       <StrictMode>
@@ -195,6 +204,41 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
     )
 
     await screen.findByText("Authentication failed. Please try again.")
+    expect(mockedHandleCallback).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("OAuth callback page — a code this tab never asked for (SW-JRD-05 / SW-SAM-13)", () => {
+  it("offers a fresh sign-in, not a failure", async () => {
+    // A password-reset link opened from an email: a new tab, so the code is
+    // for another tab's sign-in.
+    mockedHandleCallback.mockResolvedValue({ kind: "not-this-tab" })
+    setSearchParams({ code: "reset-code", state: "state-from-the-other-tab" })
+
+    render(<AuthCallbackPage />)
+
+    expect(
+      await screen.findByText("This sign-in finished in a different tab or browser."),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("If you just set a new password, it has been saved. Sign in to continue."),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Authentication failed. Please try again.")).toBeNull()
+    expect(replace).not.toHaveBeenCalled()
+
+    screen.getByRole("button", { name: "Sign in" }).click()
+    expect(mockedCustomerLogin).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("link", { name: "Back to shop" })).toHaveAttribute("href", "/shop")
+  })
+
+  it("keeps the failure copy when this tab DID start the sign-in", async () => {
+    setSearchParams({ code: "bad-code", state: "s" })
+    mockedHandleCallback.mockResolvedValue({ kind: "failed" })
+
+    render(<AuthCallbackPage />)
+
+    expect(await screen.findByText("Authentication failed. Please try again.")).toBeInTheDocument()
+    expect(screen.queryByText("This sign-in finished in a different tab or browser.")).toBeNull()
     expect(mockedHandleCallback).toHaveBeenCalledTimes(1)
   })
 })

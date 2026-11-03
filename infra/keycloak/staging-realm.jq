@@ -104,7 +104,10 @@ def vendor:
 def customer:
   if .realm != "jtoye-customers" then error("staging-realm.jq: the customer template realm is \(.realm), expected jtoye-customers") else . end
   | require_client("storefront-client")
-  | set_client("storefront-client"; .redirectUris = [app_uri] | .webOrigins = [app_origin])
+  # baseUrl is what Keycloak's info page links back to ("Back to Application")
+  # when no auth session survives: an email-verification or reset link opened
+  # twice, or in another browser. Without it that page is a dead end (SW-JRD-04).
+  | set_client("storefront-client"; .redirectUris = [app_uri] | .webOrigins = [app_origin] | .baseUrl = (app_origin + "/shop/signin"))
   | .verifyEmail = true
   | .smtpServer = mailpit
   | wordmark_home

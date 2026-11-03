@@ -360,6 +360,45 @@ export async function customerRegister(returnTo?: string) {
 }
 
 /**
+ * The outcome of a callback, typed so the page can tell "this code belongs to
+ * another tab's sign-in" from a real failure (SW-JRD-05 / SW-SAM-13).
+ */
+export type CallbackOutcome =
+  | { kind: "signed-in"; profile: CustomerProfile }
+  | { kind: "not-this-tab" }
+  | { kind: "failed" }
+
+/**
+ * A password-reset or verification link from an email opens in a new tab, and
+ * Keycloak finishes the sign-in that ANOTHER tab started by sending this one a
+ * code. This tab then holds either no PKCE verifier (sessionStorage is per tab)
+ * or the verifier of some earlier sign-in of its own, whose `state` does not
+ * match the one returned. Either way the code cannot be ours to exchange, and
+ * the right answer is "sign in again", not "authentication failed". Only when
+ * the returned state matches this tab's stored state is the exchange tried, and
+ * only its own failure is reported as one.
+ */
+export async function exchangeCallback(
+  code: string,
+  returnedState?: string | null
+): Promise<CallbackOutcome> {
+  let verifier: string | null = null
+  let storedState: string | null = null
+  try {
+    verifier = sessionStorage.getItem(PKCE_VERIFIER_KEY)
+    storedState = sessionStorage.getItem(OAUTH_STATE_KEY)
+  } catch {
+    /* storage unavailable: nothing here can be ours */
+  }
+  if (!verifier || !storedState || returnedState !== storedState) {
+    clearAuthTransients()
+    return { kind: "not-this-tab" }
+  }
+  const profile = await handleCallback(code, returnedState)
+  return profile ? { kind: "signed-in", profile } : { kind: "failed" }
+}
+
+/**
  * Handle OAuth callback — exchange code for tokens, then hand them off to the
  * server to be stored as HttpOnly cookies. Returns the profile parsed from
  * the id token (profile data is not sensitive; only the raw tokens are).
