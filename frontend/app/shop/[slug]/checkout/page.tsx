@@ -26,6 +26,7 @@ import {
   ALLERGY_NOTE_MAX_LENGTH,
   OrderAllergenPanel,
   allergyNoteCountCopy,
+  allergyNoteLimitAnnouncement,
   allergyNoteHelpCopy,
   type AllergenAckErrorKind,
 } from "@/components/storefront/order-allergen-panel"
@@ -1400,8 +1401,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const vatPreviewPennies = vatFromGross(previewTotalPennies, basketVatRate)
   // 37-49 (UI-SPEC G1): the one type this shop takes, or null when it takes both (lib/fulfilment-offered).
   const onlyType = onlyOfferedType(shop)
+  // SW-MRC-07: ONE focus style for every field the customer types into. The old amber-200 ring
+  // measured about 1.2:1 to 1.7:1 against the white field and the cream page, below the 3:1 that
+  // WCAG 1.4.11 / 2.4.11 ask of a focus indicator. brand-700 (#6E1D21) is the ring design/identity.md
+  // names for focus: about 11:1 on white and on cream-100. Ring and border both turn brand-700, so the
+  // indicator does not rely on the 2px ring alone.
   const inputBase =
-    "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
+    "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
 
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
@@ -1522,6 +1528,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 value={address1}
                 onChange={(e) => setAddress1(e.target.value)}
                 placeholder="e.g., 12 Coldharbour Lane"
+                aria-required="true"
                 aria-invalid={fieldErrors.address1 ? "true" : undefined}
                 aria-describedby={fieldErrors.address1 ? "address1-error" : undefined}
                 className={`${inputBase} ${fieldErrors.address1 ? "border-red-300" : "border-cream-100"}`}
@@ -1554,6 +1561,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="e.g., London"
+                aria-required="true"
                 aria-invalid={fieldErrors.city ? "true" : undefined}
                 aria-describedby={fieldErrors.city ? "city-error" : undefined}
                 className={`${inputBase} ${fieldErrors.city ? "border-red-300" : "border-cream-100"}`}
@@ -1574,6 +1582,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 onChange={(e) => setPostcode(e.target.value)}
                 onBlur={() => setPostcode((p) => p.trim().toUpperCase())}
                 placeholder="e.g., SW9 8LF"
+                aria-required="true"
                 aria-invalid={fieldErrors.postcode ? "true" : undefined}
                 aria-describedby={fieldErrors.postcode ? "postcode-error" : undefined}
                 className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-cream-100"}`}
@@ -1588,6 +1597,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         {/* Customer details */}
         <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-slate-900">Your details</h2>
+          {/* SW-SAM-10: say who receives these details, and link the notice, where they are asked for. */}
+          <p className="text-xs text-slate-600">
+            We pass these details to {shop?.name ?? "the shop"} so they can prepare your order and contact you
+            about it. Our{" "}
+            <Link
+              href="/legal/privacy"
+              className="font-medium text-brand-700 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 rounded-sm"
+            >
+              privacy notice
+            </Link>{" "}
+            explains how your data is used and your rights.
+          </p>
 
           <div className="space-y-1.5">
             <label htmlFor="name" className="block text-xs font-medium text-slate-600">Full name *</label>
@@ -1599,7 +1620,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="e.g., Ade Johnson"
-              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className={`${inputBase} border-cream-100`}
             />
           </div>
 
@@ -1613,7 +1634,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
               placeholder="e.g., ade@example.com"
-              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className={`${inputBase} border-cream-100`}
             />
           </div>
 
@@ -1627,7 +1648,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
               placeholder="e.g., 07700 900000"
-              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+              className={`${inputBase} border-cream-100`}
             />
           </div>
 
@@ -1639,7 +1660,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Any special requests..."
               rows={2}
-              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
+              className={`${inputBase} border-cream-100 resize-none`}
             />
           </div>
 
@@ -1657,21 +1678,27 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               maxLength={ALLERGY_NOTE_MAX_LENGTH}
               rows={2}
               aria-describedby="allergy-note-help allergy-note-count"
-              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
+              className={`${inputBase} border-cream-100 resize-none`}
             />
             <div className="flex items-start justify-between gap-3">
               <p id="allergy-note-help" className="text-xs text-slate-600">
                 {allergyNoteHelpCopy(shop?.name ?? "the shop")}
               </p>
+              {/* SW-MRC-08: the count is read with the field (aria-describedby) and is NOT a live
+                  region — as one it spoke on every keystroke. */}
               <p
                 id="allergy-note-count"
                 data-testid="allergy-note-count"
-                aria-live="polite"
                 className="flex-shrink-0 text-xs tabular-nums text-slate-600"
               >
                 {allergyNoteCountCopy(allergyNote.length)}
               </p>
             </div>
+            {/* Speaks only when the length crosses 450 or 500: its text is a step function of the
+                length, so typing inside a band changes nothing and announces nothing. */}
+            <p data-testid="allergy-note-limit" aria-live="polite" className="sr-only">
+              {allergyNoteLimitAnnouncement(allergyNote.length)}
+            </p>
           </div>
         </div>
 

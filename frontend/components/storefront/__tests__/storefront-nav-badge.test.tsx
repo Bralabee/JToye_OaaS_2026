@@ -12,6 +12,8 @@ const mockUseParams = jest.fn<Record<string, string>, []>(() => ({ slug: "test-s
 jest.mock("next/navigation", () => ({
   usePathname: () => "/shop/test-shop",
   useParams: () => mockUseParams(),
+  // The header's Sign in link reads `next` on /shop/signin (SW-JRD-08).
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 jest.mock("@/lib/customer-auth", () => ({

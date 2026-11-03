@@ -3784,6 +3784,7 @@ INV24_ALLOW=(
     "frontend/app/dashboard/finance/page.tsx|from|The finance scope prop's first-day date ({ shopId, shopName, from, to }) passed to a component; not a request."
     "frontend/app/dashboard/orders/page.tsx|origin|A Zod issue's origin field (ctx.addIssue({ code, origin: \"string\", ... })); not a request."
     "frontend/app/sitemap.ts|priority|Sitemap entry priority in the Next sitemap metadata route (served as /sitemap.xml); not a request header."
+    "frontend/lib/public-routes.ts|priority|The sitemap priority of each public static route, read by app/sitemap.ts (moved there from sitemap.ts, PR 1109); not a request header."
     "frontend/components/dashboard/secret-reveal-dialog.tsx|warning|A component prop type (the show-once warning copy); not a request."
     "frontend/lib/finance-api.ts|from|The finance scope/query date-range field, sent as a query parameter, not a header."
     "frontend/lib/structured-data.ts|origin|The public site origin used to build JSON-LD URLs (interface members and a function parameter); not a request."

@@ -13,6 +13,8 @@
 jest.mock("next/navigation", () => ({
   usePathname: () => "/shop/brixton-village-grill",
   useParams: () => ({ slug: "brixton-village-grill" }),
+  // The header's Sign in link reads `next` on /shop/signin (SW-JRD-08).
+  useSearchParams: () => new URLSearchParams(),
 }))
 jest.mock("@/lib/customer-auth", () => ({
   getCustomerSession: jest.fn(() => Promise.resolve(null)),

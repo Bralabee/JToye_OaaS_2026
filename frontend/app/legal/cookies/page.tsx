@@ -62,8 +62,8 @@ const SECTIONS = [
   "How to see and delete this information",
 ] as const
 
-const LAST_UPDATED = "6 October 2026"
-const VERSION = "1.1"
+const LAST_UPDATED = "3 November 2026"
+const VERSION = "1.2"
 
 const LINK =
   "font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -110,11 +110,14 @@ const COOKIE_ROWS: readonly StorageRow[] = [
     lifetime: "Up to 30 days. Removed when you sign out.",
   },
   {
-    name: "authjs.* (vendor dashboard)",
+    // SW-SAM-06: this row used to say these were "set only on the dashboard, never while you shop".
+    // Measured on compose and on staging: the csrf and callback cookies arrive with every page,
+    // / and /shop included, because the middleware that runs on every route is Auth.js's.
+    name: "authjs.* (dashboard sign-in)",
     purpose:
-      "A family of cookies that signs vendors and their staff in to the business dashboard. It covers the dashboard session itself plus short-lived values used only while signing in: authjs.session-token, authjs.callback-url, authjs.csrf-token, authjs.pkce.code_verifier, authjs.state, authjs.nonce and authjs.challenge. They are set only on the dashboard, never while you shop.",
+      "A family of cookies that signs vendors and their staff in to the business dashboard. Two of them are set on every page of this site, including while you shop and even if you never sign in: authjs.csrf-token, which protects the sign-in form against cross-site request forgery, and authjs.callback-url, which holds the page to return to after signing in. They hold nothing about you and are strictly necessary for the site's sign-in to be secure. The rest are set only when someone signs in to the dashboard: the dashboard session, authjs.session-token, and short-lived values used while signing in: authjs.pkce.code_verifier, authjs.state, authjs.nonce and authjs.challenge. On the live site, which runs over HTTPS, each name carries a security prefix: __Host-authjs.csrf-token, __Secure-authjs.callback-url, __Secure-authjs.session-token, and __Secure- before each of the sign-in values.",
     lifetime:
-      "The dashboard session; the sign-in values are discarded as soon as sign-in completes. All are removed on sign-out.",
+      "authjs.csrf-token and authjs.callback-url last until you close your browser. The dashboard session lasts while the vendor stays signed in and is removed on sign-out; the sign-in values are discarded as soon as sign-in completes.",
   },
 ] as const
 

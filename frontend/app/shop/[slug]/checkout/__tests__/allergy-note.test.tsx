@@ -226,14 +226,16 @@ describe("the allergy note field (#812, D-15)", () => {
     expect(describedBy).toContain(help.id)
   })
 
-  it("shows a live 'N of 500' count as the customer types", async () => {
+  it("shows an 'N of 500' count as the customer types", async () => {
     seedCart()
     renderCheckout()
     await waitFor(() => noteField())
 
     const count = screen.getByTestId("allergy-note-count")
     expect(count).toHaveTextContent("0 of 500")
-    expect(count).toHaveAttribute("aria-live", "polite")
+    // SW-MRC-08: visible and describing the field, but no longer a live region — it spoke on every
+    // keystroke. The threshold announcements are checkout-swarm-a11y.test.tsx's.
+    expect(count).not.toHaveAttribute("aria-live")
 
     fireEvent.change(noteField(), { target: { value: "No sesame please" } })
     expect(count).toHaveTextContent("16 of 500")
