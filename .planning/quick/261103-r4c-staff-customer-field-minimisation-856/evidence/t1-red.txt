@@ -1,0 +1,12 @@
+# Task 1 RED — StaffCustomerFieldMinimisationIntegrationTest on the pre-fix tree (HEAD c1a38cd5, no production change)
+IT gradle rc=1 (RED expected: non-zero)
+tests="5" skipped="0" failures="4" errors="0"
+<failure message="java.lang.AssertionError: [the STAFF shop's order carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;allergyNote&quot;:&quot;No sesame please 4094c982&quot;,&quot;createdAt&quot;:&quot;2026-11-03T19:56:47.694556Z&quot;,&quot;customerEmail&quot;:&quot;delivery-4094c982@
+<failure message="java.lang.AssertionError: [STAFF's kitchen board carries no customer email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;acknowledgedAllergenNames&quot;:null,&quot;addressCity&quot;:&quot;Birmingham&quot;,&quot;addressLine1&quot;:&quot;12 Hand-off Lane 964498c9&quot;,&quot;address
+<failure message="java.lang.AssertionError: [per-shop STAFF's customer list carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;id&quot;:&quot;fa1cfdcf-981f-439b-8d63-f717f96e3d93&quot;,&quot;tenantId&quot;:&quot;32c9b276-16c4-4c1c-9e7a-847dfb0c6b6e&quot;,&quot;name&quot;:&quot;Ada Custo
+<failure message="java.lang.AssertionError: [STAFF response #0 carries no customer email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;allergyNote&quot;:&quot;No sesame please db17a891&quot;,&quot;createdAt&quot;:&quot;2026-11-03T19:56:48.171905Z&quot;,&quot;customerEmail&quot;:&quot;delivery-db17a
+# failing tests (gradle console):
+StaffCustomerFieldMinimisationIntegrationTest > #856: SHOP_MANAGER on A + STAFF on B sees full contact on A's orders and customers and the minimised view on B's FAILED
+StaffCustomerFieldMinimisationIntegrationTest > #856: STAFF's kitchen board omits every customer email and the collection order's address, and keeps name, phone, items, allergens, notes, allergy note and the DELIVERY address FAILED
+StaffCustomerFieldMinimisationIntegrationTest > #856: STAFF (per-shop and tenant-wide) reads customers with name and phone but no email FAILED
+StaffCustomerFieldMinimisationIntegrationTest > #856: STAFF's order reads, a transition and the allergy-note acknowledgement carry no customer email; the collection detail carries no address FAILED

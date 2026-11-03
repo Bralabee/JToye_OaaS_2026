@@ -1,0 +1,30 @@
+# Task 2 break arm: CustomerContactScope.fullContactOn -> 'return true; // BREAK ARM: always full contact'
+-        return allShops || (shopId != null && managedShopIds.contains(shopId));
++        return true; // BREAK ARM: always full contact
+BREAK IT gradle rc=1 (expected non-zero)
+tests="5" skipped="0" failures="3" errors="0"
+<failure message="java.lang.AssertionError: [the STAFF shop's order carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;allergyNote&quot;:&quot;No sesame please 51665c07&quot;,&quot;create
+<failure message="java.lang.AssertionError: [STAFF's kitchen board carries no customer email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;acknowledgedAllergenNames&quot;:null,&quot;addressCity&quot;
+<failure message="java.lang.AssertionError: [STAFF response #0 carries no customer email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;allergyNote&quot;:&quot;No sesame please d52469f4&quot;,&quot;cr
+
+# Arm 1 note: failures=3, not the planned 4. The customer test stayed green because CustomerService decides through allShops()/managedShopIds() (a customer has no single shop), never through fullContactOn. So a second arm on the customer path:
+# Task 2 break arm 2: CustomerService.contactMinimiser scope -> ALL_SHOPS
+-        CustomerContactScope scope = shopAccessService.customerContactScope();
++        CustomerContactScope scope = CustomerContactScope.ALL_SHOPS; // BREAK ARM 2: customer path always full
+BREAK-2 IT gradle rc=1 (expected non-zero)
+tests="5" skipped="0" failures="2" errors="0"
+<failure message="java.lang.AssertionError: [a customer only of the STAFF shop carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;id&quot;:&quot;a2e7d672-a12c-408a-bcd0-5249b358e0e7&quot;
+<failure message="java.lang.AssertionError: [per-shop STAFF's customer list carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;id&quot;:&quot;a178642c-2d69-4ca6-98de-130fc9aa5dd1&quot;,&q
+
+# Task 2 break arm 3 (the planned 'always-full decision', at the decision point): ShopAccessService.customerContactScope() -> ALL_SHOPS for every caller
++        if (true) return CustomerContactScope.ALL_SHOPS; // BREAK ARM 3: the decision always says full
+BREAK-3 IT gradle rc=1 (expected non-zero)
+tests="5" skipped="0" failures="4" errors="0"
+<failure message="java.lang.AssertionError: [the STAFF shop's order carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;allergyNote&quot;:&quot;No s
+<failure message="java.lang.AssertionError: [STAFF's kitchen board carries no customer email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;acknowledgedAllergen
+<failure message="java.lang.AssertionError: [per-shop STAFF's customer list carries no email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;id&quot;:&quot;7f7d0
+<failure message="java.lang.AssertionError: [STAFF response #0 carries no customer email] &#10;Expecting actual:&#10;  &quot;{&quot;content&quot;:[{&quot;allergyNote&quot;:&quot;
+
+# Restored by explicit edit (never git checkout): git diff --quiet -- core-java/src rc=0 (0 = byte-identical to committed a4e3d687); rg -uu --count-matches 'BREAK ARM' core-java/src rc=1 (1 = no marker left)
+RESTORED IT gradle rc=0
+tests="5" skipped="0" failures="0" errors="0"

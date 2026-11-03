@@ -1,0 +1,130 @@
+# Task 3 OpenAPI description-only comparison (every 'description' key stripped from origin/main's snapshot and from the regenerated one)
+git-show rc=0 openapi-compare rc=0 (git-show must be 0 or the compare is VOID; 0 = description-only)
+BREAK ARM: same comparison against a copy with ONE customerEmail "type" : "string" altered to integer -> compare rc=1 (expected 1 = unequal)
+regenerated diff: 4	0	docs/api/openapi-snapshot.json
+check-openapi-snapshot-fresh rc=1
+# check-openapi-snapshot-fresh rc=1 compares the snapshot to the RUNNING compose core-java, which was NOT rebuilt here (runtime parity is the ship step gate, not claimed). Its A-1 diff = the four new #856 descriptions PLUS pre-existing staleness from main (#1111 POST /public/orders/{n}/lookup, OrderLookupRequest, the deprecated query-string lookup): the running image predates origin/main itself. Lines (cut to 110 chars):
+-            "description": "The customer's email. Null when the caller's best role on the customer's shop is 
++            "description": "<<ABSENT FROM THE RUNNING SERVICE>>",
+-            "description": "First address line. addressLine1, addressLine2, addressCity and addressPostcode a
++            "description": "<<ABSENT FROM THE RUNNING SERVICE>>",
+-            "description": "The customer's email. Null when the caller's best role on the order's shop is STA
++            "description": "<<ABSENT FROM THE RUNNING SERVICE>>",
+-            "description": "The customer's email. Null when the caller's best role on the order's shop is STA
++            "description": "<<ABSENT FROM THE RUNNING SERVICE>>",
+-      "OrderLookupRequest": {
+-        "description": "Proof of ownership for a guest order lookup: the email address the order was placed w
+-        "properties": {
+-          "email": {
+-            "description": "The email address the order was placed with.",
+-            "example": "alice@example.com",
+-            "maxLength": 255,
+-            "minLength": 0,
+-            "type": "string"
+-          }
+-        },
+-        "required": [
+-          "email"
+-        ],
+-        "type": "object"
+-      },
++      "OrderLookupRequest": "<<ABSENT FROM THE RUNNING SERVICE>>",
+-        "deprecated": true,
+-        "description": "Look up order status by order number and email. Both must match. Deprecated because t
++        "deprecated": "<<ABSENT FROM THE RUNNING SERVICE>>",
++        "description": "Look up order status by order number and email. Both must match.",
+-        "summary": "Track a guest order (email in the query string)",
++        "summary": "Track a guest order",
+-    "/api/v1/public/orders/{orderNumber}/lookup": {
+-      "post": {
+-        "description": "Look up order status by order number, with the email address the order was placed wit
+-        "operationId": "lookupOrder",
+-        "parameters": [
+-          {
+-            "in": "path",
+-            "name": "orderNumber",
+-            "required": true,
+-            "schema": {
+-              "type": "string"
+-            }
+-          }
+-        ],
+-        "requestBody": {
+-          "content": {
+-            "application/json": {
+-              "schema": {
+-                "$ref": "#/components/schemas/OrderLookupRequest"
+-              }
+-            }
+-          },
+-          "required": true
+-        },
+-        "responses": {
+-          "200": {
+-            "content": {
+-              "*/*": {
+-                "schema": {
+-                  "$ref": "#/components/schemas/PublicOrderStatus"
+-                }
+-              }
+-            },
+-            "description": "The order's current status"
+-          },
+-          "400": {
+-            "content": {
+-              "application/problem+json": {
+-                "schema": {
+-                  "$ref": "#/components/schemas/ProblemDetail"
+-                }
+-              }
+-            },
+-            "description": "Missing or blank email"
+-          },
+-          "404": {
+-            "content": {
+-              "application/problem+json": {
+-                "schema": {
+-                  "$ref": "#/components/schemas/ProblemDetail"
+-                }
+-              }
+-            },
+-            "description": "No order with this number and email"
+-          }
+-        },
+-        "summary": "Track a guest order",
+-        "tags": [
+-          "Public Storefront"
+-        ]
+-      }
+-    },
++    "/api/v1/public/orders/{orderNumber}/lookup": "<<ABSENT FROM THE RUNNING SERVICE>>",
+-        "deprecated": true,
+-        "description": "Look up order status by order number and email. Both must match. Deprecated because t
++        "deprecated": "<<ABSENT FROM THE RUNNING SERVICE>>",
++        "description": "Look up order status by order number and email. Both must match.",
+-        "summary": "Track a guest order (email in the query string)",
++        "summary": "Track a guest order",
+-    "/public/orders/{orderNumber}/lookup": {
+-      "post": {
+-        "description": "Look up order status by order number, with the email address the order was placed wit
+-        "operationId": "lookupOrder_1",
+-        "parameters": [
+-          {
+-            "in": "path",
+-            "name": "orderNumber",
+-            "required": true,
+-            "schema": {
+-              "type": "string"
+-            }
+-          }
+-        ],
+-        "requestBody": {
+-          "content": {
+-            "application/json": {
+-              "schema": {
+-                "$ref": "#/components/schemas/OrderLookupRequest"
+-              }
+-            }
+-          },
+-          "required": true
+-        },

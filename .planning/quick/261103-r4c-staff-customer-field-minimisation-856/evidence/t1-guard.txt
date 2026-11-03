@@ -1,0 +1,4 @@
+guard gradle rc=0
+tests="2" skipped="0" failures="0" errors="0"
+<testcase name="#856: the SSE/STOMP broadcast payload carries no customer contact field"
+<testcase name="#856 break arm: the guard names the contact fields of a leaky event"
