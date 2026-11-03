@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
  * Issue #856 / SW-TND-08 (owner ruling 2026-11-03): field-level minimisation of customer contact
@@ -227,6 +228,83 @@ class StaffCustomerFieldMinimisationIntegrationTest {
         assertThat(customers).as("a customer of the managed shop keeps its email").contains(f.custAEmail());
         assertThat(customers).as("a customer only of the STAFF shop is listed").contains(f.custBName());
         assertThat(customers).as("a customer only of the STAFF shop carries no email").doesNotContain(f.custBEmail());
+    }
+
+    @Test
+    @DisplayName("#856 review R0-1: a mixed-role caller cannot surface a STAFF-shop customer's email by linking them to an order at the managed shop")
+    void mixedRole_cannotLinkMinimisedCustomerToManagedShopOrder() throws Exception {
+        Fixture f = seed();
+        UUID mixed = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant(), mixed, f.shopA(), "SHOP_MANAGER", "mixed-" + mixed + "@example.com");
+        ShopGrants.grantOperator(jdbc, f.tenant(), mixed, f.shopB(), "STAFF", "mixed-" + mixed + "@example.com");
+        UUID productA = seedProduct(f.tenant(), f.shopA());
+
+        // create: link custB (a shop-B-only customer) to a new order at shop A
+        MvcResult created = mockMvc.perform(post("/api/v1/orders")
+                        .contentType("application/json")
+                        .content("{\"shopId\":\"" + f.shopA() + "\",\"customerId\":\"" + f.custB()
+                                + "\",\"items\":[{\"productId\":\"" + productA + "\",\"quantity\":1}]}")
+                        .with(vendorWithOrderScopes(f.tenant(), mixed)))
+                .andReturn();
+        assertThat(created.getResponse().getContentAsString()).as("create response").doesNotContain(f.custBEmail());
+        assertThat(created.getResponse().getStatus()).as("linking a minimised customer is refused, typed")
+                .isEqualTo(403);
+        assertThat(created.getResponse().getContentAsString()).contains("shop-access-denied");
+
+        // update: link custB to an editable order at shop A
+        jdbc.update("UPDATE orders SET status = 'PENDING' WHERE id = ?", f.collectionOrder());
+        MvcResult updated = mockMvc.perform(put("/api/v1/orders/" + f.collectionOrder())
+                        .contentType("application/json")
+                        .content("{\"customerId\":\"" + f.custB() + "\"}")
+                        .with(vendorWithOrderScopes(f.tenant(), mixed)))
+                .andReturn();
+        assertThat(updated.getResponse().getContentAsString()).as("update response").doesNotContain(f.custBEmail());
+        assertThat(updated.getResponse().getStatus()).as("re-linking to a minimised customer is refused").isEqualTo(403);
+
+        // and the refusals did not make custB a managed-shop customer
+        String customer = ok(get("/api/v1/customers/" + f.custB()), f.tenant(), mixed);
+        assertThat(customer).as("custB is still minimised afterwards").contains(f.custBName()).doesNotContain(f.custBEmail());
+        Integer linked = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE customer_id = ? AND shop_id = ?", Integer.class, f.custB(), f.shopA());
+        assertThat(linked).as("no shop-A order links custB").isZero();
+
+        // CONTROL: the same caller still links a customer it manages
+        MvcResult own = mockMvc.perform(post("/api/v1/orders")
+                        .contentType("application/json")
+                        .content("{\"shopId\":\"" + f.shopA() + "\",\"customerId\":\"" + f.custA()
+                                + "\",\"items\":[{\"productId\":\"" + productA + "\",\"quantity\":1}]}")
+                        .with(vendorWithOrderScopes(f.tenant(), mixed)))
+                .andReturn();
+        assertThat(own.getResponse().getStatus()).as("linking a managed customer still works").isEqualTo(201);
+        assertThat(own.getResponse().getContentAsString()).contains(f.custAEmail());
+    }
+
+    @Test
+    @DisplayName("#856 review R0-2: a mixed-role caller cannot overwrite the email of a customer it sees minimised")
+    void mixedRole_cannotEditMinimisedCustomer() throws Exception {
+        Fixture f = seed();
+        UUID mixed = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant(), mixed, f.shopA(), "SHOP_MANAGER", "mixed-" + mixed + "@example.com");
+        ShopGrants.grantOperator(jdbc, f.tenant(), mixed, f.shopB(), "STAFF", "mixed-" + mixed + "@example.com");
+
+        MvcResult edited = mockMvc.perform(put("/api/v1/customers/" + f.custB())
+                        .contentType("application/json")
+                        .content("{\"name\":\"Renamed\",\"email\":\"typed-over@example.test\",\"phone\":\"07700 000000\"}")
+                        .with(vendorWithOrderScopes(f.tenant(), mixed)))
+                .andReturn();
+        assertThat(edited.getResponse().getStatus()).as("editing a minimised customer is refused, typed").isEqualTo(403);
+        assertThat(edited.getResponse().getContentAsString()).contains("shop-access-denied");
+        String stored = jdbc.queryForObject("SELECT email FROM customers WHERE id = ?", String.class, f.custB());
+        assertThat(stored).as("the stored email is untouched").isEqualTo(f.custBEmail());
+
+        // CONTROL: the same caller still edits a customer of its managed shop
+        MvcResult own = mockMvc.perform(put("/api/v1/customers/" + f.custA())
+                        .contentType("application/json")
+                        .content("{\"name\":\"" + f.custAName() + "\",\"email\":\"" + f.custAEmail()
+                                + "\",\"phone\":\"07700 111111\"}")
+                        .with(vendorWithOrderScopes(f.tenant(), mixed)))
+                .andReturn();
+        assertThat(own.getResponse().getStatus()).as("editing a managed customer still works").isEqualTo(200);
     }
 
     // ------------------------------------------------------------------
