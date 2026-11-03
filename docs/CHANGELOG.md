@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Storefront: Swarm Batch 1, Accessibility and Privacy Fixes — 2026-11-03 (#PRNUM)
+### Storefront: Swarm Batch 1, Accessibility and Privacy Fixes — 2026-11-03 (#1109)
 
 Seven findings from the 2026-10-19 staging persona swarm (epic issue 964), approved as one batch by the owner on 2026-11-03: SW-MRC-07, SW-MRC-08, SW-MRC-11, SW-SAM-10 (checkout half), SW-JRD-08, SW-SAM-06, SW-CLR-05 (remaining part).
 
