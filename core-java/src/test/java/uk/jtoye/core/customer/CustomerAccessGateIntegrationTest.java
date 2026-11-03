@@ -223,7 +223,7 @@ class CustomerAccessGateIntegrationTest {
         MvcResult before = mockMvc.perform(get("/api/v1/customers").with(vendor(f.tenant, manager))).andReturn();
         assertThat(before.getResponse().getStatus()).as("positive control before the revoke: %s", body(before))
                 .isEqualTo(200);
-        assertThat(before.getResponse().getContentAsString()).contains(f.customerEmail);
+        assertThat(before.getResponse().getContentAsString()).as("#856: STAFF sees the customer but not the email").contains(f.customerId.toString()).doesNotContain(f.customerEmail);
 
         MvcResult revoke = mockMvc.perform(delete("/api/v1/staff/" + grantId)
                         .with(realmAdmin(f.tenant, UUID.randomUUID())))
@@ -313,12 +313,12 @@ class CustomerAccessGateIntegrationTest {
 
         MvcResult list = mockMvc.perform(get("/api/v1/customers").with(vendor(f.tenant, staff))).andReturn();
         assertThat(list.getResponse().getStatus()).as(body(list)).isEqualTo(200);
-        assertThat(list.getResponse().getContentAsString()).contains(f.customerEmail);
+        assertThat(list.getResponse().getContentAsString()).as("#856: STAFF sees the customer but not the email").contains(f.customerId.toString()).doesNotContain(f.customerEmail);
 
         MvcResult one = mockMvc.perform(get("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, staff)))
                 .andReturn();
         assertThat(one.getResponse().getStatus()).as(body(one)).isEqualTo(200);
-        assertThat(one.getResponse().getContentAsString()).contains(f.customerEmail);
+        assertThat(one.getResponse().getContentAsString()).as("#856: STAFF sees the customer but not the email").contains(f.customerId.toString()).doesNotContain(f.customerEmail);
     }
 
     @Test
@@ -545,7 +545,7 @@ class CustomerAccessGateIntegrationTest {
 
         MvcResult list = mockMvc.perform(get("/api/v1/customers").with(vendor(f.tenant, staff))).andReturn();
         assertThat(list.getResponse().getStatus()).as(body(list)).isEqualTo(200);
-        assertThat(list.getResponse().getContentAsString()).contains(f.customerEmail);
+        assertThat(list.getResponse().getContentAsString()).as("#856: STAFF sees the customer but not the email").contains(f.customerId.toString()).doesNotContain(f.customerEmail);
 
         JsonNode me = staffMe(f.tenant, staff);
         assertThat(me.path("groupAdmin").asBoolean()).as(me.toString()).isFalse();
