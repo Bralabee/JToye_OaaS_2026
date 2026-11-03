@@ -81,5 +81,14 @@ describe("Customers page — a STAFF-minimised customer has no email (#856)", ()
     expect(minimised).toHaveTextContent("07700 900111")
     expect(mailIcons(minimised)).toHaveLength(0)
     expect(minimised.textContent).not.toMatch(/undefined|null/)
+
+    // #856 review R0-2: the server refuses to edit a customer the caller sees minimised (it has
+    // never been shown the email it would overwrite), so the row offers no Edit; the control does.
+    expect(
+      screen.getByRole("button", { name: "Edit customer Control Customer" })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Edit customer Minimised Customer" })
+    ).not.toBeInTheDocument()
   })
 })

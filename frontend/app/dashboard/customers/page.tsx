@@ -395,11 +395,15 @@ export default function CustomersPage() {
                                 <ShoppingCart className="h-4 w-4" />
                               </Button>
                             </Link>
-                            <IconButton
-                              onClick={() => openEditDialog(customer)}
-                              label={`Edit customer ${customer.name}`}
-                              icon={<Pencil className="h-4 w-4" />}
-                            />
+                            {/* #856: no email means the caller sees this customer minimised
+                                (STAFF on its shop); the API refuses that edit, so none is offered. */}
+                            {customer.email && (
+                              <IconButton
+                                onClick={() => openEditDialog(customer)}
+                                label={`Edit customer ${customer.name}`}
+                                icon={<Pencil className="h-4 w-4" />}
+                              />
+                            )}
                             <IconButton
                               onClick={() => openDeleteDialog(customer)}
                               className="text-red-600 hover:bg-red-50 hover:text-red-700"
