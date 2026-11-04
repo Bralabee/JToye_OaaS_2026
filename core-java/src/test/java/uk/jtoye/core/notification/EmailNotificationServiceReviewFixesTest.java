@@ -149,6 +149,19 @@ class EmailNotificationServiceReviewFixesTest {
     }
 
     @Test
+    @DisplayName("ready-by just after UK midnight: a UTC clock still on the 14th is already the 15th in London, so a ready-by on the 15th reads as TODAY (time alone)")
+    void readyByJustAfterUkMidnightIsTodayInLondon() {
+        // 00:10 BST on 15 June 2030 = 23:10 UTC on the 14th. The clock is in UTC, so a zone-less LocalDate.now(clock)
+        // says the 14th; London says the 15th. The system clock (2026) says neither. Only the injected clock read in
+        // the UK zone prints the time alone.
+        Clock fixedUtc = Clock.fixed(Instant.parse("2030-06-14T23:10:00Z"), ZoneOffset.UTC);
+        OffsetDateTime readyBy = OffsetDateTime.parse("2030-06-15T10:00:00Z"); // 11:00 BST on the 15th
+
+        String paragraph = serviceAt(fixedUtc).readyByParagraph(readyAt(readyBy));
+        assertThat(paragraph).contains("Estimated ready by 11:00.").doesNotContain(" on ");
+    }
+
+    @Test
     @DisplayName("ready-by on the same UK day as the injected Clock's now prints the time alone")
     void readyByTodayPrintsTheTimeAlone() {
         Clock fixed = Clock.fixed(Instant.parse("2030-06-14T10:00:00Z"), ZoneId.of("UTC"));
