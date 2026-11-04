@@ -642,9 +642,9 @@ jtoye:
     # the env-contract gate owes no compose / .env.example / k8s line. A threshold below 1 minute refuses
     # to start, naming the key.
     # max-age (a Duration like threshold): an order PENDING between `threshold` and this is emailed and stamped;
-    # an OLDER one is stamped SILENTLY (no email, count logged per tenant at INFO), so a deploy or an outage
-    # cannot email every old PENDING order. max-age minus threshold must be at least 3 x sweep-interval-ms
-    # (refuses to start, naming the keys).
+    # an OLDER one is left alone (not emailed, not stamped, so no vendor alert either), so a deploy or an outage
+    # cannot flood customers or dashboards. max-age minus threshold must be at least 3 x sweep-interval-ms (a
+    # number of ms or a Duration like PT1M); a window that is empty or narrower refuses to start, naming the keys.
     unaccepted-alert:
       enabled: true
       threshold: 10m
