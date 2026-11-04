@@ -52,8 +52,9 @@ import java.util.UUID;
  * <h2>What is NOT swept</h2>
  * <ul>
  *   <li>a VOIDED order ({@code voided_at IS NOT NULL}): it is not waiting for anyone;</li>
- *   <li>an order still awaiting its payment ({@link OrderService#isAwaitingUpfrontOrDepositPayment}): the
- *       shop cannot accept it yet, so "the shop has not accepted" would be untrue;</li>
+ *   <li>an order still awaiting its payment (the {@link OrderService#isAwaitingUpfrontOrDepositPayment} rule,
+ *       in SQL): the shop cannot accept it yet, so "the shop has not accepted" would be untrue;</li>
+ *   <li>an order the shop placed itself ({@code placed_via = 'VENDOR'}): see {@link #ALERTABLE_PREDICATE};</li>
  *   <li>an order already alerted.</li>
  * </ul>
  *
@@ -75,17 +76,48 @@ public class UnacceptedOrderSweep {
     /** Per tenant per run; the next run takes the rest. Keeps one tenant's backlog from holding a transaction. */
     private static final int BATCH = 200;
 
+    /**
+     * EVERY skip predicate lives here, in the statement that picks the batch, so the batch holds only orders the
+     * sweep will act on. A skip made afterwards in Java stamps nothing, so the skipped row is picked again next
+     * run and, with {@link #BATCH} or more of them at the head of the ORDER BY, no real overdue order behind them
+     * is ever reached (review of PR 1119, finding 1).
+     *
+     * <ul>
+     *   <li>not voided, still PENDING, not yet alerted, older than the threshold;</li>
+     *   <li>not placed by the shop (V69 {@code placed_via = 'VENDOR'}): the shop made it, so "the shop has not
+     *       accepted your order" would be false, and the alert copy says the customer was told. A NULL channel
+     *       (a pre-V69 row) is a customer order and stays in;</li>
+     *   <li>not awaiting payment: the same rule as {@link OrderService#isAwaitingUpfrontOrDepositPayment}
+     *       (payment status PENDING or FAILED, or a payment reference that is neither CAPTURED nor AUTHORIZED),
+     *       written in SQL. The shop cannot accept such an order yet.</li>
+     * </ul>
+     */
+    private static final String ALERTABLE_PREDICATE =
+            "status = 'PENDING' AND voided_at IS NULL AND unaccepted_notified_at IS NULL "
+                    + "AND placed_via IS DISTINCT FROM 'VENDOR' "
+                    + "AND COALESCE(payment_status, 'NONE') NOT IN ('PENDING', 'FAILED') "
+                    + "AND (payment_reference IS NULL OR COALESCE(payment_status, 'NONE') IN ('CAPTURED', 'AUTHORIZED'))";
+
     private static final String CANDIDATES_SQL =
-            "SELECT id FROM orders "
-                    + "WHERE tenant_id = :tenantId AND status = 'PENDING' AND voided_at IS NULL "
-                    + "AND unaccepted_notified_at IS NULL "
+            "SELECT id FROM orders WHERE tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + " "
                     + "AND updated_at < now() - make_interval(secs => :secs) "
                     + "ORDER BY updated_at LIMIT " + BATCH;
 
+    /**
+     * The claim: a narrow UPDATE that touches ONLY the stamp. It deliberately does NOT bump {@code version}: the
+     * {@code unaccepted_notified_at IS NULL} predicate (repeated with the rest of {@link #ALERTABLE_PREDICATE},
+     * so a race with an accept or a void re-checks them) is the once-only guarantee, and a version bump would
+     * make a vendor Accept that loaded the order a moment earlier fail with an optimistic-lock error for a
+     * change that does not matter to it (review of PR 1119, finding 3).
+     *
+     * <p>It also writes no {@code orders_aud} row, deliberately: this is an operational stamp, not a business
+     * revision of the order (nobody decided anything), exactly like {@code ClientIpDigestRetentionSweep}'s native
+     * UPDATE of {@code client_ip_digest}, which is not audited either. Who accepted, cancelled or voided the
+     * order is audited by the transition that does it.
+     */
     private static final String CLAIM_SQL =
-            "UPDATE orders SET unaccepted_notified_at = now(), version = version + 1 "
-                    + "WHERE id = :id AND tenant_id = :tenantId AND status = 'PENDING' AND voided_at IS NULL "
-                    + "AND unaccepted_notified_at IS NULL";
+            "UPDATE orders SET unaccepted_notified_at = now() "
+                    + "WHERE id = :id AND tenant_id = :tenantId AND " + ALERTABLE_PREDICATE;
 
     private final OrderRepository orderRepository;
     private final EntityManager entityManager;
@@ -181,7 +213,7 @@ public class UnacceptedOrderSweep {
         for (Object raw : ids) {
             UUID orderId = raw instanceof UUID u ? u : UUID.fromString(raw.toString());
             Order order = orderRepository.findByIdAndTenantId(orderId, tenantId).orElse(null);
-            if (order == null || OrderService.isAwaitingUpfrontOrDepositPayment(order)) {
+            if (order == null) {
                 continue;
             }
             int claimed = entityManager.createNativeQuery(CLAIM_SQL)

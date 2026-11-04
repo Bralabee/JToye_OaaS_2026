@@ -72,6 +72,7 @@ class UnacceptedOrderSweepIntegrationTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired UnacceptedOrderSweep sweep;
     @Autowired OrderService orderService;
+    @Autowired OrderRepository orderRepository;
     @Autowired PlatformTransactionManager txManager;
 
     private static final UUID TENANT_A = UUID.fromString("00000000-0000-0000-0000-00000000821a");
@@ -212,6 +213,79 @@ class UnacceptedOrderSweepIntegrationTest {
                 "SELECT status FROM orders WHERE tenant_id = ? AND id = ?", String.class, tenant, orderId));
     }
 
+    @Test
+    @DisplayName("review 1: more unpaid PENDING orders than the batch cannot starve a real overdue order behind them")
+    void unpaidOrdersAheadOfTheBatchDoNotStarveARealOverdueOrder() {
+        // 250 > BATCH (200), all older than the real one, so a batch taken before the skip predicates is all unpaid.
+        inTenant(TENANT_A, () -> jdbcTemplate.update(
+                "INSERT INTO orders (id, tenant_id, shop_id, order_number, status, customer_name, customer_email, "
+                        + "customer_phone, subtotal_pennies, vat_rate, vat_amount_pennies, delivery_fee_pennies, "
+                        + "fulfilment_type, total_amount_pennies, item_count, payment_status, payment_reference, "
+                        + "payment_method, created_at, updated_at, version) "
+                        + "SELECT gen_random_uuid(), ?, ?, 'ORD-STARVE-' || g, 'PENDING', 'Unpaid Buyer', "
+                        + "'unpaid-' || g || '@example.com', '07700 900000', 1000, 'ZERO', 0, 0, 'COLLECTION', 1000, 1, "
+                        + "'PENDING', 'pi_starve_' || g, 'Card', now() - make_interval(mins => 600), "
+                        + "now() - make_interval(mins => 600), 0 FROM generate_series(1, 250) g",
+                TENANT_A, shopA));
+        UUID real = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 30, false);
+
+        sweep.sweep();
+
+        assertThat(stampOf(TENANT_A, real)).as("the real overdue cash order behind 250 unpaid ones is alerted").isNotNull();
+        assertThat(inTenant(TENANT_A, () -> jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders WHERE tenant_id = ? AND payment_reference LIKE 'pi_starve_%' "
+                        + "AND unaccepted_notified_at IS NOT NULL", Integer.class, TENANT_A)))
+                .as("and none of the unpaid ones is stamped").isZero();
+    }
+
+    @Test
+    @DisplayName("review 2: a shop-created (VENDOR) order is neither stamped nor emailed - the shop made it, and the alert copy says the customer was told")
+    void aVendorPlacedOrderIsNotAlertedAndTheCustomerIsNotEmailed() {
+        UUID vendor = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 30, false, true, "VENDOR");
+        UUID storefront = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 30, false, true, "STOREFRONT");
+        UUID unrecorded = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 30, false, true, null);
+
+        sweep.sweep();
+
+        assertThat(stampOf(TENANT_A, vendor)).as("VENDOR").isNull();
+        assertThat(stampOf(TENANT_A, storefront)).as("STOREFRONT control").isNotNull();
+        assertThat(stampOf(TENANT_A, unrecorded)).as("placed_via NULL (pre-V69) is still a customer order").isNotNull();
+        verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, vendor)), any());
+        verify(emailService, times(2)).sendOrderAwaitingAcceptance(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("review 3: the claim does not bump the version, so an accept loaded before the sweep still commits")
+    void anAcceptLoadedBeforeTheSweepStillSucceeds() {
+        UUID overdue = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 30, false);
+        Order loaded;
+        TenantContext.set(TENANT_A);
+        try {
+            loaded = new TransactionTemplate(txManager).execute(status -> {
+                jdbcTemplate.queryForObject("SELECT set_config('app.current_tenant_id', ?, true)", String.class, TENANT_A.toString());
+                return orderRepository.findByIdAndTenantId(overdue, TENANT_A).orElseThrow();
+            });
+        } finally {
+            TenantContext.clear();
+        }
+
+        assertThat(sweep.sweep()).isGreaterThanOrEqualTo(1);
+        assertThat(stampOf(TENANT_A, overdue)).as("PRECONDITION: the sweep claimed it after the vendor loaded it").isNotNull();
+
+        // The vendor's accept, holding the version it read before the sweep committed.
+        loaded.setStatus(OrderStatus.CONFIRMED);
+        TenantContext.set(TENANT_A);
+        try {
+            new TransactionTemplate(txManager).executeWithoutResult(status -> {
+                jdbcTemplate.queryForObject("SELECT set_config('app.current_tenant_id', ?, true)", String.class, TENANT_A.toString());
+                orderRepository.saveAndFlush(loaded);
+            });
+        } finally {
+            TenantContext.clear();
+        }
+        assertThat(statusOf(TENANT_A, overdue)).isEqualTo("CONFIRMED");
+    }
+
     private String emailOf(UUID tenant, UUID orderId) {
         return inTenant(tenant, () -> jdbcTemplate.queryForObject(
                 "SELECT customer_email FROM orders WHERE tenant_id = ? AND id = ?", String.class, tenant, orderId));
@@ -219,7 +293,12 @@ class UnacceptedOrderSweepIntegrationTest {
 
     private UUID seedOrder(UUID tenant, UUID shop, String status, String paymentStatus, String paymentReference,
                            int minutesAgo, boolean voided) {
-        return seedOrder(tenant, shop, status, paymentStatus, paymentReference, minutesAgo, voided, true);
+        return seedOrder(tenant, shop, status, paymentStatus, paymentReference, minutesAgo, voided, true, "STOREFRONT");
+    }
+
+    private UUID seedOrder(UUID tenant, UUID shop, String status, String paymentStatus, String paymentReference,
+                           int minutesAgo, boolean voided, boolean withEmail) {
+        return seedOrder(tenant, shop, status, paymentStatus, paymentReference, minutesAgo, voided, withEmail, "STOREFRONT");
     }
 
     /**
@@ -228,21 +307,21 @@ class UnacceptedOrderSweepIntegrationTest {
      * would silently turn an "old" fixture into a young one and make a negative arm pass for the wrong reason.
      */
     private UUID seedOrder(UUID tenant, UUID shop, String status, String paymentStatus, String paymentReference,
-                           int minutesAgo, boolean voided, boolean withEmail) {
+                           int minutesAgo, boolean voided, boolean withEmail, String placedVia) {
         return inTenant(tenant, () -> {
             UUID id = UUID.randomUUID();
             jdbcTemplate.update(
                     "INSERT INTO orders (id, tenant_id, shop_id, order_number, status, customer_name, customer_email, "
                             + "customer_phone, subtotal_pennies, vat_rate, vat_amount_pennies, delivery_fee_pennies, "
                             + "fulfilment_type, total_amount_pennies, item_count, payment_status, payment_reference, "
-                            + "payment_method, created_at, updated_at, version, voided_at, voided_by, void_reason) "
+                            + "payment_method, created_at, updated_at, version, placed_via, voided_at, voided_by, void_reason) "
                             + "VALUES (?, ?, ?, ?, ?, 'Sweep Buyer', ?, '07700 900000', 1000, 'ZERO', 0, 0, "
                             + "'COLLECTION', 1000, 1, ?, ?, 'Unpaid', now() - make_interval(mins => ?), "
-                            + "now() - make_interval(mins => ?), 0, "
+                            + "now() - make_interval(mins => ?), 0, ?, "
                             + (voided ? "now(), 'tester', 'test')" : "NULL, NULL, NULL)"),
                     id, tenant, shop, "ORD-821-" + id.toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT),
                     status, withEmail ? "sweep-" + id + "@example.com" : null, paymentStatus, paymentReference,
-                    minutesAgo, minutesAgo);
+                    minutesAgo, minutesAgo, placedVia);
             return id;
         });
     }

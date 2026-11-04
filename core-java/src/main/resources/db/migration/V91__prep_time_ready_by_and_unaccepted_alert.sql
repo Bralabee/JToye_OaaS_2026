@@ -16,6 +16,10 @@
 --    board and dashboard read the stamp as "overdue". NULL = not (yet) alerted. No backfill: existing PENDING
 --    orders are picked up by the first sweep like any other.
 --    Partial index idx_orders_pending_unnotified backs the sweep's claim (open, not voided, not yet alerted).
+--    The stamp is an OPERATIONAL stamp and is written by a narrow native UPDATE that touches neither `version`
+--    (a vendor Accept loaded just before must still commit) nor `orders_aud` (no business decision was made;
+--    same as ClientIpDigestRetentionSweep's native write of client_ip_digest). The column still has its
+--    orders_aud mirror below because Order is @Audited: Hibernate writes it on every later audited revision.
 --
 -- 3. Shop and Order are @Audited: the shops_aud and orders_aud mirrors of all three columns are in THIS
 --    migration (a missing _aud column throws at runtime on the next audited write: V30/V38). The mirrors are

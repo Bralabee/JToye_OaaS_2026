@@ -102,3 +102,29 @@ trader-identity gates, or must it re-verify; (c) does a second shop need approva
 - No MCP tool added: there is no shop-write tool; `read_orders` passes the DTO through.
 - Dev/prose docs that state "Current schema version: V89" were not edited (another lane holds V90; the claims
   collide at rebase).
+
+## Review round 1 of PR 1119: three admissible findings in `UnacceptedOrderSweep`
+
+All fixed test-first. RED = `evidence/review1-red.txt` (7 tests, 3 failed, on the code as reviewed); GREEN =
+`evidence/review1-green.txt` (7 of 7). `OrderReadyByEstimateIntegrationTest`,
+`OrderStateChangeListenerIdempotencyIntegrationTest`, `OpenApiSnapshotTest` and `RlsContractTest` also pass (rc=0);
+the API and schema shape did not change (only a comment in V91).
+
+1. **Starvation.** RED: 250 unpaid PENDING orders older than a real overdue cash order: the real one was never
+   stamped (`Expecting actual not to be null`). Fix: every skip predicate (voided, PENDING, not yet alerted, not
+   VENDOR-placed, not awaiting payment) is in `ALERTABLE_PREDICATE`, used by both `CANDIDATES_SQL` and
+   `CLAIM_SQL`; the Java skip is gone. The awaiting-payment rule is the SQL form of
+   `OrderService.isAwaitingUpfrontOrDepositPayment`. GREEN: the real order is alerted and none of the 250 is stamped.
+2. **False email for shop-created orders.** Decision: a `placed_via = 'VENDOR'` order is excluded from the sweep
+   ENTIRELY (no stamp, no email), not just from the email. Reason: the badge and banner copy say "the customer has
+   been told", which would be false for it, and the shop created the order so it is not waiting on an unseen
+   customer order. A NULL `placed_via` (pre-V69) is a customer order and stays in. RED: the VENDOR order was stamped.
+   GREEN: VENDOR unstamped and unemailed, STOREFRONT and NULL controls stamped, exactly 2 emails.
+3. **Optimistic lock and audit.** The claim no longer touches `version`. RED: an accept holding the pre-sweep
+   version failed with `ObjectOptimisticLockingFailureException`. GREEN: the same accept commits and the order is
+   CONFIRMED. Audit: left UNAUDITED and documented (migration header, `CLAIM_SQL` javadoc). Precedent:
+   `ClientIpDigestRetentionSweep`'s native `UPDATE orders SET client_ip_digest = NULL` writes no `orders_aud` row
+   either. The stamp is operational, not a business decision; who accepted, cancelled or voided the order is
+   audited by that transition.
+
+The six recorded findings were left alone, as instructed.
