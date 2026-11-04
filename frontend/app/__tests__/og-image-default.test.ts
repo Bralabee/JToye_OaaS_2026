@@ -46,8 +46,9 @@ afterEach(() => {
   }
 })
 
-function absolute(url: string, base: URL | null | undefined): string {
-  return resolveAbsoluteUrlWithPathname(url, base ?? null, "/", { trailingSlash: false, isStaticMetadataRouteFile: false })
+function absolute(url: string, base: string | URL | null | undefined): string {
+  // Metadata["metadataBase"] is typed string | URL | null; the resolver wants a URL or null.
+  return resolveAbsoluteUrlWithPathname(url, base == null ? null : new URL(base), "/", { trailingSlash: false, isStaticMetadataRouteFile: false })
 }
 
 type Images = Array<{ url: string | URL }> | undefined
