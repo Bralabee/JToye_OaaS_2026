@@ -59,7 +59,7 @@ function echo(url: string) {
   return { shopId: p.get("shopId"), shopName: null, from: p.get("from"), to: p.get("to") }
 }
 
-function apiMock(url: string) {
+function apiMock(url: string): Promise<unknown> {
   if (url.startsWith("/api/v1/financial-transactions/summary")) {
     return Promise.resolve({
       data: {
