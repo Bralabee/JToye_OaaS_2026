@@ -245,7 +245,7 @@ class DemoDataSeederServiceAccountGrantIntegrationTest {
     }
 
     private static String orderJson(UUID shopId, UUID productId) {
-        return "{\"shopId\":\"" + shopId + "\",\"items\":[{\"productId\":\"" + productId + "\",\"quantity\":1}]}";
+        return "{\"shopId\":\"" + shopId + "\",\"customerName\":\"Test Customer\",\"items\":[{\"productId\":\"" + productId + "\",\"quantity\":1}]}";
     }
 
     /** The integration-orders-rw client-credentials token shape: its service-account sub and scopes. */

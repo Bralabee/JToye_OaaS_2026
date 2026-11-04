@@ -272,7 +272,8 @@ export interface ProductAllergenWarning {
 }
 
 export interface CreateProductRequest {
-  sku: string
+  /** Optional (#875): omitted or blank, core generates one (JTP-XXXXXXXX); on an update, blank keeps the stored SKU. */
+  sku?: string
   title: string
   ingredientsText: string
   allergenMask: number

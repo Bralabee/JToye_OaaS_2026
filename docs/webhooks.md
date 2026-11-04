@@ -43,6 +43,34 @@ again by any other endpoint, including `GET`. Store it before you close the resp
 | `POST /api/v1/webhooks/{id}/pause` | stop delivering (`PAUSED`); events already queued are kept as `HELD` |
 | `POST /api/v1/webhooks/{id}/resume` | deliver again, deliver every `HELD` event, and clear the failure counter |
 | `POST /api/v1/webhooks/{id}/revoke` | terminal (`REVOKED`) |
+| `POST /api/v1/webhooks/{id}/test` | queue one `webhook.test` ping to an `ACTIVE` endpoint (202); see [Send a test event](#send-a-test-event) |
+| `DELETE /api/v1/webhooks/{id}` | delete a `REVOKED` endpoint and its delivery log (204); any other status is a 409 |
+
+### Send a test event
+
+`POST /api/v1/webhooks/{id}/test` queues one ping and answers `202` with `{ deliveryId, eventId, status }`.
+The ping takes the same path as a real event: it is signed with the endpoint's current secret and POSTed to
+the validated address, and it appears in the delivery log (`GET /api/v1/webhooks/{id}/deliveries`) as
+`webhook.test`, where you read the outcome by `deliveryId`. The dashboard has the same button on an endpoint's
+page.
+
+```json
+{ "id": "<eventId>", "type": "webhook.test", "tenantId": "<your tenant uuid>", "occurredAt": "…", "version": "1",
+  "data": { "subscriptionId": "<id>", "message": "This is a test event from J'Toye. …" } }
+```
+
+- A ping gets **one attempt**. It is not retried over hours like a real event, and a failed ping never counts
+  toward [auto-pause](#auto-pause).
+- Only an `ACTIVE` endpoint can be pinged. A paused, auto-paused or revoked one answers a typed `409`
+  (`https://jtoye.uk/errors/webhook-subscription-state`, with `subscriptionStatus`).
+- Each call sends one ping with a new event id. It takes no `Idempotency-Key`: sending it twice is two pings.
+
+`DELETE` is the same typed `409` for an endpoint that is not yet revoked: revoke first, then delete. The
+delivery log goes with the endpoint.
+
+Managing endpoints is deliberately **not** exposed as an MCP tool. Registering an endpoint points the platform's
+order data at an arbitrary URL and returns a signing secret, which is an administrator's decision, not an
+agent's; MCP credentials are scoped to catalogue, order and customer work, and `GROUP_ADMIN` is required here.
 
 Errors are RFC 7807 problem documents, not prose.
 
@@ -326,6 +354,15 @@ worse than none — it is confidently wrong.
 ---
 
 ## 5. Delivery, retries, and failure
+
+### Redirects are not followed
+
+A `3xx` answer counts as a failed attempt: we do not follow redirects. This is deliberate. The address is
+validated as public and HTTPS at registration and again at every attempt, and the connection is made to that
+validated address; following a `Location` would send the signed body to an address nobody validated, which is
+the SSRF hole the check exists to close. If your receiver sits behind a redirect (a Google Apps Script web app
+is a common one: it answers a POST with a redirect), register the **final** URL the
+redirect lands on, or put a small relay that answers `2xx` in front of it.
 
 ### Responding
 
