@@ -335,6 +335,8 @@ async function sharedBrowserFlow(browser) {
     const signOut = page.getByTitle("Sign out").first()
     await signOut.waitFor({ state: "visible", timeout: 30000 })
     await signOut.click()
+    // #877 / UXT-107: the icon asks first; the dialog's own button is the sign-out.
+    await page.getByRole("dialog").getByRole("button", { name: "Sign out" }).click()
     await page.waitForTimeout(3000)
     // ADJACENT DEFECT, recorded rather than worked around silently: the
     // end-session URL is built from `req.nextUrl.origin`, which inside the

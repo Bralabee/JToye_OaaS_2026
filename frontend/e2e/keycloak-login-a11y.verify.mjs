@@ -12,7 +12,13 @@
 // positive tabindex, a <title> that names the page (register is "Register", not "Sign in"), and zero
 // axe violations at WCAG 2.2 AA plus best-practice. On register it additionally asserts the password
 // rules are on the page BEFORE any failed submit and tied to the field, and that the privacy notice
-// link is present and points at the app's /legal/privacy.
+// link is present and points at the app's /legal/privacy. It also asserts every field the page marks
+// with a required asterisk is exposed as required (required / aria-required) and, after an empty
+// submit, that every aria-invalid field names its error in aria-describedby (the profile fields
+// email, first name and last name come from user-profile-commons.ftl, which the theme overrides).
+//
+// Wired into the nightly (.github/workflows/e2e-nightly.yml, "Gate - Keycloak customer-realm pages"),
+// the only workflow with a running Keycloak. Shown failing on the stock markup, passing on the theme.
 import { chromium } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
 
@@ -48,6 +54,39 @@ async function structural(pg, label) {
   check(label, "exactly one main landmark", facts.mains === 1, `found ${facts.mains}`)
   check(label, "no positive tabindex", facts.positiveTabindex.length === 0, facts.positiveTabindex.join(", "))
   return facts
+}
+
+// Every control behind a label that carries the visible required asterisk must expose it too.
+async function requiredCues(pg, label) {
+  const found = await pg.evaluate(() => {
+    const rows = [...document.querySelectorAll("label[for]")]
+      .filter((l) => l.parentElement?.querySelector(".required"))
+      .map((l) => {
+        const c = document.getElementById(l.getAttribute("for"))
+        return {
+          id: l.getAttribute("for"),
+          ok: !!c && (c.required || c.getAttribute("aria-required") === "true"),
+        }
+      })
+    return rows
+  })
+  check(label, "the page has starred (required) fields to check", found.length >= 3, `${found.length} found`)
+  const missing = found.filter((r) => !r.ok).map((r) => r.id)
+  check(label, "every starred field is exposed as required", missing.length === 0, missing.join(", "))
+}
+
+// Every invalid control must point at a non-empty element that says why.
+async function errorsAreLinked(pg, label) {
+  const found = await pg.evaluate(() =>
+    [...document.querySelectorAll('[aria-invalid="true"]')].map((c) => {
+      const ids = (c.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
+      const text = ids.map((i) => document.getElementById(i)?.textContent?.trim() || "").join(" ").trim()
+      return { id: c.id || c.name, linked: text.length > 0 }
+    })
+  )
+  check(label, "the empty submit produced invalid fields to check", found.length >= 3, `${found.length} found`)
+  const unlinked = found.filter((r) => !r.linked).map((r) => r.id)
+  check(label, "every invalid field names its error in aria-describedby", unlinked.length === 0, unlinked.join(", "))
 }
 
 async function axe(pg, label) {
@@ -104,12 +143,15 @@ try {
     [...document.querySelectorAll("a")].filter((a) => /privacy/i.test(a.textContent || "")).map((a) => a.href)
   )
   check("register", "privacy notice link present", privacy.some((h) => h === `${APP_ORIGIN}/legal/privacy`), privacy.join(", "))
+  await requiredCues(pg, "register")
   await axe(pg, "register")
 
   // The failed-submit state must not lose the up-front rules.
-  await pg.click('input[type="submit"]')
-  await pg.waitForLoadState("domcontentloaded")
+  // Wait for the navigation the submit causes: reading the DOM straight after the click can still be
+  // the page BEFORE the submit, whose fields are not yet marked invalid.
+  await Promise.all([pg.waitForNavigation({ waitUntil: "domcontentloaded" }), pg.click('input[type="submit"]')])
   await structural(pg, "register-after-empty-submit")
+  await errorsAreLinked(pg, "register-after-empty-submit")
   await axe(pg, "register-after-empty-submit")
 
   if (forgotHref) {

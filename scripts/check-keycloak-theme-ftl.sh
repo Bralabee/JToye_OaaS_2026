@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-keycloak-theme-ftl.sh — the three FTL overrides of the jtoye login theme, and the realm
+# check-keycloak-theme-ftl.sh — the four FTL overrides of the jtoye login theme, and the realm
 # settings that go with them, cannot rot or regress unnoticed (#847, #848).
 #
 # WHY THIS EXISTS
@@ -7,8 +7,8 @@
 #   The jtoye theme was CSS-only on purpose: a forked template pins us to one Keycloak version's
 #   markup. #848 (UXT-079, SW-MRC-12, SW-SAM-10) needed what CSS cannot do — a <main> landmark, a
 #   <title> that names the page, no positive tabindex, the password rules and a privacy link on
-#   the register page — so three templates are now overridden (template.ftl, login.ftl,
-#   register.ftl). The recorded reason against forking was the SILENT rot at the next upgrade. This
+#   the register page — so four templates are now overridden (template.ftl, login.ftl,
+#   register.ftl, user-profile-commons.ftl). The recorded reason against forking was the SILENT rot at the next upgrade. This
 #   gate makes that rot loud instead of forbidding the fork:
 #
 #     1. every override opens with `JTOYE-BASE-KEYCLOAK: <version>`, and that version must equal
@@ -44,7 +44,7 @@ SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SO
 DEFAULT_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
 THEME=infra/keycloak/themes/jtoye/login
-FTL=(template.ftl login.ftl register.ftl)
+FTL=(template.ftl login.ftl register.ftl user-profile-commons.ftl)
 IMAGE_FILES=(docker-compose.full-stack.yml infra/docker-compose.yml infra/docker-compose.hostnet.yml k8s/components/keycloak/keycloak.yaml)
 REALMS=(infra/keycloak/realm-export.template.json infra/keycloak/realm-export-customers.template.json)
 CUSTOMER_REALM=infra/keycloak/realm-export-customers.template.json
@@ -130,6 +130,11 @@ check_tree() {
   command grep -q 'id="kc-password-policy"' "$root/$THEME/register.ftl" || d "$THEME/register.ftl no longer shows the password rules"
   command grep -q 'aria-describedby="kc-password-policy' "$root/$THEME/register.ftl" || d "$THEME/register.ftl: the password field is not described by the rules"
   command grep -q 'registerPrivacyNotice' "$root/$THEME/register.ftl" || d "$THEME/register.ftl no longer links the privacy notice"
+  # #848: the register page's profile fields (email, first and last name) are rendered by
+  # user-profile-commons.ftl; each control must say it is required and name its error.
+  command grep -q 'aria-required="true"' "$root/$THEME/user-profile-commons.ftl" || d "$THEME/user-profile-commons.ftl no longer marks required profile fields aria-required"
+  command grep -q 'aria-describedby="${jtIds' "$root/$THEME/user-profile-commons.ftl" || d "$THEME/user-profile-commons.ftl no longer ties a field's error to it with aria-describedby"
+  [ "$(command grep -c '<@jtRequiredAndDescribed attribute=attribute/>' "$root/$THEME/user-profile-commons.ftl")" -ge 3 ] || d "$THEME/user-profile-commons.ftl: the input, textarea and select tags no longer all call jtRequiredAndDescribed"
 
   # ---- 3. the rules sentence is derived from the realm policy --------------------------------
   [ -r "$root/$MESSAGES" ] || { echo "VOID: cannot read $MESSAGES" >&2; return 2; }
@@ -179,6 +184,7 @@ selftest() {
     printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<title><#if jtPageHeadingText?has_content>x</#if></title>\n<header id="kc-header">\n<main id="kc-main">\n</main>\n' > "$r/$THEME/template.ftl"
     printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<input id="username">\n' > "$r/$THEME/login.ftl"
     printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<input id="password" aria-describedby="kc-password-policy">\n<span id="kc-password-policy">x</span>\n${msg("registerPrivacyNotice")}\n' > "$r/$THEME/register.ftl"
+    printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<input aria-required="true">\naria-describedby="${jtIds?join(%s)}"\n<@jtRequiredAndDescribed attribute=attribute/>\n<@jtRequiredAndDescribed attribute=attribute/>\n<@jtRequiredAndDescribed attribute=attribute/>\n' "' '" > "$r/$THEME/user-profile-commons.ftl"
     printf 'passwordPolicyHint=At least 12 characters, with an uppercase letter, a lowercase letter, a number and a special character. It cannot be the same as your email address.\nregisterPrivacyNotice=See our <a href="{0}">privacy notice</a>.\n' > "$r/$MESSAGES"
     for x in "${REALMS[@]}"; do
       printf '{\n  "passwordPolicy" : "length(12) and digits(1) and upperCase(1) and lowerCase(1) and specialChars(1) and notUsername",\n  "actionTokenGeneratedByUserLifespan" : 3600,\n  "attributes" : {\n    "actionTokenGeneratedByUserLifespan.verify-email" : "86400"\n  }\n}\n' > "$r/$x"
@@ -227,6 +233,15 @@ selftest() {
 
   plant "$t/nopolicy"; sed -i '/kc-password-policy">/d' "$t/nopolicy/$THEME/register.ftl"
   arm rules-removed 1 "no longer shows the password rules" "$t/nopolicy"
+
+  plant "$t/noreq"; sed -i 's/aria-required="true"//' "$t/noreq/$THEME/user-profile-commons.ftl"
+  arm profile-fields-lose-required 1 "no longer marks required profile fields aria-required" "$t/noreq"
+
+  plant "$t/nodesc"; sed -i 's/aria-describedby="${jtIds/x="${jtIds/' "$t/nodesc/$THEME/user-profile-commons.ftl"
+  arm profile-fields-lose-error-link 1 "aria-describedby" "$t/nodesc"
+
+  plant "$t/nocall"; sed -i '0,/<@jtRequiredAndDescribed attribute=attribute\/>/{//d}' "$t/nocall/$THEME/user-profile-commons.ftl"
+  arm profile-field-type-drops-call 1 "no longer all call jtRequiredAndDescribed" "$t/nocall"
 
   plant "$t/noprivacy"; sed -i '/registerPrivacyNotice/d' "$t/noprivacy/$THEME/register.ftl"
   arm privacy-removed 1 "no longer links the privacy notice" "$t/noprivacy"

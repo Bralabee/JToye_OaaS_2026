@@ -724,9 +724,18 @@ public class PublicStorefrontService {
                     shopRepository.searchPublishedDeclaring(query, declaredMask, unsorted).map(this::toPublicShopDto),
                     SearchInterpretation.text());
         }
-        return new SearchOutcome(
-                shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
-                SearchInterpretation.text());
+        Page<PublicShopDto> likeResults = shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto);
+        // #877 / UXT-112: nothing found by any tier. If the term was shaped like a postcode the dataset
+        // does not know (a typo, or Northern Ireland), say THAT, so the page does not report "no kitchens
+        // match" about a postcode that was never found. A page that has results was answered as text.
+        if (likeResults.getTotalElements() == 0) {
+            Optional<PostcodeGeocoder.ShapedPostcode> shaped = postcodeGeocoder.postcodeShapedTerm(query);
+            if (shaped.isPresent()) {
+                return new SearchOutcome(likeResults,
+                        SearchInterpretation.unrecognisedPostcode(shaped.get().key(), shaped.get().precision()));
+            }
+        }
+        return new SearchOutcome(likeResults, SearchInterpretation.text());
     }
 
     /**

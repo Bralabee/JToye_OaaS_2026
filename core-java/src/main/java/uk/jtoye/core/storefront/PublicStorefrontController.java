@@ -142,13 +142,17 @@ public class PublicStorefrontController {
                     + "a 'q' that is not a postcode, or is a postcode the dataset does not know "
                     + "(Code-Point Open is GB only), is answered by the text search exactly as "
                     + "before. The 'X-Search-Interpretation' response header states which reading "
-                    + "was applied.")
+                    + "was applied, including 'postcode-unrecognised' when a postcode-shaped term "
+                    + "found no postcode and no kitchen.")
     @ApiResponse(responseCode = "200", description = "A page of published shops.",
             headers = @Header(name = SearchInterpretation.HEADER,
                     description = "How the server read 'q'. Present on ?q= responses only — absent "
                             + "from the plain listing and from the lat/lon distance path. Either "
                             + "the single token 'text', or "
-                            + "'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>'. "
+                            + "'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>', or "
+                            + "'postcode-unrecognised; postcode=<KEY>; precision=<unit|district>' when the term "
+                            + "is shaped like a postcode, no such postcode is in the dataset (a typo, or "
+                            + "Northern Ireland: the dataset is GB only) and the text search found nothing. "
                             + "Present even when the proximity result is empty, because "
                             + "\"no kitchens within the radius of SE22\" and \"nothing matches "
                             + "'SE22'\" are different answers.",

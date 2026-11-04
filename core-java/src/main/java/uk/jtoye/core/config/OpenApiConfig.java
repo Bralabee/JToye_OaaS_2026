@@ -94,8 +94,8 @@ public class OpenApiConfig {
                                                                 scopes (`catalog-scopes` security scheme, client-credentials grant):
                                                                 - `catalog:read` — list/get products (read surface, authenticated-only)
                                                                 - `catalog:write` — create/update/delete products + images (gates all nine product mutations)
-                                                                - `orders:write` — create orders (enforced; gates `POST /orders`, Phase 25 [AI-02])
-                                                                - `customers:write` — create customers (enforced; gates `POST /customers`, Phase 25 [AI-02])
+                                                                - `orders:write` — mutate orders (enforced; gates every mutating order endpoint: create, update, delete, state transitions, payment links; Phase 25 [AI-02])
+                                                                - `customers:write` — mutate customers (enforced; gates create, update and delete; Phase 25 [AI-02])
                                                                 - `orders:read`, `customers:read` — reserved taxonomy for the MCP model; defined, not yet enforced
 
                                                                 A `catalog:read`-only token gets **200** on `GET /products` and **403** on
@@ -155,8 +155,8 @@ public class OpenApiConfig {
                                                                                                 .scopes(new Scopes()
                                                                                                                 .addString("catalog:read", "Read the product catalog (list/get products)")
                                                                                                                 .addString("catalog:write", "Create, update, and delete products and product images")
-                                                                                                                .addString("orders:write", "Enforced; gates POST /orders (Phase 25 [AI-02])")
-                                                                                                                .addString("customers:write", "Enforced; gates POST /customers (Phase 25 [AI-02])")
+                                                                                                                .addString("orders:write", "Enforced; gates every order mutation: create, update, delete, the state transitions and order payment links (Phase 25 [AI-02])")
+                                                                                                                .addString("customers:write", "Enforced; gates every customer mutation: create, update and delete (Phase 25 [AI-02])")
                                                                                                                 .addString("orders:read", "Reserved for the MCP model — defined, not yet enforced")
                                                                                                                 .addString("customers:read", "Reserved for the MCP model — defined-only, not enforced this phase"))))));
         }

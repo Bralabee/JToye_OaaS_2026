@@ -1494,6 +1494,66 @@ class PublicStorefrontServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("searchPublishedShops — #877 / UXT-112: an unfound postcode is said to be unfound")
+    class UnrecognisedPostcodeTier {
+
+        @Test
+        @DisplayName("postcode-shaped, not in the dataset, nothing by text either: UNRECOGNISED_POSTCODE")
+        void unfoundPostcodeIsSaidSo() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("BT1 5GS"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("BT1 5GS"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("BT1 5GS")).thenReturn(Optional.empty());
+            when(postcodeGeocoder.postcodeShapedTerm("BT1 5GS")).thenReturn(
+                    Optional.of(new PostcodeGeocoder.ShapedPostcode("BT15GS", PostcodeGeocoder.Precision.UNIT)));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("BT1 5GS", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.UNRECOGNISED_POSTCODE, outcome.interpretation().kind());
+            assertEquals("postcode-unrecognised; postcode=BT15GS; precision=unit",
+                    outcome.interpretation().headerValue());
+            assertTrue(outcome.page().isEmpty());
+        }
+
+        @Test
+        @DisplayName("a postcode-shaped term the text search DID answer stays TEXT (a shop named 'SE22 Kitchen')")
+        void answeredByTextStaysText() {
+            when(postcodeGeocoder.locateSearchTerm("ZZ99")).thenReturn(Optional.empty());
+            when(shopRepository.fullTextSearchPublished(eq("ZZ99"), any()))
+                    .thenReturn(new PageImpl<>(List.of(publishedShop)));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("ZZ99", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
+            verify(postcodeGeocoder, never()).postcodeShapedTerm(any());
+        }
+
+        @Test
+        @DisplayName("a food search that finds nothing is TEXT, not a postcode complaint")
+        void emptyFoodSearchStaysText() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("zzzz"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("zzzz"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("zzzz")).thenReturn(Optional.empty());
+            when(postcodeGeocoder.postcodeShapedTerm("zzzz")).thenReturn(Optional.empty());
+
+            assertEquals(SearchInterpretation.Kind.TEXT,
+                    service.searchPublishedShops("zzzz", PageRequest.of(0, 20)).interpretation().kind());
+        }
+
+        @Test
+        @DisplayName("the grammar: a key outside the safe charset degrades to the text token")
+        void unsafeKeyDegrades() {
+            assertEquals("text", SearchInterpretation
+                    .unrecognisedPostcode("AB;CD", PostcodeGeocoder.Precision.UNIT).headerValue());
+            assertEquals("postcode-unrecognised; postcode=ZZ99; precision=district", SearchInterpretation
+                    .unrecognisedPostcode("ZZ99", PostcodeGeocoder.Precision.DISTRICT).headerValue());
+        }
+    }
+
     /**
      * WR-03 — a misconfigured platform radius must be a LOUD failure, never a page that states the
      * opposite of what the server did.

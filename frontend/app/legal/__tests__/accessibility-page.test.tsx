@@ -223,12 +223,16 @@ describe("accessibility statement page — the exception list", () => {
     expect((main.textContent ?? "").toLowerCase()).not.toContain("skip to content")
   })
 
-  it("still lists the checkout address fields marked required only visually, because they still are", () => {
-    // Measured 2026-10-07: #address1, #city and #postcode carry neither
-    // `required` nor `aria-required`, while #name, #email and #phone are
-    // `required`. Kept, not bulk-deleted with the skip-link entry.
+  it("no longer lists the checkout address fields as marked required only visually, because they now carry aria-required (#878)", () => {
+    // The checkout test `checkout-swarm-a11y.test.tsx` ("every field whose label ends in an
+    // asterisk is exposed as required") is the proof the exception's premise is gone: #address1,
+    // #city and #postcode carry `aria-required="true"` (PR #1109) beside #name, #email and #phone.
+    // An exception saying otherwise would publish a defect the site no longer has.
     const { main } = renderPage()
-    expect(main.querySelector('[data-exception-id="required-fields-marked-visually-only"]')).not.toBeNull()
+    expect(main.querySelectorAll("[data-exception-id]").length).toBeGreaterThan(0) // control
+    expect(STATEMENT.exceptions.map((e) => e.id)).not.toContain("required-fields-marked-visually-only")
+    expect(main.querySelector('[data-exception-id="required-fields-marked-visually-only"]')).toBeNull()
+    expect(main.textContent ?? "").not.toContain("marked required only by a visible asterisk")
   })
 
   it("gives a reader the registered office as a postal contact route when it is configured", () => {

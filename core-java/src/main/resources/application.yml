@@ -806,6 +806,10 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [${spring.application.name:},%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n"
 
 springdoc:
+  # #879 / UXT-123: springdoc's default produces type is */*, which tells a client generator nothing and
+  # was on 187 of 207 operations. Every body this API returns is JSON unless an operation declares
+  # otherwise (the CSV template, the label PDF and /health do, with @ApiResponse(content = ...)).
+  default-produces-media-type: application/json
   api-docs:
     path: /v3/api-docs
   swagger-ui:

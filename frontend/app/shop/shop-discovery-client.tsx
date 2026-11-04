@@ -721,6 +721,9 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
                 &ldquo;{summary.term}&rdquo;
               </span>
             </>
+          ) : summary.kind === "unrecognised-postcode" ? (
+            // #877 / UXT-112: said as it is, with no proximity claim and no exclusion note.
+            summary.text
           ) : (
             <>
               {summary.text}

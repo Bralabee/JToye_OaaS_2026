@@ -2,6 +2,8 @@ package uk.jtoye.core.product;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -143,6 +145,8 @@ public class ProductController {
 
     @GetMapping("/template")
     @Operation(summary = "Download CSV template", description = "Returns a CSV template file for bulk product import")
+    @ApiResponse(responseCode = "200", description = "The CSV template (attachment product-import-template.csv)",
+            content = @Content(mediaType = "text/csv", schema = @Schema(type = "string", format = "binary")))
     public ResponseEntity<byte[]> downloadTemplate() {
         byte[] csv = bulkImportService.generateCsvTemplate().getBytes(java.nio.charset.StandardCharsets.UTF_8);
         return ResponseEntity.ok()
@@ -278,7 +282,9 @@ public class ProductController {
                     + "(100x60mm sticker, default) or THERMAL_62MM (62mm continuous thermal roll for "
                     + "Brother QL-800/810W printers, GTM-BLK-06).")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "The label PDF (attachment label-{id}.pdf)"),
+            @ApiResponse(responseCode = "200", description = "The label PDF (attachment label-{id}.pdf)",
+                    content = @Content(mediaType = "application/pdf",
+                            schema = @Schema(type = "string", format = "binary"))),
             @ApiResponse(responseCode = "400", description = "Unsupported label format parameter (errors/invalid-argument)"),
             @ApiResponse(responseCode = "401", description = "No bearer token, or an invalid one"),
             @ApiResponse(responseCode = "403",

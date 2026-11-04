@@ -484,10 +484,19 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
     // =====================================================================================
 
     @Test
-    @DisplayName("a Northern Ireland postcode falls through to text — never a proximity claim on a "
-            + "branch that did not apply")
+    @DisplayName("a Northern Ireland postcode falls through to text and, finding nothing, is said to be "
+            + "unrecognised — never a proximity claim on a branch that did not apply (#877 / UXT-112)")
     void northernIrelandPostcodeFallsThroughToText() throws Exception {
         mockMvc.perform(get("/public/shops").param("q", "BT1 5GS"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HEADER, "postcode-unrecognised; postcode=BT15GS; precision=unit"))
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    @Test
+    @DisplayName("#877 / UXT-112 CONTROL: an ordinary food search that finds nothing is still plain text")
+    void anEmptyFoodSearchIsStillText() throws Exception {
+        mockMvc.perform(get("/public/shops").param("q", "zzzzqq"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HEADER, "text"))
                 .andExpect(jsonPath("$.content").isEmpty());

@@ -9,6 +9,7 @@ import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useCustomerSession } from "@/hooks/use-customer-session"
 import { customerLogout } from "@/lib/customer-auth"
 import { signOutReturnPath } from "@/lib/sign-out-return"
+import { SignOutConfirmDialog } from "@/components/storefront/sign-out-confirm-dialog"
 import {
   Sheet,
   SheetClose,
@@ -70,6 +71,8 @@ export function PublicHeader() {
   // there re-enabled the button for the whole commit window: exactly the window
   // the busy state exists to cover.
   const [signingOut, setSigningOut] = useState(false)
+  // #877 / UXT-107: the desktop icon asks before it signs anyone out; the mobile sheet's labelled button does not.
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const handleSignOut = async () => {
     setSigningOut(true)
     // SW-JRD-08 (#1109 review round 1): the same destination rule as the storefront header, so a
@@ -175,7 +178,7 @@ export function PublicHeader() {
                   </div>
                   <button
                     type="button"
-                    onClick={handleSignOut}
+                    onClick={() => setConfirmingSignOut(true)}
                     disabled={signingOut}
                     aria-busy={signingOut}
                     className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-600 disabled:opacity-60"
@@ -184,6 +187,12 @@ export function PublicHeader() {
                     <LogOut className="h-3.5 w-3.5" />
                     <span className="sr-only">Sign out</span>
                   </button>
+                  <SignOutConfirmDialog
+                    open={confirmingSignOut}
+                    onOpenChange={setConfirmingSignOut}
+                    onConfirm={handleSignOut}
+                    busy={signingOut}
+                  />
                 </div>
               </>
             ) : (

@@ -396,7 +396,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      * @param path the request path
      * @return true if path should be excluded, false otherwise
      */
-    private boolean isExcludedPath(String path) {
+    public static boolean isExcludedPath(String path) {
         return path.startsWith("/actuator/") ||
                path.equals("/health") ||
                path.startsWith("/swagger-ui/") ||

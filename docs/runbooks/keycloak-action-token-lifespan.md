@@ -8,7 +8,7 @@ Two different things change, and they reach staging by different routes:
 
 | Change | Where it lives | How it reaches staging |
 |---|---|---|
-| Three FTL theme overrides (`template.ftl`, `login.ftl`, `register.ftl`), the two new messages, the CSS | `infra/keycloak/themes/jtoye/login/`, copied to `k8s/components/keycloak/theme/` | The `keycloak-theme` ConfigMap. Its name carries a content hash, so applying the staging manifests rolls the Keycloak pod onto the new theme. No realm change, no kcadm. |
+| Four FTL theme overrides (`template.ftl`, `login.ftl`, `register.ftl`, `user-profile-commons.ftl`), the two new messages, the CSS | `infra/keycloak/themes/jtoye/login/`, copied to `k8s/components/keycloak/theme/` | The `keycloak-theme` ConfigMap. Its name carries a content hash, so applying the staging manifests rolls the Keycloak pod onto the new theme. No realm change, no kcadm. |
 | `actionTokenGeneratedByUserLifespan` = 3600, `actionTokenGeneratedByUserLifespan.verify-email` = 86400 | the realm templates | **Not** by a deploy. Keycloak is Postgres-backed: an existing realm keeps its old values. Apply with the admin CLI below. |
 
 ## What the realm values mean
