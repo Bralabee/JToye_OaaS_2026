@@ -126,6 +126,8 @@ public class OrderService {
      */
     private final TransactionTemplate perOrderTransaction;
     private final uk.jtoye.core.shop.ShopFulfilmentSlotService slotService;
+    /** Places the order's delivery postcode for the shop's delivery-radius rule (#460). */
+    private final uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -145,7 +147,7 @@ public class OrderService {
         this(orderRepository, productRepository, shopRepository, customerRepository,
                 stateMachineService, orderMapper, eventPublisher, financialTransactionService,
                 stockService, refundService, shopAccessService, orderNumberGenerator,
-                orderLimits, bulkCancelLimit, transactionManager, null);
+                orderLimits, bulkCancelLimit, transactionManager, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -164,7 +166,8 @@ public class OrderService {
                        OrderLimits orderLimits,
                        BulkCancelLimit bulkCancelLimit,
                        PlatformTransactionManager transactionManager,
-                       uk.jtoye.core.shop.ShopFulfilmentSlotService slotService) {
+                       uk.jtoye.core.shop.ShopFulfilmentSlotService slotService,
+                       uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -182,6 +185,7 @@ public class OrderService {
         this.perOrderTransaction = new TransactionTemplate(transactionManager);
         this.perOrderTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.slotService = slotService;
+        this.postcodeGeocoder = postcodeGeocoder;
     }
 
     /**
@@ -283,6 +287,10 @@ public class OrderService {
         FulfilmentPolicy.requireOffered(shop, fulfilmentType);
         FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
                 request.getAddressCity(), request.getAddressPostcode());
+        // #460 / UXT-030: refuse a delivery beyond the shop's radius, exactly as the storefront does.
+        FulfilmentPolicy.requireWithinDeliveryRadius(shop, fulfilmentType, request.getAddressPostcode(),
+                postcode -> postcodeGeocoder.locateCustomerPostcode(postcode),
+                () -> postcodeGeocoder.isDatasetLoaded());
         if (fulfilmentType == FulfilmentType.DELIVERY) {
             order.setAddressLine1(request.getAddressLine1());
             order.setAddressLine2(request.getAddressLine2());

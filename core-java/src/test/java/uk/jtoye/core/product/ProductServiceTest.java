@@ -223,6 +223,52 @@ class ProductServiceTest {
         assertEquals("YAM-5KG", savedProduct.getSku());
     }
 
+    // #875 / UXT-115: a stall holder has no SKU. Omitted (or blank) is saved with a generated one, unique per tenant.
+    @Test
+    @DisplayName("createProduct - UXT-115: an omitted or blank SKU is saved with a generated, tenant-unique one")
+    void testCreateProduct_GeneratesSkuWhenOmitted() {
+        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
+        when(productRepository.saveAndFlush(productCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        validRequest.setSku(null);
+        productService.createProduct(validRequest);
+        validRequest.setSku("   ");
+        productService.createProduct(validRequest);
+
+        List<Product> saved = productCaptor.getAllValues();
+        assertEquals(2, saved.size());
+        for (Product p : saved) {
+            assertTrue(p.getSku().matches("[A-Z0-9]{3}-[A-Z0-9]{8}"), p.getSku());
+        }
+        assertNotEquals(saved.get(0).getSku(), saved.get(1).getSku());
+    }
+
+    @Test
+    @DisplayName("createProduct - UXT-115: a generated SKU that collides with a stored one is regenerated, never reused")
+    void testCreateProduct_RegeneratesCollidingGeneratedSku() {
+        when(productRepository.existsByTenantIdAndSku(eq(tenantId), anyString())).thenReturn(true, true, false);
+        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
+        when(productRepository.saveAndFlush(productCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        validRequest.setSku(null);
+        productService.createProduct(validRequest);
+
+        verify(productRepository, times(3)).existsByTenantIdAndSku(eq(tenantId), anyString());
+        assertTrue(productCaptor.getValue().getSku().matches("[A-Z0-9]{3}-[A-Z0-9]{8}"));
+    }
+
+    @Test
+    @DisplayName("createProduct - UXT-115 control: a SKU the vendor typed is kept exactly and not looked up")
+    void testCreateProduct_KeepsAVendorSku() {
+        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
+        when(productRepository.saveAndFlush(productCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        productService.createProduct(validRequest);
+
+        assertEquals("YAM-5KG", productCaptor.getValue().getSku());
+        verify(productRepository, never()).existsByTenantIdAndSku(any(), anyString());
+    }
+
     @Test
     @DisplayName("createProduct - Fails when tenant context not set")
     void testCreateProduct_MissingTenant() {

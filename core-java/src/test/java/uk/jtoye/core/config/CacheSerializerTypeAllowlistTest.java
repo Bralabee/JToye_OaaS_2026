@@ -423,14 +423,14 @@ class CacheSerializerTypeAllowlistTest {
         for (Map.Entry<String, java.time.Duration> region : ttls.entrySet()) {
             RedisCacheConfiguration config = ((RedisCache) manager.getCache(region.getKey())).getCacheConfiguration();
             assertThat(config.getKeyPrefixFor(region.getKey())).as("key prefix of %s", region.getKey())
-                    .isEqualTo("v5:" + region.getKey() + "::");
+                    .isEqualTo("v6:" + region.getKey() + "::");
             assertThat(config.getTtlFunction().getTimeToLive("k", "v")).as("TTL of %s", region.getKey())
                     .isEqualTo(region.getValue());
         }
         RedisCache later = (RedisCache) manager.getCache("aRegionAddedLater");
         assertThat(later.getCacheConfiguration().getKeyPrefixFor("aRegionAddedLater"))
                 .as("a region nobody configured inherits the prefix from the defaults")
-                .isEqualTo("v5:aRegionAddedLater::");
+                .isEqualTo("v6:aRegionAddedLater::");
     }
 
     /** The cache family of the 38-01 MANIFEST: exactly the files this class feeds below. */

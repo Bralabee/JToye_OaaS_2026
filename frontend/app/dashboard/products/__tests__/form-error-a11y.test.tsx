@@ -35,7 +35,6 @@ jest.mock("@/hooks/use-toast", () => ({
 }))
 
 const FIELDS: Array<{ label: string | RegExp; message: string }> = [
-  { label: "SKU", message: "SKU is required" },
   { label: "Product Title", message: "Title is required" },
   { label: "Ingredients", message: "Ingredients are required" },
   { label: /^Price/, message: "Price is required" },
@@ -71,11 +70,11 @@ describe("Products form — field errors are programmatically associated (A11Y-7
     expect(target).toHaveTextContent(message)
   })
 
-  it("every rendered error message has a flagged input, and there are at least four of each", async () => {
+  it("every rendered error message has a flagged input, and there are at least three of each", async () => {
     await openEmptyFormAndSubmit()
     const messages = FIELDS.map((f) => screen.getByText(f.message))
     const flagged = document.querySelectorAll('#product-form [aria-invalid="true"]')
-    expect(messages.length).toBeGreaterThanOrEqual(4)
+    expect(messages.length).toBeGreaterThanOrEqual(3)
     expect(flagged.length).toBe(messages.length)
     // Nothing is submitted while the form is invalid.
     expect(mockedApiClient.post).not.toHaveBeenCalled()

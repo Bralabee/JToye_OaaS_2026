@@ -14,6 +14,7 @@ import tools.jackson.databind.exc.InvalidDefinitionException;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 import uk.jtoye.core.boot4.GoldenSamples;
+import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.testsupport.BootJsonMapper;
 
@@ -70,8 +71,12 @@ class WebhookFanoutListenerEnvelopeTest {
     }
 
     private WebhookFanoutListener listener(JsonMapper mapper) {
+        return listener(mapper, mock(OrderRepository.class));
+    }
+
+    private WebhookFanoutListener listener(JsonMapper mapper, OrderRepository orders) {
         return new WebhookFanoutListener(subscriptions, deliveries, new WebhookProperties(), mapper,
-                entityManager, transactionManager);
+                entityManager, transactionManager, new OrderWebhookDataFactory(orders));
     }
 
     /** Drives the listener with the golden order event and returns the one saved delivery row. */
@@ -156,5 +161,26 @@ class WebhookFanoutListenerEnvelopeTest {
         assertThatCode(() -> listener(failing).onOrderState(GoldenSamples.orderStateChangeEvent()))
                 .doesNotThrowAnyException();
         verify(deliveries, never()).save(any());
+    }
+
+    /**
+     * Round-1 review A5: the {@code order.*} enrichment reads the order. A database or connection error there
+     * must not escape the listener (redelivery loop or dead letter for every family on the shared queue); the
+     * documented behaviour is the thin event, delivered, with one log line. The bytes are the thin fixture's.
+     */
+    @Test
+    void enrichmentReadFailure_deliversTheThinEvent_andDoesNotThrow() throws IOException {
+        OrderRepository failing = mock(OrderRepository.class);
+        when(failing.findAllWithItemsByIdIn(any()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("connection reset"));
+
+        assertThatCode(() -> listener(BOOT, failing).onOrderState(GoldenSamples.orderStateChangeEvent()))
+                .doesNotThrowAnyException();
+
+        ArgumentCaptor<WebhookDelivery> saved = ArgumentCaptor.forClass(WebhookDelivery.class);
+        verify(deliveries).save(saved.capture());
+        String delivered = saved.getValue().getPayload().replace(saved.getValue().getEventId().toString(),
+                GoldenSamples.EVENT_ID.toString());
+        assertThat(delivered).as("the thin event, byte for byte").isEqualTo(fixture());
     }
 }

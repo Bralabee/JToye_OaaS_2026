@@ -65,6 +65,7 @@ import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ShopHasProductsException;
 import uk.jtoye.core.exception.ShopSlugTakenException;
+import uk.jtoye.core.exception.DeliveryRadiusException;
 import uk.jtoye.core.exception.FulfilmentNotOfferedException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -74,6 +75,7 @@ import uk.jtoye.core.exception.ShopClosedException;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
 import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.SqlStateExtractor;
+import uk.jtoye.core.exception.WebhookSubscriptionStateException;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
 import uk.jtoye.core.media.exception.PayloadTooLargeException;
@@ -537,6 +539,21 @@ public class GlobalExceptionHandler {
         // serialised as a SECOND "status" key that last-wins parsers read in place of the 409 (37-10 Task 3).
         problem.setProperty("orderStatus", ex.getStatus().name());
         problem.setProperty("orderNumber", ex.getOrderNumber());
+        return problem;
+    }
+
+    /**
+     * #879: a webhook action the subscription's state does not allow (test event on an endpoint that is not
+     * ACTIVE; delete of one that is not REVOKED). 409, with the status as {@code subscriptionStatus} for the same
+     * reason {@link #handleOrderNotDeletable} uses {@code orderStatus}: {@code status} is the HTTP code.
+     */
+    @ExceptionHandler(WebhookSubscriptionStateException.class)
+    public ProblemDetail handleWebhookSubscriptionState(WebhookSubscriptionStateException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Webhook endpoint is in the wrong state");
+        problem.setType(URI.create("https://jtoye.uk/errors/webhook-subscription-state"));
+        problem.setProperty("code", "WEBHOOK_SUBSCRIPTION_STATE");
+        problem.setProperty("subscriptionStatus", ex.getSubscriptionStatus());
         return problem;
     }
 
@@ -1068,6 +1085,24 @@ public class GlobalExceptionHandler {
         problem.setProperty("code", "FULFILMENT_NOT_OFFERED");
         problem.setProperty("fulfilmentType", ex.getRequested().name());
         problem.setProperty("offered", ex.getOffered().stream().map(Enum::name).toList());
+        return problem;
+    }
+
+    /** #460 / UXT-030: delivery beyond the shop's radius (or to a postcode that cannot be measured). */
+    @ExceptionHandler(DeliveryRadiusException.class)
+    public ProblemDetail handleDeliveryRadius(DeliveryRadiusException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setProperty("deliveryRadiusKm", ex.getDeliveryRadiusKm());
+        if (ex.getReason() == DeliveryRadiusException.Reason.OUT_OF_RANGE) {
+            problem.setTitle("Outside the delivery area");
+            problem.setType(URI.create("https://jtoye.uk/errors/delivery-out-of-range"));
+            problem.setProperty("code", "DELIVERY_OUT_OF_RANGE");
+            problem.setProperty("distanceKm", ex.getDistanceKm());
+        } else {
+            problem.setTitle("Postcode not recognised");
+            problem.setType(URI.create("https://jtoye.uk/errors/delivery-postcode-unrecognised"));
+            problem.setProperty("code", "DELIVERY_POSTCODE_UNRECOGNISED");
+        }
         return problem;
     }
 

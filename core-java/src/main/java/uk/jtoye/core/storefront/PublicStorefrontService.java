@@ -1456,6 +1456,10 @@ public class PublicStorefrontService {
         // message; the message text is unchanged.
         FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
                 request.getAddressCity(), request.getAddressPostcode());
+        // #460 / UXT-030: refuse a delivery beyond the shop's radius (typed 422), before pricing and stock.
+        FulfilmentPolicy.requireWithinDeliveryRadius(shop, fulfilmentType, request.getAddressPostcode(),
+                postcode -> postcodeGeocoder.locateCustomerPostcode(postcode),
+                () -> postcodeGeocoder.isDatasetLoaded());
         if (fulfilmentType == FulfilmentType.DELIVERY) {
             order.setAddressLine1(request.getAddressLine1());
             order.setAddressLine2(request.getAddressLine2());
@@ -1955,6 +1959,8 @@ public class PublicStorefrontService {
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
         dto.setDeliveryFeePennies(shop.getDeliveryFeePennies());
         dto.setFreeDeliveryThresholdPennies(shop.getFreeDeliveryThresholdPennies());
+        // #460: how far the shop delivers (null = no limit), so checkout can say so before the customer types a postcode.
+        dto.setDeliveryRadiusKm(shop.getDeliveryRadiusKm());
         // 37-48 (UXT-023): the same reading FulfilmentPolicy.requireOffered enforces (a null flag is offered).
         dto.setOffersDelivery(!Boolean.FALSE.equals(shop.getOffersDelivery()));
         dto.setOffersCollection(!Boolean.FALSE.equals(shop.getOffersCollection()));

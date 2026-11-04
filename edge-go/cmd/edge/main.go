@@ -29,6 +29,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
@@ -169,71 +170,118 @@ const (
 	defaultRateLimitBurst = 400
 )
 
-// valveLimitsFromEnv reads the process-wide valve's rate and burst from the
-// environment, with the documented defaults (getEnvInt falls back on a
-// non-positive or non-numeric value).
+// valveLimitsFromEnv reads the pre-auth valve's PER-CLIENT-ADDRESS rate and
+// burst from the environment, with the documented defaults (getEnvInt falls
+// back on a non-positive or non-numeric value).
 func valveLimitsFromEnv() (rps int, burst int) {
 	return getEnvInt("RATE_LIMIT_RPS", defaultRateLimitRPS), getEnvInt("RATE_LIMIT_BURST", defaultRateLimitBurst)
 }
 
-// rateLimiter is a single, process-wide token-bucket used purely as a coarse
-// DoS / overload guard for this edge replica — it is NOT a per-tenant quota.
-// The authoritative per-tenant rate limit (e.g. 100 req/min per tenant) lives
-// in Core via Bucket4j. Note that with multiple edge replicas the effective
-// global ceiling is this limit multiplied by the replica count.
-//
-// The refill goroutine is tied to the supplied context so it exits cleanly
-// on graceful shutdown instead of leaking the ticker + goroutine for the
-// process lifetime.
-func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
-	tokens := make(chan struct{}, burst)
-	// fill bucket initially
-	for i := 0; i < burst; i++ {
-		tokens <- struct{}{}
+// defaultValveMaxClients bounds how many per-address buckets the pre-auth valve
+// holds (RATE_LIMIT_IP_MAX). Addresses beyond the bound share one overflow
+// bucket, the per-tenant limiter's T-37-63 rule: forged or very numerous source
+// addresses cost a bounded map plus one bucket, never unbounded growth.
+const defaultValveMaxClients = 10000
+
+// Per-replica ceiling over ALL pre-auth traffic, whatever the number of source
+// addresses (RATE_LIMIT_GLOBAL_RPS / RATE_LIMIT_GLOBAL_BURST). Before #808 the
+// valve was one bucket per replica, so this bound existed by construction; the
+// per-address buckets removed it, and a flood spread over many sources would
+// otherwise reach JWT validation and the Core proxy at N times the old rate.
+// The default is FIVE times the per-address default (1000 rps / 2000 burst):
+// well above what any one address or twenty tenants at full rate can send, far
+// below an unbounded spread flood. Set them explicitly when RATE_LIMIT_RPS or
+// RATE_LIMIT_BURST is raised.
+const (
+	defaultGlobalRateLimitRPS   = 1000
+	defaultGlobalRateLimitBurst = 2000
+)
+
+// valveLimitsConfig is the valve's bucket configuration: the rate and burst of
+// ONE client address, how many addresses are tracked, and the per-replica
+// ceiling over all of them.
+func valveLimitsConfig() tenantRateLimitConfig {
+	rps, burst := valveLimitsFromEnv()
+	return tenantRateLimitConfig{
+		RPS: rps, Burst: burst, MaxTenants: getEnvInt("RATE_LIMIT_IP_MAX", defaultValveMaxClients),
+		GlobalRPS:   getEnvInt("RATE_LIMIT_GLOBAL_RPS", defaultGlobalRateLimitRPS),
+		GlobalBurst: getEnvInt("RATE_LIMIT_GLOBAL_BURST", defaultGlobalRateLimitBurst),
 	}
-	// refill goroutine
-	ticker := time.NewTicker(time.Second / time.Duration(rps))
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				select {
-				case tokens <- struct{}{}:
-				default:
-				}
-			}
-		}
-	}()
+}
 
-	// One refill tick: the longest a refused caller has to wait for a token,
-	// and what Retry-After advertises (rounded up to whole seconds, min 1).
-	tick := time.Second / time.Duration(rps)
+// valveKey is the bucket key of a resolved client address. An IPv6 host owns a
+// whole /64 (2^64 addresses) at no cost, so IPv6 clients are keyed on their
+// /64 prefix: rotating inside it stays in one bucket. IPv4 (and anything that
+// is not an IP literal) is keyed on the full address.
+func valveKey(addr string) string {
+	a, err := netip.ParseAddr(addr)
+	if err != nil || !a.Is6() {
+		return addr
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return addr
+	}
+	return p.String()
+}
 
+// rateLimiter is the PRE-AUTH valve: a token bucket PER CLIENT ADDRESS used as
+// a coarse flood guard for this edge replica. It is NOT a quota: the
+// authoritative per-tenant limit lives AFTER authentication
+// (ratelimit_tenant.go) and, in Core, in Bucket4j.
+//
+// Issue #808: the valve used to be ONE process-wide bucket, so a sustained
+// anonymous flood emptied it and every vendor's sync was refused 429 before
+// authentication ever ran. It is now keyed on the client address, resolved by
+// the trusted-proxy rule core uses (clientip.go): an anonymous flood from one
+// address exhausts only that address's bucket, and an authenticated tenant on
+// another address is untouched. The key is never a header the caller can pick:
+// X-Forwarded-For counts only when the socket peer is a configured proxy.
+//
+// IPv6 clients are keyed on their /64 (valveKey), so one host cannot mint
+// buckets by rotating its low 64 bits. A per-replica GLOBAL bucket
+// (RATE_LIMIT_GLOBAL_RPS / _BURST) is checked after the per-address one and
+// restores the old overall ceiling: a flood spread over many sources is
+// bounded as a whole. A per-address refusal does not spend global tokens.
+//
+// Residual, stated rather than hidden: a flood spread over more than
+// cfg.MaxTenants (RATE_LIMIT_IP_MAX) simultaneously active keys makes further
+// new keys share one overflow bucket. Volumetric floods of that shape belong
+// at the ingress / WAF; this valve bounds the single-source case, the
+// replica's overall load, and its own memory.
+//
+// Buckets refill lazily from the clock; there is no goroutine and so no
+// shutdown context.
+func rateLimiter(cfg tenantRateLimitConfig, resolver *clientIPResolver, clk clock) gin.HandlerFunc {
+	limiter := newTenantLimiter(cfg, clk)
+	var global *tenantLimiter
+	if cfg.GlobalRPS > 0 && cfg.GlobalBurst > 0 {
+		global = newTenantLimiter(tenantRateLimitConfig{RPS: cfg.GlobalRPS, Burst: cfg.GlobalBurst, MaxTenants: 1}, clk)
+	}
 	return func(c *gin.Context) {
 		if rateLimiterExemptPaths[c.Request.URL.Path] {
 			c.Next()
 			return
 		}
-		select {
-		case <-tokens:
-			c.Next()
-		default:
-			// 37-25 (D-19): the same typed 429 as the per-tenant limiter, so
-			// an integrator backs off from either refusal the same way. The
-			// bucket is empty by construction here; Reset is when it would
-			// be full again at the configured rate.
-			now := time.Now()
-			writeRateLimited(c, rateDecision{
-				allowed:    false,
-				limit:      burst,
-				remaining:  0,
-				retryAfter: tick,
-				resetAt:    now.Add(time.Duration(burst) * tick),
-			})
+		// All X-Forwarded-For header lines as one list: a second line must not
+		// be a way to hide the hop a trusted proxy appended.
+		xff := strings.Join(c.Request.Header.Values("X-Forwarded-For"), ",")
+		key := valveKey(resolver.resolve(c.Request.RemoteAddr, xff))
+
+		d := limiter.take(key)
+		if !d.allowed {
+			// 37-25 (D-19): the same typed 429 as the per-tenant limiter, so an
+			// integrator backs off from either refusal the same way.
+			writeRateLimited(c, d)
+			return
 		}
+		if global != nil {
+			if gd := global.take("global"); !gd.allowed {
+				writeRateLimited(c, gd)
+				return
+			}
+		}
+		c.Next()
 	}
 }
 
@@ -248,8 +296,8 @@ type routerDeps struct {
 	// validate is jwtMiddleware.Validate() in production. It is the ONLY
 	// writer of c.Get("tenant_id") on the protected group.
 	validate gin.HandlerFunc
-	// valve is the process-wide pre-auth rateLimiter — the DoS guard that
-	// gates every non-exempt route before authentication.
+	// valve is the per-client-address pre-auth rateLimiter (#808) — the flood
+	// guard that gates every non-exempt route before authentication.
 	valve gin.HandlerFunc
 	// tenantLimits is the per-tenant quota applied on the protected group,
 	// after validate has written tenant_id (ratelimit_tenant.go).
@@ -279,7 +327,7 @@ func newRouter(d routerDeps) (*gin.Engine, bool) {
 	// status. See metrics.go for the low-cardinality route-template labelling.
 	r.Use(prometheusMiddleware())
 
-	// Process-wide DoS guard: a per-replica overload valve, not a per-tenant
+	// Pre-auth flood guard keyed per client address (#808), not a per-tenant
 	// quota (see rateLimiter()).
 	r.Use(d.valve)
 
@@ -382,12 +430,19 @@ func main() {
 		whatsAppTenantID: whatsAppTenantID,
 	}
 
-	// Process-wide DoS guard (configurable via env). This is a per-replica
-	// overload valve, not a per-tenant quota — see rateLimiter() and Core's
-	// Bucket4j for the authoritative per-tenant limit.
-	rps, burst := valveLimitsFromEnv()
-	logger.Info("Process-wide DoS-guard rate limiter configured (per-replica, not per-tenant)",
-		zap.Int("rps", rps), zap.Int("burst", burst))
+	// Pre-auth flood guard (configurable via env), keyed per client address
+	// (#808) — see rateLimiter() and Core's Bucket4j for the authoritative
+	// per-tenant limit. X-Forwarded-For is believed only from the proxies in
+	// TRUSTED_PROXY_CIDRS (core's variable; default trust none).
+	valveCfg := valveLimitsConfig()
+	clientIPs, err := newClientIPResolver(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		logger.Fatal("Invalid "+trustedProxiesEnv, zap.Error(err))
+	}
+	logger.Info("Pre-auth flood-guard rate limiter configured (per client address, per replica)",
+		zap.Int("rps", valveCfg.RPS), zap.Int("burst", valveCfg.Burst), zap.Int("max_clients", valveCfg.MaxTenants),
+		zap.Int("global_rps", valveCfg.GlobalRPS), zap.Int("global_burst", valveCfg.GlobalBurst),
+		zap.Int("trusted_proxy_ranges", len(clientIPs.trusted)))
 	tenantLimits := tenantLimitsFromEnv()
 	logger.Info("Per-tenant rate limiter configured (after JWT validation, keyed on tenant_id)",
 		zap.Int("rps", tenantLimits.RPS), zap.Int("burst", tenantLimits.Burst), zap.Int("max_tenants", tenantLimits.MaxTenants))
@@ -418,7 +473,7 @@ func main() {
 	r, metricsOnAppPort := newRouter(routerDeps{
 		handlers:       h,
 		validate:       jwtMiddleware.Validate(),
-		valve:          rateLimiter(ctx, rps, burst),
+		valve:          rateLimiter(valveCfg, clientIPs, realClock{}),
 		tenantLimits:   tenantLimits,
 		clock:          realClock{},
 		managementPort: managementPort,

@@ -8,11 +8,11 @@ import java.util.UUID;
  *
  * <p>LOCKED wire contract (Assumption A4 resolved):
  * <pre>
- * { id, type, tenantId, occurredAt, version, data: { …full existing DTO } }
+ * { id, type, tenantId, occurredAt, version, data: { …the event record; order.* adds the order summary, #864 } }
  * </pre>
  * {@code id} is the receiver dedupe key (echoed as {@code X-JToye-Event-Id});
- * {@code data} reuses the existing domain DTO (OrderDto / refund / onboarding /
- * payment) rather than a bespoke minimal shape — deliveries go to the vendor's
+ * {@code data} is the event record (refund / onboarding / payment) or, for {@code order.*},
+ * {@link OrderWebhookData} (the original event plus lines, totals and customer) — deliveries go to the vendor's
  * OWN endpoint carrying the vendor's OWN tenant data (D-05).
  *
  * <p>The envelope is serialized to bytes exactly ONCE; those exact bytes are
@@ -23,7 +23,7 @@ import java.util.UUID;
  * @param tenantId   owning tenant
  * @param occurredAt event time (ISO-8601)
  * @param version    envelope schema version ({@code webhook.envelope.version})
- * @param data       the full existing domain DTO / event payload
+ * @param data       the event payload (see above)
  */
 public record WebhookEventEnvelope(
         UUID id,

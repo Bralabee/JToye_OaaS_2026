@@ -55,6 +55,9 @@ class GdprServiceTest {
     // #771: the catalogue reference check. Unstubbed it answers 0 ("not referenced").
     @Mock
     private MediaAssetRepository mediaAssetRepository;
+
+    @Mock
+    private uk.jtoye.core.webhook.WebhookDeliveryRepository webhookDeliveryRepository;
     // A mocked manager lets TransactionTemplate run its callback: getTransaction returns null and
     // commit(null) is a no-op, so the post-commit count write executes inline in these tests.
     @Mock

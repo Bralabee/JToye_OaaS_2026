@@ -2,10 +2,13 @@ package uk.jtoye.core.order.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import uk.jtoye.core.common.contact.PlausibleContact;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,8 +18,14 @@ public class CreateOrderRequest {
     private UUID shopId;
 
     private UUID customerId;
+    @PlausibleContact(value = PlausibleContact.Kind.NAME, message = "Enter the customer's name (at least two letters)")
+    @Size(max = 255)
     private String customerName;
+    @PlausibleContact(value = PlausibleContact.Kind.EMAIL, message = "Enter a valid email address, like name@example.com")
+    @Size(max = 255)
     private String customerEmail;
+    @PlausibleContact(value = PlausibleContact.Kind.PHONE, message = "Enter a valid phone number, like 07700 900123 or +44 7700 900123")
+    @Size(max = 50)
     private String customerPhone;
     private String notes;
 
@@ -83,6 +92,46 @@ public class CreateOrderRequest {
             + "DRAFT, to be submitted later with POST /api/v1/orders/{id}/submit.",
             example = "true")
     private Boolean submit;
+
+    /**
+     * Explicit walk-in (#841, UXT-072): this order has no customer to contact, on purpose.
+     *
+     * <p>A vendor, API or MCP order must otherwise name at least one way to reach the customer (a linked
+     * {@code customerId}, or a name, phone or email), because an order nobody can call back about is a dead
+     * end when it turns out to be a no-show or a mistake. A genuine over-the-counter sale has none to give; it
+     * says so with {@code walkIn: true} instead of the platform guessing. {@code NON_NULL}: an absent flag must
+     * serialise as before this field existed, so an Idempotency-Key retry in flight across the deploy keeps its
+     * fingerprint (the same reason as {@code submit}).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Set true for a walk-in sale with no customer to contact. Without it, an order needs "
+            + "customerId, or at least one of customerName, customerPhone, customerEmail.", example = "false")
+    private Boolean walkIn;
+
+    /**
+     * The at-least-one-contact rule (#841). A bean-validation method so the refusal is the platform's usual
+     * typed 400 ({@code errors} keyed by this property). Hidden from JSON and from the published schema: it is
+     * a rule over the other fields, not a field.
+     */
+    @JsonIgnore
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
+    @AssertTrue(message = "Say how to reach the customer: a linked customerId, or a name, phone or email. "
+            + "For a walk-in sale with nobody to contact, send walkIn: true.")
+    public boolean isContactPresentOrWalkIn() {
+        return customerId != null
+                || Boolean.TRUE.equals(walkIn)
+                || (customerName != null && !customerName.isBlank())
+                || (customerPhone != null && !customerPhone.isBlank())
+                || (customerEmail != null && !customerEmail.isBlank());
+    }
+
+    public Boolean getWalkIn() {
+        return walkIn;
+    }
+
+    public void setWalkIn(Boolean walkIn) {
+        this.walkIn = walkIn;
+    }
 
     public UUID getShopId() {
         return shopId;

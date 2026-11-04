@@ -23,6 +23,7 @@ import uk.jtoye.core.review.ReviewRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.storage.StorageService;
+import uk.jtoye.core.webhook.WebhookDeliveryRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -63,6 +64,8 @@ public class GdprService {
     private final UserDirectoryRepository userDirectoryRepository;
     /** #771: the catalogue reference check — an object a live catalogue row points at is never deleted. */
     private final MediaAssetRepository mediaAssetRepository;
+    /** #864: order webhook payloads now hold the customer contact details; erasure scrubs the stored copy. */
+    private final WebhookDeliveryRepository webhookDeliveryRepository;
     /**
      * A NEW transaction for the post-commit photo-count write. Inside an {@code afterCommit} hook the
      * erasure's transaction has committed but its synchronization is still active, so a
@@ -78,6 +81,7 @@ public class GdprService {
                        ErasureRecordRepository erasureRecordRepository,
                        UserDirectoryRepository userDirectoryRepository,
                        MediaAssetRepository mediaAssetRepository,
+                       WebhookDeliveryRepository webhookDeliveryRepository,
                        PlatformTransactionManager transactionManager) {
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;
@@ -86,6 +90,7 @@ public class GdprService {
         this.erasureRecordRepository = erasureRecordRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.mediaAssetRepository = mediaAssetRepository;
+        this.webhookDeliveryRepository = webhookDeliveryRepository;
         this.postCommitTransaction = new TransactionTemplate(transactionManager);
         this.postCommitTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -304,6 +309,18 @@ public class GdprService {
         }
         int ordersAnonymised = ordersById.size();
         orderRepository.saveAll(new ArrayList<>(ordersById.values()));
+
+        // #864: an order.* webhook payload carries the customer's contact details and delivery address, and
+        // is stored for the retention window (and may still be queued). Scrub the stored copy with the order;
+        // the order facts in it (lines, totals, status) stay, as they do on the order itself.
+        if (!ordersById.isEmpty()) {
+            int webhookPayloadsScrubbed = webhookDeliveryRepository.scrubOrderCustomerDetails(tenantId,
+                    ordersById.keySet().stream().map(UUID::toString).toList());
+            if (webhookPayloadsScrubbed > 0) {
+                log.info("GDPR erasure scrubbed {} stored webhook payload(s) in tenant {}",
+                        webhookPayloadsScrubbed, tenantId);
+            }
+        }
 
         // Anonymise PII on this tenant's reviews and COLLECT their photo URLs. Nothing is deleted
         // from storage here: object storage cannot roll back, so the deletion waits for commit.

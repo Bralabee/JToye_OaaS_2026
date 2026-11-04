@@ -59,6 +59,8 @@ import {
   SINGLE_OPTION_COPY,
 } from "@/lib/fulfilment-offered"
 import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
+import { CONTACT_COPY, isPlausibleEmail, isPlausibleName, isPlausiblePhone } from "@/lib/contact-plausibility"
+import { deliveryRadiusFieldCopy, deliveryRadiusHintCopy, readDeliveryRadiusProblem } from "@/lib/delivery-radius"
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
 import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } from "@/lib/basket-allergens"
@@ -589,13 +591,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // A11Y-07: a refused submit must move focus to the control that refused, not merely paint it
   // red. These refs are the only focus-management precedent in the app besides the dish modal's
   // focus-return (product-detail-modal.tsx:117).
-  const address1Ref = useRef<HTMLInputElement>(null)
-  const cityRef = useRef<HTMLInputElement>(null)
-  const postcodeRef = useRef<HTMLInputElement>(null)
-  // UXT-105: the three detail fields get the same treatment as the address ones.
   const nameRef = useRef<HTMLInputElement>(null)
   const emailRef = useRef<HTMLInputElement>(null)
   const phoneRef = useRef<HTMLInputElement>(null)
+  const address1Ref = useRef<HTMLInputElement>(null)
+  const cityRef = useRef<HTMLInputElement>(null)
+  const postcodeRef = useRef<HTMLInputElement>(null)
   const fieldRefs: Record<CheckoutFieldKey, React.RefObject<HTMLInputElement | null>> = {
     address1: address1Ref,
     city: cityRef,
@@ -973,10 +974,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         errs.postcode = "Enter a valid UK postcode (e.g. SW1A 1AA)"
       }
     }
+    // #841 / UXT-072 rides this same pass: a name, email or phone nobody can use ("x", "call me",
+    // name@example) is refused here, message on the field, focus on the first. Core refuses the same
+    // values (typed 400); this is the message before the round trip. It verifies nothing. An EMPTY
+    // field keeps its UXT-105 "Enter ..." message; plausibility only judges what was typed.
     if (!customerName.trim()) errs.name = "Enter your full name."
+    else if (!isPlausibleName(customerName)) errs.name = CONTACT_COPY.name
     if (!customerEmail.trim()) errs.email = "Enter your email address."
     else if (!EMAIL_SHAPE.test(customerEmail.trim())) errs.email = "Enter a valid email address, like ade@example.com."
+    else if (!isPlausibleEmail(customerEmail)) errs.email = CONTACT_COPY.email
     if (!customerPhone.trim()) errs.phone = "Enter a phone number the shop can reach you on."
+    else if (!isPlausiblePhone(customerPhone)) errs.phone = CONTACT_COPY.phone
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs)
       // A11Y-07: move focus to the FIRST invalid field, in the order the page presents them. The
@@ -1233,6 +1241,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           setShop((prev) => (prev ? { ...prev, offersDelivery, offersCollection } : prev))
           if (notOffered.offered.length === 1) setFulfilmentType(notOffered.offered[0])
         }
+        return
+      }
+      // #460 / UXT-030: the address is outside the shop's delivery radius (or cannot be placed to check it).
+      // Core refuses with a typed 422 before any write, so no order exists. The sentence goes on the
+      // postcode field (the thing to change), with focus there; collection is named when the shop offers it.
+      const radius = readDeliveryRadiusProblem(err)
+      if (radius) {
+        setFieldErrors({
+          postcode: deliveryRadiusFieldCopy(radius, shop?.offersCollection !== false),
+        })
+        if (postcodeRef.current && postcodeRef.current.isConnected) postcodeRef.current.focus()
         return
       }
       const shopClosed = readShopClosedProblem(err)
@@ -1743,11 +1762,24 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 placeholder="e.g., SW9 8LF"
                 aria-required="true"
                 aria-invalid={fieldErrors.postcode ? "true" : undefined}
-                aria-describedby={fieldErrors.postcode ? "postcode-error" : undefined}
+                aria-describedby={
+                  fieldErrors.postcode
+                    ? "postcode-error"
+                    : deliveryRadiusHintCopy(shop?.deliveryRadiusKm)
+                      ? "postcode-radius-hint"
+                      : undefined
+                }
                 className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-cream-100"}`}
               />
-              {fieldErrors.postcode && (
+              {fieldErrors.postcode ? (
                 <p id="postcode-error" className="text-xs text-red-600">{fieldErrors.postcode}</p>
+              ) : (
+                // #460: said before the customer types, so a far address is not discovered at "Place order".
+                deliveryRadiusHintCopy(shop?.deliveryRadiusKm) && (
+                  <p id="postcode-radius-hint" className="text-xs text-slate-600">
+                    {deliveryRadiusHintCopy(shop?.deliveryRadiusKm)}
+                  </p>
+                )
               )}
             </div>
           </div>

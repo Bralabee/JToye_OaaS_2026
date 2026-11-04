@@ -53,13 +53,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * uk.jtoye.core.config.RedisCacheErrorHandler} would swallow it and count it in
  * {@code jtoye.cache.errors}, and every request would pay that until the entry expired.
  *
- * <p>A pre-37-G entry is planted beside it under {@code v4:shops::…} (37-G review, plan 37-50 finding
+ * <p>A pre-37-G entry is planted beside it under {@code v5:shops::…} (37-G review, plan 37-50 finding
  * 2.9): a ShopDto the {@code v4} image cached, written by the production serializer, with a third name
  * and none of the four 37-48 fields. Those bytes READ cleanly into today's ShopDto (the fields come back
  * null), so no error would ever reveal it; only the {@code v5} key keeps it from being served.
  *
  * <p>Asserted: the first call serves the DATABASE name, fee and offered types with the error counter
- * unchanged; Redis then holds the {@code v5:shops::…} key with the tenant segment intact (T-38-25);
+ * unchanged; Redis then holds the {@code v6:shops::…} key with the tenant segment intact (T-38-25);
  * the shop is renamed behind the cache's back and the second call still returns the first name, so it
  * was served from the v5 key; both old entries are untouched; the counter stays 0 throughout. A second
  * arm (review WR-01, widened by the 37-G review) proves the converse direction for EVICTION: an eviction
@@ -117,10 +117,10 @@ class CacheFormatIsolationIntegrationTest {
     private static final String KEY_SUFFIX = "tenant:" + TENANT + ":getShopById:" + SHOP;
     private static final String BOOT35_KEY = "shops::" + KEY_SUFFIX;
     /** The key a pre-37-G (v4) pod cached this shop under, and the name its planted entry carries. */
-    private static final String PRE37G_KEY = "v4:shops::" + KEY_SUFFIX;
+    private static final String PRE37G_KEY = "v5:shops::" + KEY_SUFFIX;
     private static final String PRE37G_NAME = "Pre-37-G Cached Kitchen";
     /** The current key. A literal, not the constant: reverting the bump must red this test. */
-    private static final String BOOT4_KEY = "v5:shops::" + KEY_SUFFIX;
+    private static final String BOOT4_KEY = "v6:shops::" + KEY_SUFFIX;
     private static final long DB_FEE = 299L;
 
     private byte[] boot35Value;
@@ -261,8 +261,8 @@ class CacheFormatIsolationIntegrationTest {
         UUID otherTenant = UUID.fromString("0ddba11d-0000-4000-8000-000000000038");
         String otherSuffix = "tenant:" + otherTenant + ":getShopById:" + SHOP;
         String otherBoot35Key = "shops::" + otherSuffix;
-        String otherBoot4Key = "v5:shops::" + otherSuffix;
-        String otherPre37gKey = "v4:shops::" + otherSuffix;
+        String otherBoot4Key = "v6:shops::" + otherSuffix;
+        String otherPre37gKey = "v5:shops::" + otherSuffix;
 
         // A v5 entry for TENANT via the real @Cacheable path (the Boot-3.5 and v4 ones are planted by
         // seed()), plus the other tenant's three entries.

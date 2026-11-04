@@ -939,6 +939,8 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead>SKU</TableHead>
                     <TableHead>Title</TableHead>
+                    {/* #875 / UXT-117: under All shops, which kitchen a product belongs to. */}
+                    {!contextShopId && <TableHead>Shop</TableHead>}
                     <TableHead>Category</TableHead>
                     <TableHead>Allergens</TableHead>
                     <TableHead className="text-right">Price</TableHead>
@@ -993,6 +995,13 @@ export default function ProductsPage() {
                             </div>
                           </div>
                         </TableCell>
+                        {!contextShopId && (
+                          <TableCell className="text-sm">
+                            {product.shopId
+                              ? (shops.find((s) => s.id === product.shopId)?.name ?? "Another shop")
+                              : <span className="text-muted-foreground">No shop</span>}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             {product.category ? (
@@ -1224,12 +1233,16 @@ export default function ProductsPage() {
 
               <Input
                 id="sku"
-                placeholder="e.g., PROD-001"
+                placeholder="Optional, e.g. PROD-001"
                 aria-invalid={errors.sku ? "true" : undefined}
-                aria-describedby={errors.sku ? "sku-error" : undefined}
+                aria-describedby={errors.sku ? "sku-error" : "sku-hint"}
                 {...register("sku")}
 
               />
+              {/* #875 / UXT-115: a stall holder has no stock code; leaving it blank is fine. */}
+              <p id="sku-hint" className="text-xs text-slate-500">
+                Your own stock code. Leave it blank and we&apos;ll make one.
+              </p>
 
               {errors.sku && (
                 <p id="sku-error" className="text-sm text-red-600">{errors.sku.message}</p>

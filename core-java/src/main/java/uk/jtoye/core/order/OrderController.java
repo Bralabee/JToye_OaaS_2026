@@ -130,7 +130,7 @@ public class OrderController {
         IdempotencyOutcome<OrderDto> outcome = idempotencyService.execute(
                 "orders.create", idempotencyKey, request, OrderDto.class,
                 () -> orderService.createOrder(request));
-        return ResponseEntity.status(outcome.status()).body(outcome.value());
+        return outcome.toResponse();
     }
 
     /**

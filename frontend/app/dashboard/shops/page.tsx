@@ -80,6 +80,22 @@ function isPoundsOrEmpty(value: string | undefined): boolean {
   return POUNDS_PATTERN.test(value.trim())
 }
 
+/** #460: the server's bounds on a delivery radius (CreateShopRequest, ck_shops_delivery_radius_km). */
+const RADIUS_MESSAGE = "Enter a distance between 0.1 and 100 km, or leave it empty."
+const RADIUS_PATTERN = /^(?:\d+(?:\.\d+)?|\.\d+)$/
+
+function isRadiusOrEmpty(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "") return true
+  if (!RADIUS_PATTERN.test(value.trim())) return false
+  const km = Number(value)
+  return km >= 0.1 && km <= 100
+}
+
+/** The radius as typed -> a number, or null for an empty field (null clears the stored radius). */
+function radiusToNumber(value: string | undefined): number | null {
+  return value === undefined || value.trim() === "" ? null : Number(value)
+}
+
 /** Pounds as typed -> whole pennies, or null for an empty field. */
 function poundsToPennies(value: string | undefined): number | null {
   if (value === undefined || value.trim() === "") return null
@@ -105,6 +121,8 @@ const shopSchema = z.object({
   // 37-49 (UI-SPEC G1): pounds as typed. Empty fee = no fee; empty threshold = no free-delivery threshold.
   deliveryFeePounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
   freeDeliveryThresholdPounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
+  // #460: km as typed; empty = no limit (sent as an explicit null).
+  deliveryRadiusKm: z.string().optional().or(z.literal("")).refine(isRadiusOrEmpty, RADIUS_MESSAGE),
 })
 
 type ShopFormData = z.infer<typeof shopSchema>
@@ -318,7 +336,7 @@ export default function ShopsPage() {
 
   const openCreateDialog = () => {
     setEditingShop(null)
-    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "" })
+    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "", deliveryRadiusKm: "" })
     setOffersDelivery(true)
     setOffersCollection(true)
     setFulfilmentTimingMode("IMMEDIATE_ONLY")
@@ -351,6 +369,7 @@ export default function ShopsPage() {
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
     setValue("deliveryFeePounds", penniesToPounds(shop.deliveryFeePennies))
     setValue("freeDeliveryThresholdPounds", penniesToPounds(shop.freeDeliveryThresholdPennies))
+    setValue("deliveryRadiusKm", shop.deliveryRadiusKm == null ? "" : String(shop.deliveryRadiusKm))
     // An absent flag reads as offered: that is what the shop did before the flags existed.
     setOffersDelivery(shop.offersDelivery !== false)
     setOffersCollection(shop.offersCollection !== false)
@@ -466,6 +485,9 @@ export default function ShopsPage() {
         // clears it on an explicit null, so an emptied field must reach the server as null.
         deliveryFeePennies: poundsToPennies(data.deliveryFeePounds) ?? 0,
         freeDeliveryThresholdPennies: poundsToPennies(data.freeDeliveryThresholdPounds),
+        // #460: ALWAYS sent, like the threshold: core keeps the stored radius when the key is absent and
+        // clears it on an explicit null, so an emptied field must reach it as null.
+        deliveryRadiusKm: radiusToNumber(data.deliveryRadiusKm),
         offersDelivery,
         offersCollection,
         fulfilmentTimingMode,
@@ -1037,6 +1059,30 @@ export default function ShopsPage() {
                   {errors.freeDeliveryThresholdPounds && (
                     <p id="freeDeliveryThresholdPounds-error" className="text-sm text-red-600">
                       {errors.freeDeliveryThresholdPounds.message}
+                    </p>
+                  )}
+                </div>
+                {/* #460 / UXT-030: how far the shop delivers, measured from its address. */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="deliveryRadiusKm">Delivery radius (km)</Label>
+                  <Input
+                    id="deliveryRadiusKm"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    className="h-11"
+                    aria-invalid={errors.deliveryRadiusKm ? true : undefined}
+                    aria-describedby={
+                      errors.deliveryRadiusKm ? "deliveryRadius-hint deliveryRadiusKm-error" : "deliveryRadius-hint"
+                    }
+                    {...register("deliveryRadiusKm")}
+                  />
+                  <p id="deliveryRadius-hint" className="text-sm text-slate-600">
+                    Leave empty to deliver to any address. Measured from your shop&apos;s address.
+                  </p>
+                  {errors.deliveryRadiusKm && (
+                    <p id="deliveryRadiusKm-error" className="text-sm text-red-600">
+                      {errors.deliveryRadiusKm.message}
                     </p>
                   )}
                 </div>

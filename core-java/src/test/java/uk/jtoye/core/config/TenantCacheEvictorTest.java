@@ -248,8 +248,8 @@ class TenantCacheEvictorTest {
         // fire-and-forget, which would let a key outlive the caller's write (PR #898 round 1 for the
         // versioned key, WR-01 for the Boot-3.5 key). verifyNoMoreInteractions fails on any evict.
         // Literals, not the constants: this pins the actual key bytes each generation reads.
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v6:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
-        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
         verifyNoMoreInteractions(writer);
     }
@@ -269,29 +269,29 @@ class TenantCacheEvictorTest {
         assertDoesNotThrow(() -> redisEvictor.evictEntity("shops", "getShopById", shopId),
                 "the legacy delete is best-effort: it must never fail the caller's write");
 
-        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v6:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
-        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
     }
 
     @Test
-    @DisplayName("evictEntity - A failing previous-format (v4) delete is logged, not propagated, and the other evictions stand")
+    @DisplayName("evictEntity - A failing previous-format (v5) delete is logged, not propagated, and the other evictions stand")
     void testEvictEntity_PreviousFormatDeleteFailureDoesNotPropagate() {
         RedisCacheWriter writer = mock(RedisCacheWriter.class);
         UUID tenant = UUID.randomUUID();
         UUID shopId = UUID.randomUUID();
         String suffix = "tenant:" + tenant + ":getShopById:" + shopId;
-        doThrow(new RedisConnectionFailureException("simulated: v4 delete refused"))
-                .when(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        doThrow(new RedisConnectionFailureException("simulated: v5 delete refused"))
+                .when(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
         TenantCacheEvictor redisEvictor = redisBackedEvictor(writer);
 
         TenantContext.set(tenant);
         assertDoesNotThrow(() -> redisEvictor.evictEntity("shops", "getShopById", shopId),
                 "the previous-format delete is best-effort: it must never fail the caller's write");
 
-        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v6:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
-        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
     }
 
     @Test

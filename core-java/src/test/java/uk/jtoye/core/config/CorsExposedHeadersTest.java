@@ -233,6 +233,17 @@ class CorsExposedHeadersTest {
     }
 
     @Test
+    @DisplayName("#879: the Idempotent-Replayed marker is exposed to script, even when the operator list omits it")
+    void idempotentReplayedIsInTheFloor() throws Exception {
+        // A browser client (the dashboard's api-client, which retries a same-key POST) can only tell a replay from
+        // a fresh create if the browser hands it this header. Built WITHOUT the name so only the floor supplies it.
+        CorsFilter operatorList = buildFilter("Authorization,Content-Type,Retry-After");
+
+        assertThat(exposedNames(actualRequest(operatorList))).contains("idempotent-replayed");
+        assertThat(exposedNames(preflightRequest(operatorList))).contains("idempotent-replayed");
+    }
+
+    @Test
     @DisplayName("33-08: an actual cross-origin response exposes X-Search-Interpretation to script")
     void actualResponseExposesSearchInterpretationHeader() throws Exception {
         // The yml assertion above proves the CONFIGURED name. This proves the filter emits it —
@@ -347,7 +358,7 @@ class CorsExposedHeadersTest {
         assertThat(merged).as("no duplicate under a different casing")
                 .containsExactly("retry-after", "x-search-interpretation",
                         "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
-                        "Content-Disposition", "X-Finance-Scope");
+                        "Content-Disposition", "X-Finance-Scope", "Idempotent-Replayed");
     }
 
     @Test

@@ -885,6 +885,8 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "customerId" : {
@@ -892,9 +894,13 @@
             "type" : "string"
           },
           "customerName" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "customerPhone" : {
+            "maxLength" : 50,
+            "minLength" : 0,
             "type" : "string"
           },
           "fulfilmentType" : {
@@ -925,6 +931,11 @@
           "submit" : {
             "description" : "Submit the order on creation. true: the order is created and moved DRAFT -> PENDING in the same transaction, so it appears in the kitchen's New lane for the vendor to accept (it is never confirmed automatically). Absent or false: the order is created as a DRAFT, to be submitted later with POST /api/v1/orders/{id}/submit.",
             "example" : true,
+            "type" : "boolean"
+          },
+          "walkIn" : {
+            "description" : "Set true for a walk-in sale with no customer to contact. Without it, an order needs customerId, or at least one of customerName, customerPhone, customerEmail.",
+            "example" : false,
             "type" : "boolean"
           }
         },
@@ -1046,10 +1057,10 @@
             "type" : "string"
           },
           "sku" : {
-            "description" : "Stock Keeping Unit (unique per tenant)",
+            "description" : "Stock Keeping Unit (unique per tenant). Optional: omitted or blank, one is generated (JTP-XXXXXXXX). On an update, blank keeps the stored SKU.",
             "example" : "YAM-5KG",
             "maxLength" : 100,
-            "minLength" : 1,
+            "minLength" : 0,
             "type" : "string"
           },
           "title" : {
@@ -1081,7 +1092,6 @@
           "allergenMask",
           "ingredientsText",
           "pricePennies",
-          "sku",
           "title"
         ],
         "type" : "object"
@@ -1222,6 +1232,16 @@
           },
           "deliveryInfo" : {
             "type" : "string"
+          },
+          "deliveryRadiusKm" : {
+            "description" : "How far the shop delivers, in km (0.1 to 100) from its location. A DELIVERY order to a postcode beyond it is refused 422 delivery-out-of-range. null means no limit. Absent keeps the stored value; an explicit null clears it.",
+            "format" : "double",
+            "maximum" : 100,
+            "minimum" : 0.1,
+            "type" : [
+              "number",
+              "null"
+            ]
           },
           "depositBps" : {
             "description" : "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR. Absent keeps the stored value (10000 on create).",
@@ -5034,6 +5054,11 @@
           "deliveryInfo" : {
             "type" : "string"
           },
+          "deliveryRadiusKm" : {
+            "description" : "How far the shop delivers, in km from its location. Absent: no limit. A DELIVERY order beyond it is refused 422 delivery-out-of-range.",
+            "format" : "double",
+            "type" : "number"
+          },
           "description" : {
             "type" : "string"
           },
@@ -5506,6 +5531,11 @@
           },
           "deliveryInfo" : {
             "type" : "string"
+          },
+          "deliveryRadiusKm" : {
+            "description" : "How far the shop delivers, in km from its location. Absent: no limit. A DELIVERY order to a postcode beyond it is refused 422 delivery-out-of-range.",
+            "format" : "double",
+            "type" : "number"
           },
           "depositBps" : {
             "description" : "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR.",
@@ -6503,6 +6533,22 @@
           },
           "updatedAt" : {
             "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "WebhookTestEventView" : {
+        "properties" : {
+          "deliveryId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "eventId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "status" : {
             "type" : "string"
           }
         },
@@ -16474,6 +16520,58 @@
       }
     },
     "/api/v1/webhooks/{id}" : {
+      "delete" : {
+        "description" : "Permanently deletes a REVOKED subscription and its delivery log. Idempotent in effect: a repeat answers 404. Any other status answers 409 (type webhook-subscription-state): revoke it first.",
+        "operationId" : "delete_5",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "204" : {
+            "description" : "Deleted"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Subscription not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The subscription is not REVOKED"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Delete a revoked subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      },
       "get" : {
         "description" : "Returns a single subscription by id. Never includes the signing secret.",
         "operationId" : "get",
@@ -16683,6 +16781,67 @@
           }
         ],
         "summary" : "Rotate the signing secret",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/test" : {
+      "post" : {
+        "description" : "Queues one `webhook.test` ping for an ACTIVE endpoint and answers 202. It travels the production path (signed with the current secret, POSTed to the validated address) and appears in the delivery log, where its outcome is read by `deliveryId`. It gets one attempt, is never retried and never counts toward auto-pause. Deliberately repeatable (each call sends one ping with a new event id), so it takes no Idempotency-Key.",
+        "operationId" : "sendTestEvent",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "202" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookTestEventView"
+                }
+              }
+            },
+            "description" : "Ping queued"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Subscription not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The endpoint is not ACTIVE (type webhook-subscription-state)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Send a test event",
         "tags" : [
           "Webhooks"
         ]

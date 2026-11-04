@@ -135,7 +135,9 @@ public class MediaController {
         // 202 on both the fresh re-drive and the replay (the stored body is echoed).
         // IdempotencyService stamps 201 internally; the controller owns the async 202 status,
         // exactly as MediaUploadController.accept does.
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(outcome.value());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .headers(h -> { if (outcome.replayed()) { h.add(IdempotencyOutcome.REPLAYED_HEADER, "true"); } })
+                .body(outcome.value());
     }
 
     /** The idempotency request fingerprint — hashed by IdempotencyService to detect body reuse. */

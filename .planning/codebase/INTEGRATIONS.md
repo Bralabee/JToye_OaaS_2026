@@ -158,7 +158,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 **Outgoing:**
 - Platform webhook delivery engine (Phase 22 COMMS-05) — `uk.jtoye.core.webhook` package: `WebhookSubscriptionController`/`Service` (tenant-managed subscriptions), `WebhookDeliveryWorker` (delivery loop, exponential backoff, auto-pause after `webhook.delivery.auto-pause-threshold` consecutive failures, default 10), `WebhookSigner` (HMAC request signing), `WebhookUrlValidator` + `SsrfGuardAddressResolverGroup` (blocks private IP ranges by default, `webhook.target.block-private-ranges=true`, re-guards against DNS rebinding at delivery time), `WebhookRetentionCleanup` (30-day default retention on `webhook_delivery` rows).
-- Config: `webhook.delivery.max-attempts` (8), `backoff-base-ms`/`backoff-cap-ms` (1s/1h), `timeout-seconds` (10), `signature-tolerance-seconds` (300).
+- Config: `webhook.delivery.max-attempts` (15), `backoff-base-ms`/`backoff-cap-ms` (30s/4h, ~24h window, #587), `timeout-seconds` (10), `signature-tolerance-seconds` (300).
 - Backed by `webhook_subscription` (V55) and `webhook_delivery` (V56) tables, plus `webhook.envelope.version` for the payload envelope schema.
 
 ## MCP Server (AI Agent Surface)

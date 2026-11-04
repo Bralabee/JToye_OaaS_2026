@@ -6,7 +6,9 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.webhook.dto.CreateWebhookSubscriptionRequest;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
+import uk.jtoye.core.webhook.dto.WebhookTestEventView;
 
 import java.net.URI;
 import java.util.List;
@@ -110,5 +113,36 @@ public class WebhookSubscriptionController {
     @Operation(summary = "Revoke a subscription", description = "Terminally revokes the subscription (status REVOKED).")
     public WebhookSubscriptionDto revoke(@PathVariable UUID id) {
         return service.revoke(id);
+    }
+
+    @PostMapping("/{id}/test")
+    @Operation(summary = "Send a test event",
+            description = "Queues one `webhook.test` ping for an ACTIVE endpoint and answers 202. It travels the "
+                    + "production path (signed with the current secret, POSTed to the validated address) and "
+                    + "appears in the delivery log, where its outcome is read by `deliveryId`. It gets one attempt, "
+                    + "is never retried and never counts toward auto-pause. Deliberately repeatable (each call "
+                    + "sends one ping with a new event id), so it takes no Idempotency-Key.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "202", description = "Ping queued"),
+            @ApiResponse(responseCode = "404", description = "Subscription not found"),
+            @ApiResponse(responseCode = "409", description = "The endpoint is not ACTIVE (type webhook-subscription-state)")
+    })
+    public ResponseEntity<WebhookTestEventView> sendTestEvent(@PathVariable UUID id) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.sendTestEvent(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete a revoked subscription",
+            description = "Permanently deletes a REVOKED subscription and its delivery log. Idempotent in effect: "
+                    + "a repeat answers 404. Any other status answers 409 (type webhook-subscription-state): "
+                    + "revoke it first.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Deleted"),
+            @ApiResponse(responseCode = "404", description = "Subscription not found"),
+            @ApiResponse(responseCode = "409", description = "The subscription is not REVOKED")
+    })
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        service.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }

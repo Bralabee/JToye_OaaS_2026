@@ -48,6 +48,11 @@ type tenantRateLimitConfig struct {
 	// MaxTenants bounds how many per-tenant buckets are held in memory.
 	// Tenants beyond the bound share one overflow bucket (T-37-63).
 	MaxTenants int
+	// GlobalRPS / GlobalBurst, used by the pre-auth valve only, are a
+	// per-replica ceiling on ALL admitted traffic regardless of how many
+	// addresses it comes from. Zero disables it (the per-tenant limiter).
+	GlobalRPS   int
+	GlobalBurst int
 }
 
 // Defaults, chosen so the edge tenant limit sits ABOVE core's authoritative
@@ -124,7 +129,19 @@ type tenantLimiter struct {
 	// overflow is the one bucket shared by every tenant that does not fit
 	// in buckets. It is never in the map and is never evicted.
 	overflow *tenantBucket
+	// lastSweep is when evictIdle last ran; sweeps counts the runs
+	// (test-observable).
+	lastSweep time.Time
+	sweeps    int
 }
+
+// sweepInterval is the shortest gap between two idle sweeps of a full map.
+// Without it every newcomer arriving at a full map paid an O(MaxTenants) walk
+// under the mutex, so a spray of fresh keys turned the limiter into a CPU and
+// lock amplifier (round-1 review A1). Between sweeps a newcomer simply shares
+// the overflow bucket; a bucket needs Burst/RPS seconds to refill anyway, so
+// a sweep per second finds everything that is reclaimable.
+const sweepInterval = time.Second
 
 func newTenantLimiter(cfg tenantRateLimitConfig, clk clock) *tenantLimiter {
 	if clk == nil {
@@ -140,9 +157,11 @@ func newTenantLimiter(cfg tenantRateLimitConfig, clk clock) *tenantLimiter {
 }
 
 // evictIdle drops every held bucket that has refilled to full by now. Called
-// with the lock held, and only when the map is at its cap, so its O(n) walk
-// is paid once per newcomer-at-capacity rather than per request.
+// with the lock held, only when the map is at its cap, and at most once per
+// sweepInterval, so its O(n) walk is amortised across newcomers.
 func (l *tenantLimiter) evictIdle(now time.Time) {
+	l.sweeps++
+	l.lastSweep = now
 	for key, b := range l.buckets {
 		l.refill(b, now)
 		if b.tokens >= float64(l.cfg.Burst) {
@@ -158,7 +177,7 @@ func (l *tenantLimiter) bucketFor(key string, now time.Time) *tenantBucket {
 	if b := l.buckets[key]; b != nil {
 		return b
 	}
-	if len(l.buckets) >= l.cfg.MaxTenants {
+	if len(l.buckets) >= l.cfg.MaxTenants && (l.sweeps == 0 || now.Sub(l.lastSweep) >= sweepInterval) {
 		l.evictIdle(now)
 	}
 	if len(l.buckets) >= l.cfg.MaxTenants {
