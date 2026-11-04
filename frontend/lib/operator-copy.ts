@@ -15,6 +15,19 @@
 export const OPERATOR_APPLICATION_REVIEW_LINE =
   "A person reviews every application, and nothing is charged until a plan is agreed."
 
+/**
+ * The vendor-to-vendor confidentiality statement (issue 878, UXT-119 finding
+ * F6: "no vendor-to-vendor confidentiality assurance in the UI or legal
+ * copy"). It states what the database already enforces tenant by tenant under
+ * row-level security: one business's orders, customer records and sales
+ * figures are not visible to another business on the platform. It makes no
+ * promise about the public shop page and menu, which are public by design, and
+ * none about J'Toye staff. Rendered by /for-operators and
+ * /legal/merchant-terms.
+ */
+export const OPERATOR_CONFIDENTIALITY_LINE =
+  "Your orders, customer records and sales figures are private to your business: other food businesses on J'Toye cannot see them. Your public shop page and menu are public, because that is how customers find you."
+
 /** What stays the operator's legal responsibility. */
 export const OPERATOR_FBO_LINE =
   "You remain the Food Business Operator. Recipe accuracy and cross-contamination are still yours."
