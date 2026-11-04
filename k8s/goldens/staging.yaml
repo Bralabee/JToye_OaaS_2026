@@ -733,7 +733,7 @@ data:
   stripe.connect.return-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/return
   stripe.environment-tag: staging
   vendor.logout-complete.enabled: "false"
-  webhook.delivery.max-attempts: "8"
+  webhook.delivery.max-attempts: "15"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
 kind: ConfigMap

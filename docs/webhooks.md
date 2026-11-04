@@ -282,26 +282,36 @@ and will be retried, which makes the load worse.
 
 ### Retry schedule
 
-Up to **8 attempts** per delivery, with exponential backoff from a 1-second base:
+Up to **15 attempts** per delivery, with exponential backoff from a 30-second base,
+capped at 4 hours (`WEBHOOK_DELIVERY_MAX_ATTEMPTS`, `WEBHOOK_DELIVERY_BACKOFF_BASE_MS`,
+`WEBHOOK_DELIVERY_BACKOFF_CAP_MS`):
 
 | After attempt | Next attempt in |
 |---|---|
-| 1 | 1s |
-| 2 | 2s |
-| 3 | 4s |
-| 4 | 8s |
-| 5 | 16s |
-| 6 | 32s |
-| 7 | 64s |
-| 8 | — terminal `FAILED` |
+| 1 | 30s |
+| 2 | 1m |
+| 3 | 2m |
+| 4 | 4m |
+| 5 | 8m |
+| 6 | 16m |
+| 7 | 32m |
+| 8 | 1h 4m |
+| 9 | 2h 8m |
+| 10 – 14 | 4h each (the cap) |
+| 15 | — terminal `FAILED` |
 
-The delivery worker polls every 5 seconds, so short gaps round up to the next tick. There
-is a 1-hour backoff cap configured, but at the default 8 attempts and 1-second base it is
-never reached: **the whole retry sequence finishes in roughly two minutes.**
+The delivery worker polls every 5 seconds, so short gaps round up to the next tick. **The
+whole retry sequence spans about 24 hours** (24 h 16 m), so an endpoint that is down for a
+deploy, a certificate renewal or an overnight outage still receives the event once it is
+back. Until #587 the sequence finished in about two minutes (8 attempts from a 1-second
+base), and an event raised during a ten-minute deploy was lost to automatic retry.
 
-Plan for that. An endpoint down for a ten-minute deploy will exhaust every attempt for
-every event in that window. Retries cover a blip, not an outage — for an outage, use the
-delivery log to replay.
+If the endpoint is still down after the last attempt, use the delivery log to replay.
+
+While a delivery waits out a backoff it is `RETRYING`; the auto-pause rule below counts a
+delivery only once it has used every attempt, so an endpoint that is down now is paused
+about three days later at the earliest, not minutes later. Pause it yourself
+(`POST /api/v1/webhooks/{id}/pause`) if you know it is going away.
 
 ### What terminal `FAILED` means to you
 
@@ -316,7 +326,7 @@ a replay will not re-run a handler that already succeeded. If you need us to re-
 you need the event to occur again.
 
 A delivery is not attempted while the subscription is `PAUSED` or `AUTO_PAUSED`: it is
-`HELD`, and `POST /api/v1/webhooks/{id}/resume` delivers it with a fresh set of 8 attempts.
+`HELD`, and `POST /api/v1/webhooks/{id}/resume` delivers it with a fresh set of 15 attempts.
 `GET /api/v1/webhooks/{id}` reports how many are waiting as `heldCount`. Held events are
 pruned with the rest of the log after the retention window (30 days by default). A delivery
 still goes straight to `FAILED`, without retrying, if the subscription is revoked.
@@ -324,7 +334,7 @@ still goes straight to `FAILED`, without retrying, if the subscription is revoke
 ### Auto-pause
 
 The subscription counts **consecutive failed deliveries**: an event counts once it has
-used all 8 of its attempts without a 2xx. At **3** such events in a row
+used all 15 of its attempts (about 24 hours) without a 2xx. At **3** such events in a row
 (`WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES`) the subscription flips to
 `AUTO_PAUSED`. Any delivered event resets the counter to zero.
 

@@ -53,7 +53,7 @@ class WebhookPropertiesBindingTest {
                 new NoUnboundElementsBindHandler(BindHandler.DEFAULT)).get();
 
         assertThat(bound.getDelivery().getAutoPauseAfterFailedDeliveries()).isEqualTo(3);
-        assertThat(bound.getDelivery().getMaxAttempts()).isEqualTo(8);
+        assertThat(bound.getDelivery().getMaxAttempts()).isEqualTo(15);
         assertThat(new WebhookProperties().getDelivery().getAutoPauseAfterFailedDeliveries())
                 .as("the field default matches the yml default").isEqualTo(3);
     }

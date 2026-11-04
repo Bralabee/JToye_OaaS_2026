@@ -462,13 +462,13 @@ data:
 
   # --- Webhook delivery knobs — Phase 22 COMMS-* -----------------------------
   # SOURCE: all three byte-identical to their application.yml defaults
-  # (`${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}`,
+  # (`${WEBHOOK_DELIVERY_MAX_ATTEMPTS:15}`,
   # `${WEBHOOK_DELIVERY_RETENTION_DAYS:30}`,
   # `${WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES:true}`). Made explicit so the
   # retry/retention budget and the SSRF private-range block are reviewable and
   # per-environment tunable instead of being invisible code defaults.
   # block-private-ranges is a SECURITY control: keep it "true".
-  webhook.delivery.max-attempts: "8"
+  webhook.delivery.max-attempts: "15"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
 

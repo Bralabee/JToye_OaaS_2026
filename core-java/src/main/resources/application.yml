@@ -963,9 +963,13 @@ webhook:
   delivery:
     interval-ms: ${WEBHOOK_DELIVERY_INTERVAL_MS:5000}
     batch-size: ${WEBHOOK_DELIVERY_BATCH_SIZE:50}
-    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}
-    backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:1000}
-    backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:3600000}
+    # #587: the retry window. Attempt n failing waits base * 2^(n-1), clamped to the cap:
+    # 30 s, 1 m, 2 m, 4 m, 8 m, 16 m, 32 m, 64 m, ~2.1 h, then 4 h (the cap) five times, so
+    # 15 attempts span ~24.3 h before a delivery is parked FAILED (it was 8 attempts from a 1 s
+    # base: 127 s, with a 1 h cap no wait ever reached). WebhookRetryScheduleTest pins the window.
+    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:15}
+    backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:30000}
+    backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:14400000}
     # 37-43 (UXT-038): consecutive failed DELIVERIES (each exhausted max-attempts), not attempts.
     auto-pause-after-failed-deliveries: ${WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES:3}
     retention-days: ${WEBHOOK_DELIVERY_RETENTION_DAYS:30}
