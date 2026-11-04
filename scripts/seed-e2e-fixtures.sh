@@ -267,7 +267,15 @@ fi
 #   also in the combined gross the VAT is derived from — the exact figure Order.calculateTotal
 #   truncates once.
 #
-#   Idempotent on (tenant_id, sku), which is the live unique index idx_products_tenant_sku.
+#   Idempotent on (tenant_id, sku) WHERE archived_at IS NULL: idx_products_tenant_sku has been a
+#   PARTIAL unique index since V90, so ON CONFLICT must repeat the predicate to infer it, and an
+#   ARCHIVED fixture row (a vendor deleted it) no longer conflicts: a re-run then INSERTS a fresh
+#   live row beside it, which is the intended way to get the fixture back.
+#
+#   DemoDataSeeder treats every E2E-* SKU as curated (PR #1126 review), so a core start no longer moves
+#   this product to the hidden archive shop. The `shop_id = excluded.shop_id` repair below is only for
+#   a dev volume where an EARLIER seeder already moved it (and set available = false, repaired by the
+#   same arm); on a volume that never had that, it changes nothing.
 #
 #   durability_type + shelf_life_days ARE NOT OPTIONAL HERE, and the ON CONFLICT arm must
 #   keep repairing them on rows an earlier seeder version created without. This product

@@ -446,10 +446,12 @@ test.describe("live storefront @mobile-only", () => {
     expect(await missing.text()).toContain("Kitchen not found")
     expect((await request.get(`/shop/${SHOP_SLUG}`, { maxRedirects: 0 })).status(), "live kitchen").toBe(200)
     // A <Link> prefetch skips the core check (it would spend the visitor's rate limit), so the same
-    // missing slug is not answered 404 there: the probe can tell the two request kinds apart.
+    // missing slug is not answered 404 there: the probe can tell the two request kinds apart. Next removes
+    // the RSC headers and `_rsc` before the proxy runs, so what the proxy can see is the browser's own
+    // fetch metadata (PR #1126); the RSC headers stay on the request because they are what a prefetch is.
     const prefetch = await request.get("/shop/sw-clr-17-no-such-kitchen", {
       maxRedirects: 0,
-      headers: { RSC: "1", "Next-Router-Prefetch": "1" },
+      headers: { RSC: "1", "Next-Router-Prefetch": "1", "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors" },
     })
     expect(prefetch.status(), "prefetch of an unknown kitchen").not.toBe(404)
   })

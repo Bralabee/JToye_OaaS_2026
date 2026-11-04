@@ -6,9 +6,11 @@
  * every other answer, and every failure, passes the request to the page unchanged (fail open).
  */
 import {
+  KITCHEN_NOT_FOUND_PAGE_TIMEOUT_MS,
+  SHOP_SLUG_CHECKED_PARAM,
   checkShopSlug,
+  fetchKitchenNotFoundPage,
   isDocumentRequest,
-  notFoundRewriteTarget,
   shopSlugOf,
 } from "@/lib/shop-slug-gate"
 
@@ -107,51 +109,80 @@ describe("isDocumentRequest (PR #1111 review R1)", () => {
     expect(isDocumentRequest(new Headers({ "next-router-prefetch": "1" }), none)).toBe(false)
     expect(isDocumentRequest(new Headers(), new URLSearchParams("_rsc=abc"))).toBe(false)
   })
+  it("reads the browser's fetch metadata, which survives Next stripping the flight headers (PR #1126)", () => {
+    expect(isDocumentRequest(new Headers({ "sec-fetch-dest": "empty", "sec-fetch-mode": "cors" }), none)).toBe(false)
+    expect(isDocumentRequest(new Headers({ "sec-fetch-dest": "document", "sec-fetch-mode": "navigate" }), none)).toBe(true)
+    expect(isDocumentRequest(new Headers({ "sec-fetch-dest": "iframe" }), none)).toBe(true)
+    // A crawler or a plain HTTP client sends none of it and is a document.
+    expect(isDocumentRequest(new Headers({ "user-agent": "Googlebot" }), none)).toBe(true)
+  })
 })
 
-describe("notFoundRewriteTarget (runtime defect after the persona close-out merge)", () => {
-  // Next treats a rewrite as INTERNAL only when its origin is {protocol}://{HOSTNAME}:{PORT}, with the
-  // protocol read from X-Forwarded-Proto; the URL a proxy sees is built from http://localhost:PORT. A
-  // rewrite to the request URL on a server bound to 0.0.0.0 was proxied to itself and hung for 30 s
-  // (HTTP 500 instead of 404).
-  const seen = new URL("http://localhost:3000/shop/no-such-kitchen?utm=a")
-  const none = new Headers()
-  const tls = new Headers({ "x-forwarded-proto": "https" })
+describe("fetchKitchenNotFoundPage (runtime defect after the persona close-out merge)", () => {
+  // The proxy used to rewrite an unknown kitchen to its own URL; on a server bound to 0.0.0.0 Next proxied
+  // that to itself in a loop (HTTP 500). It now renders the page itself, with the checked marker so that
+  // second request is not gated again, and answers with that page's body and headers at status 404.
+  const url = new URL("http://localhost:3000/shop/no-such-kitchen?utm=a")
 
-  it("carries the origin Next compares against when the server is bound with HOSTNAME", () => {
-    const target = notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0", PORT: "3000" })
-    expect(target.origin).toBe("http://0.0.0.0:3000")
-    expect(target.pathname + target.search).toBe("/shop/no-such-kitchen?utm=a")
-  })
+  const page = (status = 200, headers: Record<string, string> = {}) =>
+    new Response("<html>Kitchen not found</html>", {
+      status,
+      headers: { "content-type": "text/html", "content-security-policy": "script-src 'nonce-abc'", ...headers },
+    })
 
-  it("follows PORT, and defaults to 3000 when PORT is absent or not a number", () => {
-    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0", PORT: "8081" }).origin).toBe(
-      "http://0.0.0.0:8081"
+  it("asks the same URL once more with the checked marker, forwarding only the visitor's X-Forwarded-For", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(page())
+    const res = await fetchKitchenNotFoundPage(
+      url,
+      new Headers({ "x-forwarded-for": "203.0.113.9", cookie: "session=secret" }),
+      fetchImpl
     )
-    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0" }).origin).toBe("http://0.0.0.0:3000")
-    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0", PORT: "x" }).origin).toBe(
-      "http://0.0.0.0:3000"
+    expect(res).not.toBeNull()
+    const [target, init] = fetchImpl.mock.calls[0]
+    expect((target as URL).pathname).toBe("/shop/no-such-kitchen")
+    expect((target as URL).searchParams.get("utm")).toBe("a")
+    expect((target as URL).searchParams.get(SHOP_SLUG_CHECKED_PARAM)).toBe("1")
+    expect(init.headers).toEqual({ "X-Forwarded-For": "203.0.113.9" })
+    expect(init.redirect).toBe("manual")
+    expect(init.cache).toBe("no-store")
+  })
+
+  it("answers 404 with the page's body and its CSP (the nonce it was rendered with), minus hop-by-hop headers", async () => {
+    const res = await fetchKitchenNotFoundPage(
+      url,
+      noHeaders,
+      jest.fn().mockResolvedValue(page(200, { "content-length": "999", "transfer-encoding": "chunked" }))
     )
+    expect(res!.status).toBe(404)
+    expect(await res!.text()).toContain("Kitchen not found")
+    expect(res!.headers.get("content-security-policy")).toBe("script-src 'nonce-abc'")
+    expect(res!.headers.get("content-type")).toBe("text/html")
+    expect(res!.headers.get("content-length")).toBeNull()
+    expect(res!.headers.get("transfer-encoding")).toBeNull()
   })
 
-  it("keeps the request's own host when HOSTNAME is unset (next dev, next start on the default host)", () => {
-    expect(notFoundRewriteTarget(seen, none, {}).href).toBe(seen.href)
-    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "  " }).href).toBe(seen.href)
+  it("is null (the request passes to the page) on a 5xx, a redirect, a network error or a timeout", async () => {
+    expect(await fetchKitchenNotFoundPage(url, noHeaders, jest.fn().mockResolvedValue(page(500)))).toBeNull()
+    expect(await fetchKitchenNotFoundPage(url, noHeaders, jest.fn().mockResolvedValue(page(302)))).toBeNull()
+    expect(await fetchKitchenNotFoundPage(url, noHeaders, jest.fn().mockRejectedValue(new Error("ECONNREFUSED")))).toBeNull()
+    expect(KITCHEN_NOT_FOUND_PAGE_TIMEOUT_MS).toBeLessThanOrEqual(10_000)
   })
 
-  it("uses https when X-Forwarded-Proto says so (a TLS-terminating ingress), with or without HOSTNAME", () => {
-    expect(notFoundRewriteTarget(seen, tls, { HOSTNAME: "0.0.0.0", PORT: "3000" }).origin).toBe(
-      "https://0.0.0.0:3000"
-    )
-    expect(notFoundRewriteTarget(seen, tls, {}).origin).toBe("https://localhost:3000")
-    expect(
-      notFoundRewriteTarget(seen, new Headers({ "x-forwarded-proto": "http" }), { HOSTNAME: "0.0.0.0" }).origin
-    ).toBe("http://0.0.0.0:3000")
+  it("asks the origin Next recorded for this server, not the request URL (Auth.js rewrites that to NEXTAUTH_URL)", async () => {
+    const publicUrl = new URL("https://app.example.test/shop/no-such-kitchen")
+    const fetchImpl = jest.fn().mockResolvedValue(page())
+    await fetchKitchenNotFoundPage(publicUrl, noHeaders, fetchImpl, 1000, "http://localhost:3000")
+    const target = fetchImpl.mock.calls[0][0] as URL
+    expect(target.origin).toBe("http://localhost:3000")
+    expect(target.pathname).toBe("/shop/no-such-kitchen")
+    // Without it (a Next that no longer sets the variable) the request URL is the fallback.
+    const fallback = jest.fn().mockResolvedValue(page())
+    await fetchKitchenNotFoundPage(publicUrl, noHeaders, fallback, 1000, undefined)
+    expect((fallback.mock.calls[0][0] as URL).origin).toBe("https://app.example.test")
   })
 
-  it("brackets an IPv6 host and never carries the public host of the request", () => {
-    const pub = new URL("https://olajay.co.uk/shop/x")
-    expect(notFoundRewriteTarget(pub, none, { HOSTNAME: "::", PORT: "3000" }).origin).toBe("http://[::]:3000")
-    expect(notFoundRewriteTarget(pub, none, { HOSTNAME: "0.0.0.0" }).host).not.toContain("olajay")
+  it("does not mutate the request URL", async () => {
+    await fetchKitchenNotFoundPage(url, noHeaders, jest.fn().mockResolvedValue(page()))
+    expect(url.searchParams.has(SHOP_SLUG_CHECKED_PARAM)).toBe(false)
   })
 })

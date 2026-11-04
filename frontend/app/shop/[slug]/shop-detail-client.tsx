@@ -805,7 +805,11 @@ export function ShopDetailClient({
               </a>
             )}
             {shop.email && (
-              <a href={`mailto:${shop.email}`} className="inline-flex items-center gap-1 hover:text-slate-700">
+              <a
+                href={`mailto:${shop.email}`}
+                data-testid="shop-email-link"
+                className="inline-flex max-w-full items-center gap-1 hover:text-slate-700 [overflow-wrap:anywhere]"
+              >
                 <Mail className="h-3.5 w-3.5 text-slate-400" />
                 {shop.email}
               </a>
