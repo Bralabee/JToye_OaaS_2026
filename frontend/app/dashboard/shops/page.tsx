@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { m } from "framer-motion"
 import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -167,6 +168,23 @@ function slugRefusal(error: unknown): string | null {
   return data.errors?.slug?.trim() || null
 }
 
+/** #833: the plain-words refusal when the server says the shop still has products, else null. */
+function shopHasProductsRefusal(error: unknown): string | null {
+  const data = (error as { response?: { data?: { type?: string; productCount?: number } } } | null)?.response?.data
+  if (data?.type !== "https://jtoye.uk/errors/shop-has-products") return null
+  const n = typeof data.productCount === "number" ? data.productCount : null
+  const what = n === null ? "products" : n === 1 ? "1 product" : `${n} products`
+  return `This shop still has ${what}. Move them to another shop or delete them first, then delete the shop.`
+}
+
+/** #835: the typed 409 an older core-java answers when a shop edit carries a publish change. */
+function isPublishRefusal(error: unknown): boolean {
+  return (
+    (error as { response?: { data?: { type?: string } } })?.response?.data?.type ===
+    "https://jtoye.uk/errors/shop-publish-not-accepted"
+  )
+}
+
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
@@ -178,8 +196,9 @@ export default function ShopsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [deletingShop, setDeletingShop] = useState<Shop | null>(null)
+  // #833: set when the server refuses a delete because the shop still has products (409 shop-has-products).
+  const [deleteBlockedBy, setDeleteBlockedBy] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [published, setPublished] = useState(false)
   // 37-21 (K4, D-15): the structured hours the dialog will send, or null while the editor is untouched
   // (the request then omits openingSchedule and the server keeps the stored hours and their source).
   // The seven free-text inputs that wrote `openingHours` are gone: that text decides nothing since
@@ -300,7 +319,6 @@ export default function ShopsPage() {
   const openCreateDialog = () => {
     setEditingShop(null)
     reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "" })
-    setPublished(false)
     setOffersDelivery(true)
     setOffersCollection(true)
     setFulfilmentTimingMode("IMMEDIATE_ONLY")
@@ -343,7 +361,6 @@ export default function ShopsPage() {
         ? String(Math.round(shop.depositBps / 100))
         : "50"
     )
-    setPublished(shop.published || false)
     setScheduleDraft(null)
     resetSlugControl(shop.slug || "")
     setEditorSession((n) => n + 1)
@@ -397,6 +414,7 @@ export default function ShopsPage() {
 
   const openDeleteDialog = (shop: Shop) => {
     setDeletingShop(shop)
+    setDeleteBlockedBy(null)
     setDeleteDialogOpen(true)
   }
 
@@ -450,7 +468,6 @@ export default function ShopsPage() {
         freeDeliveryThresholdPennies: poundsToPennies(data.freeDeliveryThresholdPounds),
         offersDelivery,
         offersCollection,
-        published,
         fulfilmentTimingMode,
         ...(settlementPolicyMode ? { settlementPolicyMode } : {}),
         ...(computedDepositBps !== undefined ? { depositBps: computedDepositBps } : {}),
@@ -495,10 +512,10 @@ export default function ShopsPage() {
       }
       // A11Y-2 (#688): an axios error IS an Error whose .message is transport
       // text — classify it so an RFC 7807 detail wins and raw strings never show.
-      const errorMessage = describeLoadError(
-        error,
-        `Failed to ${editingShop ? "update" : "create"} shop`
-      ).message
+      // #835: an older server refuses a publish change with developer text; never show it.
+      const errorMessage = isPublishRefusal(error)
+        ? "Your shop could not be saved. Whether a shop is live is set from Onboarding, not here. Please try again."
+        : describeLoadError(error, `Failed to ${editingShop ? "update" : "create"} shop`).message
       toast({
         variant: "destructive",
         title: editingShop ? "Error updating shop" : "Error creating shop",
@@ -524,6 +541,12 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
+      // #833: a shop that still has products is refused. Say so in the dialog, with the way out.
+      const blocked = shopHasProductsRefusal(error)
+      if (blocked) {
+        setDeleteBlockedBy(blocked)
+        return
+      }
       // A11Y-2 (#688): same classification as onSubmit above.
       const errorMessage = describeLoadError(error, "Failed to delete shop").message
       toast({
@@ -858,15 +881,24 @@ export default function ShopsPage() {
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="published"
-                  checked={published}
-                  onChange={(e) => setPublished(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                <Label htmlFor="published" className="text-sm font-normal">Publish to storefront (visible to customers)</Label>
+              {/* #835 (UXT-066): whether a shop is on the storefront is decided by the go-live review,
+                  never by this form (V43: the onboarding state machine is the only writer of
+                  Shop.published). It used to be a checkbox the server refused, discarding the whole
+                  edit with a developer error. Now it is a status, and `published` is never sent. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-testid="shop-publish-status">
+                <span className="font-medium text-slate-700">Storefront</span>
+                {editingShop?.published ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-700">
+                    <Globe className="h-3.5 w-3.5" aria-hidden="true" />Live on the storefront
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-slate-600">Not live yet</span>
+                    <Link href="/dashboard/onboarding" className="text-primary underline underline-offset-2">
+                      Go live from Onboarding
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1135,6 +1167,14 @@ export default function ShopsPage() {
               <span className="font-semibold">{deletingShop?.name}</span>? This
               action cannot be undone.
             </DialogDescription>
+            {deleteBlockedBy && (
+              <div role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <p>{deleteBlockedBy}</p>
+                <Link href="/dashboard/products" className="mt-1 inline-block underline underline-offset-2">
+                  Go to Products
+                </Link>
+              </div>
+            )}
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -1147,7 +1187,7 @@ export default function ShopsPage() {
             <Button
               variant="destructive"
               onClick={handleDelete}
-              disabled={submitting}
+              disabled={submitting || deleteBlockedBy !== null}
             >
               {submitting ? "Deleting..." : "Delete Shop"}
             </Button>

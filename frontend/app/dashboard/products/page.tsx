@@ -735,7 +735,7 @@ export default function ProductsPage() {
       if (currentPage === 0) fetchProducts()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      // SW-ADE-09 (swarm epic #964): a product an order still references is refused with a typed
+      // SW-ADE-09 (swarm epic #964), narrowed by #832: a product on an order that is still open is refused with a typed
       // 409 (errors/in-use). Say why and what to do instead, rather than the raw axios string.
       const res = (error as { response?: { status?: number; data?: { type?: unknown } } } | null)
         ?.response
@@ -749,7 +749,7 @@ export default function ProductsPage() {
               variant: "destructive",
               title: `${deletingProduct.title} can't be deleted`,
               description:
-                "It is on past orders, so it stays in your records. To take it off your menu, edit it and untick Available.",
+                "It is on an order that is still open. Complete or cancel that order, then delete it. To stop selling it now, edit it and untick Available.",
             }
           : {
               variant: "destructive",
@@ -1735,7 +1735,8 @@ export default function ProductsPage() {
             <DialogDescription>
               Are you sure you want to delete{" "}
               <span className="font-semibold">{deletingProduct?.title}</span>? This
-              action cannot be undone.
+              action cannot be undone. If customers have ordered it before, it leaves your menu and lists
+              but stays in your order history.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
