@@ -447,7 +447,7 @@ function KdsNewCard({
           <UnverifiedContactBadge contactVerified={order.contactVerified} />
         </div>
         <KdsCustomerNote note={order.notes} />
-        <KdsItemList items={order.items} />
+        <KdsItemList items={order.items} unitCount={order.unitCount} />
         <div className="flex items-center gap-1 text-xs text-slate-500">
           <Clock className="h-3 w-3" />
           {elapsedText(order.createdAt)}

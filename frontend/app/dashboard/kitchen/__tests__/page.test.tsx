@@ -930,3 +930,242 @@ describe("KitchenPage grid: a refused bump says why (issue #958)", () => {
     expect(within(card).queryByTestId("awaiting-payment")).toBeNull()
   })
 })
+
+/**
+ * #818: a double-tap on "Start Preparing" must not carry the order straight to READY.
+ *
+ * The bump flips the card to its next status optimistically, so the SAME button is re-rendered as
+ * "Mark Ready" before the first request has answered; a second tap then posted /mark-ready, which is
+ * a legal PREPARING -> READY transition on the server, and the customer got a "Ready!" email for food
+ * nobody had cooked. The server cannot tell a double-tap from a fast cook, so the guard lives here:
+ * one request in flight per order, and the control says so by being disabled.
+ */
+describe("KitchenPage grid: a double-tap advances an order one step (issue #818)", () => {
+  function stubOne(status: string) {
+    mockGet.mockReset()
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/shops")) return Promise.resolve({ data: shopsPayload })
+      if (url.startsWith("/api/v1/orders/kitchen")) {
+        return Promise.resolve({
+          data: {
+            content: [orderDetailPayload("order-0", status)],
+            totalElements: 1, totalPages: 1, size: 100, number: 0, first: true, last: true,
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    mockPost.mockReset()
+  }
+
+  const cardOf = async () =>
+    (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+
+  beforeEach(() => {
+    localStorage.clear()
+    mockToast.mockClear()
+  })
+
+  it("posts start-preparation once for two taps, and never mark-ready", async () => {
+    stubOne("CONFIRMED")
+    let answer!: (v: unknown) => void
+    mockPost.mockImplementation(
+      () => new Promise((resolve) => { answer = resolve })
+    )
+    render(<KitchenPage />)
+
+    const card = await cardOf()
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: "Start Preparing" }))
+    })
+    // The optimistic move re-labels the SAME button; the second tap lands on it.
+    const second = within(card).getByRole("button", { name: /Mark Ready/ })
+    await act(async () => {
+      fireEvent.click(second)
+    })
+
+    expect(mockPost).toHaveBeenCalledTimes(1)
+    expect(mockPost).toHaveBeenCalledWith("/api/v1/orders/order-0/start-preparation")
+    expect(mockPost).not.toHaveBeenCalledWith("/api/v1/orders/order-0/mark-ready")
+    // And the control says why a tap does nothing, to a screen reader as well as the eye.
+    expect(second).toBeDisabled()
+
+    await act(async () => { answer({ data: {} }) })
+  })
+
+  it("lets the NEXT step through once the first has answered", async () => {
+    stubOne("CONFIRMED")
+    mockPost.mockResolvedValue({ data: {} })
+    render(<KitchenPage />)
+
+    const card = await cardOf()
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: "Start Preparing" }))
+    })
+    const ready = await within(card).findByRole("button", { name: /Mark Ready/ })
+    await waitFor(() => expect(ready).toBeEnabled())
+    await act(async () => {
+      fireEvent.click(ready)
+    })
+    expect(mockPost).toHaveBeenNthCalledWith(2, "/api/v1/orders/order-0/mark-ready")
+  })
+
+  it("releases the guard when the request fails, so the cook can tap again", async () => {
+    stubOne("CONFIRMED")
+    mockPost.mockRejectedValueOnce(new Error("Network Error")).mockResolvedValue({ data: {} })
+    render(<KitchenPage />)
+
+    const card = await cardOf()
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: "Start Preparing" }))
+    })
+    const again = await within(card).findByRole("button", { name: "Start Preparing" })
+    await waitFor(() => expect(again).toBeEnabled())
+    await act(async () => {
+      fireEvent.click(again)
+    })
+    expect(mockPost).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * #866: a socket frame is NOT proof the board is current. With the API unreachable but the socket
+ * up, the frame handler advanced the "last synced" stamp BEFORE loading the order, then swallowed the
+ * failed load - so the pill said Live for ~50 s while the new order never appeared.
+ */
+describe("KitchenPage feed: a frame whose order cannot be loaded does not read as Live (issue #866)", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    mockToast.mockClear()
+  })
+
+  const frame = (newStatus: string) => ({
+    orderId: "order-9",
+    orderNumber: "ORD-9",
+    newStatus,
+  })
+  const lastHandler = () => {
+    const calls = (useStomp as jest.Mock).mock.calls.filter(([topic]) => typeof topic === "string")
+    return calls[calls.length - 1][1] as (e: unknown) => void
+  }
+
+  it("shows 'Not updating' at once when the frame's order cannot be fetched", async () => {
+    stubApi([])
+    render(<KitchenPage />)
+    const pill = await screen.findByTestId("kds-feed-pill")
+    fireEvent.click(screen.getByTestId("kds-sound-control"))
+    await waitFor(() => expect(pill).toHaveTextContent("Live"))
+
+    // The API goes away; the socket still delivers the frame.
+    mockGet.mockImplementation(() => Promise.reject(new Error("Network Error")))
+    await act(async () => {
+      lastHandler()(frame("PENDING"))
+    })
+
+    await waitFor(() => expect(pill).toHaveTextContent("Not updating"))
+    expect(await screen.findByTestId("kds-feed-banner")).toHaveTextContent(/not refreshing/i)
+  })
+
+  it("recovers by itself: the board re-read after the failed fetch brings the order and clears the pill", async () => {
+    stubApi([])
+    render(<KitchenPage />)
+    const pill = await screen.findByTestId("kds-feed-pill")
+    fireEvent.click(screen.getByTestId("kds-sound-control"))
+    await waitFor(() => expect(pill).toHaveTextContent("Live"))
+
+    // Only the single-order detail read fails; the board read lands and carries the order.
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/shops")) return Promise.resolve({ data: shopsPayload })
+      if (url.includes("/detail")) return Promise.reject(new Error("503"))
+      return Promise.resolve({ data: kitchenBoardPayload(["CONFIRMED"]) })
+    })
+    await act(async () => {
+      lastHandler()(frame("CONFIRMED"))
+    })
+
+    expect(await screen.findAllByText("Alice")).not.toHaveLength(0)
+    await waitFor(() => expect(pill).toHaveTextContent("Live"))
+  })
+})
+
+/**
+ * #824: the board is a first-in-first-out queue and a ticket's size is what the cook must make.
+ */
+describe("KitchenPage grid: oldest first, and units not lines (issue #824)", () => {
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+
+  function stubTickets(tickets: Array<Record<string, unknown>>) {
+    mockGet.mockReset()
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/shops")) return Promise.resolve({ data: shopsPayload })
+      if (url.startsWith("/api/v1/orders/kitchen")) {
+        return Promise.resolve({
+          data: {
+            content: tickets,
+            totalElements: tickets.length, totalPages: 1, size: 100, number: 0, first: true, last: true,
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    mockPost.mockReset()
+    mockPost.mockResolvedValue({ data: {} })
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it("lists the longest-waiting ticket first", async () => {
+    stubTickets([
+      { ...orderDetailPayload("order-new", "PREPARING", minutesAgo(1)), orderNumber: "ORD-NEWEST" },
+      { ...orderDetailPayload("order-old", "PREPARING", minutesAgo(40)), orderNumber: "ORD-OLDEST" },
+      { ...orderDetailPayload("order-mid", "CONFIRMED", minutesAgo(10)), orderNumber: "ORD-MIDDLE" },
+    ])
+    render(<KitchenPage />)
+
+    await screen.findByText("ORD-OLDEST")
+    const order = screen
+      .getAllByTestId("kds-grid-card")
+      .map((c) => (/ORD-(OLDEST|MIDDLE|NEWEST)/.exec(c.textContent ?? "") ?? [])[0])
+    expect(order).toEqual(["ORD-OLDEST", "ORD-MIDDLE", "ORD-NEWEST"])
+  })
+
+  it("counts UNITS in the ticket summary when the order records them", async () => {
+    // One line, six Zobo: the customer's basket said 6, the board used to say 1.
+    stubTickets([
+      {
+        ...orderDetailPayload("order-0", "CONFIRMED"),
+        unitCount: 6,
+        items: [{ ...orderDetailPayload("x", "CONFIRMED").items[0], quantity: 6, productName: "Zobo" }],
+      },
+    ])
+    render(<KitchenPage />)
+
+    const card = (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+    expect(within(card).getByText("6 items")).toBeInTheDocument()
+    expect(within(card).queryByText("1 item")).toBeNull()
+    // The per-line list is untouched.
+    expect(within(within(card).getByTestId("kds-item-list")).getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("says '1 item' for one unit, not '1 items'", async () => {
+    stubTickets([
+      {
+        ...orderDetailPayload("order-0", "CONFIRMED"),
+        unitCount: 1,
+        items: [{ ...orderDetailPayload("x", "CONFIRMED").items[0], quantity: 1 }],
+      },
+    ])
+    render(<KitchenPage />)
+    const card = (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+    expect(within(card).getByText("1 item")).toBeInTheDocument()
+  })
+
+  it("falls back to the line count when the order does not record units (older rows)", async () => {
+    stubTickets([{ ...orderDetailPayload("order-0", "CONFIRMED"), unitCount: null }])
+    render(<KitchenPage />)
+    const card = (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+    expect(within(card).getByText("1 item")).toBeInTheDocument()
+  })
+})

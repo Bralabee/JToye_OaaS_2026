@@ -37,6 +37,48 @@ export interface FinanceTransactionsPage {
   scope: FinanceScope | null
 }
 
+/** A preset on the Finance page's date control (#827). */
+export type FinancePreset = "today" | "last7" | "month" | "all"
+
+/** The UK calendar day (Europe/London, never the machine's zone) of `now` as an ISO date. */
+export function ukToday(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ""
+  return `${get("year")}-${get("month")}-${get("day")}`
+}
+
+/** `iso` shifted by whole days. Pure calendar arithmetic on the date, so a DST change cannot move it. */
+export function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+
+/**
+ * The inclusive UK-day range a preset means, "" = unbounded. Today is one day; last 7 days is today
+ * and the six before; this month runs from the 1st of the UK month to today; all time is no bound.
+ */
+export function financePresetRange(
+  preset: FinancePreset,
+  now: Date = new Date()
+): { from: string; to: string } {
+  const today = ukToday(now)
+  switch (preset) {
+    case "today":
+      return { from: today, to: today }
+    case "last7":
+      return { from: addDaysIso(today, -6), to: today }
+    case "month":
+      return { from: `${today.slice(0, 8)}01`, to: today }
+    default:
+      return { from: "", to: "" }
+  }
+}
+
 /** `shopId=…&from=…&to=…` for the fields present, in that order; "" when none are. */
 export function financeQueryString(query: FinanceQuery): string {
   const params = new URLSearchParams()

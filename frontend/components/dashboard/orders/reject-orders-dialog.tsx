@@ -83,6 +83,36 @@ export function rejectTitleCopy(orders: ReadonlyArray<RejectableOrder>): string 
   return orders.length === 1 ? `Reject order ${orders[0].label}?` : `Reject ${orders.length} orders?`
 }
 
+/**
+ * #820 "cancel" mode: the Orders list's per-row Cancel. Same dialog, same required reason kept on the
+ * order and never sent to the customer; it differs in WHICH endpoint it posts and in its words.
+ * A cancel is not a reject: it also covers an order the kitchen has already accepted (CONFIRMED),
+ * which the bulk-cancel path deliberately refuses with ALREADY_ACCEPTED, so this mode posts the
+ * single-order cancel (`POST /orders/{id}/cancel {reasonCode}`) and reads the server's 200 as the
+ * result - there is nothing to summarise for one order.
+ */
+export function cancelTitleCopy(order: RejectableOrder): string {
+  return `Cancel order ${order.label}?`
+}
+
+export const CANCEL_CONFIRM_COPY = "Cancel order"
+export const CANCEL_BODY_COPY =
+  "The customer is told the order was cancelled. This can't be undone. " +
+  "The reason stays on the order for your records and isn't sent to the customer."
+export const CANCEL_FAILED_COPY =
+  "Couldn't cancel this order. Check your connection and try again. Nothing was changed."
+export const CANCEL_FORBIDDEN_COPY = "You don't have access to cancel this order. Nothing was changed."
+export const CANCEL_REFUSED_COPY =
+  "Couldn't cancel this order. It may have changed on another screen. Nothing was changed."
+
+/** The copy for a failed single cancel (nothing was changed in every case). */
+export function describeCancelFailure(error: unknown): string {
+  const response = (error as ProblemResponse | null)?.response
+  if (!response) return CANCEL_FAILED_COPY
+  if (response.status === 403) return CANCEL_FORBIDDEN_COPY
+  return CANCEL_REFUSED_COPY
+}
+
 export function rejectConfirmCopy(count: number): string {
   return count === 1 ? "Reject order" : `Reject ${count} orders`
 }
@@ -185,6 +215,11 @@ export interface RejectOrdersDialogProps {
   onRejected: (orderIds: string[]) => void
   /** Called when the summary is dismissed after a submit — the caller clears its selection and re-reads. */
   onClosedAfterSubmit?: () => void
+  /**
+   * "reject" (default, unchanged): the bulk-cancel path of the kitchen's New lane and the Orders
+   * page's selection. "cancel" (#820): ONE order, the single-order cancel, closes on the server's 200.
+   */
+  mode?: "reject" | "cancel"
 }
 
 type Phase = "confirm" | "summary"
@@ -195,7 +230,9 @@ export function RejectOrdersDialog({
   orders,
   onRejected,
   onClosedAfterSubmit,
+  mode = "reject",
 }: RejectOrdersDialogProps) {
+  const cancelMode = mode === "cancel"
   const [reason, setReason] = useState<RejectReasonCode | "">("")
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -243,6 +280,20 @@ export function RejectOrdersDialog({
     setPending(true)
     setFailure(null)
     setSubmitted(orders)
+    if (cancelMode) {
+      // #820: the single-order cancel. The server's 200 IS the result; there is no per-order outcome
+      // to summarise, so the dialog closes and the caller re-reads (onClosedAfterSubmit).
+      try {
+        await apiClient.post(`/api/v1/orders/${orders[0].id}/cancel`, { reasonCode: reason })
+        onRejected([orders[0].id])
+        finish()
+      } catch (e: unknown) {
+        setFailure(describeCancelFailure(e))
+      } finally {
+        setPending(false)
+      }
+      return
+    }
     try {
       const res = await apiClient.post<BulkCancelResponse>(BULK_CANCEL_ENDPOINT, {
         orderIds: orders.map((o) => o.id),
@@ -263,8 +314,8 @@ export function RejectOrdersDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{rejectTitleCopy(shown)}</DialogTitle>
-          <DialogDescription>{rejectBodyCopy(count)}</DialogDescription>
+          <DialogTitle>{cancelMode && shown[0] ? cancelTitleCopy(shown[0]) : rejectTitleCopy(shown)}</DialogTitle>
+          <DialogDescription>{cancelMode ? CANCEL_BODY_COPY : rejectBodyCopy(count)}</DialogDescription>
         </DialogHeader>
 
         {phase === "confirm" ? (
@@ -319,7 +370,7 @@ export function RejectOrdersDialog({
                 onClick={handleConfirm}
                 disabled={pending || !reason}
               >
-                {pending ? "Working…" : rejectConfirmCopy(count)}
+                {pending ? "Working…" : cancelMode ? CANCEL_CONFIRM_COPY : rejectConfirmCopy(count)}
               </Button>
             </DialogFooter>
           </>

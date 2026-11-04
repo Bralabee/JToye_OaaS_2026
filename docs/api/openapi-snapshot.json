@@ -3662,6 +3662,37 @@
         ],
         "type" : "object"
       },
+      "OrderTimelineEventDto" : {
+        "description" : "One entry of an order's activity timeline: what changed, when, and who did it.",
+        "properties" : {
+          "actorName" : {
+            "type" : "string"
+          },
+          "actorType" : {
+            "type" : "string"
+          },
+          "at" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "detail" : {
+            "type" : "string"
+          },
+          "fromStatus" : {
+            "type" : "string"
+          },
+          "kind" : {
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "Outcome" : {
         "description" : "REJECTED: it was PENDING and is now CANCELLED, with the reason stored. ALREADY_ACCEPTED: the kitchen had already taken it (or it is not a placed order), so it was left as it was. ALREADY_CANCELLED: it was already cancelled, refunded or voided; nothing to do. NOT_FOUND: no such order the caller may act on (it does not exist, belongs to a shop the caller is not granted, or belongs to another tenant; these are deliberately indistinguishable).",
         "enum" : [
@@ -7548,8 +7579,19 @@
     },
     "/api/v1/customers" : {
       "get" : {
-        "description" : "Returns a paginated list of customers for the authenticated tenant",
+        "description" : "Returns a paginated list of customers for the authenticated tenant. Optional q searches EVERY page: a case-insensitive substring of the name, the phone (any spelling: +44, spaces, hyphens, brackets) or - only for a caller who sees every customer's email - the email. q is bounded to 100 characters; blank is no search.",
         "operationId" : "list_4",
+        "parameters" : [
+          {
+            "description" : "Search text; matched over all pages",
+            "in" : "query",
+            "name" : "q",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
         "responses" : {
           "200" : {
             "content" : {
@@ -9369,7 +9411,7 @@
     },
     "/api/v1/orders" : {
       "get" : {
-        "description" : "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant.",
+        "description" : "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant. Optional q searches EVERY page (not just the one returned): a case-insensitive substring of the order number or id, the customer's name, the customer's phone (any spelling: +44, spaces, hyphens, brackets) or - only where the caller sees full customer contact - the customer's email. q is bounded to 100 characters; blank is no search.",
         "operationId" : "getAllOrders",
         "parameters" : [
           {
@@ -9378,6 +9420,14 @@
             "required" : false,
             "schema" : {
               "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "q",
+            "required" : false,
+            "schema" : {
               "type" : "string"
             }
           },
@@ -10662,6 +10712,67 @@
           }
         ],
         "summary" : "Submit order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/timeline" : {
+      "get" : {
+        "description" : "Who changed the order, to what, and when, oldest first: placed, each status change, payment changes and a void, read from the order's audit history. A change made by a signed-in person names them (actorType STAFF); one made with no one signed in - the customer at checkout, a payment webhook, a scheduled job - is actorType SYSTEM. Requires at least STAFF on the order's shop.",
+        "operationId" : "timeline",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/OrderTimelineEventDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The timeline, oldest first (may be empty for an order with no recorded history)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "shop-access-denied: the caller holds no STAFF grant on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Order activity timeline",
         "tags" : [
           "Orders"
         ]

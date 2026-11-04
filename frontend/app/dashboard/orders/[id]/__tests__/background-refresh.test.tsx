@@ -35,6 +35,9 @@ import { VOID_REASON_LABEL } from "@/components/dashboard/orders/void-order-dial
 import type { OrderDetail, OrderStateChangeEvent } from "@/types/api"
 
 jest.mock("@/lib/api-client")
+// These tests count and queue the DETAIL reads one by one; the activity timeline (#857) makes its own
+// GET and has its own test (order-timeline.test.tsx), so it is left out of the sequence here.
+jest.mock("@/components/dashboard/orders/order-timeline", () => ({ OrderTimeline: () => null }))
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
 
 // Module-level, so the page sees ONE stable function and the test can read its calls.

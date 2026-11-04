@@ -203,6 +203,8 @@ function undeclaredAllergenNames(warnings: ProductAllergenWarning[] | null | und
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
+  /** #858: products with an availability PATCH in flight. */
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(() => new Set())
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [currentPage, setCurrentPage] = useState(0)
@@ -304,6 +306,44 @@ export default function ProductsPage() {
       setShops(await fetchAllMyShops())
     } catch {
       // Shops are optional — fail silently
+    }
+  }
+
+  /**
+   * #858: put a product on / take it off sale from its row. Optimistic, rolled back with the server's
+   * reason on failure. PATCH carries ONLY `available` (37-39: it cannot express an allergen or an
+   * ingredient), absolute and so idempotent. One request in flight per product.
+   */
+  const toggleAvailability = async (product: Product) => {
+    if (togglingIds.has(product.id)) return
+    const next = !product.available
+    const setAvailableOnRow = (value: boolean) =>
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, available: value } : p)))
+    setTogglingIds((prev) => new Set(prev).add(product.id))
+    setAvailableOnRow(next)
+    try {
+      await apiClient.patch(`/api/v1/products/${product.id}`, { available: next })
+      toast({
+        title: next ? `${product.title} is back on sale` : `${product.title} marked sold out`,
+        description: next
+          ? "Customers can order it again."
+          : "Customers can no longer order it. Tap again to put it back.",
+      })
+    } catch (error: unknown) {
+      setAvailableOnRow(!next)
+      const problem = await readProblem(error)
+      toast({
+        variant: "destructive",
+        title: `Couldn't update ${product.title}`,
+        description:
+          problem.detail ?? "Check your connection and try again. Nothing was changed.",
+      })
+    } finally {
+      setTogglingIds((prev) => {
+        const rest = new Set(prev)
+        rest.delete(product.id)
+        return rest
+      })
     }
   }
 
@@ -996,11 +1036,34 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {product.available ? (
-                              <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
-                            ) : (
-                              <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
-                            )}
+                            {/* #858: one tap to 86 an item (or put it back), through the narrow PATCH that
+                                can only change availability. The icon stays as the visual state; the
+                                button is the 44px target. */}
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={!!product.available}
+                              aria-label={
+                                product.available
+                                  ? `${product.title}: available. Tap to mark sold out`
+                                  : `${product.title}: sold out. Tap to mark available`
+                              }
+                              title={product.available ? "Available - tap to mark sold out" : "Sold out - tap to mark available"}
+                              disabled={togglingIds.has(product.id)}
+                              onClick={() => toggleAvailability(product)}
+                              className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                                product.available
+                                  ? "text-emerald-800 hover:bg-emerald-50"
+                                  : "text-slate-700 hover:bg-slate-100"
+                              }`}
+                            >
+                              {product.available ? (
+                                <Eye className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                              ) : (
+                                <EyeOff className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                              )}
+                              <span aria-hidden="true">{product.available ? "On" : "Sold out"}</span>
+                            </button>
                             {product.featured && (
                               <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
                             )}

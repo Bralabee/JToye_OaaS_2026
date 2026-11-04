@@ -36,11 +36,22 @@ export function orderLabel(order: Pick<OrderDetail, "orderNumber" | "id">): stri
  * 14px, because a 12px inline run cannot carry a per-item allergen badge legibly at the 0.6-1.5 m a
  * kitchen display is read from.
  */
-export function KdsItemList({ items }: { items: OrderDetail["items"] | undefined }) {
-  const itemSummary =
-    items && items.length > 0
-      ? `${items.length} item${items.length !== 1 ? "s" : ""}`
-      : "No items"
+export function KdsItemList({
+  items,
+  unitCount,
+}: {
+  items: OrderDetail["items"] | undefined
+  /**
+   * #824 (V66): UNITS on the order - what the customer counted in the basket and what the cook has
+   * to make. Absent/null = not recorded (older rows); the summary then falls back to the number of
+   * lines, which is what it always said.
+   */
+  unitCount?: number | null
+}) {
+  const hasItems = !!items && items.length > 0
+  // A 35-unit ticket on 18 lines read "18 items" here while the customer's basket said 35.
+  const size = unitCount != null && hasItems ? unitCount : (items?.length ?? 0)
+  const itemSummary = hasItems ? `${size} item${size !== 1 ? "s" : ""}` : "No items"
   return (
     <div className="text-sm text-slate-600">
       <span className="font-medium">{itemSummary}</span>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useRef, useState, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
@@ -320,6 +320,9 @@ const getAvailableTransitions = (order: {
 
 const PAGE_SIZE = 20
 
+/** #822: how long the search box waits after the last keystroke before asking the server. */
+const SEARCH_DEBOUNCE_MS = 300
+
 /** The sticky bar's confirm label (UI-SPEC § D1 "Bulk reject (Orders page)"), singular at one. */
 export function rejectSelectionCopy(count: number): string {
   return count === 1 ? "Reject 1 order" : `Reject ${count} orders`
@@ -340,8 +343,18 @@ function OrdersPageInner() {
   const [productsTruncated, setProductsTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
-  /** SW-ADE-10: a text search over the orders already loaded on this page (no new request). */
+  /**
+   * What is typed in the search box. It filters the rows already loaded AT ONCE (SW-ADE-10), and
+   * after a pause becomes {@link appliedQuery}, which the server searches over every page (#822).
+   */
   const [searchQuery, setSearchQuery] = useState("")
+  /** #822: the trimmed text the list was last asked for (sent as `q`); "" = the ordinary list. */
+  const [appliedQuery, setAppliedQuery] = useState("")
+  /** True for the one re-read a new search triggers, so the page keeps the box (and its focus) instead of swapping to its spinner. */
+  const quietNextFetchRef = useRef(false)
+  /** #820: the order a row Cancel was tapped on, held while the reason dialog asks why. */
+  const [cancelTarget, setCancelTarget] = useState<RejectableOrder | null>(null)
+  const [cancelOpen, setCancelOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
@@ -398,10 +411,25 @@ function OrdersPageInner() {
   const { contextShopId } = useShopContext()
 
   useEffect(() => {
-    fetchData()
-    // A switcher change must refetch so the list narrows live (no reload).
+    const quiet = quietNextFetchRef.current
+    quietNextFetchRef.current = false
+    fetchData({ quiet })
+    // A switcher change must refetch so the list narrows live (no reload); so does a new search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, contextShopId])
+  }, [currentPage, contextShopId, appliedQuery])
+
+  // #822: after a pause in typing, hand the text to the server (from page 0 - a new search is a new
+  // list). One request per pause, not per keystroke.
+  useEffect(() => {
+    const next = searchQuery.trim()
+    if (next === appliedQuery) return
+    const timer = setTimeout(() => {
+      quietNextFetchRef.current = true
+      setAppliedQuery(next)
+      setCurrentPage(0)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [searchQuery, appliedQuery])
 
   // #485: the create-order dialog's two pickers, loaded ONCE on mount.
   //
@@ -427,7 +455,11 @@ function OrdersPageInner() {
   // (nightly #683, abuse-bounds.spec.ts on mobile). The rows are kept until the new page arrives.
   useOrderEvents(() => fetchData({ quiet: true }))
 
+  /** #822: only the newest list request may write state, so a slow answer to "a" cannot overwrite the answer to "ab". */
+  const fetchSeqRef = useRef(0)
+
   const fetchData = async ({ quiet = false }: { quiet?: boolean } = {}) => {
+    const seq = ++fetchSeqRef.current
     try {
       if (!quiet) setLoading(true)
       // Issue #95: /orders/customer/{id} is paginated now (Page response, same
@@ -438,14 +470,19 @@ function OrdersPageInner() {
       // customer-scoped endpoint takes no shop param, so that branch narrows on
       // the rendered rows instead (see visibleOrders).
       const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
+      // #822: the search runs on the server over every page. The customer-scoped endpoint has no
+      // search, so that branch keeps filtering its own rows in the browser (see `localNeedle`).
+      const searchScope = appliedQuery && !customerIdParam ? `&q=${encodeURIComponent(appliedQuery)}` : ""
       const ordersRes = customerIdParam
         ? await apiClient.get(`/api/v1/orders/customer/${customerIdParam}?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
-        : await apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}`)
+        : await apiClient.get(`/api/v1/orders?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${shopScope}${searchScope}`)
+      if (seq !== fetchSeqRef.current) return
       setOrders(ordersRes.data.content || [])
       setTotalPages(ordersRes.data.totalPages || 0)
       setTotalElements(ordersRes.data.totalElements || 0)
       setLoadFailed(false)
     } catch (error: unknown) {
+      if (seq !== fetchSeqRef.current) return
       const { message } = describeLoadError(error)
       toast({
         variant: "destructive",
@@ -457,7 +494,7 @@ function OrdersPageInner() {
       setLoadFailed(true)
       setLoadErrorMessage(message)
     } finally {
-      setLoading(false)
+      if (seq === fetchSeqRef.current) setLoading(false)
     }
   }
 
@@ -501,9 +538,16 @@ function OrdersPageInner() {
       : orders
 
   // SW-ADE-10 (swarm epic #964): order number, customer name or email, case-insensitive, over the
-  // rows this page already holds. The list is paged server-side, so the search covers this page only
-  // and says so in its placeholder.
-  const needle = searchQuery.trim().toLowerCase()
+  // rows this page already holds - an instant preview while the box is being typed in.
+  //
+  // #822: the REAL search is the server's. Once the typed text has been applied (`appliedQuery`) the
+  // rows on screen ARE the server's matches over every page, and filtering them again here would
+  // hide the ones the browser cannot compute (a phone number, an id), so the local filter steps
+  // aside. It stays for the two cases with no server search behind them: text still being typed,
+  // and the customer-scoped list (/orders/customer/{id} takes no q).
+  const typed = searchQuery.trim()
+  const searchActive = typed !== ""
+  const needle = (customerIdParam || typed !== appliedQuery ? typed : "").toLowerCase()
   // Status first, then the search, so an empty page can name the filter that emptied it (review
   // round 1 on #1076: the search was blamed when the status filter had removed every row).
   const statusMatches = visibleOrders.filter(
@@ -529,6 +573,16 @@ function OrdersPageInner() {
     .map((o) => ({ id: o.id, label: o.orderNumber ?? `${o.id.substring(0, 8)}...` }))
   const allPendingSelected =
     pendingOnPage.length > 0 && pendingOnPage.every((o) => selectedIds.has(o.id))
+
+  /** Clear the box AND the applied search at once, without waiting out the typing pause. */
+  const clearSearch = () => {
+    setSearchQuery("")
+    if (appliedQuery !== "") {
+      quietNextFetchRef.current = true
+      setAppliedQuery("")
+      setCurrentPage(0)
+    }
+  }
 
   const toggleSelected = (orderId: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -675,6 +729,23 @@ function OrdersPageInner() {
     }
   }
 
+  /**
+   * #820: a row action. Cancel is the one that cannot be taken back and the one that tells the customer,
+   * so it never fires from a bare tap: it asks for a reason first (RejectOrdersDialog, "cancel" mode).
+   * Every other transition is unchanged.
+   */
+  const requestTransition = (
+    order: { id: string; orderNumber?: string | null },
+    transition: StateTransition
+  ) => {
+    if (transition.endpoint === "cancel") {
+      setCancelTarget({ id: order.id, label: order.orderNumber ?? `${order.id.substring(0, 8)}...` })
+      setCancelOpen(true)
+      return
+    }
+    handleStateTransition(order.id, transition.endpoint, transition.action)
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -774,9 +845,9 @@ function OrdersPageInner() {
                 {/* #688: never assert a count nothing loaded (see products). */}
                 {loadFailed
                   ? "—"
-                  : `${totalElements} order${totalElements !== 1 ? "s" : ""} in total${
-                      statusFilter !== "ALL" ? ` (filtered: ${statusFilter})` : ""
-                    }`}
+                  : `${totalElements} order${totalElements !== 1 ? "s" : ""} ${
+                      appliedQuery && !customerIdParam ? "match" : "in total"
+                    }${statusFilter !== "ALL" ? ` (filtered: ${statusFilter})` : ""}`}
               </CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -787,8 +858,8 @@ function OrdersPageInner() {
                 />
                 <Input
                   type="search"
-                  aria-label="Search orders on this page"
-                  placeholder="Order no., name or email"
+                  aria-label="Search orders"
+                  placeholder="Order no., name, phone or email"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-11 w-full pl-9 sm:h-10 sm:w-[240px]"
@@ -838,16 +909,16 @@ function OrdersPageInner() {
                   Show all statuses
                 </Button>
               </div>
-            ) : filteredOrders.length === 0 && needle && statusMatches.length > 0 ? (
+            ) : filteredOrders.length === 0 && searchActive && (statusMatches.length > 0 || visibleOrders.length === 0) ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Search className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
-                  No orders match &ldquo;{searchQuery.trim()}&rdquo;
+                  No orders match &ldquo;{typed}&rdquo;
                 </h3>
                 <p className="mb-4 text-sm text-slate-500">
-                  The search covers the orders on this page. Try another name, email or order number.
+                  Try another name, phone number or order number{customerIdParam ? " (this customer's orders on this page)" : ""}.
                 </p>
-                <Button onClick={() => setSearchQuery("")} variant="outline">
+                <Button onClick={clearSearch} variant="outline">
                   Clear search
                 </Button>
               </div>
@@ -1006,14 +1077,9 @@ function OrdersPageInner() {
                                 <Button
                                   key={transition.action}
                                   size="sm"
-                                  className={`${transition.color} text-white h-8`}
-                                  onClick={() =>
-                                    handleStateTransition(
-                                      order.id,
-                                      transition.endpoint,
-                                      transition.action
-                                    )
-                                  }
+                                  // #820: 32px is fine for a mouse; a thumb needs 44px (P2-FUN-12).
+                                  className={`${transition.color} text-white h-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:min-w-11`}
+                                  onClick={() => requestTransition(order, transition)}
                                   disabled={isProcessing}
                                 >
                                   <TransitionIcon className="mr-1 h-3 w-3" />
@@ -1088,6 +1154,24 @@ function OrdersPageInner() {
           // The list is re-read only now: fetchData swaps the page for its spinner, which would
           // unmount the dialog before the summary could be read.
           setSelectedIds(new Set())
+          fetchData()
+        }}
+      />
+
+      {/* #820: the per-row Cancel asks why first. The single-order cancel (not bulk-cancel, which
+          refuses an order the kitchen already accepted), so a CONFIRMED order can still be cancelled. */}
+      <RejectOrdersDialog
+        mode="cancel"
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        orders={cancelTarget ? [cancelTarget] : []}
+        onRejected={() => {
+          toast({
+            title: "Order updated",
+            description: "Order has been cancelled successfully.",
+          })
+        }}
+        onClosedAfterSubmit={() => {
           fetchData()
         }}
       />
@@ -1473,11 +1557,7 @@ function OrdersPageInner() {
                         size="sm"
                         className={`${transition.color} text-white`}
                         onClick={() => {
-                          handleStateTransition(
-                            selectedOrderDetail.id,
-                            transition.endpoint,
-                            transition.action
-                          )
+                          requestTransition(selectedOrderDetail, transition)
                           setDetailDialogOpen(false)
                         }}
                       >
