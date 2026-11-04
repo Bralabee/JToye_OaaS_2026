@@ -55,7 +55,10 @@ import java.util.UUID;
  *   <li>an order still awaiting its payment (the {@link OrderService#isAwaitingUpfrontOrDepositPayment} rule,
  *       in SQL): the shop cannot accept it yet, so "the shop has not accepted" would be untrue;</li>
  *   <li>an order the shop placed itself ({@code placed_via = 'VENDOR'}): see {@link #ALERTABLE_PREDICATE};</li>
- *   <li>an order already alerted.</li>
+ *   <li>an order already alerted;</li>
+ *   <li>an order PENDING for longer than {@link #MAX_AGE_PROPERTY} (default 120 minutes): an alert is only
+ *       true while the shop could still be expected to react, and the first run after a deploy must never email
+ *       the customer of every old PENDING order in the table. Such an order is neither emailed nor stamped.</li>
  * </ul>
  *
  * <p>"Left PENDING" is measured from the moment the order BECAME PENDING, never from its last touch
@@ -77,6 +80,7 @@ public class UnacceptedOrderSweep {
     private static final Logger log = LoggerFactory.getLogger(UnacceptedOrderSweep.class);
 
     public static final String THRESHOLD_PROPERTY = "jtoye.orders.unaccepted-alert.threshold";
+    public static final String MAX_AGE_PROPERTY = "jtoye.orders.unaccepted-alert.max-age-minutes";
 
     /** Per tenant per run; the next run takes the rest. Keeps one tenant's backlog from holding a transaction. */
     private static final int BATCH = 200;
@@ -116,6 +120,7 @@ public class UnacceptedOrderSweep {
             "SELECT id FROM (SELECT o.id, " + PENDING_SINCE_SQL + " AS pending_since FROM orders o "
                     + "WHERE o.tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + ") t "
                     + "WHERE pending_since < now() - make_interval(secs => :secs) "
+                    + "AND pending_since >= now() - make_interval(secs => :maxSecs) "
                     + "ORDER BY pending_since LIMIT " + BATCH;
 
     /**
@@ -142,6 +147,7 @@ public class UnacceptedOrderSweep {
     private final ConsentGate consentGate;
     private final boolean enabled;
     private final long thresholdSeconds;
+    private final long maxAgeSeconds;
 
     @Autowired
     public UnacceptedOrderSweep(OrderRepository orderRepository,
@@ -151,7 +157,8 @@ public class UnacceptedOrderSweep {
                                 EmailNotificationService emailService,
                                 @Nullable ConsentGate consentGate,
                                 @Value("${jtoye.orders.unaccepted-alert.enabled:true}") boolean enabled,
-                                @Value("${" + THRESHOLD_PROPERTY + ":10m}") Duration threshold) {
+                                @Value("${" + THRESHOLD_PROPERTY + ":10m}") Duration threshold,
+                                @Value("${" + MAX_AGE_PROPERTY + ":120}") long maxAgeMinutes) {
         this.orderRepository = orderRepository;
         this.entityManager = entityManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -163,6 +170,13 @@ public class UnacceptedOrderSweep {
             throw new IllegalStateException(THRESHOLD_PROPERTY + " must be at least 1 minute, was " + threshold);
         }
         this.thresholdSeconds = threshold.toSeconds();
+        // Fail fast: a window [now - maxAge, now - threshold] that is empty or inverted would silently disable
+        // the alert, which is worse than refusing to start.
+        if (maxAgeMinutes <= 0 || Duration.ofMinutes(maxAgeMinutes).compareTo(threshold) <= 0) {
+            throw new IllegalStateException(MAX_AGE_PROPERTY + " (" + maxAgeMinutes + " minutes) must be greater than "
+                    + THRESHOLD_PROPERTY + " (" + threshold + ")");
+        }
+        this.maxAgeSeconds = Duration.ofMinutes(maxAgeMinutes).toSeconds();
     }
 
     /** One order alerted: everything the after-commit side effects need, as values. */
@@ -223,6 +237,7 @@ public class UnacceptedOrderSweep {
         List<Object> ids = entityManager.createNativeQuery(CANDIDATES_SQL)
                 .setParameter("tenantId", tenantId)
                 .setParameter("secs", (double) thresholdSeconds)
+                .setParameter("maxSecs", (double) maxAgeSeconds)
                 .getResultList();
         List<Alerted> alerted = new ArrayList<>();
         for (Object raw : ids) {
