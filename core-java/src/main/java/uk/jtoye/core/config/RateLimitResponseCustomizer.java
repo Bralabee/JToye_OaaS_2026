@@ -25,9 +25,11 @@ import java.util.Map;
  * {@code Retry-After} header. The spec documented that on 7 of 207 operations, so an integrator
  * generating a client from it was never told to back off on the response it is most likely to meet.
  *
- * <p>One rule in one place, the {@link ProblemDetailResponseCustomizer} way: the paths the interceptor
- * does not guard come from {@link RateLimitInterceptor#isExcludedPath}, not from a copy of its list, so
- * a path added to the exclusion stops being documented here too.
+ * <p>One rule in one place, the {@link ProblemDetailResponseCustomizer} way: the paths the limiter never
+ * guards are {@link RateLimitInterceptor#EXCLUDED_PATH_PATTERNS}, the same array {@code WebConfig} registers
+ * the interceptor with, so a path added to the exclusion stops being documented here too. What cannot be
+ * known from a path is the interceptor's other pass-through (a non-{@code /public} request with no tenant
+ * claim is not throttled); the text says so rather than claiming every call draws on a bucket.
  *
  * <p>An operation that already documents its own 429 (the per-IP limits on the public intake endpoints)
  * keeps that description and gains the headers; the limiter can answer on those paths as well.
@@ -39,7 +41,9 @@ public class RateLimitResponseCustomizer implements OpenApiCustomizer {
 
     static final String DESCRIPTION = "Rate limit exceeded (errors/rate-limited). Wait Retry-After seconds, then retry "
             + "the same request; retryAfterSeconds in the body carries the same number. Authenticated calls draw on "
-            + "the tenant's bucket, /public calls on the client address's.";
+            + "the tenant's bucket (a call that carries no tenant claim is not throttled), /public calls on the "
+            + "client address's. This describes errors/rate-limited only: an operation that can answer 429 for "
+            + "another typed reason says so in its own text, and that reason is not retried by waiting.";
 
     @Override
     public void customise(OpenAPI openApi) {
@@ -76,7 +80,7 @@ public class RateLimitResponseCustomizer implements OpenApiCustomizer {
                     new MediaType().schema(new Schema<>().$ref("#/components/schemas/"
                             + ProblemDetailResponseCustomizer.SCHEMA_NAME))));
         }
-        header(r429, RETRY_AFTER, "Seconds to wait before retrying");
+        header(r429, RETRY_AFTER, "Seconds to wait before retrying (errors/rate-limited only; absent on any other 429)");
         header(r429, "X-RateLimit-Limit", "Capacity of the bucket that was exceeded");
         header(r429, "X-RateLimit-Remaining", "Tokens left in the bucket (0 on a 429)");
         header(r429, "X-RateLimit-Reset", "Unix time, in seconds, at which the bucket has refilled");

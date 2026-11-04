@@ -78,8 +78,18 @@ class OpenApiRateLimitAndPageableCustomizerTest {
         Operation op = pageable(40).customize(springdocOperation(), handler("bare"));
 
         Parameter size = op.getParameters().stream().filter(p -> p.getName().equals("size")).findFirst().orElseThrow();
-        assertThat(size.getSchema().getDefault()).isEqualTo(PageableParametersCustomizer.FALLBACK_SIZE);
+        assertThat(size.getSchema().getDefault()).isEqualTo(20); // the configured default-page-size (field default 20)
         assertThat(size.getSchema().getMaximum()).isEqualByComparingTo("40");
+    }
+
+    @Test
+    void anUnannotatedPageablePublishesTheCONFIGUREDDefaultPageSize() throws Exception {
+        PageableParametersCustomizer c = pageable(100);
+        ReflectionTestUtils.setField(c, "defaultPageSize", 35);
+        Operation op = c.customize(springdocOperation(), handler("bare"));
+
+        Parameter size = op.getParameters().stream().filter(p -> p.getName().equals("size")).findFirst().orElseThrow();
+        assertThat(size.getSchema().getDefault()).isEqualTo(35);
     }
 
     @Test
@@ -115,6 +125,29 @@ class OpenApiRateLimitAndPageableCustomizerTest {
         assertThat(r).isNotNull();
         assertThat(r.getHeaders()).containsKeys("Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset");
         assertThat(r.getContent()).containsKey("application/problem+json");
+    }
+
+    @Test
+    void everyPathTheInterceptorIsRegisteredToSkipIsNotToldItCanBeThrottled() {
+        // The registration list (WebConfig) and the spec share RateLimitInterceptor.EXCLUDED_PATH_PATTERNS, so
+        // a path that only the registration used to exclude (/swagger-ui.html) no longer slips through (#1127).
+        for (String path : new String[] {"/health", "/swagger-ui.html", "/swagger-ui/index.html", "/v3/api-docs",
+                "/v3/api-docs/x", "/v3/api-docs.yaml", "/actuator/health"}) {
+            OpenAPI api = specWith(path, new ApiResponses().addApiResponse("200", new ApiResponse().description("ok")));
+            new RateLimitResponseCustomizer().customise(api);
+            assertThat(api.getPaths().get(path).getGet().getResponses()).as(path).doesNotContainKey("429");
+        }
+        // CONTROL: a path that is not excluded still gains it.
+        OpenAPI api = specWith("/api/v1/shops", new ApiResponses().addApiResponse("200", new ApiResponse().description("ok")));
+        new RateLimitResponseCustomizer().customise(api);
+        assertThat(api.getPaths().get("/api/v1/shops").getGet().getResponses()).containsKey("429");
+    }
+
+    @Test
+    void theGenericDescriptionClaimsRateLimitedOnlyAndAdmitsTheNoTenantPassThrough() {
+        assertThat(RateLimitResponseCustomizer.DESCRIPTION)
+                .contains("errors/rate-limited only")
+                .contains("not throttled");
     }
 
     @Test

@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
@@ -1507,6 +1508,7 @@ class PublicStorefrontServiceTest {
             when(postcodeGeocoder.locateSearchTerm("BT1 5GS")).thenReturn(Optional.empty());
             when(postcodeGeocoder.postcodeShapedTerm("BT1 5GS")).thenReturn(
                     Optional.of(new PostcodeGeocoder.ShapedPostcode("BT15GS", PostcodeGeocoder.Precision.UNIT)));
+            when(postcodeGeocoder.isDatasetLoaded()).thenReturn(true);
 
             PublicStorefrontService.SearchOutcome outcome =
                     service.searchPublishedShops("BT1 5GS", PageRequest.of(0, 20));
@@ -1515,6 +1517,38 @@ class PublicStorefrontServiceTest {
             assertEquals("postcode-unrecognised; postcode=BT15GS; precision=unit",
                     outcome.interpretation().headerValue());
             assertTrue(outcome.page().isEmpty());
+        }
+
+        @Test
+        @DisplayName("#1127 review: with postcode_centroid empty or unreadable EVERY postcode is unfound, so the "
+                + "server says nothing about typos: TEXT")
+        void emptyCentroidTableNeverBlamesTheCustomer() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("SE22"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("SE22"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.empty());
+            when(postcodeGeocoder.postcodeShapedTerm("SE22")).thenReturn(
+                    Optional.of(new PostcodeGeocoder.ShapedPostcode("SE22", PostcodeGeocoder.Precision.DISTRICT)));
+            when(postcodeGeocoder.isDatasetLoaded()).thenReturn(false);
+
+            assertEquals(SearchInterpretation.Kind.TEXT,
+                    service.searchPublishedShops("SE22", PageRequest.of(0, 20)).interpretation().kind());
+        }
+
+        @Test
+        @DisplayName("#1127 review: a page PAST the full-text results is not 'the postcode was not found' while "
+                + "page 0 showed kitchens: the FTS total decides, not the page")
+        void pagePastTheResultsStaysText() {
+            Pageable pageTwo = PageRequest.of(2, 20);
+            Page<Shop> pastTheEnd = new PageImpl<>(List.of(), pageTwo, 5);
+            Page<Shop> likeEmpty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("ZZ99"), any())).thenReturn(pastTheEnd);
+            when(shopRepository.searchPublished(eq("ZZ99"), any())).thenReturn(likeEmpty);
+            when(postcodeGeocoder.locateSearchTerm("ZZ99")).thenReturn(Optional.empty());
+
+            assertEquals(SearchInterpretation.Kind.TEXT,
+                    service.searchPublishedShops("ZZ99", pageTwo).interpretation().kind());
+            verify(postcodeGeocoder, never()).postcodeShapedTerm(any()); // the FTS total (5) already settled it
         }
 
         @Test

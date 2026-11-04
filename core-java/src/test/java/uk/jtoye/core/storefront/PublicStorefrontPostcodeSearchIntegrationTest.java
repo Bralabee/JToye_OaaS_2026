@@ -494,6 +494,17 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
     }
 
     @Test
+    @DisplayName("#1127 review: with postcode_centroid EMPTY a postcode-shaped search is plain text, never "
+            + "'unrecognised' (the dataset not being loaded is not the customer's typo)")
+    void anEmptyCentroidTableNeverReportsAnUnrecognisedPostcode() throws Exception {
+        jdbc.update("DELETE FROM postcode_centroid"); // the next test's @BeforeEach seeds it again
+        mockMvc.perform(get("/public/shops").param("q", "BT1 5GS"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HEADER, "text"))
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    @Test
     @DisplayName("#877 / UXT-112 CONTROL: an ordinary food search that finds nothing is still plain text")
     void anEmptyFoodSearchIsStillText() throws Exception {
         mockMvc.perform(get("/public/shops").param("q", "zzzzqq"))

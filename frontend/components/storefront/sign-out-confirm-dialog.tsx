@@ -47,7 +47,10 @@ export function SignOutConfirmDialog({
             sign out.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-0">
+        {/* DOM order is visual order at every width: DialogFooter's default `flex-col-reverse` would draw the
+            destructive button ABOVE "Stay signed in" on a phone while focus starts on "Stay signed in"
+            (WCAG 2.4.3 / 1.3.2). */}
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-2 sm:space-x-0">
           <button
             type="button"
             onClick={() => onOpenChange(false)}

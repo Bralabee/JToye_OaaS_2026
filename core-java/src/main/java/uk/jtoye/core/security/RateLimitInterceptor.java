@@ -45,6 +45,25 @@ import java.util.function.Supplier;
 public class RateLimitInterceptor implements HandlerInterceptor {
 
     private static final Logger logger = LoggerFactory.getLogger(RateLimitInterceptor.class);
+
+    /**
+     * The ONE list of paths that are never rate limited. {@code WebConfig} registers the interceptor with
+     * exactly these as its exclusions, {@link #isExcludedPath} judges a request path by them, and
+     * {@code RateLimitResponseCustomizer} decides which operations the published spec says can answer 429 by
+     * them, so the three cannot disagree (#1127 review: {@code /swagger-ui.html} was excluded at
+     * registration but not in the old private list).
+     */
+    public static final String[] EXCLUDED_PATH_PATTERNS = {
+            "/actuator/**",
+            "/health",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/v3/api-docs/**",
+            "/v3/api-docs.yaml"
+    };
+
+    private static final org.springframework.util.AntPathMatcher EXCLUDED_MATCHER =
+            new org.springframework.util.AntPathMatcher();
     private static final String RATE_LIMIT_KEY_PREFIX = "rate_limit::";
     // issue #88 [P1-6]: distinct namespace for tenant-less public (guest) IP buckets so
     // a public flood can never consume a tenant's tokens and vice-versa (T-88-03).
@@ -397,10 +416,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      * @return true if path should be excluded, false otherwise
      */
     public static boolean isExcludedPath(String path) {
-        return path.startsWith("/actuator/") ||
-               path.equals("/health") ||
-               path.startsWith("/swagger-ui/") ||
-               path.startsWith("/v3/api-docs");
+        for (String pattern : EXCLUDED_PATH_PATTERNS) {
+            if (EXCLUDED_MATCHER.match(pattern, path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

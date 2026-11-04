@@ -286,6 +286,13 @@ public class PublicStorefrontController {
                     + "change, then resubmit under the same Idempotency-Key. An allergen-only change is "
                     + "errors/allergen-acknowledgement-stale, unchanged"),
             @ApiResponse(responseCode = "410", description = "The completed order has been deleted or expired; no replacement is created"),
+            @ApiResponse(responseCode = "429", description = "Two different 429s. (1) errors/rate-limited: the per-IP public "
+                    + "limit; it carries Retry-After and retryAfterSeconds, so wait that long and retry the same request. "
+                    + "(2) errors/order-cap-exceeded (code ORDER_CAP_EXCEEDED, with axis EMAIL | PHONE | IP and cap): this "
+                    + "customer already holds the most OPEN cash orders the shop allows. It carries NO Retry-After because "
+                    + "waiting does not clear it; a slot frees only when an open order completes. Do not retry the same "
+                    + "request; the reservation rolled back, so the same Idempotency-Key succeeds once an order has "
+                    + "completed. Branch on the problem type, never on the status alone"),
             @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload or shop "
                     + "(errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on "
                     + "each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement "

@@ -94,12 +94,26 @@ async function expectSaysWhatIsLost(ui: Ui) {
   expect(screen.getByRole("dialog")).toHaveTextContent(/basket/i)
 }
 
+async function expectFooterIsInVisualOrder(ui: Ui) {
+  await open(ui)
+  const dialog = screen.getByRole("dialog")
+  const stay = within(dialog).getByRole("button", { name: "Stay signed in" })
+  const footer = stay.parentElement as HTMLElement
+  // CONTROL: the two buttons share the footer, Stay first (it takes initial focus).
+  expect(Array.from(footer.children).map((c) => c.textContent)).toEqual(["Stay signed in", "Sign out"])
+  // twMerge resolves the footer's stock `flex-col-reverse` against ours: the reverse must be GONE, or a
+  // phone draws Sign out above the button focus starts on (WCAG 2.4.3 / 1.3.2).
+  expect(footer.classList.contains("flex-col")).toBe(true)
+  expect(footer.classList.contains("flex-col-reverse")).toBe(false)
+}
+
 describe("StorefrontNav: sign-out asks first", () => {
   it("tapping the icon opens a dialog and signs nobody out", () => expectOpensAndSignsNobodyOut(storefront))
   it("'Stay signed in' closes it and leaves the session alone", () => expectStayClosesIt(storefront))
   it("Escape closes it and leaves the session alone", () => expectEscapeClosesIt(storefront))
   it("the dialog's own Sign out signs out exactly once, towards a path on this site", () => expectConfirmSignsOutOnce(storefront))
   it("the dialog says what is lost", () => expectSaysWhatIsLost(storefront))
+  it("focus order and visual order agree on a phone (no flex-col-reverse)", () => expectFooterIsInVisualOrder(storefront))
 })
 
 describe("PublicHeader: sign-out asks first", () => {

@@ -160,6 +160,20 @@ class OpenApiContractTest {
     }
 
     @Test
+    void placingAGuestOrderDocumentsBothTypedTooManyRequestsProblemsDistinctly() throws IOException {
+        JsonNode spec = spec();
+        for (String path : new String[] {"/api/v1/public/shops/{slug}/orders", "/public/shops/{slug}/orders"}) {
+            String d429 = spec.at("/paths/" + path.replace("/", "~1") + "/post/responses/429/description").asString();
+            assertThat(d429).as(path + " 429 description (control: present)").isNotBlank();
+            assertThat(d429).as(path).contains("errors/rate-limited").contains("Retry-After");
+            assertThat(d429).as(path).contains("errors/order-cap-exceeded")
+                    .contains("NO Retry-After")
+                    .contains("Do not retry the same request")
+                    .contains("axis");
+        }
+    }
+
+    @Test
     void theBatchResponseCarriesBothSpellingsOfProcessedCount() throws IOException {
         JsonNode props = spec().at("/components/schemas/BatchSyncResponse/properties");
         assertThat(props.has("processedCount")).as("core's existing name stays").isTrue();

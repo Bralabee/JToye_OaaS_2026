@@ -35,8 +35,13 @@ import java.util.Objects;
 @Component
 public class PageableParametersCustomizer implements OperationCustomizer, OpenApiCustomizer {
 
-    /** Spring Data's fallback page size for a Pageable argument that carries no {@code @PageableDefault}. */
-    static final int FALLBACK_SIZE = 20;
+    /**
+     * The page size a Pageable argument gets when it carries no {@code @PageableDefault}: the resolver reads
+     * {@code spring.data.web.pageable.default-page-size} (20 when unset, Spring Data's own fallback), so the
+     * published default follows the configuration instead of restating a number.
+     */
+    @Value("${spring.data.web.pageable.default-page-size:20}")
+    private int defaultPageSize = 20;
 
     private static final String PAGEABLE_SCHEMA = "Pageable";
 
@@ -57,7 +62,7 @@ public class PageableParametersCustomizer implements OperationCustomizer, OpenAp
         List<Parameter> params = new ArrayList<>(operation.getParameters() == null ? List.of() : operation.getParameters());
         params.removeIf(p -> "pageable".equals(p.getName()) && "query".equals(p.getIn()));
 
-        int size = defaults == null ? FALLBACK_SIZE : (defaults.size() != 10 ? defaults.size() : defaults.value());
+        int size = defaults == null ? defaultPageSize : (defaults.size() != 10 ? defaults.size() : defaults.value());
         int page = defaults == null ? 0 : defaults.page();
         List<String> sortDefault = new ArrayList<>();
         if (defaults != null) {

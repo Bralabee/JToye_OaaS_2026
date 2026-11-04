@@ -158,6 +158,19 @@ describe("UXT-112: three empty searches, three different lines", () => {
     expect(line).not.toMatch(/further away/i)
   })
 
+  it("the empty-state panel below does not tell the customer to try a postcode they were just told was not found", () => {
+    lineFor("BT1 5GS", { kind: "unrecognised-postcode", postcode: "BT15GS", precision: "unit" })
+    expect(screen.getByRole("heading", { name: "Postcode not found" })).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Try a different dish, cuisine or postcode/)
+    expect(document.body.textContent).toMatch(/Check the postcode/)
+  })
+
+  it("CONTROL: a text miss keeps the generic panel", () => {
+    lineFor("zzzzqq", { kind: "text" })
+    expect(screen.getByRole("heading", { name: "No kitchens found" })).toBeInTheDocument()
+    expect(document.body.textContent).toMatch(/Try a different dish, cuisine or postcode/)
+  })
+
   it("a real postcode with no kitchen near it: says how far it looked", () => {
     const line = lineFor("AB10 1AA", { kind: "proximity", postcode: "AB101AA", precision: "unit", radiusKm: 5 })
     expect(line).toMatch(/No kitchens within 3\.1 miles of AB10 1AA/)
