@@ -141,6 +141,18 @@ export default function SignInPage() {
                 Customer sign in
               </Link>
             </p>
+            {/* Issue 803: a prospective vendor who followed a sign-in link has no
+                account (vendor-realm registration is off; a person reviews every
+                application), so the way in is the application route. */}
+            <p className="rounded-lg bg-cream/60 px-3 py-2.5 text-center text-sm text-slate-600">
+              Run a food business without an account?{" "}
+              <Link
+                href="/contact#apply"
+                className="font-semibold text-oxblood underline-offset-4 hover:underline"
+              >
+                Apply to join
+              </Link>
+            </p>
             <div className="flex items-center justify-center gap-6 border-t border-cream-100 pt-4 text-sm">
               <Link
                 href="/"

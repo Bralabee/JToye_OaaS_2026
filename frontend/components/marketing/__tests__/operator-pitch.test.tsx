@@ -74,7 +74,9 @@ describe("OperatorPitch", () => {
     const h1s = screen.getAllByRole("heading", { level: 1 })
     expect(h1s).toHaveLength(1)
     expect(h1s[0]).toHaveTextContent("One kitchen. Weekday counter, weekend catering.")
-    expect(screen.getByText(/established West African food businesses in London/i)).toBeInTheDocument()
+    // Owner ruling 2026-11-04: UK-wide, launching first in Birmingham and the West Midlands.
+    expect(screen.getByText(/established food businesses across the UK, launching first in Birmingham and the West Midlands/i)).toBeInTheDocument()
+    expect(screen.queryByText(/in London|West African/i)).toBeNull()
     // The superseded headline must not survive anywhere.
     expect(screen.queryByText(/keep the order/i)).toBeNull()
   })
@@ -94,7 +96,9 @@ describe("OperatorPitch", () => {
     const { container } = render(<OperatorPitch />)
 
     // Non-vacuity control: the instrument finds a link that IS there.
-    expect(container.querySelectorAll('a[href="/dashboard/onboarding"]').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('a[href="/contact#apply"]').length).toBeGreaterThan(0)
+    // Issue 803: the application route is no longer a sign-in.
+    expect(container.querySelectorAll('a[href="/dashboard/onboarding"]')).toHaveLength(0)
     expect(container.querySelector("a[href*='pilot-pack']")).toBeNull()
     expect(container.querySelector("a[href$='.pdf']")).toBeNull()
     expect(container.querySelector("a[download]")).toBeNull()
@@ -124,7 +128,7 @@ describe("OperatorPitch", () => {
     const ctas = screen.getAllByRole("link", { name: /start your application/i })
     expect(ctas).toHaveLength(2)
     for (const cta of ctas) {
-      expect(cta).toHaveAttribute("href", "/dashboard/onboarding")
+      expect(cta).toHaveAttribute("href", "/contact#apply")
       expect(cta.classList.contains("bg-amber-500")).toBe(true)
     }
     const secondary = screen.getByRole("link", { name: /see pricing/i })
