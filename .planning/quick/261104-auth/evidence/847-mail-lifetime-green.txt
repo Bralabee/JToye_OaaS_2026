@@ -1,0 +1,5 @@
+register page: http://127.0.0.1:32774/realms/jtoye-customers/login-actions/registration?client_id=storefront-client&tab_id=kB99o4Q7vTs&client_data=eyJydSI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzAwMC8iLCJydCI6ImNvZGUifQ Register - J'Toye email,firstName,lastName,
+after register: Email verification - J'Toye
+after forgot: Sign in to your account - J'Toye
+MAIL ?: subject=Reset password link-lifetime=60 min ; body-says=expire within 1 hour.
+MAIL ?: subject=Verify email link-lifetime=1440 min ; body-says=expire within 1 day.

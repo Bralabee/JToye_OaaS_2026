@@ -1,0 +1,8 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/api/customer-auth/__tests__/session-refresh-late-probe.test.ts
+  Using tsconfig file: tsconfig.build.json
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        0.295 s, estimated 1 s
+Ran all test suites matching app/api/customer-auth/__tests__/session-refresh-late-probe.test.ts.

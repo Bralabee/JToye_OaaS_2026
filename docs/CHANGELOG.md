@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Sign-in: A Slow Network No Longer Signs the Customer Out, Reset and Verification Links Last, and the Keycloak Pages Meet the Accessibility Bar — 2026-11-04 (#PR)
+
+Persona close-out, lane `auth`: #843, #847, #848 and the swarm findings SW-JRD-06, SW-MRC-12 and SW-SAM-10.
+
+- **#843, a regression of #465:** the realm rotates refresh tokens, and the server's single-flight guard only collapsed probes that overlapped in time. On a slow connection a probe that left the browser with the old cookie but arrived after the first had settled redeemed a spent token, was refused, and cleared the cookies the first probe had just issued. The session route now answers such a late probe with the same renewed session for 60 seconds (keyed by a digest of the spent token, successes only, capped), and `getCustomerSession()` shares one request between overlapping callers. Two of the five new server cases and one of the three client cases were RED on the unfixed code.
+- **#847 and SW-JRD-06 (lifespan):** `actionTokenGeneratedByUserLifespan` is 3600 in both realm templates, and the customer template adds a 24-hour `actionTokenGeneratedByUserLifespan.verify-email`. Measured from the real emails on throwaway Keycloak 26.8.1: the links lived 5 minutes before and 60 and 1440 minutes after. `staging-realm-import.sh` refuses a realm below the floors, rendered and live. An existing realm keeps its old values until `docs/runbooks/keycloak-action-token-lifespan.md` is applied; staging has not been updated.
+- **#848, SW-MRC-12, SW-SAM-10:** the `jtoye` login theme gains three small FTL overrides (`template.ftl`, `login.ftl`, `register.ftl`): a `<main>` landmark and a banner `<header>`, a `<title>` that names the page (Register is no longer "Sign in to J'Toye"), no positive `tabindex`, the password rules on the register page before a failed submit and tied to the field, and a privacy-notice link there. The earlier reason for staying CSS-only was silent rot at a Keycloak upgrade, so `scripts/check-keycloak-theme-ftl.sh` (CI, with `--selftest`) fails when an override's `JTOYE-BASE-KEYCLOAK` marker differs from the pinned image. axe plus structural checks failed 12 ways on the old theme and pass on the new one; `/shop/signin` also names the privacy notice. k8s mounts the new files and the staging golden changed only in that ConfigMap.
+- **Not done:** the plain-text unbranded emails (SW-JRD-06), the register profile fields' `required` cue and error association, the update-password page's rules, and a throttled-browser Playwright run for #843.
+
 ### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
 
 Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.

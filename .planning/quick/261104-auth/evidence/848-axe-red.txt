@@ -1,0 +1,34 @@
+PASS [sign-in] html has a lang — en
+FAIL [sign-in] exactly one main landmark — found 0
+FAIL [sign-in] no positive tabindex — input#username=2, input#password=3, button#=4, input#rememberMe=5, a#=6, input#kc-login=7, a#=8
+PASS [sign-in] title names the page — Sign in to J'Toye
+FAIL [sign-in] axe: zero violations — landmark-one-main(1), region(6), tabindex(7)
+PASS [register] html has a lang — en
+FAIL [register] exactly one main landmark — found 0
+PASS [register] no positive tabindex
+FAIL [register] title says "Register" — Sign in to J'Toye
+FAIL [register] password rules are on the page up front, visible, and tied to the field
+FAIL [register] privacy notice link present
+FAIL [register] axe: zero violations — landmark-one-main(1), region(9)
+PASS [register-after-empty-submit] html has a lang — en
+FAIL [register-after-empty-submit] exactly one main landmark — found 0
+PASS [register-after-empty-submit] no positive tabindex
+FAIL [register-after-empty-submit] axe: zero violations — landmark-one-main(1), region(12)
+PASS [forgot-password] html has a lang — en
+FAIL [forgot-password] exactly one main landmark — found 0
+PASS [forgot-password] no positive tabindex
+FAIL [forgot-password] axe: zero violations — landmark-one-main(1), region(4)
+
+12 failure(s):
+  sign-in: exactly one main landmark
+  sign-in: no positive tabindex
+  sign-in: axe: zero violations
+  register: exactly one main landmark
+  register: title says "Register"
+  register: password rules are on the page up front, visible, and tied to the field
+  register: privacy notice link present
+  register: axe: zero violations
+  register-after-empty-submit: exactly one main landmark
+  register-after-empty-submit: axe: zero violations
+  forgot-password: exactly one main landmark
+  forgot-password: axe: zero violations
