@@ -270,6 +270,13 @@ const SIMPLE_ROUTES = [
   // PR 1080: the terms and contact pages, static and backend-free like the rest.
   "/legal/terms",
   "/contact",
+  // Persona close-out (issues 803, 804): the pages a prospective vendor needs. A page the
+  // pilot sends people to must not ship outside the gate. The published statement's scope
+  // (SCOPE_COVERAGE) is the customer order journey and is not widened here.
+  "/pricing",
+  "/about",
+  "/legal/merchant-terms",
+  "/for-operators",
 ] as const
 
 test.describe(`public surfaces — ${CLAIM}`, () => {

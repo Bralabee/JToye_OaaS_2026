@@ -64,6 +64,12 @@ const POLICY_DOCUMENTS = [
       "How ordering through J'Toye works: who runs the platform, who you are buying from, cancellation, VAT, and the terms for food businesses on the pilot.",
   },
   {
+    href: "/legal/merchant-terms",
+    title: "Merchant terms (draft)",
+    description:
+      "Draft terms for food businesses that sell through J'Toye: fees, VAT, payouts, food safety and data roles. Under legal review and not yet in force.",
+  },
+  {
     href: "/legal/accessibility",
     title: "Accessibility statement",
     description:
