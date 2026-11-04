@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Storefront: Persona Close-Out, Public Storefront / Checkout / Tracking — 2026-11-04 (#1117)
+
+Quick 261104-storefront. Issues 829, 845, 846, 813, 850, 876, 877, 854 and swarm items SW-CLR-08, SW-CLR-12, SW-TND-03, SW-PRY-07 (epic issue 964), each re-checked on main first and fixed test-first.
+
+- **Cookie notice (issue 854, SW-CLR-12, SW-TND-03):** on a phone the notice is one flush row, 62 px of a 390x664 viewport (9.3%), down from a stacked 170 px card. `/invite` is carved out like `/pay`. Measured by a stack-free Playwright spec wired into the per-PR browser job (`frontend/e2e/cookie-notice-compact.spec.ts`).
+- **How you pay (issue 829):** the shop card, the shop's details bar, the basket and the top of checkout state the method from the server's `acceptsCardPayments` (`components/storefront/payment-method-note.tsx`); the Place order icon follows it. An absent flag says nothing.
+- **Order again and remembered address (issue 845):** past orders on My Orders link to `/shop/{slug}/reorder/{orderNumber}`, which refills the basket from the live menu through the basket provider and says what changed (unavailable, price, per-line limit). The signed-in customer's last delivery address and phone prefill checkout, including on a fresh browser through the order they order again. New `GET /public/shops/{slug}/orders/{orderNumber}/reorder` (token identity, `no-store`, the same 404 for a missing, someone else's or another shop's order) and `shopSlug` on the signed-in history. Both client stores are identity-stamped and tested through sign-in, lapse, second sign-in and sign-out.
+- **Reviews (issues 846, 813):** new `POST /public/shops/{slug}/orders/{orderNumber}/review` takes the customer from the verified token and puts no email in the URL; **Rate your order** on My Orders and the order page, with the notice that the review is public and shows first name and initial. The old `POST /shops/{slug}/reviews?email=` stays for API clients, marked deprecated. Moderation is out of scope. OpenAPI snapshot regenerated.
+- **Tracking accessibility (issue 850):** `/track` "Order not found" is an alert, the order page's email prompt has an h1 and a label, "Copied!" is announced.
+- **Checkout polish (issue 876):** offline and no-answer failures say the order may already be placed; address, phone and notes survive Back then Forward; one validation pass with an error summary and focus on the first invalid field. SW-PRY-07: the allergen panel gives the shop's phone and email beside "tell the kitchen before you order".
+- **Storefront polish (issue 877, partly):** the signed-in person icon is the account link and sign-out has a 44 px target; ratings read with their unit; `/track` no longer says Auto-refreshing on a finished order; the postcode result line's live region is mounted before its text. Left: a sign-out confirmation, the shop-card dish-photo fallback, decorative dish alt text, distinct postcode messages (need core's signal).
+- **Default share image (SW-CLR-08):** an `og:image` and large Twitter card from the owner's BeesLens photo on every public page that has none, through one helper plus a source scan.
+- **Storage policy:** the checkout draft (`jtoye-checkout-draft-<shop>`, session) and the last delivery address (`jtoye-last-delivery`, local) are declared in the storage registry and so appear on the cookie and storage policy page; both are removed by an explicit sign-out.
+
 ### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
 
 Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.
