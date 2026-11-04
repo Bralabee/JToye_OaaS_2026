@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { openGraphWithDefaultImage } from "@/lib/og-image"
 import { PublicShell } from "@/components/public/public-shell"
 import { LEGAL_LINK_CLASS, LEGAL_PROSE_LINK_CLASS } from "@/components/legal/policy-page"
 import { getCompanyInfo } from "@/lib/company"
@@ -11,12 +12,13 @@ export const metadata: Metadata = {
   title: "About J'Toye",
   description: DESCRIPTION,
   alternates: { canonical: "/about" },
-  openGraph: {
+  // SW-CLR-08: a page's own openGraph replaces the root's, so the default share image is added here.
+  openGraph: openGraphWithDefaultImage({
     title: "About J'Toye",
     description: DESCRIPTION,
     url: "/about",
     type: "website",
-  },
+  }),
 }
 
 /**
