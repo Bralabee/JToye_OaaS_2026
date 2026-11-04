@@ -154,7 +154,8 @@ export function ReviewOrder({
                     aria-hidden="true"
                     className={cn(
                       "h-9 w-9 rounded-md p-1 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-700 peer-focus-visible:ring-offset-2",
-                      rating !== null && n <= rating ? "fill-amber-400 text-amber-500" : "text-slate-400"
+                      // Outline and fill both clear 3:1 (WCAG 1.4.11) and the literal-contrast contract.
+                      rating !== null && n <= rating ? "fill-amber-400 text-amber-700" : "text-slate-600"
                     )}
                   />
                 </label>

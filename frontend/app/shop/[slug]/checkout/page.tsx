@@ -448,17 +448,6 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       setCustomerSignedIn(true)
       setCustomerName((prev) => prev || session.profile.name || "")
       setCustomerEmail((prev) => prev || session.profile.email || "")
-      // #845: this customer's own last delivery address and phone, offered only to exactly them
-      // (lib/checkout-memory.ts), and only into fields still empty: a restored draft or anything the
-      // customer has already typed wins.
-      const last = readLastDelivery()
-      if (last) {
-        setAddress1((prev) => prev || last.address1)
-        setAddress2((prev) => prev || last.address2)
-        setCity((prev) => prev || last.city)
-        setPostcode((prev) => prev || last.postcode)
-        setCustomerPhone((prev) => prev || last.phone)
-      }
     })
     return () => {
       cancelled = true
@@ -560,6 +549,21 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the read above is the reason for this flag
     setDraftReady(true)
   }, [slug])
+  // #845: once a customer is confirmed signed in, THEIR OWN last delivery address and phone are offered
+  // (lib/checkout-memory.ts reads it only for exactly that customer), and only into fields still empty: a
+  // restored draft or anything already typed wins. After the draft is read, so a draft is never overwritten.
+  useEffect(() => {
+    if (!customerSignedIn || !draftReady) return
+    const last = readLastDelivery()
+    if (!last) return
+    /* eslint-disable react-hooks/set-state-in-effect -- localStorage exists only after mount (DOM API) */
+    setAddress1((prev) => prev || last.address1)
+    setAddress2((prev) => prev || last.address2)
+    setCity((prev) => prev || last.city)
+    setPostcode((prev) => prev || last.postcode)
+    setCustomerPhone((prev) => prev || last.phone)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [customerSignedIn, draftReady])
   useEffect(() => {
     if (!draftReady) return
     writeCheckoutDraft(slug, {

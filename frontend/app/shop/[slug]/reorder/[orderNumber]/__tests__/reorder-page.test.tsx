@@ -162,6 +162,61 @@ describe("a signed-in customer orders again", () => {
   })
 })
 
+describe("the order's own delivery details pre-fill the next checkout, on a browser that has never seen the customer", () => {
+  const DELIVERY = { addressLine1: "12 Coldharbour Lane", addressLine2: "Flat 3", addressCity: "London", addressPostcode: "SW9 8LF", phone: "07700 900001" }
+  const storedLast = () => JSON.parse(localStorage.getItem("jtoye-last-delivery") ?? "null")
+  function signIn(sub: string) {
+    localStorage.setItem(CUSTOMER_ID_KEY, sub)
+    localStorage.setItem(CUSTOMER_MARKER_KEY, "true")
+    localStorage.setItem(CUSTOMER_EXPIRES_KEY, String(Math.floor(Date.now() / 1000) + 300))
+  }
+
+  it("a fresh browser, signed in as A: ordering again stores A's delivery details, stamped A, for the checkout to offer", async () => {
+    signIn("user-A")
+    expect(localStorage.getItem("jtoye-last-delivery")).toBeNull()
+    respond(200, { ...LINES, delivery: DELIVERY })
+    renderPage()
+    await screen.findByTestId("reorder-result")
+    await waitFor(() =>
+      expect(storedLast()).toEqual({
+        owner: "user-A",
+        address1: "12 Coldharbour Lane",
+        address2: "Flat 3",
+        city: "London",
+        postcode: "SW9 8LF",
+        phone: "07700 900001",
+      })
+    )
+  })
+
+  it("no delivery in the answer (a collection or erased order) stores nothing, and leaves an existing entry alone", async () => {
+    signIn("user-A")
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", address1: "1 Old Road", address2: "", city: "Leeds", postcode: "LS1 1AA", phone: "07700 900009" }))
+    respond(200, { ...LINES, delivery: null })
+    renderPage()
+    await screen.findByTestId("reorder-result")
+    expect(storedLast()).toMatchObject({ owner: "user-A", address1: "1 Old Road" })
+  })
+
+  it("through the transition: B ordering again replaces A's stored details with B's, stamped B (B is signed in and writing)", async () => {
+    signIn("user-A")
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", address1: "1 Old Road", address2: "", city: "Leeds", postcode: "LS1 1AA", phone: "07700 900009" }))
+    signIn("user-B")
+    respond(200, { ...LINES, delivery: DELIVERY })
+    renderPage()
+    await screen.findByTestId("reorder-result")
+    await waitFor(() => expect(storedLast()).toMatchObject({ owner: "user-B", address1: "12 Coldharbour Lane" }))
+    expect(JSON.stringify(storedLast())).not.toContain("Old Road")
+  })
+
+  it("nobody identified (a session that lapsed mid-page) stores nothing", async () => {
+    respond(200, { ...LINES, delivery: DELIVERY })
+    renderPage()
+    await screen.findByTestId("reorder-result")
+    expect(localStorage.getItem("jtoye-last-delivery")).toBeNull()
+  })
+})
+
 describe("it never leaves the customer on a blank page", () => {
   it("a lapsed session (401) asks them to sign in again, with the way back", async () => {
     respond(401, { error: "not_authenticated" })

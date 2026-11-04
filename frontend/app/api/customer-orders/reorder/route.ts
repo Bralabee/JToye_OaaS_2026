@@ -11,8 +11,9 @@ import { forwardedForHeader } from "@/lib/forwarded-for"
  * order it is from the verified token; there is no email on this surface or the upstream one; `shop` and
  * `order` are matched against a strict shape before they enter the upstream path; no cookie is a 401 with
  * no upstream call; core's status passes through (another customer's order is core's 404); a failure to
- * reach core is a 502. The answer carries what the customer bought (product names and quantities), so it is
- * `no-store`.
+ * reach core is a 502. The answer carries what the customer bought (product names and quantities) and, for a
+ * delivery order, the address and phone it was delivered to (the caller's own order, returned to them, so a
+ * fresh browser can pre-fill the next checkout), so it is `no-store`.
  */
 const ACCESS_COOKIE = "jtoye-customer-access"
 const SHOP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$/

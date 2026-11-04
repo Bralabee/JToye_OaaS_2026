@@ -6,6 +6,7 @@ import { AlertTriangle, Loader2 } from "lucide-react"
 
 import { useCart } from "@/components/storefront/cart-provider"
 import { CustomerSignInPrompt } from "@/components/storefront/customer-signin-prompt"
+import { rememberLastDelivery } from "@/lib/checkout-memory"
 import publicApiClient from "@/lib/public-api-client"
 import { planReorder, type ReorderPlan, type ReorderResponse } from "@/lib/reorder"
 import type { ProductsByCategory, PublicProduct, PublicShop } from "@/types/storefront"
@@ -74,6 +75,19 @@ export default function ReorderPage({ params }: { params: Promise<{ slug: string
       ])
       const menu: PublicProduct[] = Object.values(menuRes.data).flat()
       const plan = planReorder(order.lines, menu, shopRes?.data.maxLineQuantity)
+
+      // The order's own delivery details, for the checkout to offer on a browser that has never seen this
+      // customer (#845: a fresh browser has no stored address). Through `rememberLastDelivery`, the one
+      // writer: it stamps the signed-in customer and writes nothing for a guest or an unidentified session.
+      if (order.delivery) {
+        rememberLastDelivery({
+          address1: order.delivery.addressLine1,
+          address2: order.delivery.addressLine2 ?? "",
+          city: order.delivery.addressCity ?? "",
+          postcode: order.delivery.addressPostcode,
+          phone: order.delivery.phone ?? "",
+        })
+      }
 
       const hadItems = itemCountRef.current > 0
       let added = 0

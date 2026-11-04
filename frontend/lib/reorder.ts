@@ -21,10 +21,24 @@ export interface ReorderLine {
   unitPricePennies: number
 }
 
+/**
+ * Where the order was delivered, as the server returns it for the CALLER'S OWN order (null for a
+ * collection order, an order with no address, or one whose personal data was erased).
+ */
+export interface ReorderDelivery {
+  addressLine1: string
+  addressLine2?: string | null
+  addressCity?: string | null
+  addressPostcode: string
+  phone?: string | null
+}
+
 export interface ReorderResponse {
   orderNumber: string
   shopSlug: string
   lines: ReorderLine[]
+  /** Absent from an older backend, which is the same as null. */
+  delivery?: ReorderDelivery | null
 }
 
 export interface ReorderPlan {
