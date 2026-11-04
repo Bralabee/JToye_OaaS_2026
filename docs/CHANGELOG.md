@@ -21,6 +21,10 @@ Quick 261104-storefront. Issues 829, 845, 846, 813, 850, 876, 877, 854 and swarm
 - **Default share image (SW-CLR-08):** an `og:image` and large Twitter card from the owner's BeesLens photo on every public page that has none, through one helper plus a source scan.
 - **Storage policy:** the checkout draft (`jtoye-checkout-draft-<shop>`, session) and the last delivery address (`jtoye-last-delivery`, local) are declared in the storage registry and so appear on the cookie and storage policy page; both are removed by an explicit sign-out.
 
+### Roadmap: 999.x Backlog for Six Unplanned Items — 2026-11-04 (#1113)
+
+Owner ruling 2026-11-04 (persona-test close-out): issues 870 (menu modifiers), 873 (campaigns and loyalty), 874 (custom domains), 869 (server-side basket) and 863 (MCP OAuth discovery) are persona findings, and issue 208 (WhatsApp channel, AI-6 from the AI-readiness track) is not; all six are closed as not planned for v2.3 and recorded as backlog phases 999.1 to 999.6. Each is a `### Phase 999.N: ... (BACKLOG)` entry under `## Backlog` in `.planning/ROADMAP.md` with a `.planning/phases/999.N-<slug>/.gitkeep` directory, the shape GSD's add-backlog workflow writes, so `/gsd-review-backlog` lists them and `phase.next-decimal 999` returns 999.7. Review round 1 also corrected the entries: 999.1 now names tenant routing, replies and the absent Meta GET handshake as the gaps (the signed POST intake works), 999.2 names the V69 acknowledgement check, 999.3 names the missing marketing-consent capture, and 999.6 keeps the long-lived-token alternative from issue 863. Docs only.
+
 ### Public Content: A Way In, Pricing, About and Draft Merchant Terms — 2026-11-04 (#1116)
 
 Quick 261104-public-content (persona close-out lane `public-content`). Issue 803 (UXT-031), issue 804 (UXT-032), issue 878 UXT-119 (the positioning and confidentiality half), SW-CLR-03 and SW-CLR-06 (epic issue 964). Three owner rulings of 2026-11-04 are cited where the copy lives.
