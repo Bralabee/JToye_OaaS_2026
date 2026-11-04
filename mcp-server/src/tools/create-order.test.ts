@@ -95,6 +95,39 @@ describe("create_order handler", () => {
     expect(body).toHaveProperty("submit", true);
   });
 
+  // #841 / UXT-072: core now requires a way to reach the customer unless the order says it is a walk-in.
+  it("#841: accepts walkIn at the tool boundary and forwards it, so an agent can declare a no-contact sale", async () => {
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    expect(createOrderSchema.safeParse({ ...validArgs(), walkIn: true }).success).toBe(true);
+    expect(createOrderSchema.safeParse({ ...validArgs(), walkIn: "yes" }).success).toBe(false);
+    await createOrderHandler("tok")({ ...validArgs(), walkIn: true });
+
+    const [, , body] = vi.mocked(corePost).mock.calls[0]!;
+    expect(body).toHaveProperty("walkIn", true);
+  });
+
+  it("#841: core's typed 'say how to reach the customer' refusal reaches the agent with the field name", async () => {
+    vi.mocked(corePost).mockResolvedValue({
+      ok: false,
+      status: 400,
+      contentType: "application/problem+json",
+      body: {
+        type: "https://jtoye.uk/errors/validation",
+        title: "Validation Error",
+        status: 400,
+        detail: "Validation failed",
+        errors: { contactPresentOrWalkIn: "Say how to reach the customer ... send walkIn: true." },
+      },
+    } as never);
+
+    const result = await createOrderHandler("tok")(validArgs());
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("contactPresentOrWalkIn");
+    expect((result.content[0] as { text: string }).text).toContain("walkIn: true");
+  });
+
   it("COR-1: forwards fulfilmentType + the address block verbatim in the body", async () => {
     vi.mocked(corePost).mockResolvedValue(created201);
 

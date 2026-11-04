@@ -9,21 +9,25 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
+import uk.jtoye.core.common.contact.PlausibleContact;
 
 import java.util.List;
 import java.util.UUID;
 
 public class GuestOrderRequest {
     @NotBlank(message = "Name is required")
+    @PlausibleContact(value = PlausibleContact.Kind.NAME, message = "Enter your name (at least two letters)")
     @Size(max = 255)
     private String customerName;
 
     @NotBlank(message = "Email is required")
     @Email(message = "Valid email is required")
+    @PlausibleContact(value = PlausibleContact.Kind.EMAIL, message = "Enter a valid email address, like name@example.com")
     @Size(max = 255)
     private String customerEmail;
 
     @NotBlank(message = "Phone is required")
+    @PlausibleContact(value = PlausibleContact.Kind.PHONE, message = "Enter a valid phone number, like 07700 900123 or +44 7700 900123")
     @Size(max = 50)
     private String customerPhone;
 

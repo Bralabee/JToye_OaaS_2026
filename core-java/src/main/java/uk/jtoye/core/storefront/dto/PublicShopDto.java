@@ -26,6 +26,9 @@ public class PublicShopDto {
     private Long minimumOrderPennies;
     private Long deliveryFeePennies;
     private Long freeDeliveryThresholdPennies;
+    @Schema(description = "How far the shop delivers, in km from its location. Absent: no limit. A DELIVERY order beyond it is refused 422 delivery-out-of-range.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Double deliveryRadiusKm;
     private String tags;
 
     /**
@@ -149,6 +152,8 @@ public class PublicShopDto {
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
     public Long getDeliveryFeePennies() { return deliveryFeePennies; }
     public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+    public Double getDeliveryRadiusKm() { return deliveryRadiusKm; }
+    public void setDeliveryRadiusKm(Double deliveryRadiusKm) { this.deliveryRadiusKm = deliveryRadiusKm; }
     public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
     public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
     public String getTags() { return tags; }

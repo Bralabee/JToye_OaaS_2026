@@ -51,6 +51,16 @@ export const createOrderInputSchema = {
     .describe("Walk-in customer name (optional; ignored when customerId is set)"),
   customerEmail: z.string().email().optional().describe("Walk-in customer email (optional)"),
   customerPhone: z.string().optional().describe("Walk-in customer phone (optional)"),
+  // #841 / UXT-072: core requires a way to reach the customer (customerId, or a name, phone or email)
+  // unless the order is declared a walk-in. A contact given must also be plausible: a real phone
+  // (07700 900123, +44 7700 900123), an email with a dotted domain, a name with two letters.
+  walkIn: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set true for a walk-in sale with nobody to contact. Without it the order needs customerId, " +
+        "or at least one of customerName, customerPhone, customerEmail (plausible values only).",
+    ),
   notes: z.string().optional().describe("Order notes (optional)"),
   // COR-1 (QA-council 20260902-134741, owner ruling E-1). Optional, mirroring
   // CreateOrderRequest.fulfilmentType. OMITTING it means COLLECTION — which is what a
@@ -129,6 +139,7 @@ interface CreateOrderArgs {
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
+  walkIn?: boolean;
   notes?: string;
   fulfilmentType?: "DELIVERY" | "COLLECTION";
   addressLine1?: string;
@@ -187,7 +198,9 @@ export function registerCreateOrder(server: McpServer, bearer: string): void {
         "Requires a stable idempotencyKey — REUSE the same key on any retry so a " +
         "replay returns the original order, never a duplicate. fulfilmentType is optional and " +
         "defaults to COLLECTION; pass DELIVERY with addressLine1/addressCity/addressPostcode to " +
-        "place a delivery order, which is priced with the shop's delivery fee.",
+        "place a delivery order, which is priced with the shop's delivery fee. Say how to reach " +
+        "the customer (customerId, or a name, phone or email) or pass walkIn: true for a sale with " +
+        "nobody to contact.",
       inputSchema: createOrderSchema,
     },
     createOrderHandler(bearer),

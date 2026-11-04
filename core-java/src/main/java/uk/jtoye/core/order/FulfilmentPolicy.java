@@ -1,6 +1,9 @@
 package uk.jtoye.core.order;
 
+import uk.jtoye.core.exception.DeliveryRadiusException;
 import uk.jtoye.core.exception.FulfilmentNotOfferedException;
+import uk.jtoye.core.geo.GeoBounds;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.shop.Shop;
 
 import java.util.ArrayList;
@@ -94,6 +97,45 @@ public final class FulfilmentPolicy {
         }
         if (isBlank(addressLine1) || isBlank(addressCity) || isBlank(addressPostcode)) {
             throw new IllegalArgumentException(MISSING_ADDRESS_MESSAGE);
+        }
+    }
+
+    /**
+     * Refuse a DELIVERY order beyond the shop's delivery radius (#460 / UXT-030). Both writers call this right
+     * after {@link #requireDeliveryAddress}, so the rule is the same on the storefront and on the vendor / REST /
+     * MCP path.
+     *
+     * <p>It applies only when ALL of these hold, and otherwise the order is not touched: the order is a
+     * DELIVERY; the shop has set a {@code deliveryRadiusKm} (null = no limit, every shop before V94); and the
+     * shop has a stored coordinate to measure from (a shop whose address never geocoded cannot be measured from,
+     * and silently refusing every delivery for that reason would be a worse failure than not enforcing). When it
+     * applies, a postcode the dataset cannot place is refused too, as {@code delivery-postcode-unrecognised}:
+     * the shop asked for a distance limit, and "unknown, so allowed" would be a hole a typo walks through.
+     *
+     * @param locatePostcode resolves the order's postcode to a coordinate (the production
+     *                       {@code PostcodeGeocoder::locate}); a function so this class stays dependency-free
+     * @throws DeliveryRadiusException (422) out of range, or postcode not recognised
+     */
+    public static void requireWithinDeliveryRadius(
+            Shop shop,
+            FulfilmentType fulfilmentType,
+            String addressPostcode,
+            java.util.function.Function<String, java.util.Optional<PostcodeGeocoder.Coordinate>> locatePostcode) {
+        if (fulfilmentType != FulfilmentType.DELIVERY) {
+            return;
+        }
+        Double radiusKm = shop.getDeliveryRadiusKm();
+        if (radiusKm == null || shop.getLatitude() == null || shop.getLongitude() == null) {
+            return;
+        }
+        PostcodeGeocoder.Coordinate customer = locatePostcode.apply(addressPostcode).orElse(null);
+        if (customer == null) {
+            throw DeliveryRadiusException.postcodeNotRecognised(radiusKm);
+        }
+        double distanceKm = GeoBounds.distanceKm(shop.getLatitude(), shop.getLongitude(),
+                customer.latitude(), customer.longitude());
+        if (distanceKm > radiusKm) {
+            throw DeliveryRadiusException.outOfRange(radiusKm, distanceKm);
         }
     }
 

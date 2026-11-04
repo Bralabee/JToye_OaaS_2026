@@ -346,6 +346,10 @@ public class ShopService {
         if (request.isFreeDeliveryThresholdPenniesSent() && request.getFreeDeliveryThresholdPennies() == null) {
             shop.setFreeDeliveryThresholdPennies(null);
         }
+        // #460: the same shape for the delivery radius - absent keeps it, an EXPLICIT null removes the limit.
+        if (request.isDeliveryRadiusKmSent() && request.getDeliveryRadiusKm() == null) {
+            shop.setDeliveryRadiusKm(null);
+        }
         // A single false merged with the OTHER flag already false offers nothing: refused before anything is saved.
         requireSomeFulfilmentOffered(shop);
         // 37-20 (D-15/D-25): a sent schedule replaces the stored one and makes the hours STRUCTURED (this ends

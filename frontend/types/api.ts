@@ -57,6 +57,8 @@ export interface Shop {
   deliveryFeePennies?: number
   /** A DELIVERY order whose items reach this subtotal (inclusive) pays no fee. Absent: no threshold. */
   freeDeliveryThresholdPennies?: number
+  /** #460: how far the shop delivers, in km. Absent: no limit. */
+  deliveryRadiusKm?: number
   /** The shop takes DELIVERY orders. Absent reads as true (a shop takes both until told otherwise). */
   offersDelivery?: boolean
   /** The shop takes COLLECTION orders. Absent reads as true. */
@@ -133,6 +135,8 @@ export interface CreateShopRequest {
    * delivery). The shop form always sends the key, so an emptied field clears the threshold.
    */
   freeDeliveryThresholdPennies?: number | null
+  /** #460: km, 0.1 to 100. ABSENT keeps the stored radius; an explicit `null` CLEARS it (no limit). */
+  deliveryRadiusKm?: number | null
   /** 37-48: at least one of the two must be true (400 under `fulfilmentOffered` otherwise). */
   offersDelivery?: boolean
   offersCollection?: boolean

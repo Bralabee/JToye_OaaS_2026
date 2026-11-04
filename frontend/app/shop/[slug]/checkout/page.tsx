@@ -51,6 +51,8 @@ import {
   SINGLE_OPTION_COPY,
 } from "@/lib/fulfilment-offered"
 import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
+import { CONTACT_COPY, isPlausibleEmail, isPlausibleName, isPlausiblePhone } from "@/lib/contact-plausibility"
+import { deliveryRadiusFieldCopy, deliveryRadiusHintCopy, readDeliveryRadiusProblem } from "@/lib/delivery-radius"
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
 import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } from "@/lib/basket-allergens"
@@ -500,6 +502,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [city, setCity] = useState("")
   const [postcode, setPostcode] = useState("")
   const [fieldErrors, setFieldErrors] = useState<{
+    name?: string
+    email?: string
+    phone?: string
     address1?: string
     city?: string
     postcode?: string
@@ -508,6 +513,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // A11Y-07: a refused submit must move focus to the control that refused, not merely paint it
   // red. These refs are the only focus-management precedent in the app besides the dish modal's
   // focus-return (product-detail-modal.tsx:117).
+  const nameRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const phoneRef = useRef<HTMLInputElement>(null)
   const address1Ref = useRef<HTMLInputElement>(null)
   const cityRef = useRef<HTMLInputElement>(null)
   const postcodeRef = useRef<HTMLInputElement>(null)
@@ -868,6 +876,22 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     if (cardUnavailable) return
     setError(null)
 
+    // #841 / UXT-072: a name, email or phone nobody can use ("x", "call me", name@example) is stopped here,
+    // with the message on the field and focus on the first. Core refuses the same values (typed 400); this is
+    // the message before the round trip. It does not verify anything, only refuses what can never reach a person.
+    {
+      const contactErrs: { name?: string; email?: string; phone?: string } = {}
+      if (!isPlausibleName(customerName)) contactErrs.name = CONTACT_COPY.name
+      if (!isPlausibleEmail(customerEmail)) contactErrs.email = CONTACT_COPY.email
+      if (!isPlausiblePhone(customerPhone)) contactErrs.phone = CONTACT_COPY.phone
+      if (Object.keys(contactErrs).length > 0) {
+        setFieldErrors(contactErrs)
+        const firstInvalid = contactErrs.name ? nameRef.current : contactErrs.email ? emailRef.current : phoneRef.current
+        if (firstInvalid && firstInvalid.isConnected) firstInvalid.focus()
+        return
+      }
+    }
+
     // Conditional UK-address validation (Surface E). Collection needs no address.
     if (fulfilmentType === "DELIVERY") {
       const errs: { address1?: string; city?: string; postcode?: string } = {}
@@ -1129,6 +1153,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           setShop((prev) => (prev ? { ...prev, offersDelivery, offersCollection } : prev))
           if (notOffered.offered.length === 1) setFulfilmentType(notOffered.offered[0])
         }
+        return
+      }
+      // #460 / UXT-030: the address is outside the shop's delivery radius (or cannot be placed to check it).
+      // Core refuses with a typed 422 before any write, so no order exists. The sentence goes on the
+      // postcode field (the thing to change), with focus there; collection is named when the shop offers it.
+      const radius = readDeliveryRadiusProblem(err)
+      if (radius) {
+        setFieldErrors({
+          postcode: deliveryRadiusFieldCopy(radius, shop?.offersCollection !== false),
+        })
+        if (postcodeRef.current && postcodeRef.current.isConnected) postcodeRef.current.focus()
         return
       }
       const shopClosed = readShopClosedProblem(err)
@@ -1591,11 +1626,24 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 placeholder="e.g., SW9 8LF"
                 aria-required="true"
                 aria-invalid={fieldErrors.postcode ? "true" : undefined}
-                aria-describedby={fieldErrors.postcode ? "postcode-error" : undefined}
+                aria-describedby={
+                  fieldErrors.postcode
+                    ? "postcode-error"
+                    : deliveryRadiusHintCopy(shop?.deliveryRadiusKm)
+                      ? "postcode-radius-hint"
+                      : undefined
+                }
                 className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-cream-100"}`}
               />
-              {fieldErrors.postcode && (
+              {fieldErrors.postcode ? (
                 <p id="postcode-error" className="text-xs text-red-600">{fieldErrors.postcode}</p>
+              ) : (
+                // #460: said before the customer types, so a far address is not discovered at "Place order".
+                deliveryRadiusHintCopy(shop?.deliveryRadiusKm) && (
+                  <p id="postcode-radius-hint" className="text-xs text-slate-600">
+                    {deliveryRadiusHintCopy(shop?.deliveryRadiusKm)}
+                  </p>
+                )
               )}
             </div>
           </div>
@@ -1621,42 +1669,54 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <label htmlFor="name" className="block text-xs font-medium text-slate-600">Full name *</label>
             <input
               id="name"
+              ref={nameRef}
               type="text"
               autoComplete="name"
               required
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="e.g., Ade Johnson"
-              className={`${inputBase} border-cream-100`}
+              aria-invalid={fieldErrors.name ? "true" : undefined}
+              aria-describedby={fieldErrors.name ? "name-error" : undefined}
+              className={`${inputBase} ${fieldErrors.name ? "border-red-300" : "border-cream-100"}`}
             />
+            {fieldErrors.name && <p id="name-error" className="text-xs text-red-600">{fieldErrors.name}</p>}
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="email" className="block text-xs font-medium text-slate-600">Email address *</label>
             <input
               id="email"
+              ref={emailRef}
               type="email"
               autoComplete="email"
               required
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
               placeholder="e.g., ade@example.com"
-              className={`${inputBase} border-cream-100`}
+              aria-invalid={fieldErrors.email ? "true" : undefined}
+              aria-describedby={fieldErrors.email ? "email-error" : undefined}
+              className={`${inputBase} ${fieldErrors.email ? "border-red-300" : "border-cream-100"}`}
             />
+            {fieldErrors.email && <p id="email-error" className="text-xs text-red-600">{fieldErrors.email}</p>}
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="phone" className="block text-xs font-medium text-slate-600">Phone number *</label>
             <input
               id="phone"
+              ref={phoneRef}
               type="tel"
               autoComplete="tel"
               required
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
               placeholder="e.g., 07700 900000"
-              className={`${inputBase} border-cream-100`}
+              aria-invalid={fieldErrors.phone ? "true" : undefined}
+              aria-describedby={fieldErrors.phone ? "phone-error" : undefined}
+              className={`${inputBase} ${fieldErrors.phone ? "border-red-300" : "border-cream-100"}`}
             />
+            {fieldErrors.phone && <p id="phone-error" className="text-xs text-red-600">{fieldErrors.phone}</p>}
           </div>
 
           <div className="space-y-1.5">

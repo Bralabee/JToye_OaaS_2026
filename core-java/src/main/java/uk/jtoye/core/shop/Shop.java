@@ -96,6 +96,18 @@ public class Shop {
     private Long freeDeliveryThresholdPennies;
 
     /**
+     * How far the shop delivers, in km from its stored coordinate (V94, #460 / UXT-030). {@code null} = no limit,
+     * which is what every shop did before V94. Enforced on every order writer by
+     * {@code FulfilmentPolicy.requireWithinDeliveryRadius}; a shop with no stored coordinate cannot be measured
+     * from and is not blocked.
+     */
+    @Column(name = "delivery_radius_km")
+    private Double deliveryRadiusKm;
+
+    public Double getDeliveryRadiusKm() { return deliveryRadiusKm; }
+    public void setDeliveryRadiusKm(Double deliveryRadiusKm) { this.deliveryRadiusKm = deliveryRadiusKm; }
+
+    /**
      * The shop takes DELIVERY orders (V83, Phase 37-48 UXT-023). Default true: every shop took both types
      * before V83. Enforced on every order writer by {@code FulfilmentPolicy.requireOffered}; at least one of
      * the two flags is true ({@code ck_shops_offers_some}).

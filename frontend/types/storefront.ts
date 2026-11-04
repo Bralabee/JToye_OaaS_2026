@@ -84,6 +84,8 @@ export interface PublicShop {
    */
   offersDelivery?: boolean
   offersCollection?: boolean
+  /** #460: how far the shop delivers, in km. Absent/null: no limit. A delivery beyond it is refused 422. */
+  deliveryRadiusKm?: number | null
   /**
    * V87 (ADR-0007 / GAP-GTM-02): whether the shop accepts immediate orders only (IMMEDIATE_ONLY),
    * scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS).
