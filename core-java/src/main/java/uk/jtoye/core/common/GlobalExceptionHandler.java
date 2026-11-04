@@ -63,6 +63,7 @@ import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
 import uk.jtoye.core.exception.StaffInviteUnavailableException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
+import uk.jtoye.core.exception.ShopHasProductsException;
 import uk.jtoye.core.exception.ShopSlugTakenException;
 import uk.jtoye.core.exception.FulfilmentNotOfferedException;
 import uk.jtoye.core.exception.ResourceInUseException;
@@ -777,6 +778,20 @@ public class GlobalExceptionHandler {
         problem.setProperty("field", "published");
         problem.setProperty("requestedPublished", ex.getRequestedPublished());
         problem.setProperty("currentPublished", ex.getCurrentPublished());
+        return problem;
+    }
+
+    /**
+     * #833 (UXT-064): a shop that still has products cannot be deleted. 409 with the count as data
+     * ({@code productCount}) and a stable {@code code}, so the dashboard and agents need not parse prose.
+     */
+    @ExceptionHandler(ShopHasProductsException.class)
+    public ProblemDetail handleShopHasProducts(ShopHasProductsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Shop Has Products");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-has-products"));
+        problem.setProperty("code", "SHOP_HAS_PRODUCTS");
+        problem.setProperty("productCount", ex.getProductCount());
         return problem;
     }
 

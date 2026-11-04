@@ -87,12 +87,12 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     // switcher would silently stop applying the moment a vendor types two characters, because
     // the screen swaps to this endpoint at searchQuery.length >= 2. No OR-null branch (matching
     // findByShopId above), so RLS + the caller's require() gate carry tenant scoping.
-    @Query(value = "SELECT p.* FROM products p WHERE p.shop_id = :shopId AND p.id IN ("
+    @Query(value = "SELECT p.* FROM products p WHERE p.archived_at IS NULL AND p.shop_id = :shopId AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
             + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
-           countQuery = "SELECT COUNT(*) FROM products p WHERE p.shop_id = :shopId AND p.id IN ("
+           countQuery = "SELECT COUNT(*) FROM products p WHERE p.archived_at IS NULL AND p.shop_id = :shopId AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
@@ -117,12 +117,12 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     // runs). ProductSearchFtsIntegrationTest pins the plan. RLS scopes every
     // products reference to the current tenant. ts_rank orders FTS matches by
     // relevance; SKU-only matches rank 0 and sort after, tie-broken by title.
-    @Query(value = "SELECT p.* FROM products p WHERE p.id IN ("
+    @Query(value = "SELECT p.* FROM products p WHERE p.archived_at IS NULL AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
             + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
-           countQuery = "SELECT COUNT(*) FROM products p WHERE p.id IN ("
+           countQuery = "SELECT COUNT(*) FROM products p WHERE p.archived_at IS NULL AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!')",
@@ -139,12 +139,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     // findTenantScopedInGrantSetOrTenantWide: the OR-null branch is not implicitly tenant-local.
     // Callers guarantee a non-empty shopIds set (a zero-grant user is short-circuited before this).
     @Query(value = "SELECT p.* FROM products p WHERE p.tenant_id = :tenantId "
+            + "AND p.archived_at IS NULL "
             + "AND (p.shop_id IN (:shopIds) OR p.shop_id IS NULL) AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
             + "SELECT id FROM products WHERE LOWER(sku) LIKE :skuPrefix ESCAPE '!') "
             + "ORDER BY ts_rank(p.search_vector, to_tsquery('english', :tsQuery)) DESC, p.title ASC, p.id ASC",
            countQuery = "SELECT COUNT(*) FROM products p WHERE p.tenant_id = :tenantId "
+            + "AND p.archived_at IS NULL "
             + "AND (p.shop_id IN (:shopIds) OR p.shop_id IS NULL) AND p.id IN ("
             + "SELECT id FROM products WHERE search_vector @@ to_tsquery('english', :tsQuery) "
             + "UNION "
@@ -175,4 +177,25 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             + "AND (p.image_url = :url OR :url = ANY(p.additional_image_urls))", nativeQuery = true)
     long countOtherProductsReferencingImage(@Param("tenantId") UUID tenantId, @Param("productId") UUID productId,
                                             @Param("url") String url);
+
+    // ---- Delete vs archive (#832 / UXT-063) ----
+
+    /**
+     * How many order lines name this product, in ANY order (cancelled and completed included). A product
+     * with even one is ARCHIVED rather than deleted: the line keeps its product_id (fk_order_items_product)
+     * and the order's history keeps the name snapshotted on it. Tenant predicate explicit, as above.
+     */
+    @Query(value = "SELECT COUNT(*) FROM order_items oi WHERE oi.tenant_id = :tenantId AND oi.product_id = :productId",
+           nativeQuery = true)
+    long countOrderLinesForProduct(@Param("tenantId") UUID tenantId, @Param("productId") UUID productId);
+
+    /**
+     * How many order lines name this product on an order that is still in flight (DRAFT to READY). Such a
+     * product is neither deleted nor archived: the kitchen is still working from it. Terminal orders
+     * (COMPLETED, CANCELLED, REFUNDED) do not count.
+     */
+    @Query(value = "SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id "
+            + "WHERE oi.tenant_id = :tenantId AND oi.product_id = :productId "
+            + "AND o.status IN ('DRAFT','PENDING','CONFIRMED','PREPARING','READY')", nativeQuery = true)
+    long countOpenOrderLinesForProduct(@Param("tenantId") UUID tenantId, @Param("productId") UUID productId);
 }

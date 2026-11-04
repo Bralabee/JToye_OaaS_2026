@@ -17,6 +17,7 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
 import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
+import uk.jtoye.core.exception.ShopHasProductsException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopSlugTakenException;
@@ -599,6 +600,14 @@ public class ShopService {
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
         Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        // #833 (UXT-064): products.shop_id is ON DELETE SET NULL (V20), so deleting a shop that still has
+        // products orphaned them (listed, unreachable by id, moved to "All Shops" by the next edit).
+        // Refuse instead, BEFORE any image is deleted (object storage does not roll back).
+        long liveProducts = shopRepository.countLiveProducts(tenantId, shopId);
+        if (liveProducts > 0) {
+            throw new ShopHasProductsException(liveProducts);
+        }
 
         // Clean up images from storage
         storageService.delete(shop.getLogoUrl());

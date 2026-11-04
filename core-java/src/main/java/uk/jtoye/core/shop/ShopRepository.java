@@ -101,6 +101,14 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
     @Query("SELECT s FROM Shop s WHERE LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(s.address) LIKE LOWER(CONCAT('%', :q, '%'))")
     List<Shop> search(@Param("q") String query);
 
+    /**
+     * #833: the shop's live (not archived, #832) products. A shop that has any is not deleted:
+     * products.shop_id is ON DELETE SET NULL (V20), which would orphan them. Tenant predicate explicit.
+     */
+    @Query(value = "SELECT COUNT(*) FROM products WHERE tenant_id = :tenantId AND shop_id = :shopId "
+            + "AND archived_at IS NULL", nativeQuery = true)
+    long countLiveProducts(@Param("tenantId") UUID tenantId, @Param("shopId") UUID shopId);
+
     // Public kitchen search: a published shop matches on its OWN vector (V25: name, tags,
     // description, address) OR through an available product of that shop whose vector (V25:
     // title, category, description, ingredients, dietary tags) matches the same query. Before

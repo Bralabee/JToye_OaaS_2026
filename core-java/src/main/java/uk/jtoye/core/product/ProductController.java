@@ -446,10 +446,11 @@ public class ProductController {
 
     @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete product", description = "Deletes a product for the authenticated tenant")
+    @Operation(summary = "Delete product", description = "Deletes a product for the authenticated tenant. A product that past orders still name is archived instead (removed from lists and the storefront, kept for order history). Its photos are released either way.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "204", description = "Product deleted successfully"),
-            @ApiResponse(responseCode = "404", description = "Product not found")
+            @ApiResponse(responseCode = "204", description = "Product deleted or archived"),
+            @ApiResponse(responseCode = "404", description = "Product not found"),
+            @ApiResponse(responseCode = "409", description = "The product is on an order that is still open (type in-use)")
     })
     public ResponseEntity<Void> delete(
             @Parameter(description = "Product ID") @PathVariable UUID id) {
