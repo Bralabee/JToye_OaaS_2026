@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Catalogue and Shop Admin: Persona Close-Out — 2026-11-04
+### Catalogue and Shop Admin: Persona Close-Out — 2026-11-04 (#1115)
 
 Quick 261104-catalogue. Five persona findings, each re-checked on main first: issue 831, issue 832, issue 833, issue 835 and the remainder of issue 799.
 
