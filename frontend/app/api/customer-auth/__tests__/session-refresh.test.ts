@@ -19,7 +19,6 @@
 
 import { GET as sessionGET } from "../session/route"
 import { NextRequest } from "next/server"
-import { __resetRefreshMemoForTests } from "@/lib/customer-token-refresh"
 
 function fakeJwt(claims: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")
@@ -38,10 +37,11 @@ function futureJwt(sub = "user-1") {
 }
 
 /** A request carrying an EXPIRED access state plus a live refresh cookie. */
-function expiredWithRefresh(refreshValue: string): NextRequest {
+function expiredWithRefresh(refreshValue: string, retry = false): NextRequest {
   const expiredId = fakeJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) - 60 })
   return new NextRequest("http://localhost/api/customer-auth/session", {
     headers: {
+      ...(retry ? { "x-session-retry": "1" } : {}),
       cookie: [
         `jtoye-customer-id=${expiredId}`,
         `jtoye-customer-refresh=${refreshValue}`,
@@ -62,8 +62,6 @@ const ORIGINAL_ENV = { ...process.env }
 beforeEach(() => {
   process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL = "http://keycloak:8080/realms/jtoye-customers"
   jest.restoreAllMocks()
-  // The grace memo (#843) is module state that outlives an `it`; several tests here reuse a token name.
-  __resetRefreshMemoForTests()
 })
 
 afterEach(() => {
@@ -179,12 +177,12 @@ describe("/api/customer-auth/session — renewal (#465)", () => {
     expect(calls).toBe(1)
   })
 
-  it("clears all three cookies when the IdP refuses the refresh token", async () => {
+  it("clears all three cookies when the IdP refuses the refresh token AGAIN on the browser's retry (#843)", async () => {
     global.fetch = jest.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })
     ) as unknown as typeof fetch
 
-    const res = await sessionGET(expiredWithRefresh("dead-token"))
+    const res = await sessionGET(expiredWithRefresh("dead-token", true))
     const body = await res.json()
 
     expect(res.status).toBe(200) // still never a 401 — backlog #13

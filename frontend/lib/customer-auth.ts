@@ -95,8 +95,19 @@ function decodeJwtPayload(token: string): IdTokenClaims | null {
   }
 }
 
+/**
+ * The identity generation: bumped by EVERY marker write (setMarker, clearMarker), so by every
+ * sign-in, sign-out, renewal and lapse. A session probe remembers the generation it started under;
+ * a probe from an older generation is not joined by later callers and its late answer is not
+ * written to storage (#843 review, the identity-lifecycle contract): the callback page's probe
+ * leaves anonymous, the callback then stamps the marker, and that early "anonymous" answer must not
+ * erase the stamp.
+ */
+let identityGeneration = 0
+
 function setMarker(expiresAt: number, sub?: string | null) {
   if (typeof window === "undefined") return
+  identityGeneration += 1
   // Read the OUTGOING identity before anything is written. This call is the
   // only moment it is still on disk — `rememberCustomerId` below overwrites it.
   const previous = getCurrentCustomerId()
@@ -156,6 +167,7 @@ function setMarker(expiresAt: number, sub?: string | null) {
 
 function clearMarker() {
   if (typeof window === "undefined") return
+  identityGeneration += 1
   try {
     localStorage.removeItem(MARKER_KEY)
     localStorage.removeItem(EXPIRES_KEY)
@@ -525,50 +537,126 @@ export async function handleCallback(
  * checks, use `isLoggedIn()`.
  */
 export function getCustomerSession(): Promise<CustomerSession | null> {
-  // Single flight (#843). Past the access-token lifetime every probe is a redemption of the one
-  // refresh cookie on the server, and the realm rotates it (single use). The nav store alone
-  // probes on mount and then each second for five seconds, and checkout adds its own, so on a slow
-  // connection the first request has not returned when the next leaves, and they all carry the
-  // same cookie. Callers that overlap share one request; nothing is cached once it settles.
-  if (sessionInFlight) return sessionInFlight
-  const attempt = fetchCustomerSession().finally(() => {
-    sessionInFlight = null
-  })
-  sessionInFlight = attempt
-  return attempt
+  // Single flight (#843), per identity generation. Past the access-token lifetime every probe is a
+  // redemption of the one refresh cookie, and the realm rotates it (single use; MEASURED: a replay
+  // is refused AND revokes the session). The nav store alone probes on mount and each second for
+  // five seconds, and checkout adds its own, so callers that overlap share one request. A caller
+  // that arrives after a sign-in or sign-out does NOT join a probe from before it.
+  if (sessionInFlight && sessionInFlight.generation === identityGeneration) {
+    return sessionInFlight.promise
+  }
+  const generation = identityGeneration
+  const entry: { generation: number; promise: Promise<CustomerSession | null> } = {
+    generation,
+    promise: withProbeLock(() => probeCustomerSession(generation)).finally(() => {
+      if (sessionInFlight === entry) sessionInFlight = null
+    }),
+  }
+  sessionInFlight = entry
+  return entry.promise
 }
 
-let sessionInFlight: Promise<CustomerSession | null> | null = null
+let sessionInFlight: { generation: number; promise: Promise<CustomerSession | null> } | null = null
 
-async function fetchCustomerSession(): Promise<CustomerSession | null> {
+const PROBE_LOCK = "jtoye-customer-session-probe"
+const PROBE_LOCK_WAIT_MS = 30_000
+
+/**
+ * Serialise probes ACROSS TABS with the Web Locks API. The single flight above only covers one
+ * tab; a second tab probing at the same moment would leave with the same refresh cookie, and the
+ * second redemption of a rotated token ends the session at the IdP, which no server-side tolerance
+ * can undo (the server keeps no tokens). Under the lock the second probe sends AFTER the first has
+ * returned, so it carries the cookie the first one set. The wait is bounded: a lock holder that
+ * hangs must not stop this tab from ever probing, so after the bound it probes anyway, which is
+ * the behaviour before the lock. Browsers without Web Locks probe as before.
+ */
+async function withProbeLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined
+  if (!locks || typeof locks.request !== "function") return fn()
+  let started = false
+  const run = () => {
+    started = true
+    return fn()
+  }
+  // A plain timer backing an AbortController (the fetchWithTimeout pattern above), cleared as soon
+  // as the lock is granted or the wait fails, so no timer outlives the call.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_LOCK_WAIT_MS)
+  try {
+    return await locks.request(PROBE_LOCK, { signal: controller.signal }, () => {
+      clearTimeout(timer)
+      return run()
+    })
+  } catch (err) {
+    // The wait ran out before the callback started: probe unlocked, as before the lock existed.
+    // Anything else came from `fn` itself, which never throws (probeCustomerSession swallows).
+    if (!started && err instanceof DOMException && err.name === "AbortError") return fn()
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+type ProbeAnswer =
+  | { kind: "session"; session: CustomerSession; expiresAt: number | null }
+  | { kind: "none"; refreshRefused: boolean }
+  | { kind: "http-error" }
+  | { kind: "network-error" }
+
+async function probeOnce(retry: boolean): Promise<ProbeAnswer> {
   try {
     const res = await fetch("/api/customer-auth/session", {
       credentials: "include",
       cache: "no-store",
+      ...(retry ? { headers: { "x-session-retry": "1" } } : {}),
     })
     if (!res.ok) {
       // Defensive fallback: an unexpected 5xx/network error, not the normal
       // logged-out path (which now arrives as 200 { authenticated: false }).
-      clearMarker()
-      return null
+      return { kind: "http-error" }
     }
     const data = (await res.json()) as {
       authenticated: boolean
       expiresAt: number | null
       profile: CustomerProfile
+      refreshRefused?: boolean
     }
-    if (!data.authenticated) {
-      clearMarker()
-      return null
+    if (!data.authenticated) return { kind: "none", refreshRefused: data.refreshRefused === true }
+    return {
+      kind: "session",
+      session: { profile: data.profile, expiresAt: data.expiresAt || 0 },
+      expiresAt: data.expiresAt,
     }
-    // Refresh the marker so subsequent synchronous checks agree with server.
-    // Carries the subject too: this is the path a RENEWED session comes back
-    // through, and an identity that silently went missing there would make
-    // every subsequent basket write look anonymous.
-    if (data.expiresAt) setMarker(data.expiresAt, data.profile?.sub)
-    return { profile: data.profile, expiresAt: data.expiresAt || 0 }
   } catch {
-    return null
+    return { kind: "network-error" }
+  }
+}
+
+/**
+ * One probe, with the one retry. A refusal that the server says may be a stale cookie in flight
+ * (`refreshRefused`) is asked again, once, marked as a retry: by then the browser holds the cookie
+ * the winning probe set, and the server treats a refusal on the retry as final and clears the
+ * cookies. Marker writes happen only if no sign-in or sign-out has happened since this probe began.
+ */
+async function probeCustomerSession(generation: number): Promise<CustomerSession | null> {
+  let answer = await probeOnce(false)
+  if (answer.kind === "none" && answer.refreshRefused) answer = await probeOnce(true)
+
+  const current = generation === identityGeneration
+  switch (answer.kind) {
+    case "session":
+      // Refresh the marker so subsequent synchronous checks agree with server.
+      // Carries the subject too: this is the path a RENEWED session comes back
+      // through, and an identity that silently went missing there would make
+      // every subsequent basket write look anonymous.
+      if (current && answer.expiresAt) setMarker(answer.expiresAt, answer.session.profile?.sub)
+      return answer.session
+    case "none":
+    case "http-error":
+      if (current) clearMarker()
+      return null
+    default:
+      return null
   }
 }
 
