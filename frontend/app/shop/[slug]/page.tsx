@@ -3,6 +3,7 @@ import { headers } from "next/headers"
 import { notFound, permanentRedirect } from "next/navigation"
 import { loadShopDetail } from "@/lib/storefront-server"
 import { resolvePublicOrigin } from "@/lib/public-origin"
+import { DEFAULT_OG_IMAGE } from "@/lib/og-image"
 import { serialiseJsonLd, shopStructuredData } from "@/lib/structured-data"
 import { SellerBlock } from "@/components/storefront/seller-block"
 import { ShopDetailClient } from "./shop-detail-client"
@@ -126,13 +127,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       url: canonical,
       locale: "en_GB",
-      images: image ? [{ url: image, alt: `${shop.name}` }] : undefined,
+      // SW-CLR-08: the shop's own picture when it has one, the platform's default share image when it has none.
+      images: image
+        ? [{ url: image, alt: `${shop.name}` }]
+        : [{ url: DEFAULT_OG_IMAGE.url, width: DEFAULT_OG_IMAGE.width, height: DEFAULT_OG_IMAGE.height, alt: DEFAULT_OG_IMAGE.alt }],
     },
     twitter: {
-      card: image ? "summary_large_image" : "summary",
+      card: "summary_large_image",
       title: `${shop.name} — order online`,
       description,
-      images: image ? [image] : undefined,
+      images: image ? [image] : [{ url: DEFAULT_OG_IMAGE.url, alt: DEFAULT_OG_IMAGE.alt }],
     },
   }
 }

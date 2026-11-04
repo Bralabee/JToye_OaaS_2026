@@ -31,7 +31,7 @@ import java.util.Map;
  * - Tenant-aware caching with TenantAwareCacheKeyGenerator
  * - Per-cache TTL configuration (products: 10min, shops: 15min)
  * - JSON serialization for cache values (Jackson 3, allowlisted polymorphic typing)
- * - Versioned cache keys ({@code v5:{region}::...}, see CACHE_KEY_FORMAT_VERSION)
+ * - Versioned cache keys ({@code v6:{region}::...}, see CACHE_KEY_FORMAT_VERSION)
  * - Disabled for test profile to maintain test isolation
  * 
  * Cache Strategy:
@@ -64,7 +64,7 @@ public class CacheConfig implements CachingConfigurer {
     }
 
     /**
-     * The cache value FORMAT version, carried in every cache key as {@code v5:{region}::…}
+     * The cache value FORMAT version, carried in every cache key as {@code v6:{region}::…}
      * (Phase 38, 38-09, as {@code v4}; bumped to {@code v5} by the 37-G review, see "History").
      *
      * <p><b>Why.</b> The Spring Boot 4 move put the cache value serializer on Jackson 3, whose typing
@@ -93,7 +93,7 @@ public class CacheConfig implements CachingConfigurer {
      *   <li><b>Post-rollout cleanup (operator).</b> An older pod cannot be taught to evict a newer key,
      *       so a write it handles during the overlap leaves the newer entry for that entity stale until
      *       its TTL. Once every pod runs the new image, delete the current-version keys (today
-     *       {@code v5:*}; SCAN + UNLINK, never KEYS or FLUSHALL); the same step after a re-roll-forward
+     *       {@code v6:*}; SCAN + UNLINK, never KEYS or FLUSHALL); the same step after a re-roll-forward
      *       removes entries written before a rollback that the older pods never evicted. ADR-0006
      *       "Deploy notes" and "Rollback notes" carry the procedure and the bound.</li>
      * </ul>
@@ -115,9 +115,11 @@ public class CacheConfig implements CachingConfigurer {
      * added {@code deliveryFeePennies}, {@code freeDeliveryThresholdPennies}, {@code offersDelivery} and
      * {@code offersCollection} to {@code ShopDto}. Measured at the gate: after the core-java restart
      * {@code GET /shops/{id}} served the pre-deploy {@code v4:} entry without the four fields, and the
-     * vendor edit dialog would then save fee 0 and no threshold.
+     * vendor edit dialog would then save fee 0 and no threshold. {@code v6} (#460): {@code deliveryRadiusKm}
+     * added to {@code ShopDto} and {@code PublicShopDto}, for the same reason: a pre-deploy entry would serve a
+     * shop with no radius, and a vendor edit would then save "no limit" over the radius just set.
      */
-    static final String CACHE_KEY_FORMAT_VERSION = "v5";
+    static final String CACHE_KEY_FORMAT_VERSION = "v6";
 
     /**
      * TRANSITIONAL (37-G review): the format version {@link #CACHE_KEY_FORMAT_VERSION} replaced. Pods of
@@ -131,7 +133,7 @@ public class CacheConfig implements CachingConfigurer {
      * {@link #previousFormatCacheKey} and its one caller, once no image on the previous version can run
      * (no rollback to it is still on the table) and 15 minutes have elapsed since the last such pod stopped.
      */
-    static final String PREVIOUS_CACHE_KEY_FORMAT_VERSION = "v4";
+    static final String PREVIOUS_CACHE_KEY_FORMAT_VERSION = "v5";
 
     /**
      * TRANSITIONAL (37-G review): the Redis key a pod on {@link #PREVIOUS_CACHE_KEY_FORMAT_VERSION} uses for

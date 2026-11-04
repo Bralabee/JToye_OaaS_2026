@@ -112,6 +112,28 @@ class CustomerJwtVerifierTest {
     }
 
     @Test
+    @DisplayName("SW-JRD-07: verifiedIdentity returns the email AND the token's subject, under the same checks")
+    void verifiedIdentity_returnsEmailAndSubject() {
+        JwtDecoder decoder = mock(JwtDecoder.class);
+        when(decoder.decode("valid")).thenReturn(jwt(Map.of("email", "alice@example.com", "email_verified", true)));
+
+        CustomerJwtVerifier.CustomerIdentity who = verifier(decoder, true).verifiedIdentity("valid");
+
+        assertThat(who.email()).isEqualTo("alice@example.com");
+        assertThat(who.subject()).isEqualTo("customer-sub");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-07: verifiedIdentity refuses what verifiedEmail refuses (unverified email → 401)")
+    void verifiedIdentity_sameGatesAsVerifiedEmail() {
+        JwtDecoder decoder = mock(JwtDecoder.class);
+        when(decoder.decode("valid")).thenReturn(jwt(Map.of("email", "alice@example.com", "email_verified", false)));
+
+        assertUnauthorized(() -> verifier(decoder, true).verifiedIdentity("valid"));
+        assertUnauthorized(() -> verifier(decoder, true).verifiedIdentity(null));
+    }
+
+    @Test
     @DisplayName("email_verified=false is accepted when the dev-profile relaxation is active")
     void unverifiedEmail_accepted_whenNotRequired() {
         JwtDecoder decoder = mock(JwtDecoder.class);

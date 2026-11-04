@@ -40,7 +40,8 @@ class WebhookSubscriptionServiceTest {
         // inert Mockito mock (a void no-op by default); the gate itself is proven end-to-end, on
         // real Postgres with a real STAFF grant, by WebhookAuthzIntegrationTest.
         service = new WebhookSubscriptionService(repository, new WebhookUrlValidator(true),
-                mock(ShopAccessService.class), mock(WebhookDeliveryRepository.class));
+                mock(ShopAccessService.class), mock(WebhookDeliveryRepository.class),
+                mock(tools.jackson.databind.json.JsonMapper.class), new WebhookProperties());
         tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         when(repository.save(any(WebhookSubscription.class)))

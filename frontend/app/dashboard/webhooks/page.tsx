@@ -14,6 +14,7 @@ import {
   Ban,
   MoreHorizontal,
   ShieldCheck,
+  Trash2,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -64,6 +65,7 @@ function eventsSummary(sub: WebhookSubscription): string {
 type ConfirmState =
   | { kind: "rotate"; sub: WebhookSubscription }
   | { kind: "revoke"; sub: WebhookSubscription }
+  | { kind: "delete"; sub: WebhookSubscription }
   | null
 
 export default function WebhooksPage() {
@@ -151,6 +153,14 @@ export default function WebhooksPage() {
         setConfirm(null)
         setSecret(res.signingSecret)
         setSecretOpen(true)
+      } else if (kind === "delete") {
+        // #879 (UXT-122): a revoked endpoint is dead for good; deleting it removes the row and its log.
+        await webhooksApi.remove(sub.id)
+        setConfirm(null)
+        toast({
+          title: "Endpoint deleted",
+          description: "The endpoint and its delivery log have been removed.",
+        })
       } else {
         await webhooksApi.revoke(sub.id)
         setConfirm(null)
@@ -164,7 +174,8 @@ export default function WebhooksPage() {
       setConfirm(null)
       toast({
         variant: "destructive",
-        title: kind === "rotate" ? "Rotate failed" : "Revoke failed",
+        title:
+          kind === "rotate" ? "Rotate failed" : kind === "delete" ? "Delete failed" : "Revoke failed",
         description: extractErrorDetail(err, "Please try again."),
       })
     }
@@ -187,11 +198,25 @@ export default function WebhooksPage() {
   }) => {
     if (sub.status === "REVOKED") {
       return (
-        <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-0">
-          <Link href={`/dashboard/webhooks/${sub.id}`}>
-            <Eye className="mr-1 h-4 w-4" /> View
-          </Link>
-        </Button>
+        <div
+          className={
+            layout === "card" ? "flex flex-wrap gap-2" : "flex items-center justify-end gap-2"
+          }
+        >
+          <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-0">
+            <Link href={`/dashboard/webhooks/${sub.id}`}>
+              <Eye className="mr-1 h-4 w-4" /> View
+            </Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-h-11 text-red-600 hover:bg-red-50 hover:text-red-700 sm:min-h-0"
+            onClick={() => setConfirm({ kind: "delete", sub })}
+          >
+            <Trash2 className="mr-1 h-4 w-4" /> Delete
+          </Button>
+        </div>
       )
     }
     const resume = sub.status !== "ACTIVE"
@@ -483,6 +508,21 @@ export default function WebhooksPage() {
         description="The current secret stops working immediately. Update your endpoint with the new secret to keep verifying signatures — in-flight deliveries signed with the old secret will fail verification."
         confirmLabel="Rotate secret"
         cancelLabel="Keep current secret"
+        onConfirm={onConfirm}
+      />
+
+      <ConfirmActionDialog
+        open={confirm?.kind === "delete"}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title="Delete this endpoint?"
+        description={
+          confirm?.kind === "delete"
+            ? `This permanently removes ${confirm.sub.targetUrl} and its delivery log. It's already revoked, so no deliveries are affected, but the log can't be recovered.`
+            : ""
+        }
+        confirmLabel="Delete endpoint"
+        cancelLabel="Keep endpoint"
+        destructive
         onConfirm={onConfirm}
       />
 

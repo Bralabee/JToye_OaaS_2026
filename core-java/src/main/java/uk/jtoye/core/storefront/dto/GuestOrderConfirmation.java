@@ -136,6 +136,14 @@ public class GuestOrderConfirmation {
     public void setFulfilmentSlotId(UUID fulfilmentSlotId) { this.fulfilmentSlotId = fulfilmentSlotId; }
     public LocalDate getScheduledForDate() { return scheduledForDate; }
     public void setScheduledForDate(LocalDate scheduledForDate) { this.scheduledForDate = scheduledForDate; }
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the "
+            + "order was placed. An estimate, not a promise. Absent when the shop gave no preparation time.")
+    private java.time.OffsetDateTime estimatedReadyAt;
+
+    public java.time.OffsetDateTime getEstimatedReadyAt() { return estimatedReadyAt; }
+    public void setEstimatedReadyAt(java.time.OffsetDateTime estimatedReadyAt) { this.estimatedReadyAt = estimatedReadyAt; }
+
     public String getScheduledWindowLabel() { return scheduledWindowLabel; }
     public void setScheduledWindowLabel(String scheduledWindowLabel) { this.scheduledWindowLabel = scheduledWindowLabel; }
     public Long getDepositAmountPennies() { return depositAmountPennies; }

@@ -68,7 +68,7 @@ import static uk.jtoye.core.testsupport.TenantJwts.adminJwt;
  * worker counted every failed ATTEMPT across every delivery against one subscription-wide threshold
  * (10), so two events failing five times each tripped it although both would have been delivered on
  * the sixth try. This class drives the real {@link WebhookDeliveryWorker} over Postgres 15 with the
- * production attempt budget ({@code max-attempts} 8, not overridden) and the production auto-pause
+ * production attempt budget ({@code max-attempts} 15, not overridden) and the production auto-pause
  * default (not overridden), against a scripted receiver that fails a given event N times and then
  * answers 200. Only the backoff is shortened, so a run takes seconds rather than minutes.
  *
@@ -218,7 +218,7 @@ class WebhookAutoPauseIntegrationTest {
         UUID first = event(ALWAYS);
         driveUntilTerminal(first);
         assertThat(deliveryStatus(first)).isEqualTo("FAILED");
-        assertThat(receiver.attempts(first)).as("the production budget of 8 attempts").isEqualTo(8);
+        assertThat(receiver.attempts(first)).as("the production budget of 15 attempts").isEqualTo(15);
         assertThat(subscriptionStatus()).as("one exhausted delivery does not pause").isEqualTo("ACTIVE");
         assertThat(consecutiveFailures()).isEqualTo(1);
 
@@ -226,13 +226,13 @@ class WebhookAutoPauseIntegrationTest {
         driveUntilTerminal(second);
         assertThat(subscriptionStatus()).as("two exhausted deliveries do not pause").isEqualTo("ACTIVE");
         assertThat(deliveryStatus(second)).isEqualTo("FAILED");
-        assertThat(receiver.attempts(second)).isEqualTo(8);
+        assertThat(receiver.attempts(second)).isEqualTo(15);
         assertThat(consecutiveFailures()).isEqualTo(2);
 
         UUID third = event(ALWAYS);
         driveUntilTerminal(third);
         assertThat(deliveryStatus(third)).isEqualTo("FAILED");
-        assertThat(receiver.attempts(third)).isEqualTo(8);
+        assertThat(receiver.attempts(third)).isEqualTo(15);
         assertThat(subscriptionStatus()).as("the third exhausted delivery in a row pauses")
                 .isEqualTo("AUTO_PAUSED");
         assertThat(consecutiveFailures()).isEqualTo(3);

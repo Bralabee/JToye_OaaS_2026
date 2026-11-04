@@ -320,15 +320,26 @@ public class MediaAssetService {
      * A still-referenced asset is a no-op (neither the object nor the row is touched).
      */
     public void releaseAsset(UUID oldAssetId) {
+        detachAsset(oldAssetId).ifPresent(storageService::deleteByKey);   // physical Blob delete ONLY at ref-count 0
+    }
+
+    /**
+     * The row half of {@link #releaseAsset}: at reference count 0 remove the {@code media_asset} row and
+     * return the object key the caller must delete, WITHOUT touching object storage. A caller whose
+     * transaction can still roll back (the product delete) defers the physical delete to after commit:
+     * object storage does not roll back, so deleting first would leave a restored row pointing at a gone
+     * object. Empty when the asset is still referenced or unknown.
+     */
+    public Optional<String> detachAsset(UUID oldAssetId) {
         long refs = productMediaRepository.countByAssetId(oldAssetId);
         if (refs > 0) {
             log.debug("Asset {} still referenced by {} product_media row(s) — not deleting", oldAssetId, refs);
-            return;
+            return Optional.empty();
         }
-        mediaAssetRepository.findById(oldAssetId).ifPresent(asset -> {
-            storageService.deleteByKey(asset.getObjectKey());   // physical Blob delete ONLY at ref-count 0
+        return mediaAssetRepository.findById(oldAssetId).map(asset -> {
             mediaAssetRepository.delete(asset);
-            log.info("Released asset {} (ref-count 0): deleted object {} and row", oldAssetId, asset.getObjectKey());
+            log.info("Released asset {} (ref-count 0): row removed, object {} to delete", oldAssetId, asset.getObjectKey());
+            return asset.getObjectKey();
         });
     }
 

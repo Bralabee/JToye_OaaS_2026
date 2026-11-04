@@ -95,7 +95,7 @@ public class WebhookDeliveryController {
                 new ReplayRequest(subscriptionId, deliveryId),
                 WebhookDeliveryView.class,
                 () -> deliveryService.replay(subscriptionId, deliveryId));
-        return ResponseEntity.status(outcome.status()).body(outcome.value());
+        return outcome.toResponse();
     }
 
     /** Request identity for the Idempotency-Key hash (same-key/different-target = 422). */

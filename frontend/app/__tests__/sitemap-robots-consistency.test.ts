@@ -57,22 +57,3 @@ describe("sitemap.xml / robots.txt agree (FE-6)", () => {
   })
 })
 
-/**
- * SW-CLR-05 (2026-10-19 staging persona swarm, epic issue 964): a page that tells crawlers
- * `noindex` must not also be offered to them in the sitemap. `/business-model-guide` and
- * `/competitive` went noindex and left the footer in PR 1080; the guide's sitemap entry was left
- * until after Phase 30 plan 30-19 and is now removed.
- */
-describe("sitemap.xml lists no noindex page (SW-CLR-05)", () => {
-  it.each([
-    ["/business-model-guide", () => import("@/app/business-model-guide/page")],
-    ["/competitive", () => import("@/app/competitive/page")],
-  ])("%s is noindex and absent from the sitemap", async (path, load) => {
-    const { metadata } = (await load()) as { metadata: { robots?: { index?: boolean } } }
-    // CONTROL: the page really is noindex, so its absence is the agreement and not an accident.
-    expect(metadata.robots?.index).toBe(false)
-    const paths = await sitemapPaths()
-    expect(paths.length).toBeGreaterThan(0)
-    expect(paths).not.toContain(path)
-  })
-})

@@ -96,6 +96,25 @@ public class Shop {
     private Long freeDeliveryThresholdPennies;
 
     /**
+     * How far the shop delivers, in km from its stored coordinate (V94, #460 / UXT-030). {@code null} = no limit,
+     * which is what every shop did before V94. Enforced on every order writer by
+     * {@code FulfilmentPolicy.requireWithinDeliveryRadius}; a shop with no stored coordinate cannot be measured
+     * from and is not blocked.
+     */
+    @Column(name = "delivery_radius_km")
+    private Double deliveryRadiusKm;
+
+    public Double getDeliveryRadiusKm() { return deliveryRadiusKm; }
+    public void setDeliveryRadiusKm(Double deliveryRadiusKm) { this.deliveryRadiusKm = deliveryRadiusKm; }
+
+    /**
+     * Default preparation time in minutes (V91, #825, owner ruling 2026-11-04). NULL = not set, and then
+     * no ready-by estimate is shown anywhere for this shop's orders. 1..480 ({@code ck_shops_prep_time_minutes}).
+     */
+    @Column(name = "prep_time_minutes")
+    private Integer prepTimeMinutes;
+
+    /**
      * The shop takes DELIVERY orders (V83, Phase 37-48 UXT-023). Default true: every shop took both types
      * before V83. Enforced on every order writer by {@code FulfilmentPolicy.requireOffered}; at least one of
      * the two flags is true ({@code ck_shops_offers_some}).
@@ -194,6 +213,8 @@ public class Shop {
     public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
     public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
     public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
+    public Integer getPrepTimeMinutes() { return prepTimeMinutes; }
+    public void setPrepTimeMinutes(Integer prepTimeMinutes) { this.prepTimeMinutes = prepTimeMinutes; }
     public Boolean getOffersDelivery() { return offersDelivery; }
     public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
     public Boolean getOffersCollection() { return offersCollection; }

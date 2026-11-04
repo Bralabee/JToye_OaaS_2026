@@ -55,6 +55,44 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Page<Order> findByStatusAndShopIdIn(OrderStatus status, Collection<UUID> shopIds, Pageable pageable);
 
     /**
+     * Issue #822: the orders list search, over EVERY page, in one query.
+     *
+     * <p>Matches (case-insensitively, as a substring so the last four characters of an order number
+     * find it) the order number, the order id, the customer's name and the customer's phone (compared as
+     * digits with +44 folded to 0). The customer's EMAIL is consulted only on shops where the caller sees full
+     * customer contact ({@code emailAllShops}, or {@code o.shopId IN :emailShopIds}) - issue #856:
+     * a STAFF caller is never shown the email, so letting it match one would turn the search box
+     * into an oracle that confirms an address the response hides.
+     *
+     * <p>Scope is decided by the caller and narrowed here, never post-filtered: {@code allShops}
+     * (GROUP_ADMIN) or {@code o.shopId IN :shopIds} (the grant set, or the one shop an explicit
+     * {@code shopId} names). Both collections are NEVER empty - a Postgres {@code IN ()} is a
+     * syntax error, so callers pass a nil-uuid sentinel instead. The tenant predicate is explicit
+     * on top of RLS.
+     */
+    @Query("""
+            SELECT o FROM Order o
+            WHERE o.tenantId = :tenantId
+              AND (:allShops = true OR o.shopId IN :shopIds)
+              AND (lower(o.orderNumber) LIKE :text ESCAPE '\\'
+                   OR lower(cast(o.id AS string)) LIKE :text ESCAPE '\\'
+                   OR lower(o.customerName) LIKE :text ESCAPE '\\'
+                   OR (:searchPhone = true
+                       AND cast(function('regexp_replace', function('regexp_replace', coalesce(o.customerPhone, ''), '[^0-9]', '', 'g'), '^440?', '0') as String) LIKE :phone ESCAPE '\\')
+                   OR ((:emailAllShops = true OR o.shopId IN :emailShopIds)
+                       AND lower(o.customerEmail) LIKE :text ESCAPE '\\'))
+            """)
+    Page<Order> search(@Param("tenantId") UUID tenantId,
+                       @Param("allShops") boolean allShops,
+                       @Param("shopIds") Collection<UUID> shopIds,
+                       @Param("emailAllShops") boolean emailAllShops,
+                       @Param("emailShopIds") Collection<UUID> emailShopIds,
+                       @Param("text") String text,
+                       @Param("searchPhone") boolean searchPhone,
+                       @Param("phone") String phone,
+                       Pageable pageable);
+
+    /**
      * Kitchen board query (#564): one shop's orders in the given statuses, paginated.
      *
      * <p>The board previously read this by fetching the shop's WHOLE order history a page

@@ -6,6 +6,7 @@ import {
   parseSearchInterpretation,
 } from "@/lib/search-interpretation"
 import { resolvePublicOrigin } from "@/lib/public-origin"
+import { DEFAULT_OG_IMAGE, openGraphWithDefaultImage } from "@/lib/og-image"
 import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
 import { ShopDiscoveryClient } from "./shop-discovery-client"
 import { SHOPS_PAGE_SIZE } from "@/lib/shop-discovery-page-size"
@@ -41,18 +42,21 @@ export async function generateMetadata(): Promise<Metadata> {
     title: "Local kitchens near you — order online | J'Toye",
     description,
     alternates: { canonical: "/shop" },
-    openGraph: {
+    // SW-CLR-08: a page's own openGraph replaces the root's, so the default share image is added here,
+    // and the Twitter card (also replaced) becomes the large-image one that image needs.
+    openGraph: openGraphWithDefaultImage({
       type: "website",
       siteName: "J'Toye",
       title: "Local kitchens near you — order online",
       description,
       url: "/shop",
       locale: "en_GB",
-    },
+    }),
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: "Local kitchens near you — order online",
       description,
+      images: [{ url: DEFAULT_OG_IMAGE.url, alt: DEFAULT_OG_IMAGE.alt }],
     },
   }
 }

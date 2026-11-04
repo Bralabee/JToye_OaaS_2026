@@ -809,6 +809,49 @@ public class KeycloakAdminClient {
         }
     }
 
+    /**
+     * SW-JRD-07 (owner ruling 2026-11-04): {@code GET /admin/realms/{realm}/users/{id}}, the whole user
+     * representation, for a read-modify-write. A 404 is "no such user" (empty), not an error.
+     *
+     * @throws KeycloakAdminException on any other failure, carrying the realm only (never an address)
+     */
+    public Optional<ObjectNode> getUser(String realm, String userId, String token) {
+        try {
+            ObjectNode user = restClient.get()
+                    .uri("/admin/realms/{realm}/users/{id}", realm, userId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(ObjectNode.class);
+            return Optional.ofNullable(user);
+        } catch (HttpClientErrorException.NotFound e) {
+            return Optional.empty();
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak user read failed for realm=" + realm, e);
+        }
+    }
+
+    /**
+     * SW-JRD-07: {@code PUT /admin/realms/{realm}/users/{id}} with the FULL representation (Keycloak
+     * requires the whole rep on update, as {@link #setUserEnabled} notes). The caller read it with
+     * {@link #getUser}, changed the fields it means to change, and passes it back.
+     *
+     * @throws KeycloakAdminException on any non-2xx, carrying the realm only
+     */
+    public void updateUser(String realm, ObjectNode userRep, String token) {
+        String userId = userRep.path("id").asString();
+        try {
+            restClient.put()
+                    .uri("/admin/realms/{realm}/users/{id}", realm, userId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(userRep)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak user update failed for realm=" + realm, e);
+        }
+    }
+
     /** Revokes the user's active sessions ({@code POST .../users/{id}/logout}). */
     public void logoutUser(String realm, String userId, String token) {
         try {

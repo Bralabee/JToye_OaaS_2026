@@ -462,13 +462,13 @@ data:
 
   # --- Webhook delivery knobs — Phase 22 COMMS-* -----------------------------
   # SOURCE: all three byte-identical to their application.yml defaults
-  # (`${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}`,
+  # (`${WEBHOOK_DELIVERY_MAX_ATTEMPTS:15}`,
   # `${WEBHOOK_DELIVERY_RETENTION_DAYS:30}`,
   # `${WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES:true}`). Made explicit so the
   # retry/retention budget and the SSRF private-range block are reviewable and
   # per-environment tunable instead of being invisible code defaults.
   # block-private-ranges is a SECURITY control: keep it "true".
-  webhook.delivery.max-attempts: "8"
+  webhook.delivery.max-attempts: "15"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
 
@@ -555,9 +555,12 @@ data:
   # --- Edge rate limits (37-25, D-19 / RWO-039) --------------------------------
   # Consumed by edge-go (k8s/base/edge-go-deployment.yaml) as RATE_LIMIT_RPS,
   # RATE_LIMIT_BURST, RATE_LIMIT_TENANT_RPS, RATE_LIMIT_TENANT_BURST and
-  # RATE_LIMIT_TENANT_MAX. Two layers. The pre-auth, process-wide valve is a
-  # PER-REPLICA flood guard, not a quota: the effective ceiling is the value
-  # times the replica count. The per-tenant bucket is applied after JWT
+  # RATE_LIMIT_TENANT_MAX, RATE_LIMIT_IP_MAX, RATE_LIMIT_GLOBAL_RPS and
+  # RATE_LIMIT_GLOBAL_BURST. Two layers. The pre-auth valve is a
+  # PER-CLIENT-ADDRESS (#808), PER-REPLICA flood guard, not a quota: its rate and
+  # burst are one address's (an IPv6 client is keyed on its /64), and the
+  # per-replica ceiling over ALL addresses is the global pair (5x the per-address
+  # default), times the replica count. The per-tenant bucket is applied after JWT
   # validation and keyed on the validated tenant_id, so one integrator's burst
   # cannot exhaust another vendor's sync (UXT-039). Every 429 from either layer
   # is application/problem+json (type https://jtoye.uk/errors/rate-limited)
@@ -570,3 +573,6 @@ data:
   edge.rate-limit.tenant.rps: "10"
   edge.rate-limit.tenant.burst: "20"
   edge.rate-limit.tenant.max: "10000"
+  edge.rate-limit.ip.max: "10000"
+  edge.rate-limit.global.rps: "1000"
+  edge.rate-limit.global.burst: "2000"

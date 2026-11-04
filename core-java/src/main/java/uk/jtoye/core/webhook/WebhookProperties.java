@@ -38,11 +38,11 @@ public class WebhookProperties {
         /** Max due rows claimed per tenant per tick. */
         private int batchSize = 50;
         /** Attempts before a delivery flips FAILED. */
-        private int maxAttempts = 8;
-        /** Exponential-backoff base (ms). */
-        private long backoffBaseMs = 1000;
-        /** Exponential-backoff cap (ms) — default 1 hour. */
-        private long backoffCapMs = 3_600_000;
+        private int maxAttempts = 15;
+        /** Exponential-backoff base (ms) — default 30 s: 30 s, 1 m, 2 m ... (#587). */
+        private long backoffBaseMs = 30_000;
+        /** Exponential-backoff cap (ms) — default 4 hours; reached on the 9th retry so the schedule spans ~24 h (#587). */
+        private long backoffCapMs = 14_400_000;
         /**
          * Consecutive failed DELIVERIES (each one having exhausted {@link #maxAttempts}) at which a
          * subscription auto-pauses (UXT-038, 37-43). A delivered event resets the count. This

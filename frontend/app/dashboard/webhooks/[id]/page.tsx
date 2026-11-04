@@ -12,6 +12,7 @@ import {
   Play,
   Ban,
   AlertTriangle,
+  Send,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -178,6 +179,30 @@ export default function WebhookDetailPage() {
       toast({
         variant: "destructive",
         title: "Action failed",
+        description: extractErrorDetail(err, "Please try again."),
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // #879 (UXT-122): prove the endpoint works without waiting for a real order. The ping is queued, not
+  // delivered inline; the worker sends it within seconds and its outcome shows in the log below.
+  const handleSendTest = async () => {
+    if (!subscription) return
+    try {
+      setBusy(true)
+      await webhooksApi.sendTestEvent(subscription.id)
+      toast({
+        title: "Test event queued",
+        description:
+          "A test event is on its way to this endpoint. It appears in the delivery log below within a few seconds as webhook.test; reload the log to see whether it was delivered.",
+      })
+      await fetchDeliveries()
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't send a test event",
         description: extractErrorDetail(err, "Please try again."),
       })
     } finally {
@@ -353,6 +378,17 @@ export default function WebhookDetailPage() {
                     </>
                   )}
                 </Button>
+                {subscription.status === "ACTIVE" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 sm:min-h-0"
+                    disabled={busy}
+                    onClick={handleSendTest}
+                  >
+                    <Send className="mr-1 h-4 w-4" /> Send test event
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

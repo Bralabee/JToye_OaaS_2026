@@ -27,6 +27,7 @@ import {
   KdsOtherShopNotice,
 } from "@/components/dashboard/kitchen/kds-board-scope"
 import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
+import { KdsReadyByBadge } from "@/components/dashboard/kitchen/kds-time-badges"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import {
   AllergyNoteBlock,
@@ -547,11 +548,6 @@ export default function KitchenPage() {
     (event: OrderStateChangeEvent) => {
       const { orderId, newStatus } = event
 
-      // #106: a frame off the socket is proof the feed is alive right now — advance
-      // the stamp so a busy kitchen never sees a stale warning over live tickets.
-      setLastSyncedAt(Date.now())
-      setSyncFailed(false)
-
       // If new status is a kitchen status, fetch detail and add/update
       if (KITCHEN_STATUSES.includes(newStatus)) {
         apiClient
@@ -563,15 +559,28 @@ export default function KitchenPage() {
               next.set(orderId, detail)
               return next
             })
+            // #106 / #866: a frame is proof the feed is alive only once the order it announced
+            // has actually been LOADED. The stamp used to advance on arrival, before this fetch,
+            // so with the API unreachable but the socket up the pill read "Live" for ~50 s while
+            // the new order never reached the board.
+            setLastSyncedAt(Date.now())
+            setSyncFailed(false)
           })
           .catch(() => {
-            // If fetch fails, ignore — will sync on next reconnect
+            // #866: do not swallow it. The board cannot show what the frame announced, so say so
+            // now ("Not updating", banner) and re-read the whole board - which is also the retry:
+            // if it lands the order arrives and the flag clears; if it fails it toasts, and the
+            // minute poll keeps trying.
+            setSyncFailed(true)
+            void fetchOrders()
           })
 
         // 37-17: no sound from here. A new order lands in the New lane through the read above,
         // and the lane's count drives the repeating alert (useKitchenAlert below).
       } else if (newStatus === "COMPLETED" || newStatus === "CANCELLED") {
-        // Remove from display
+        // Remove from display - a local fact needing no fetch, so the frame itself is the proof.
+        setLastSyncedAt(Date.now())
+        setSyncFailed(false)
         setOrdersMap((prev) => {
           const next = new Map(prev)
           next.delete(orderId)
@@ -579,7 +588,7 @@ export default function KitchenPage() {
         })
       }
     },
-    []
+    [fetchOrders]
   )
 
   // --- WebSocket connection ---
@@ -605,9 +614,23 @@ export default function KitchenPage() {
 
   // --- Status bump ---
 
+  // #818: orders with a bump request in flight (ref = the synchronous guard, state = what renders).
+  const bumpingRef = useRef<Set<string>>(new Set())
+  const [bumpingIds, setBumpingIds] = useState<Set<string>>(() => new Set())
+
   const handleBump = async (orderId: string, currentStatus: OrderStatus) => {
     const action = bumpActions[currentStatus]
     if (!action) return
+
+    // #818: ONE request in flight per order. The optimistic move below re-labels this very button
+    // (Start Preparing -> Mark Ready) before the first request has answered, so a double-tap used
+    // to post the NEXT step too and carry the order from CONFIRMED to READY in a second, emailing
+    // the customer "Ready!" for food nobody had cooked. The ref is the guard (it is synchronous,
+    // state is not); the state mirrors it so the button is disabled for the eye and the screen
+    // reader. Released in finally, so a failed request leaves the cook free to tap again.
+    if (bumpingRef.current.has(orderId)) return
+    bumpingRef.current.add(orderId)
+    setBumpingIds(new Set(bumpingRef.current))
 
     // Optimistic update
     setOrdersMap((prev) => {
@@ -643,6 +666,9 @@ export default function KitchenPage() {
         description: hasResponse ? describeLoadError(error, fallback).message : fallback,
       })
       fetchOrders()
+    } finally {
+      bumpingRef.current.delete(orderId)
+      setBumpingIds(new Set(bumpingRef.current))
     }
   }
 
@@ -696,10 +722,14 @@ export default function KitchenPage() {
     })
   }, [])
 
-  // --- Sorted orders (newest first) ---
+  // --- Sorted orders (oldest first) ---
+  //
+  // #824: a kitchen is a first-in-first-out queue. Newest-first sank the longest-waiting ticket to
+  // the bottom of the grid, exactly where a cook on a wall tablet looks last. The New lane has
+  // always been oldest-first; the grid now agrees with it.
 
   const sortedOrders = Array.from(ordersMap.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   )
 
   // 37-16 (D-11): PENDING orders wait in the New lane; the grid keeps CONFIRMED/PREPARING/READY exactly
@@ -1179,6 +1209,8 @@ export default function KitchenPage() {
                           scheduledWindowLabel={order.scheduledWindowLabel}
                           scheduledForDate={order.scheduledForDate}
                         />
+                        {/* #825: the ESTIMATED ready-by time (nothing when the shop set no prep time). */}
+                        <KdsReadyByBadge estimatedReadyAt={order.estimatedReadyAt} />
                         {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link order, by the server's
                             rule. Warns before the tap; Start Preparing stays enabled so the
                             server's refusal (toast) is always reachable. */}
@@ -1250,7 +1282,7 @@ export default function KitchenPage() {
                           summary is a preserved good (it is the one line that answers
                           "how big is this ticket" at a glance) and the list is new
                           capacity, not a replacement for it. */}
-                      <KdsItemList items={order.items} />
+                      <KdsItemList items={order.items} unitCount={order.unitCount} />
     
                       {/* Elapsed time */}
                       <div className="flex items-center gap-1 text-xs text-slate-500">
@@ -1273,6 +1305,7 @@ export default function KitchenPage() {
                           <Button
                             className={`h-11 w-full ${action.color} text-white kds-press`}
                             onClick={() => handleBump(order.id, order.status)}
+                            disabled={bumpingIds.has(order.id)}
                           >
                             {order.status === "CONFIRMED" && <ArrowRight className="mr-2 h-4 w-4" />}
                             {order.status === "PREPARING" && <Package className="mr-2 h-4 w-4" />}

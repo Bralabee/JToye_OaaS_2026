@@ -28,8 +28,18 @@ import java.util.List;
 @Profile("!prod") // Disable Swagger UI in production
 public class OpenApiConfig {
 
-        @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8081/realms/jtoye-dev}")
-        private String issuerUri;
+        /**
+         * #879 / UXT-123 (P2-RAV-15): the issuer a CLIENT can reach, for the OAuth2 {@code tokenUrl}.
+         *
+         * <p>{@code issuer-uri} is the INTERNAL Keycloak host the service fetches its JWKS from
+         * ({@code http://keycloak:8080/...} in compose and k8s). The spec used it for {@code tokenUrl}, so
+         * Swagger's "Authorize" and every generated SDK were pointed at a host that only exists inside the
+         * cluster. The expected issuer is the PUBLIC one Keycloak stamps into tokens (the split-horizon
+         * setting of issue #87), which is by construction the address a token is obtained from; it defaults to
+         * {@code issuer-uri}, so a single-host setup is unchanged.
+         */
+        @Value("${jtoye.security.jwt.expected-issuer:${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8081/realms/jtoye-dev}}")
+        private String publicIssuerUri;
 
         /**
          * INT-24 (QA council 20260902-134741): the "Local Development" server URL.
@@ -129,7 +139,7 @@ public class OpenApiConfig {
                                                                 .name(TenantFilter.TENANT_HEADER)
                                                                 .description("Dev fallback: UUID of tenant (only used when JWT lacks tenant claim)"))
                                                 // issue #206 [AI-4]: advertise the catalog capability scopes as an
-                                                // OAuth2 client-credentials scheme. tokenUrl derives from issuerUri
+                                                // OAuth2 client-credentials scheme. tokenUrl derives from publicIssuerUri
                                                 // (never hardcoded); catalog:read/catalog:write are enforced today,
                                                 // and Phase 25 [AI-02] activates orders:write + customers:write as the
                                                 // MCP write gates; orders:read/customers:read stay defined-but-unenforced.
@@ -141,7 +151,7 @@ public class OpenApiConfig {
                                                                                 + "mutate them (403).")
                                                                 .flows(new OAuthFlows()
                                                                                 .clientCredentials(new OAuthFlow()
-                                                                                                .tokenUrl(issuerUri + "/protocol/openid-connect/token")
+                                                                                                .tokenUrl(publicIssuerUri + "/protocol/openid-connect/token")
                                                                                                 .scopes(new Scopes()
                                                                                                                 .addString("catalog:read", "Read the product catalog (list/get products)")
                                                                                                                 .addString("catalog:write", "Create, update, and delete products and product images")

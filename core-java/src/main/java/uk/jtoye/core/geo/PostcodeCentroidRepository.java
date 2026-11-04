@@ -79,4 +79,12 @@ public interface PostcodeCentroidRepository extends JpaRepository<PostcodeCentro
     DistrictCentroid findDistrictCentroid(@Param("rangeStart") String rangeStart,
                                           @Param("rangeEnd") String rangeEnd,
                                           @Param("unitLength") int unitLength);
+
+    /**
+     * Whether the dataset holds any row at all. Used only on a lookup MISS, to tell "this postcode is not in the
+     * dataset" from "the dataset is not loaded" ({@code PostcodeGeocoder#isDatasetLoaded}); an EXISTS stops at
+     * the first index entry, so it costs one probe, not a count over 1.7M rows.
+     */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM postcode_centroid)", nativeQuery = true)
+    boolean existsAnyRow();
 }

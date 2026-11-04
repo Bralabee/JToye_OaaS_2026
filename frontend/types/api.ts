@@ -57,6 +57,10 @@ export interface Shop {
   deliveryFeePennies?: number
   /** A DELIVERY order whose items reach this subtotal (inclusive) pays no fee. Absent: no threshold. */
   freeDeliveryThresholdPennies?: number
+  /** #460: how far the shop delivers, in km. Absent: no limit. */
+  deliveryRadiusKm?: number
+  /** #825: default preparation time in minutes. ABSENT = not set (no ready-by estimate is shown). */
+  prepTimeMinutes?: number
   /** The shop takes DELIVERY orders. Absent reads as true (a shop takes both until told otherwise). */
   offersDelivery?: boolean
   /** The shop takes COLLECTION orders. Absent reads as true. */
@@ -133,6 +137,13 @@ export interface CreateShopRequest {
    * delivery). The shop form always sends the key, so an emptied field clears the threshold.
    */
   freeDeliveryThresholdPennies?: number | null
+  /** #460: km, 0.1 to 100. ABSENT keeps the stored radius; an explicit `null` CLEARS it (no limit). */
+  deliveryRadiusKm?: number | null
+  /**
+   * #825: whole minutes, 1..480. ABSENT keeps the stored value; an explicit `null` CLEARS it (no estimate).
+   * The shop form always sends the key.
+   */
+  prepTimeMinutes?: number | null
   /** 37-48: at least one of the two must be true (400 under `fulfilmentOffered` otherwise). */
   offersDelivery?: boolean
   offersCollection?: boolean
@@ -268,7 +279,8 @@ export interface ProductAllergenWarning {
 }
 
 export interface CreateProductRequest {
-  sku: string
+  /** Optional (#875): omitted or blank, core generates one (JTP-XXXXXXXX); on an update, blank keeps the stored SKU. */
+  sku?: string
   title: string
   ingredientsText: string
   allergenMask: number
@@ -538,6 +550,10 @@ export interface Order {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
+  estimatedReadyAt?: string | null
+  /** #821: when the shop was alerted this order had waited too long to be accepted. ABSENT = not alerted. */
+  unacceptedNotifiedAt?: string | null
   // Phase 30-06 (issue #958): backend OrderDto has always carried these (OrderMapper maps both);
   // the list type now declares them so the Orders list can show "Awaiting payment" and stop
   // offering Submit/Confirm the server would refuse. Absent (NON_NULL) = null. Read them through
@@ -585,6 +601,21 @@ export interface OrderAllergenFlag {
 // How an order is fulfilled — mirrors backend uk.jtoye.core.order.FulfilmentType
 // (V45, Phase 19-01). COLLECTION orders carry no delivery address.
 export type FulfilmentType = "DELIVERY" | "COLLECTION"
+
+/** One line of an order's activity timeline (GET /orders/{id}/timeline, issue #857). */
+export interface OrderTimelineEvent {
+  kind: "PLACED" | "STATUS" | "PAYMENT" | "VOIDED"
+  fromStatus: OrderStatus | null
+  status: OrderStatus | null
+  paymentStatus: PaymentStatus | null
+  /** A recorded reason: a cancel reason code, or a void reason as written. */
+  detail: string | null
+  /** ISO instant the change was committed. */
+  at: string
+  /** STAFF = a signed-in person; SYSTEM = no one was (the customer at checkout, a webhook, a job). */
+  actorType: "STAFF" | "SYSTEM"
+  actorName: string | null
+}
 
 export interface OrderDetail {
   id: string
@@ -662,6 +693,10 @@ export interface OrderDetail {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
+  estimatedReadyAt?: string | null
+  /** #821: when the shop was alerted this order had waited too long to be accepted. ABSENT = not alerted. */
+  unacceptedNotifiedAt?: string | null
 }
 
 /**

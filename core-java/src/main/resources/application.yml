@@ -635,6 +635,16 @@ jtoye:
   orders:
     bulk-cancel:
       max-ids: 100
+    # #821 (owner ruling 2026-11-04, persona close-out): an order left PENDING longer than `threshold`
+    # raises a vendor alert (kitchen board + dashboard) and sends the customer ONE email saying the shop
+    # has not yet accepted it. NO auto-cancel, by ruling. Read by UnacceptedOrderSweep; once per order
+    # (orders.unaccepted_notified_at). A config KEY with no env placeholder, like bulk-cancel above, so
+    # the env-contract gate owes no compose / .env.example / k8s line. A threshold below 1 minute refuses
+    # to start, naming the key.
+    unaccepted-alert:
+      enabled: true
+      threshold: 10m
+      sweep-interval-ms: 60000
 
 # Outbox flusher tunables (27-04 T4, finding E). PRE-EXISTING DEFECT fixed here, not introduced:
 # these eight keys were bound by @Value/@Scheduled inline defaults and appeared in NO yml, env
@@ -963,9 +973,13 @@ webhook:
   delivery:
     interval-ms: ${WEBHOOK_DELIVERY_INTERVAL_MS:5000}
     batch-size: ${WEBHOOK_DELIVERY_BATCH_SIZE:50}
-    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}
-    backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:1000}
-    backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:3600000}
+    # #587: the retry window. Attempt n failing waits base * 2^(n-1), clamped to the cap:
+    # 30 s, 1 m, 2 m, 4 m, 8 m, 16 m, 32 m, 64 m, ~2.1 h, then 4 h (the cap) five times, so
+    # 15 attempts span ~24.3 h before a delivery is parked FAILED (it was 8 attempts from a 1 s
+    # base: 127 s, with a 1 h cap no wait ever reached). WebhookRetryScheduleTest pins the window.
+    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:15}
+    backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:30000}
+    backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:14400000}
     # 37-43 (UXT-038): consecutive failed DELIVERIES (each exhausted max-attempts), not attempts.
     auto-pause-after-failed-deliveries: ${WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES:3}
     retention-days: ${WEBHOOK_DELIVERY_RETENTION_DAYS:30}
@@ -987,7 +1001,7 @@ cors:
   # every fetch. The name is written ONCE in this file, on the line beneath, on purpose.
   # 37-11 appends the finance CSV export's filename and scope echo (Content-Disposition,
   # X-Finance-Scope): the dashboard downloads cross-origin and must name the file for its scope.
-  exposed-headers: ${CORS_EXPOSED_HEADERS:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,X-Search-Interpretation,Content-Disposition,X-Finance-Scope}
+  exposed-headers: ${CORS_EXPOSED_HEADERS:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,X-Search-Interpretation,Content-Disposition,X-Finance-Scope,Idempotent-Replayed}
 
 rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}

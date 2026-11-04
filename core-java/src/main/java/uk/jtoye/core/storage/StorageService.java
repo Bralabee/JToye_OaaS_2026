@@ -399,6 +399,51 @@ public class StorageService {
     }
 
     /**
+     * Delete the given objects (raw keys and public URLs) once the surrounding transaction COMMITS, or
+     * inline when there is no transaction synchronization at all (the GdprService / TenantCacheEvictor
+     * idiom). Object storage does not roll back, so a caller whose database work can still fail (a product
+     * or shop delete that can hit a late 23503) must not delete before it commits: a rollback never reaches
+     * {@code afterCommit}, so a failed delete removes nothing.
+     *
+     * <p>The committing thread's tenant is not trusted: {@code tenantId} is pinned for the D-09 guard in
+     * {@link #delete(String)}, then the caller's context is restored. The database work has committed when
+     * this runs, so a storage failure is logged and swallowed, never surfaced as a failed delete.
+     */
+    public void deleteObjectsAfterCommit(UUID tenantId, java.util.List<String> objectKeys, java.util.List<String> urls) {
+        if (objectKeys.isEmpty() && urls.isEmpty()) {
+            return;
+        }
+        Runnable work = () -> {
+            Optional<UUID> caller = TenantContext.get();
+            try {
+                TenantContext.set(tenantId);
+                objectKeys.forEach(this::deleteByKey);
+                urls.forEach(this::delete);
+            } catch (RuntimeException e) {
+                log.error("Post-commit object delete failed for tenant {} ({} key(s), {} url(s)): {}",
+                        tenantId, objectKeys.size(), urls.size(), e.getMessage());
+            } finally {
+                if (caller.isPresent()) {
+                    TenantContext.set(caller.get());
+                } else {
+                    TenantContext.clear();
+                }
+            }
+        };
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            work.run();
+                        }
+                    });
+        } else {
+            work.run();
+        }
+    }
+
+    /**
      * Checked delete (27-01 / F-5): the same best-effort delete, but it reports whether the
      * object is actually gone.
      *

@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.common.ListSearch;
 import uk.jtoye.core.customer.CustomerController.CreateCustomerRequest;
 import uk.jtoye.core.customer.CustomerController.CustomerDto;
 import uk.jtoye.core.customer.CustomerController.UpdateCustomerRequest;
@@ -145,6 +146,41 @@ public class CustomerService {
                     .map(customerMapper::toDto);
         }
         // Page.map keeps the page's own total; a rebuilt PageImpl could recompute it.
+        return page.map(contactMinimiser(page.getContent()));
+    }
+
+    /**
+     * The Customers list with a SEARCH (issue #822): {@code q} matched over every page. Same scope as
+     * {@link #getAllCustomers} (allShops callers the tenant, the rest their Option C grant set) and
+     * the same field minimisation on the response. The email is searched only for a caller who sees
+     * EVERY customer's email (a Group admin, realm admin or tenant-wide SHOP_MANAGER): a caller
+     * managing some shops sees some emails, and a per-row rule inside the search predicate would be a
+     * second copy of {@link #contactMinimiser} waiting to disagree with it, so they search by name
+     * and phone. A blank {@code q} is the ordinary list.
+     */
+    @Transactional(readOnly = true)
+    public Page<CustomerDto> searchCustomers(String q, Pageable pageable) {
+        ListSearch search = ListSearch.of(q);
+        if (search == null) {
+            return getAllCustomers(pageable);
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        boolean allShops = hasAllShopsAccess();
+        Set<UUID> shopIds;
+        if (allShops) {
+            shopIds = Set.of(new UUID(0L, 0L));
+        } else {
+            shopIds = shopAccessService.grantedShopIds();
+            if (shopIds.isEmpty()) {
+                return Page.empty(pageable);
+            }
+        }
+        CustomerContactScope scope = shopAccessService.customerContactScope();
+        boolean includeEmail = scope != null && scope.allShops();
+        Page<CustomerDto> page = customerRepository.search(tenantId, allShops, shopIds, includeEmail,
+                        search.text(), search.searchesPhone(), search.phone(), pageable)
+                .map(customerMapper::toDto);
         return page.map(contactMinimiser(page.getContent()));
     }
 

@@ -243,6 +243,91 @@ public final class AllergenCatalog {
         return List.copyOf(names);
     }
 
+    // -------------------------------------------- the DECLARED-allergen filter (#862)
+
+    /**
+     * Whole-term spellings of an allergen NAME a customer may type into the kitchen search, each
+     * mapped to its bit. Deliberately short and exact: the search term must BE the allergen, not
+     * merely contain its word. "gluten free" is the opposite of "declares gluten", and
+     * "peanut stew" is a dish, so neither is read as a declaration filter (owner ruling
+     * 2026-11-04, persona close-out: "declares", never "free from").
+     */
+    private static final Map<String, Integer> SEARCH_TERMS = buildSearchTerms();
+
+    private static Map<String, Integer> buildSearchTerms() {
+        Map<String, Integer> m = new LinkedHashMap<>();
+        for (Allergen a : ALLERGENS) {
+            m.put(a.name().toLowerCase(java.util.Locale.ROOT), a.bit());
+        }
+        // Singular and alternative spellings, written out (no stemming), one per line.
+        m.put("crustacean", 1);
+        m.put("egg", 2);
+        m.put("peanut", 4);
+        m.put("soybean", 5);
+        m.put("soya", 5);
+        m.put("soy", 5);
+        m.put("nut", 7);
+        m.put("tree nut", 7);
+        m.put("tree nuts", 7);
+        m.put("sulphite", 11);
+        m.put("sulfite", 11);
+        m.put("sulfites", 11);
+        m.put("mollusc", 13);
+        m.put("mollusk", 13);
+        m.put("molluscs", 13);
+        m.put("mollusks", 13);
+        return Map.copyOf(m);
+    }
+
+    /**
+     * The mask for a {@code declares} request parameter: one or more allergen names from the
+     * UK FSA table ({@link #allergens()}), comma separated, any case. This is what a VENDOR HAS
+     * DECLARED, matched against {@code products.allergen_mask}; it is not a claim that any
+     * other dish is free of the allergen.
+     *
+     * @throws IllegalArgumentException on a blank value, an empty element or a name that is not
+     *         one of the 14 — never silently widened to "everything", which would show an
+     *         allergic customer an unfiltered list that looks filtered
+     */
+    public static int maskForDeclaredFilter(String declares) {
+        if (declares == null || declares.isBlank()) {
+            throw new IllegalArgumentException("'declares' needs at least one allergen name");
+        }
+        int mask = 0;
+        for (String raw : declares.split(",", -1)) {
+            String name = raw.trim();
+            if (name.isEmpty()) {
+                throw new IllegalArgumentException("'declares' has an empty allergen name");
+            }
+            Allergen found = null;
+            for (Allergen a : ALLERGENS) {
+                if (a.name().equalsIgnoreCase(name)) {
+                    found = a;
+                    break;
+                }
+            }
+            if (found == null) {
+                throw new IllegalArgumentException("'declares' names an unknown allergen: " + name
+                        + " (expected one of the 14 UK FSA allergens)");
+            }
+            mask |= 1 << found.bit();
+        }
+        return mask;
+    }
+
+    /**
+     * The one-bit mask when the WHOLE search term is an allergen name (any case, trimmed),
+     * else empty. {@code "peanut"} and {@code "Gluten"} resolve; {@code "gluten free"},
+     * {@code "gluten-free"} and {@code "peanut stew"} do not.
+     */
+    public static Optional<Integer> maskForSearchTerm(String searchTerm) {
+        if (searchTerm == null) {
+            return Optional.empty();
+        }
+        Integer bit = SEARCH_TERMS.get(searchTerm.trim().toLowerCase(java.util.Locale.ROOT));
+        return bit == null ? Optional.empty() : Optional.of(1 << bit);
+    }
+
     // ---------------------------------------------------------------- the resolver
 
     /**

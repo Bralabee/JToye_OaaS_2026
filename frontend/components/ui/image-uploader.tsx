@@ -112,6 +112,21 @@ function isAsyncAccept(data: unknown): data is MediaUploadAccepted {
 }
 
 /**
+ * #831: the url a legacy synchronous upload response holds for the slot that was uploaded.
+ * logo -> logoUrl, banner -> bannerUrl, square (product) -> imageUrl (falling back to what is
+ * shown, as before). Exported for tests.
+ */
+export function resolveSlotUrl(
+  aspectRatio: "square" | "banner" | "logo",
+  dto: { imageUrl?: string | null; logoUrl?: string | null; bannerUrl?: string | null },
+  fallback: string | null | undefined
+): string | null {
+  if (aspectRatio === "banner") return dto.bannerUrl || null
+  if (aspectRatio === "logo") return dto.logoUrl || null
+  return dto.imageUrl || fallback || null
+}
+
+/**
  * Pure type gate. Returns an error string for unsupported types, else null.
  * DOM-free so it is unit-testable without a browser.
  */
@@ -487,9 +502,12 @@ export function ImageUploader({
 
         // Legacy synchronous path (shop logo/banner endpoints not migrated to
         // the async pipeline): the response carries a ready image URL.
+        // #831: the shop logo/banner endpoints return the WHOLE ShopDto, so the response holds BOTH
+        // urls. Take the field of the slot this uploader serves: the old first-non-empty chain
+        // handed the logo to the banner slot and Update Shop then persisted it as the banner. A shop
+        // slot with no url of its own reports null ("re-read"), never a sibling slot's image.
         const product = data.product || data
-        const newUrl =
-          product.imageUrl || product.logoUrl || product.bannerUrl || displayUrl
+        const newUrl = resolveSlotUrl(aspectRatio, product, displayUrl)
         onUploadComplete(newUrl)
 
         // Pass AI suggestions to parent if available
@@ -514,7 +532,7 @@ export function ImageUploader({
         URL.revokeObjectURL(objectUrl)
       }
     },
-    [uploadUrl, onUploadComplete, displayUrl, dimReq, resolveAcceptedAsset, onUploadAccepted, onAiSuggestions]
+    [uploadUrl, onUploadComplete, displayUrl, dimReq, aspectRatio, resolveAcceptedAsset, onUploadAccepted, onAiSuggestions]
   )
 
   const handleDrop = useCallback(

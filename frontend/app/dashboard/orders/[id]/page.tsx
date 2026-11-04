@@ -10,6 +10,7 @@ import { useOrderEvents } from "@/hooks/use-order-events"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { OrderDetailPanel } from "@/components/dashboard/orders/OrderDetailPanel"
+import { OrderTimeline } from "@/components/dashboard/orders/order-timeline"
 import type { OrderDetail } from "@/types/api"
 
 /**
@@ -211,6 +212,13 @@ export default function OrderDetailPage() {
             setOrder(detail)
           }
         }}
+      />
+      {/* #857: who took each step, and when. Its own loading/error states; a failed history never
+          blanks the order above it. Re-read when the order's status or update time moves. */}
+      <OrderTimeline
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        refreshKey={`${order.status}|${order.updatedAt}`}
       />
     </div>
   )

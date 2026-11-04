@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { openGraphWithDefaultImage } from "@/lib/og-image"
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -50,13 +51,14 @@ export const metadata: Metadata = {
   // from the injected public origin, and Next resolves it to an absolute URL
   // against that (no hostname is written here; app/layout.tsx says why).
   alternates: { canonical: "/" },
-  openGraph: {
+  // SW-CLR-08: a page's own openGraph replaces the root's, so the default share image is added here.
+  openGraph: openGraphWithDefaultImage({
     title: "J'Toye — Order from local kitchens, or run your own",
     description:
       "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders and manage your kitchen, with an assisted setup.",
     url: "/",
     type: "website",
-  },
+  }),
 }
 
 const steps = [
@@ -73,8 +75,12 @@ const steps = [
   },
 ]
 
+// Owner ruling 2026-11-04, persona close-out (#788, SW-CLR-14): "UK food-hygiene
+// verified" is gone. Nobody verifies it: a FHRS gate that finds no match goes to
+// MANUAL_REVIEW, which a single-tenant vendor's own admin can resolve, and the public
+// shop DTO carries no FHRS rating to show. Every marker below must be a statement the
+// platform performs; the landing test and a source scan hold the old string out.
 const trustMarkers = [
-  "UK food-hygiene verified",
   "Allergen info on every item",
   "No app to download",
 ]

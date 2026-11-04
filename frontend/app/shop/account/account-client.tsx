@@ -2,8 +2,9 @@
 
 import { useRef, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Download, Loader2, MailCheck, Trash2, UserRound } from "lucide-react"
+import { AlertTriangle, Download, KeyRound, Loader2, MailCheck, Trash2, UserRound } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import { customerPasswordChangeUrl } from "@/lib/customer-account-urls"
 import { DSAR_INTAKE_PATH, httpStatusOf, newIdempotencyKey, type DsarRequestType } from "@/lib/dsar-intake"
 import {
   Dialog,
@@ -92,12 +93,18 @@ export const ACCOUNT_NO_EMAIL_COPY =
   "We can't see an email address on your sign-in, so we can't send you the confirmation link these " +
   "requests need. Please sign out and sign in again, or contact us using the details in our privacy notice."
 
-export function AccountClient({ email }: { email: string | null }) {
+export function AccountClient({ email, name = "" }: { email: string | null; name?: string }) {
   const [states, setStates] = useState<Record<RequestType, ActionState>>({
     ACCESS: "idle",
     ERASURE: "idle",
   })
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // SW-JRD-07 / SW-SAM-11 (owner ruling 2026-11-04): the display name is editable here. `savedName` is
+  // what the sign-in account holds as far as this page knows; the field is the draft.
+  const [savedName, setSavedName] = useState(name)
+  const [draftName, setDraftName] = useState(name)
+  const [nameState, setNameState] = useState<"idle" | "busy" | "saved" | "invalid" | "unavailable" | "failed">("idle")
+  const nameInFlight = useRef(false)
   const inFlight = useRef<Record<RequestType, boolean>>({ ACCESS: false, ERASURE: false })
   const keys = useRef<Record<RequestType, string | null>>({ ACCESS: null, ERASURE: null })
 
@@ -126,6 +133,39 @@ export function AccountClient({ email }: { email: string | null }) {
       return false
     } finally {
       inFlight.current[type] = false
+    }
+  }
+
+  async function saveName() {
+    const next = draftName.trim()
+    if (!next) {
+      setNameState("invalid")
+      return
+    }
+    if (nameInFlight.current) return
+    nameInFlight.current = true
+    setNameState("busy")
+    try {
+      const res = await fetch("/api/customer-profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: next }),
+      })
+      if (res.ok) {
+        setSavedName(next)
+        setDraftName(next)
+        setNameState("saved")
+      } else if (res.status === 503) {
+        setNameState("unavailable")
+      } else if (res.status === 400) {
+        setNameState("invalid")
+      } else {
+        setNameState("failed")
+      }
+    } catch {
+      setNameState("failed")
+    } finally {
+      nameInFlight.current = false
     }
   }
 
@@ -171,6 +211,83 @@ export function AccountClient({ email }: { email: string | null }) {
               Requests are made for this address, and the confirmation email goes to it.
             </p>
           </div>
+
+          <section
+            aria-labelledby="account-details-heading"
+            className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          >
+            <h2 id="account-details-heading" className="text-lg font-semibold text-slate-900">
+              Your details
+            </h2>
+            <form
+              className="mt-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void saveName()
+              }}
+            >
+              <label htmlFor="account-name" className="text-sm font-medium text-slate-700">
+                Your name
+              </label>
+              <input
+                id="account-name"
+                type="text"
+                autoComplete="name"
+                maxLength={100}
+                value={draftName}
+                onChange={(e) => {
+                  setDraftName(e.target.value)
+                  if (nameState !== "busy") setNameState("idle")
+                }}
+                aria-describedby="account-name-hint"
+                aria-invalid={nameState === "invalid"}
+                className="mt-1.5 w-full rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              />
+              <p id="account-name-hint" className="mt-2 text-xs text-slate-600">
+                Used on your account. The name on an order is the one you give at checkout.
+              </p>
+              {nameState === "saved" && (
+                <p role="status" className="mt-3 text-sm font-medium text-emerald-800">
+                  Name saved.
+                </p>
+              )}
+              {nameState === "invalid" && (
+                <p role="alert" className="mt-3 text-sm font-medium text-amber-900">
+                  Enter a name (up to 100 characters).
+                </p>
+              )}
+              {nameState === "unavailable" && (
+                <p role="alert" className="mt-3 text-sm font-medium text-amber-900">
+                  Your name can&apos;t be changed right now. Please try again later.
+                </p>
+              )}
+              {nameState === "failed" && (
+                <p role="alert" className="mt-3 text-sm font-medium text-amber-900">
+                  Something went wrong and your name was not saved. Please try again.
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={nameState === "busy" || draftName.trim() === savedName.trim()}
+                aria-busy={nameState === "busy"}
+                className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-orange-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {nameState === "busy" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                Save name
+              </button>
+            </form>
+            <hr className="my-5 border-slate-200" />
+            <p className="text-sm leading-relaxed text-slate-600">
+              Your password is kept by our sign-in provider. You change it there, signed in as you.
+            </p>
+            <a
+              href={customerPasswordChangeUrl()}
+              className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-orange-800 underline underline-offset-4 hover:text-orange-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700"
+            >
+              <KeyRound className="h-4 w-4" aria-hidden="true" />
+              Change password
+            </a>
+          </section>
 
           <section
             aria-labelledby="account-download-heading"

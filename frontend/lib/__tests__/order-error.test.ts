@@ -3,6 +3,8 @@ import {
   retryAfterSeconds,
   secondsFromMessage,
   GENERIC_ORDER_ERROR,
+  OFFLINE_ORDER_ERROR,
+  UNREACHABLE_ORDER_ERROR,
 } from "@/lib/order-error"
 
 /**
@@ -108,8 +110,32 @@ describe("describeOrderError — #409", () => {
       )
     })
 
-    it("uses the generic copy for a network error with no response", () => {
-      expect(describeOrderError(new Error("Network Error"))).toBe(GENERIC_ORDER_ERROR)
+    it("#876 UXT-103: a transport failure (no response) says the order may already be placed, not 'Failed'", () => {
+      // Was pinned to GENERIC_ORDER_ERROR: the sentence that invites a second order from someone who
+      // may already have one. The same inputs now read as what they are.
+      for (const err of [
+        new Error("Network Error"),
+        Object.assign(new Error("boom"), { code: "ERR_NETWORK" }),
+        Object.assign(new Error("timeout of 10000ms exceeded"), { code: "ECONNABORTED" }),
+      ]) {
+        expect(describeOrderError(err)).toBe(UNREACHABLE_ORDER_ERROR)
+      }
+      expect(UNREACHABLE_ORDER_ERROR).toMatch(/may already have been placed/)
+      expect(UNREACHABLE_ORDER_ERROR).toMatch(/My Orders/)
+    })
+
+    it("#876 UXT-103: offline wins, whatever was thrown", () => {
+      const spy = jest.spyOn(window.navigator, "onLine", "get").mockReturnValue(false)
+      try {
+        expect(describeOrderError(new Error("anything"))).toBe(OFFLINE_ORDER_ERROR)
+        expect(describeOrderError(undefined)).toBe(OFFLINE_ORDER_ERROR)
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it("CONTROL: an error that is not a transport failure and carries no response keeps the generic copy", () => {
+      expect(describeOrderError(new Error("some programming error"))).toBe(GENERIC_ORDER_ERROR)
       expect(describeOrderError(undefined)).toBe(GENERIC_ORDER_ERROR)
     })
   })

@@ -65,6 +65,17 @@ public final class VatCalculator {
     }
 
     /**
+     * The rate an order is recorded at once the SELLER's registration is taken into account (owner
+     * ruling 2026-11-04, persona close-out, #962): a seller with no declared VAT number charges no VAT,
+     * so its sale is zero-rated in the order and therefore in the ledger and the access export. A
+     * registered seller's rate is returned unchanged. Applied when an order is PLACED and never
+     * retroactively: past orders keep what they were recorded with.
+     */
+    public static VatRate forSeller(VatRate resolvedRate, boolean sellerVatRegistered) {
+        return sellerVatRegistered ? resolvedRate : VatRate.ZERO;
+    }
+
+    /**
      * A single order line's VAT-inclusive gross and its resolved VAT rate, used
      * to compute an order's predominant liability.
      */

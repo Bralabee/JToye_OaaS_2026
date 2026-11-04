@@ -16,6 +16,7 @@ import {
 import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import { formatMiles } from "@/lib/distance"
 import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
+import { PaymentMethodChip } from "@/components/storefront/payment-method-note"
 import {
   PROXIMITY_EXCLUSION_NOTE,
   SEARCH_INTERPRETATION_HEADER,
@@ -25,7 +26,13 @@ import {
   type SearchInterpretation,
 } from "@/lib/search-interpretation"
 import { PublicShop } from "@/types/storefront"
-import { PageResponse } from "@/types/api"
+import { ALLERGENS, PageResponse } from "@/types/api"
+import { DeclaredAllergenFilter } from "@/components/storefront/declared-allergen-filter"
+import {
+  FREE_FROM_QUERY_NOTE,
+  declaredFilterActiveNote,
+  isFreeFromQuery,
+} from "@/lib/declared-allergen-filter"
 import { SHOPS_PAGE_SIZE } from "@/lib/shop-discovery-page-size"
 
 /** How many shops a page of the directory holds: lib/shop-discovery-page-size, shared with the server seed (app/shop/page.tsx imports it from there, never from this client module). */
@@ -221,6 +228,8 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           {shop.deliveryInfo && (
             <span className="text-slate-600 truncate">{shop.deliveryInfo}</span>
           )}
+          {/* #829: how you pay, before you open the shop (nothing when the server did not say). */}
+          <PaymentMethodChip shop={shop} className="text-slate-600" />
         </div>
       </div>
     </article>
@@ -312,6 +321,11 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
     initialInterpretation ?? TEXT_INTERPRETATION
   )
   const [page, setPage] = useState(0)
+  // #862 (owner ruling 2026-11-04): the allergen (by catalogue bit) whose DECLARATION narrows the
+  // list. Page state only, not in the URL: the SSR seed knows nothing of it, so a deep link
+  // carrying it would render an unfiltered first page under a filter that claims to be on.
+  const [declaredBit, setDeclaredBit] = useState<number | null>(null)
+  const declaredName = declaredBit === null ? null : ALLERGENS.find((a) => a.bit === declaredBit)?.name ?? null
   // Tracks the ?q= we have already reflected into state, so the URL->state and
   // state->URL syncs below can never ping-pong.
   const appliedUrlQuery = useRef(seededQuery)
@@ -355,6 +369,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
     try {
       const params: Record<string, string | number> = { page, size: SHOPS_PAGE_SIZE }
       if (resultsQuery) params.q = resultsQuery
+      if (declaredName) params.declares = declaredName
 
       const res = await publicApiClient.get<PageResponse<PublicShop>>(
         "/public/shops",
@@ -423,7 +438,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       // the real answer is still coming.
       if (generation === fetchGeneration.current) setLoading(false)
     }
-  }, [page, resultsQuery])
+  }, [page, resultsQuery, declaredName])
 
   useEffect(() => {
     fetchRef.current = fetchShops
@@ -453,7 +468,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setPage(0)
-  }, [resultsQuery])
+  }, [resultsQuery, declaredName])
 
   // box -> results: a term becomes a search only once the box has been still
   // for SEARCH_DEBOUNCE_MS. An empty box never waits here: it is applied in
@@ -607,6 +622,21 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
         </div>
       </div>
 
+      {/* #862: what a kitchen has DECLARED, never "free from". The control and its help line are
+          permanently in the flow (no layout shift when it opens); the notes below appear only when
+          they apply. */}
+      <DeclaredAllergenFilter value={declaredBit} onChange={setDeclaredBit} className="mb-4" />
+      {declaredName && (
+        <p className="mb-4 text-sm font-medium text-oxblood" data-testid="declared-filter-note">
+          {declaredFilterActiveNote(declaredName, "kitchens")}
+        </p>
+      )}
+      {isFreeFromQuery(searchQuery) && (
+        <p role="note" className="mb-4 max-w-xl rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-slate-800">
+          {FREE_FROM_QUERY_NOTE}
+        </p>
+      )}
+
       {/* Suggested searches — same vocabulary as the landing hero.
 
           A SINGLE ROW THAT CANNOT WRAP (FE-3). This row was `flex-wrap`, and it
@@ -677,8 +707,13 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           stated. The element, its `aria-live="polite"` and its class list are
           unchanged, so the reserved height and the announcement behaviour are
           exactly what they were. */}
+      {/* UXT-112 (#877): the live region is MOUNTED before it has anything to say, and the line is filled
+          into it. A region inserted already holding its text is not announced by many screen readers,
+          so the result count was silent. The wrapper has no margin of its own (the line carries it), so
+          an empty region adds no height and nothing shifts. */}
+      <div data-testid="search-summary-region" aria-live="polite">
       {!loading && !rateLimited && resultsQuery && (
-        <p aria-live="polite" className="mb-4 text-sm text-slate-600">
+        <p className="mb-4 text-sm text-slate-600">
           {summary.kind === "text" ? (
             <>
               {summary.lead}
@@ -710,6 +745,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           )}
         </p>
       )}
+      </div>
 
       {/* Results */}
       {loadFailed ? (

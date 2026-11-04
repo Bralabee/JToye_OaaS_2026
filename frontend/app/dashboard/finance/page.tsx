@@ -13,7 +13,11 @@ import {
 import { VoidedBadge } from "@/components/dashboard/orders/voided-badge"
 import { MerchantRoiCard } from "@/components/dashboard/merchant-roi-card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
+  financePresetRange,
+  type FinancePreset,
   fetchFinanceExport,
   fetchFinanceOrdersSample,
   fetchFinanceSummary,
@@ -81,6 +85,14 @@ const EXPORT_EMPTY_COPY = "No transactions in this range"
 
 const PAGE_SIZE = 20
 
+/** #827: the date control's presets, in the order shown. "All time" is the default (no range). */
+const FINANCE_PRESETS: ReadonlyArray<{ id: FinancePreset; label: string }> = [
+  { id: "all", label: "All time" },
+  { id: "today", label: "Today" },
+  { id: "last7", label: "Last 7 days" },
+  { id: "month", label: "This month" },
+]
+
 function httpStatus(err: unknown): number | undefined {
   if (err && typeof err === "object" && "response" in err) {
     return (err as { response?: { status?: number } }).response?.status
@@ -96,10 +108,19 @@ export default function FinancePage() {
   const [forbidden, setForbidden] = useState(false)
   // The page number belongs to the scope it was chosen in: switching shop starts again
   // at page 0 instead of asking the new shop for a page it may not have.
-  const [pageState, setPageState] = useState<{ shop: string | null; page: number }>({
+  const [pageState, setPageState] = useState<{ shop: string | null; range: string; page: number }>({
     shop: null,
+    range: "|",
     page: 0,
   })
+  // #827: the UK-day range the figures, the ledger and the export are asked for. "" = unbounded, so
+  // the default (no range) puts nothing new on the wire. Like the shop, a new range starts at page 0.
+  const [range, setRange] = useState<{ from: string; to: string }>({ from: "", to: "" })
+  const rangeKey = `${range.from}|${range.to}`
+  const rangeInverted = range.from !== "" && range.to !== "" && range.from > range.to
+  // A range change reloads the figures IN PLACE: the page keeps its date controls (and their focus)
+  // instead of swapping to its spinner. A shop switch still takes the spinner, as before.
+  const quietNextLoad = useRef(false)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
   // 37-12: the scope the SERVER filtered on, from the response. The banner and the
@@ -116,19 +137,28 @@ export default function FinancePage() {
   // The switcher's selection, or the one shop a single-grant manager is pinned to.
   const contextShopId = financeShopId(selectedShopId, switcher)
   const gate = financeGate(contextShopId, switcher)
-  const currentPage = pageState.shop === contextShopId ? pageState.page : 0
-  const setCurrentPage = (page: number) => setPageState({ shop: contextShopId, page })
+  const currentPage =
+    pageState.shop === contextShopId && pageState.range === rangeKey ? pageState.page : 0
+  const setCurrentPage = (page: number) => setPageState({ shop: contextShopId, range: rangeKey, page })
+  const applyRange = (next: { from: string; to: string }) => {
+    quietNextLoad.current = true
+    setRange(next)
+  }
 
   // Only the newest load may write state: the shop context hydrates after mount and a
   // manager can switch shop mid-flight, so an older, slower response must never paint
   // its scope over the one the switcher now asks for.
   const loadSeq = useRef(0)
 
-  async function fetchData() {
+  async function fetchData({ quiet = false }: { quiet?: boolean } = {}) {
     const seq = ++loadSeq.current
-    const query: FinanceQuery = { shopId: contextShopId }
+    const query: FinanceQuery = {
+      shopId: contextShopId,
+      from: range.from || null,
+      to: range.to || null,
+    }
     try {
-      setLoading(true)
+      if (!quiet) setLoading(true)
       setExportFailed(false)
       setExportEmpty(false)
       const [summaryRes, txRes, ordersRes] = await Promise.all([
@@ -174,10 +204,16 @@ export default function FinancePage() {
       loadSeq.current++
       return
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
-    fetchData()
+    // #827: an inverted range asks for nothing; the page says so beside the controls.
+    if (rangeInverted) {
+      quietNextLoad.current = false
+      return
+    }
+    const quiet = quietNextLoad.current
+    quietNextLoad.current = false
+    fetchData({ quiet })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, contextShopId, gate])
+  }, [currentPage, contextShopId, gate, range.from, range.to])
 
   async function handleExport() {
     // Exactly what is shown: the scope the server echoed (and its range), or, from an
@@ -322,6 +358,61 @@ export default function FinancePage() {
           )}
         </div>
       </m.div>
+
+      {/* #827: the date range. UK days, inclusive; the same from/to feed the figures, the ledger and the
+          CSV export, so the file is what the screen shows. A preset is just a way to fill the two inputs. */}
+      <div
+        data-testid="finance-range"
+        className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:flex-wrap sm:items-end"
+      >
+        <div role="group" aria-label="Date range presets" className="flex flex-wrap gap-2">
+          {FINANCE_PRESETS.map(({ id, label }) => {
+            const preset = financePresetRange(id)
+            const pressed = range.from === preset.from && range.to === preset.to
+            return (
+              <Button
+                key={id}
+                type="button"
+                variant={pressed ? "default" : "outline"}
+                aria-pressed={pressed}
+                className="h-11"
+                onClick={() => applyRange(preset)}
+              >
+                {label}
+              </Button>
+            )
+          })}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="finance-from">From</Label>
+            <Input
+              id="finance-from"
+              type="date"
+              value={range.from}
+              max={range.to || undefined}
+              onChange={(e) => applyRange({ from: e.target.value, to: range.to })}
+              className="h-11 w-full sm:w-[11rem]"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="finance-to">To</Label>
+            <Input
+              id="finance-to"
+              type="date"
+              value={range.to}
+              min={range.from || undefined}
+              onChange={(e) => applyRange({ from: range.from, to: e.target.value })}
+              className="h-11 w-full sm:w-[11rem]"
+            />
+          </div>
+        </div>
+        {rangeInverted && (
+          <p role="alert" className="w-full text-sm font-medium text-red-700">
+            The start date is after the end date. Change one of them to see the figures.
+          </p>
+        )}
+      </div>
 
       {/* Scope banner: the scope the API filtered on, never the switcher's own value */}
       {scope && (

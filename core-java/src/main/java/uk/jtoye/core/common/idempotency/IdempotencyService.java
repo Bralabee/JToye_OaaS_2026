@@ -248,7 +248,7 @@ public class IdempotencyService {
         String storedBody = (String) row.get("response_body");
         T value = onReplay.apply(storedBody);
         log.info("Idempotency replay: endpoint={} key={} status={}", endpoint, key, status);
-        return new IdempotencyOutcome<>(status, value);
+        return new IdempotencyOutcome<>(status, value, true);
     }
 
     /**

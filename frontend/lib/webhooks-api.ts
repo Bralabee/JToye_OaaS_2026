@@ -206,6 +206,13 @@ export function extractErrorDetail(err: unknown, fallback: string): string {
 
 // --- API methods -----------------------------------------------------------
 
+/** The 202 body of "send test event" (#879). */
+export interface WebhookTestEvent {
+  deliveryId: string
+  eventId: string
+  status: string
+}
+
 export const webhooksApi = {
   list: async (): Promise<WebhookSubscription[]> => {
     const res = await apiClient.get<WebhookSubscription[]>(BASE)
@@ -244,6 +251,20 @@ export const webhooksApi = {
   revoke: async (id: string): Promise<WebhookSubscription> => {
     const res = await apiClient.post<WebhookSubscription>(`${BASE}/${id}/revoke`)
     return res.data
+  },
+
+  /**
+   * #879: queue one `webhook.test` ping for an ACTIVE endpoint. It travels the production path and lands in
+   * the delivery log, where its outcome is read by `deliveryId` (202: queued, not yet delivered).
+   */
+  sendTestEvent: async (id: string): Promise<WebhookTestEvent> => {
+    const res = await apiClient.post<WebhookTestEvent>(`${BASE}/${id}/test`)
+    return res.data
+  },
+
+  /** #879: delete a REVOKED endpoint and its delivery log (the API answers 409 for any other status). */
+  remove: async (id: string): Promise<void> => {
+    await apiClient.delete(`${BASE}/${id}`)
   },
 
   listDeliveries: async (

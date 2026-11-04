@@ -76,7 +76,7 @@ class ScopedWriteAccessIntegrationTest {
     // request passes @Valid and reaches (or is blocked by) the @PreAuthorize gate, never 400 first.
     // A random shopId 404s downstream via OrderService, which still satisfies not403().
     private static final String VALID_ORDER_JSON =
-            "{\"shopId\":\"" + UUID.randomUUID() + "\",\"items\":[{\"productId\":\""
+            "{\"shopId\":\"" + UUID.randomUUID() + "\",\"customerName\":\"Test Customer\",\"items\":[{\"productId\":\""
             + UUID.randomUUID() + "\",\"quantity\":1}]}";
 
     // Fully valid CreateCustomerRequest — name + email present so @Valid passes.
@@ -209,7 +209,7 @@ class ScopedWriteAccessIntegrationTest {
         ShopGrants.grantOperator(jdbcTemplate, TENANT_A, sub, SHOP_A, "SHOP_MANAGER",
                 "orders-writer-" + sub + "@example.com");
         UUID missingProduct = UUID.randomUUID();
-        String orderForGrantedShop = "{\"shopId\":\"" + SHOP_A + "\",\"items\":[{\"productId\":\""
+        String orderForGrantedShop = "{\"shopId\":\"" + SHOP_A + "\",\"customerName\":\"Test Customer\",\"items\":[{\"productId\":\""
                 + missingProduct + "\",\"quantity\":1}]}";
         mockMvc.perform(post("/api/v1/orders")
                         .with(ordersWriteJwt(sub))

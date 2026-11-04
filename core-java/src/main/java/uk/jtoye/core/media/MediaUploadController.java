@@ -131,7 +131,9 @@ public class MediaUploadController {
         // 202 Accepted on both the fresh accept and the replay (the stored body is echoed).
         // IdempotencyService stamps 201 internally; the controller owns the async 202 status.
         log.debug("Media accept for product {} -> asset {} ({})", id, outcome.value().assetId(), outcome.value().status());
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(outcome.value());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .headers(h -> { if (outcome.replayed()) { h.add(IdempotencyOutcome.REPLAYED_HEADER, "true"); } })
+                .body(outcome.value());
     }
 
     /** The idempotency request fingerprint — hashed by IdempotencyService to detect body reuse. */

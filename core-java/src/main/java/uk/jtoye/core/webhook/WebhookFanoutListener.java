@@ -22,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Consumes the {@code webhook.deliveries} fanout queue (declared by 22-04, bound
@@ -62,46 +63,51 @@ public class WebhookFanoutListener {
     private final JsonMapper jsonMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
+    private final PlatformTransactionManager transactionManager;
+    private final OrderWebhookDataFactory orderWebhookData;
 
     public WebhookFanoutListener(WebhookSubscriptionRepository subscriptionRepository,
                                  WebhookDeliveryRepository deliveryRepository,
                                  WebhookProperties properties,
                                  JsonMapper jsonMapper,
                                  EntityManager entityManager,
-                                 PlatformTransactionManager transactionManager) {
+                                 PlatformTransactionManager transactionManager,
+                                 OrderWebhookDataFactory orderWebhookData) {
         this.subscriptionRepository = subscriptionRepository;
         this.deliveryRepository = deliveryRepository;
         this.properties = properties;
         this.jsonMapper = jsonMapper;
         this.entityManager = entityManager;
+        this.transactionManager = transactionManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.orderWebhookData = orderWebhookData;
     }
 
     @RabbitHandler
     public void onOrderState(OrderStateChangeEvent event) {
         fanout(event.tenantId(), WebhookEventType.ORDER_STATE_CHANGED,
                 "order." + event.newStatus().name().toLowerCase(Locale.ROOT),
-                event.timestamp(), event);
+                event.timestamp(), event, () -> orderWebhookData.build(event));
     }
 
     @RabbitHandler
     public void onRefund(RefundEvent event) {
         fanout(event.tenantId(), WebhookEventType.ORDER_REFUNDED,
-                "order.refunded", event.occurredAt(), event);
+                "order.refunded", event.occurredAt(), event, null);
     }
 
     @RabbitHandler
     public void onOnboarding(OnboardingStateChangeEvent event) {
         fanout(event.tenantId(), WebhookEventType.ONBOARDING_STATE_CHANGED,
                 "onboarding." + event.status().name().toLowerCase(Locale.ROOT),
-                event.occurredAt(), event);
+                event.occurredAt(), event, null);
     }
 
     @RabbitHandler
     public void onPayment(PaymentEvent event) {
         fanout(event.tenantId(), WebhookEventType.PAYMENT_EVENT,
                 "payment." + event.type().name().toLowerCase(Locale.ROOT),
-                event.occurredAt(), event);
+                event.occurredAt(), event, null);
     }
 
     /**
@@ -120,14 +126,23 @@ public class WebhookFanoutListener {
                 event == null ? "null" : event.getClass().getName());
     }
 
+    /**
+     * @param thin     the event as raised; what is delivered when there is no {@code enricher} or it fails
+     * @param enricher reads more of the world to build a richer {@code data} (the {@code order.*} payload), or
+     *                 {@code null}. It runs in its OWN short transaction, before the insert transaction: a
+     *                 database error inside the insert transaction would mark it rollback-only (and Postgres
+     *                 aborts it), losing the fan-out to every subscriber, whereas here the failure costs only the
+     *                 enrichment and the thin event is delivered instead.
+     */
     private void fanout(UUID tenantId, WebhookEventType family, String type,
-                        OffsetDateTime occurredAt, Object data) {
+                        OffsetDateTime occurredAt, Object thin, Supplier<Object> enricher) {
         if (tenantId == null) {
             log.warn("event=webhook_fanout_skipped reason=null_tenant type={}", type);
             return;
         }
         TenantContext.set(tenantId);
         try {
+            Object data = enricher == null ? thin : enrich(tenantId, family, type, thin, enricher);
             transactionTemplate.executeWithoutResult(status ->
                     insertPendingRows(tenantId, family, type, occurredAt, data));
         } finally {
@@ -135,18 +150,42 @@ public class WebhookFanoutListener {
         }
     }
 
-    private void insertPendingRows(UUID tenantId, WebhookEventType family, String type,
-                                   OffsetDateTime occurredAt, Object data) {
-        pinTenantGuc(tenantId);
+    /**
+     * The enriched data, or {@code thin} when there is nothing to enrich for (no subscription would receive
+     * this event, so the read is skipped) or the read fails. Any failure here, a database or connection error
+     * included, is logged once and degrades to the thin event, as {@link OrderWebhookDataFactory} promises.
+     */
+    private Object enrich(UUID tenantId, WebhookEventType family, String type, Object thin,
+                          Supplier<Object> enricher) {
+        try {
+            Object enriched = new TransactionTemplate(transactionManager).execute(status -> {
+                pinTenantGuc(tenantId);
+                return matchingSubscriptions(tenantId, family).isEmpty() ? thin : enricher.get();
+            });
+            return enriched == null ? thin : enriched;
+        } catch (RuntimeException e) {
+            log.warn("event=webhook_enrich_failed tenant={} type={} — delivering the thin event: {}",
+                    tenantId, type, e.toString());
+            return thin;
+        }
+    }
 
-        // ACTIVE subscriptions get a PENDING row; AUTO_PAUSED ones a HELD row (UXT-038: the platform
-        // paused the endpoint, the vendor did not ask to miss events). A MANUAL pause and a revoked
-        // subscription receive nothing, as before: pausing by hand is the vendor's own choice.
-        List<WebhookSubscription> matching = subscriptionRepository.findByTenantId(tenantId).stream()
+    // ACTIVE subscriptions get a PENDING row; AUTO_PAUSED ones a HELD row (UXT-038: the platform
+    // paused the endpoint, the vendor did not ask to miss events). A MANUAL pause and a revoked
+    // subscription receive nothing, as before: pausing by hand is the vendor's own choice.
+    private List<WebhookSubscription> matchingSubscriptions(UUID tenantId, WebhookEventType family) {
+        return subscriptionRepository.findByTenantId(tenantId).stream()
                 .filter(s -> s.getStatus() == WebhookSubscription.Status.ACTIVE
                         || s.getStatus() == WebhookSubscription.Status.AUTO_PAUSED)
                 .filter(s -> s.getEventTypes() != null && s.getEventTypes().contains(family.name()))
                 .toList();
+    }
+
+    private void insertPendingRows(UUID tenantId, WebhookEventType family, String type,
+                                   OffsetDateTime occurredAt, Object data) {
+        pinTenantGuc(tenantId);
+
+        List<WebhookSubscription> matching = matchingSubscriptions(tenantId, family);
         if (matching.isEmpty()) {
             return;
         }

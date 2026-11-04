@@ -118,6 +118,14 @@ public class PublicOrderStatus {
         this.allergyNoteAcknowledgedAt = allergyNoteAcknowledgedAt;
     }
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the "
+            + "order was placed or accepted. An estimate, not a promise. Absent when the shop gave no preparation time.")
+    private OffsetDateTime estimatedReadyAt;
+
+    public OffsetDateTime getEstimatedReadyAt() { return estimatedReadyAt; }
+    public void setEstimatedReadyAt(OffsetDateTime estimatedReadyAt) { this.estimatedReadyAt = estimatedReadyAt; }
+
     public java.time.LocalDate getScheduledForDate() { return scheduledForDate; }
     public void setScheduledForDate(java.time.LocalDate scheduledForDate) { this.scheduledForDate = scheduledForDate; }
     public String getScheduledWindowLabel() { return scheduledWindowLabel; }

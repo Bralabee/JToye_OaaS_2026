@@ -39,6 +39,7 @@ import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.order.ReadyByEstimate;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
@@ -52,6 +53,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
+import uk.jtoye.core.storefront.dto.ReorderLinesDto;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicPromotionDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
@@ -408,6 +410,24 @@ public class PublicStorefrontService {
     }
 
     /**
+     * Published shops with an available dish that DECLARES at least one allergen of
+     * {@code declaredMask} (#862, owner ruling 2026-11-04). "Declares" is the vendor's own
+     * {@code allergen_mask}; a shop absent from this page is not thereby free of the allergen.
+     */
+    public Page<PublicShopDto> listPublishedShopsDeclaring(int declaredMask, Pageable pageable) {
+        requireDeclaredMask(declaredMask);
+        log.debug("Listing published shops declaring mask {}, page {}", declaredMask, pageable.getPageNumber());
+        Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+        return shopRepository.findPublishedDeclaring(declaredMask, unsorted).map(this::toPublicShopDto);
+    }
+
+    private static void requireDeclaredMask(int declaredMask) {
+        if (declaredMask <= 0 || declaredMask >= (1 << uk.jtoye.core.product.AllergenCatalog.BIT_COUNT)) {
+            throw new IllegalArgumentException("'declares' must name at least one of the 14 allergens");
+        }
+    }
+
+    /**
      * The published shops among {@code slugs}, in the order of {@code slugs} (quick 261102-r6u, D-02):
      * the featured kitchens of this environment. Only published shops are ever returned (the predicate is
      * in the query, {@link ShopRepository#findByPublishedTrueAndSlugIn}); a slug that names no published
@@ -627,12 +647,33 @@ public class PublicStorefrontService {
      * keep in step.
      */
     public SearchOutcome searchPublishedShops(String query, Pageable pageable) {
+        return searchPublishedShops(query, 0, pageable);
+    }
+
+    /**
+     * The search with an optional DECLARED-allergen narrowing (#862, owner ruling 2026-11-04).
+     *
+     * <p>{@code declaredMask} 0 is the plain search. A non-zero mask keeps only kitchens that ALSO
+     * have an available dish declaring one of those allergens; it is the vendor's declaration, never
+     * a "free from" claim. With a mask the postcode tier is skipped: a proximity answer cannot honour
+     * the narrowing, and silently dropping it would be worse than reading the term as text.
+     *
+     * <p>With no mask, a term that IS an allergen name ({@link AllergenCatalog#maskForSearchTerm},
+     * "peanut", not "gluten free") also matches kitchens whose dishes declare it, so the search
+     * finds what the vendor declared even when no dish text names the allergen.
+     */
+    public SearchOutcome searchPublishedShops(String query, int declaredMask, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
+        if (declaredMask != 0) {
+            requireDeclaredMask(declaredMask);
+        }
 
         // TIER 1 — INTERPRETATION FIRST (D-A, flipped at the 33-09 owner gate). Cheap for a
         // non-postcode term: the length bound and the anchored shape test both run before any
         // lookup, so an ordinary food search issues no query here at all.
-        Optional<PostcodeGeocoder.LocatedPostcode> located = postcodeGeocoder.locateSearchTerm(query);
+        Optional<PostcodeGeocoder.LocatedPostcode> located = declaredMask != 0
+                ? Optional.empty()
+                : postcodeGeocoder.locateSearchTerm(query);
         if (located.isPresent()) {
             PostcodeGeocoder.LocatedPostcode postcode = located.get();
             // Kind and page only. The coordinate is derived from the customer's postcode and is
@@ -661,12 +702,28 @@ public class PublicStorefrontService {
             // pre-existing arms that match a shop by its own name / search_vector are unchanged
             // and still follow shops_public_read, so a tenant-bearing caller can still be offered
             // another tenant's published kitchen through those arms.
-            Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
+            Optional<Integer> termMask = declaredMask == 0
+                    ? AllergenCatalog.maskForSearchTerm(query)
+                    : Optional.empty();
+            Page<Shop> results;
+            if (declaredMask != 0) {
+                results = shopRepository.fullTextSearchPublishedDeclaring(query, declaredMask, unsorted);
+            } else if (termMask.isPresent()) {
+                results = shopRepository.fullTextSearchPublishedOrDeclaring(query, termMask.get(), unsorted);
+            } else {
+                results = shopRepository.fullTextSearchPublished(query, unsorted);
+            }
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
         }
 
+        if (declaredMask != 0) {
+            Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+            return new SearchOutcome(
+                    shopRepository.searchPublishedDeclaring(query, declaredMask, unsorted).map(this::toPublicShopDto),
+                    SearchInterpretation.text());
+        }
         return new SearchOutcome(
                 shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
                 SearchInterpretation.text());
@@ -793,8 +850,49 @@ public class PublicStorefrontService {
         return findCustomerOrderPage(email, pageable).map(order -> {
             CustomerOrderStatus status = toCustomerHistoryStatus(new CustomerOrderStatus(), order);
             status.setAllergyNote(Boolean.TRUE.equals(order.getContactVerified()) ? order.getAllergyNote() : null);
+            // #845: which shop the order is from, so a past order can link to it. The same entity
+            // lookup toCustomerHistoryStatus did for the name (served from the session cache), under
+            // the same visibility: a shop that is no longer published reads as null.
+            status.setShopSlug(shopRepository.findById(order.getShopId()).map(Shop::getSlug).orElse(null));
             return status;
         });
+    }
+
+    /**
+     * #845 (persona close-out 2026-11-04): the lines of one of the SIGNED-IN customer's own past orders, for
+     * "Order again". Call it only with an email proven by {@code CustomerJwtVerifier}.
+     *
+     * <p>The tenant is pinned from the published shop slug (SEC-01), so the orders table (FORCE RLS) is read
+     * only inside that tenant. The order must be this customer's (their verified email) AND be at this shop:
+     * anything else, and an order number that does not exist, is the SAME {@code ResourceNotFoundException},
+     * so the order number cannot be used to learn whether an order exists or whose it is (D-05, the
+     * VanishedRowStatus contract: never 403). Returns what was bought and what was paid, never the person.
+     */
+    public ReorderLinesDto getReorderLines(String slug, String orderNumber, String customerEmail) {
+        Shop shop = resolvePublicShopForSlug(slug);
+        try {
+            Order order = orderRepository.findByOrderNumber(orderNumber)
+                    .filter(o -> customerEmail.equalsIgnoreCase(o.getCustomerEmail()))
+                    .filter(o -> shop.getId().equals(o.getShopId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+            List<ReorderLinesDto.Line> lines = order.getItems().stream()
+                    .map(item -> new ReorderLinesDto.Line(
+                            item.getProductId(), item.getProductName(), item.getQuantity(), item.getUnitPricePennies()))
+                    .toList();
+            // The delivery details of a DELIVERY order that has an address: the customer's own order,
+            // returned to them, so a fresh browser can pre-fill the next checkout (#845). Nothing is
+            // stored anew. A collection order, or one whose address was erased (Article 17 anonymises
+            // these columns), yields null, never a half-filled or invented address.
+            ReorderLinesDto.Delivery delivery = null;
+            if (order.getFulfilmentType() == uk.jtoye.core.order.FulfilmentType.DELIVERY
+                    && !isBlank(order.getAddressLine1()) && !isBlank(order.getAddressPostcode())) {
+                delivery = new ReorderLinesDto.Delivery(order.getAddressLine1(), order.getAddressLine2(),
+                        order.getAddressCity(), order.getAddressPostcode(), order.getCustomerPhone());
+            }
+            return new ReorderLinesDto(order.getOrderNumber(), shop.getSlug(), lines, delivery);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     /** The history page for one address, under the transaction-local customer-email GUC (Issue #95). */
@@ -848,6 +946,7 @@ public class PublicStorefrontService {
         // D-15: that a note was sent and when the shop read it, from columns. Never the text.
         setAllergyNoteStatus(status, order);
         status.setScheduledForDate(order.getScheduledForDate());
+        status.setEstimatedReadyAt(order.getEstimatedReadyAt());
         status.setScheduledWindowLabel(order.getScheduledWindowLabel());
         status.setDepositAmountPennies(order.getDepositAmountPennies());
         status.setBalanceDuePennies(order.getBalanceDuePennies());
@@ -920,6 +1019,7 @@ public class PublicStorefrontService {
         // D-15 (#812): the customer sees that the shop read their allergy note. Never the text (T-31.1-46).
         setAllergyNoteStatus(status, order);
         status.setScheduledForDate(order.getScheduledForDate());
+        status.setEstimatedReadyAt(order.getEstimatedReadyAt());
         status.setScheduledWindowLabel(order.getScheduledWindowLabel());
         status.setDepositAmountPennies(order.getDepositAmountPennies());
         status.setBalanceDuePennies(order.getBalanceDuePennies());
@@ -1299,6 +1399,7 @@ public class PublicStorefrontService {
                 replayedSnapshot.flags(),
                 replayedStripeAccountId
         );
+        confirmation.setEstimatedReadyAt(existingOrder.getEstimatedReadyAt());
         confirmation.setFulfilmentSlotId(existingOrder.getFulfilmentSlotId());
         confirmation.setScheduledForDate(existingOrder.getScheduledForDate());
         confirmation.setScheduledWindowLabel(existingOrder.getScheduledWindowLabel());
@@ -1359,6 +1460,10 @@ public class PublicStorefrontService {
         // message; the message text is unchanged.
         FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
                 request.getAddressCity(), request.getAddressPostcode());
+        // #460 / UXT-030: refuse a delivery beyond the shop's radius (typed 422), before pricing and stock.
+        FulfilmentPolicy.requireWithinDeliveryRadius(shop, fulfilmentType, request.getAddressPostcode(),
+                postcode -> postcodeGeocoder.locateCustomerPostcode(postcode),
+                () -> postcodeGeocoder.isDatasetLoaded());
         if (fulfilmentType == FulfilmentType.DELIVERY) {
             order.setAddressLine1(request.getAddressLine1());
             order.setAddressLine2(request.getAddressLine2());
@@ -1600,7 +1705,11 @@ public class PublicStorefrontService {
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
         // this predominant liability via calculateTotal().
-        order.setVatRate(VatCalculator.predominantRate(lineRates));
+        // #962 (owner ruling 2026-11-04, persona close-out): a seller with no declared VAT number charges
+        // none, so the order (and through it the ledger and the access export) records ZERO. TenantContext
+        // is pinned by the caller; past orders are never rewritten.
+        order.setVatRate(VatCalculator.forSeller(VatCalculator.predominantRate(lineRates),
+                traderIdentityService.isVatRegistered(tenantId)));
 
         // The fee computed above, with the subtotal and the minimum, before the basket diff (37-33).
         order.setDeliveryFeePennies(deliveryFee);
@@ -1616,6 +1725,10 @@ public class PublicStorefrontService {
             }
             slotService.reserveSlotForOrder(shop, request.getFulfilmentSlotId(), order);
         }
+
+        // #825 (owner ruling 2026-11-04): the ESTIMATED ready-by time, placed-at plus the shop's prep time.
+        // After the slot block, because a scheduled-slot order carries its own window and gets no estimate.
+        order.setEstimatedReadyAt(ReadyByEstimate.of(shop, OffsetDateTime.now(), order));
 
         // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
         // If not configured, fall back to COD — order goes straight to PENDING.
@@ -1769,6 +1882,7 @@ public class PublicStorefrontService {
                 recordedSnapshot.flags(),
                 stripeAccountId
         );
+        confirmation.setEstimatedReadyAt(order.getEstimatedReadyAt());
         confirmation.setFulfilmentSlotId(order.getFulfilmentSlotId());
         confirmation.setScheduledForDate(order.getScheduledForDate());
         confirmation.setScheduledWindowLabel(order.getScheduledWindowLabel());
@@ -1858,6 +1972,8 @@ public class PublicStorefrontService {
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
         dto.setDeliveryFeePennies(shop.getDeliveryFeePennies());
         dto.setFreeDeliveryThresholdPennies(shop.getFreeDeliveryThresholdPennies());
+        // #460: how far the shop delivers (null = no limit), so checkout can say so before the customer types a postcode.
+        dto.setDeliveryRadiusKm(shop.getDeliveryRadiusKm());
         // 37-48 (UXT-023): the same reading FulfilmentPolicy.requireOffered enforces (a null flag is offered).
         dto.setOffersDelivery(!Boolean.FALSE.equals(shop.getOffersDelivery()));
         dto.setOffersCollection(!Boolean.FALSE.equals(shop.getOffersCollection()));

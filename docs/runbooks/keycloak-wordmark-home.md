@@ -5,8 +5,8 @@ verification) the "J'Toye" wordmark in the header is now a link to the environme
 app origin. Before this, a person on the "Email verification" page had no way back to the
 site.
 
-The header is each realm's `displayNameHtml`. The `jtoye` login theme is CSS-only and has no
-FTL overrides (see `infra/keycloak/themes/jtoye/login/theme.properties`). Both templates now
+The header is each realm's `displayNameHtml`. The `jtoye` login theme has no FTL override for the header
+(its three FTL overrides, #848, leave it alone; see `infra/keycloak/themes/jtoye/login/theme.properties`). Both templates now
 carry:
 
 ```

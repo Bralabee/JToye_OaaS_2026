@@ -201,6 +201,9 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  // UXT-104: the checkout keeps a per-tab draft in sessionStorage (lib/checkout-memory.ts), so the
+  // next test must not inherit the last one's address.
+  sessionStorage.clear()
   jest.clearAllMocks()
 })
 

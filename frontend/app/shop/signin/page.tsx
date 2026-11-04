@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { openGraphWithDefaultImage } from "@/lib/og-image"
 import { Suspense } from "react"
 import { CustomerSignInCard } from "@/components/storefront/customer-signin-card"
 
@@ -28,13 +29,14 @@ export const metadata: Metadata = {
   description:
     "Sign in to J'Toye to place orders with independent UK food vendors, track deliveries and see your order history.",
   alternates: { canonical: "/shop/signin" },
-  openGraph: {
+  // SW-CLR-08: a page's own openGraph replaces the root's, so the default share image is added here.
+  openGraph: openGraphWithDefaultImage({
     title: "Sign in to order — J'Toye",
     description:
       "Sign in to J'Toye to place orders with independent UK food vendors, track deliveries and see your order history.",
     url: "/shop/signin",
     type: "website",
-  },
+  }),
 }
 
 export default function CustomerSignInPage() {

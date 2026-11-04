@@ -67,7 +67,9 @@ public class CustomerController {
     }
 
     @GetMapping
-    @Operation(summary = "List customers", description = "Returns a paginated list of customers for the authenticated tenant")
+    @Operation(summary = "List customers", description = "Returns a paginated list of customers for the authenticated tenant. "
+            + "Optional q searches EVERY page: a case-insensitive substring of the name, the phone (any spelling: +44, spaces, hyphens, brackets) or - only for a caller who sees every customer's email - the email. "
+            + "q is bounded to 100 characters; blank is no search.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved customers"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT"),
@@ -75,10 +77,13 @@ public class CustomerController {
     })
     public Page<CustomerDto> list(
             @Parameter(description = "Pagination parameters", hidden = true)
-            @PageableDefault(size = 100, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 100, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            @Parameter(description = "Search text; matched over all pages") @RequestParam(required = false) String q) {
         shopAccessService.requireAnyAccess();
         // RLS ensures we only see current tenant rows
-        return customerService.getAllCustomers(pageable);
+        return (q != null && !q.isBlank())
+                ? customerService.searchCustomers(q, pageable)
+                : customerService.getAllCustomers(pageable);
     }
 
     @GetMapping("/{id}")
@@ -119,6 +124,7 @@ public class CustomerController {
         }
         CustomerDto dto;
         int status;
+        boolean replayed = false;
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             dto = customerService.createCustomer(req);
             status = 201;
@@ -128,6 +134,7 @@ public class CustomerController {
                     () -> customerService.createCustomer(req));
             dto = outcome.value();
             status = outcome.status();
+            replayed = outcome.replayed();
         }
         // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves.
         // Rebuild from the returned (fresh or replayed) dto so the 201 Location resolves identically on replay.
@@ -135,7 +142,11 @@ public class CustomerController {
                 .path("/{id}")
                 .buildAndExpand(dto.id())
                 .toUri();
-        return ResponseEntity.status(status).location(location).body(dto);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status).location(location);
+        if (replayed) {
+            response.header(IdempotencyOutcome.REPLAYED_HEADER, "true"); // #879 / UXT-123
+        }
+        return response.body(dto);
     }
 
     @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)

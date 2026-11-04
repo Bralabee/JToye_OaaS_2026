@@ -91,6 +91,25 @@ class MoneyPathExecutionIntegrationTest {
                         + "ON CONFLICT (id) DO NOTHING",
                 TENANT_ID, "COR-9 Money Path Tenant");
         shopId = seedShop();
+        seedVatRegisteredTraderIdentity();
+    }
+
+    /**
+     * #962 (owner ruling 2026-11-04): a seller with no declared VAT number records ZERO VAT. This class asserts the
+     * VAT a registered seller records (STANDARD and REDUCED lines), so its tenant declares a VAT number.
+     */
+    private void seedVatRegisteredTraderIdentity() {
+        TenantContext.set(TENANT_ID);
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO trader_identity (id, tenant_id, legal_name, entity_type, address_line1, "
+                            + "address_city, address_postcode, vat_number) "
+                            + "VALUES (?, ?, 'COR-9 Trading', 'SOLE_TRADER', '1 High St', 'Leeds', 'LS1 1AA', 'GB123456789') "
+                            + "ON CONFLICT (tenant_id) DO NOTHING",
+                    UUID.randomUUID(), TENANT_ID);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     @AfterEach

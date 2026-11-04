@@ -191,10 +191,12 @@ describe("the notice a first-time visitor sees", () => {
     const dismiss = screen.getByRole("button", { name: "Got it" })
     const link = screen.getByRole("link", { name: "Cookie policy" })
 
-    await user.tab()
-    expect(document.activeElement).toBe(dismiss)
+    // The policy link now ends the sentence (#854 compaction), so it is met before "Got it" and
+    // the sentence is read before the control that dismisses it. Both are the first two stops.
     await user.tab()
     expect(document.activeElement).toBe(link)
+    await user.tab()
+    expect(document.activeElement).toBe(dismiss)
 
     // jsdom computes no styles, so the focus RING is asserted structurally.
     // Stated plainly rather than dressed up as a rendered measurement: this
@@ -526,6 +528,51 @@ describe("the payment-link page /pay carries no cookie notice", () => {
 
   it("a real consent choice still outranks the carve-out: the banner renders at /pay", () => {
     mockedPathname.mockImplementation(() => "/pay")
+    const unregister = register(FIXTURE)
+    try {
+      render(<CookieNotice />)
+      expect(screen.getByRole("region", { name: "Cookie choices" })).toBeInTheDocument()
+    } finally {
+      unregister()
+    }
+  })
+})
+
+/**
+ * SW-TND-03 (swarm epic #964): on a phone the notice sat over the invite form's Last name and
+ * Password before the first tap. /invite is carved out exactly as /pay is (PR #1072): the page is a
+ * form a person fills in, writes nothing to web storage (invite-client.tsx header), and its footer,
+ * which links /legal/cookies, comes from PublicShell. The notice only informs.
+ */
+describe("the invitation page /invite carries no cookie notice", () => {
+  const mockedPathname = usePathname as jest.Mock
+
+  afterEach(() => {
+    mockedPathname.mockImplementation(() => "/")
+  })
+
+  it("renders nothing at /invite, where it would cover the form fields", () => {
+    mockedPathname.mockImplementation(() => "/invite")
+    render(<CookieNotice />)
+    expect(screen.queryByRole("region", { name: "Cookie notice" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Got it" })).not.toBeInTheDocument()
+    expect(document.documentElement.style.scrollPaddingBottom).toBe("")
+  })
+
+  it("renders nothing under /invite/ either", () => {
+    mockedPathname.mockImplementation(() => "/invite/anything")
+    render(<CookieNotice />)
+    expect(screen.queryByRole("region", { name: "Cookie notice" })).not.toBeInTheDocument()
+  })
+
+  it("CONTROL: a route that only starts with the letters (/invitees) still shows the notice", () => {
+    mockedPathname.mockImplementation(() => "/invitees")
+    render(<CookieNotice />)
+    expect(screen.getByRole("region", { name: "Cookie notice" })).toBeInTheDocument()
+  })
+
+  it("a real consent choice still outranks the carve-out: the banner renders at /invite", () => {
+    mockedPathname.mockImplementation(() => "/invite")
     const unregister = register(FIXTURE)
     try {
       render(<CookieNotice />)

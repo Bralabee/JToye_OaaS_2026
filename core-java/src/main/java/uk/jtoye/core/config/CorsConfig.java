@@ -87,7 +87,9 @@ public class CorsConfig {
             // the browser hides the scope-named filename and the scope echo, and the downloaded file cannot be
             // labelled with the scope it actually holds (say is not data).
             "Content-Disposition",
-            "X-Finance-Scope");
+            "X-Finance-Scope",
+            // #879 / UXT-123: marks a replayed idempotent response; unread without this if the caller is a browser.
+            "Idempotent-Replayed");
 
     /**
      * The configured list, plus any mandatory name it omits — extend-but-never-remove.

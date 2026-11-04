@@ -30,6 +30,11 @@ spring:
     enabled: false
 
 jtoye:
+  orders:
+    unaccepted-alert:
+      # #821: off in tests so a background tick can never alert or email an order some unrelated test left
+      # PENDING; UnacceptedOrderSweepIntegrationTest switches it on and drives sweep() itself.
+      enabled: false
   geo:
     postcode-import:
       # DELIBERATELY the opposite of the dev default (true), and the divergence IS the point:

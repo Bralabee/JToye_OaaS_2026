@@ -1,0 +1,19 @@
+Throwaway quay.io/keycloak/keycloak:26.8.1 (container kc-mailred) whose jtoye-customers realm was
+imported from the ORIGIN/MAIN template (user-initiated lifespan 300 s, no verify-email override;
+see 847-mail-lifetime-red.txt). The runbook's script (docs/runbooks/keycloak-action-token-lifespan.md)
+was then run against it with `docker exec kc-mailred /usr/bin/env bash /tmp/kcadm-lifespan.sh jtoye-customers`:
+
+Logging into http://localhost:8080 as user admin of realm master
+
+== jtoye-customers
+  "actionTokenGeneratedByUserLifespan" : 3600,
+    "actionTokenGeneratedByUserLifespan.verify-email" : "86400",
+
+rc=0. Read back through the admin REST API afterwards (a second instrument, not kcadm):
+  actionTokenGeneratedByUserLifespan = 3600
+  "actionTokenGeneratedByUserLifespan.verify-email": "86400"
+Additivity probe (earlier run on the same realm): a pre-set attribute `probeKeep=yes` survived the
+quoted-dotted `-s 'attributes."...verify-email"=...'` update; the JSON form `-s 'attributes={...}'`
+was NOT used because it replaces the map.
+Trap found while writing it: `kcadm get --fields attributes` prints `{ }` for a populated attributes map,
+so the script reads the whole realm back and greps it instead.

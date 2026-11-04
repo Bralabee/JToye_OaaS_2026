@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -104,7 +105,14 @@ public class PostcodeGeocoder {
     /** Highest inward code in any district. */
     private static final String HIGHEST_INWARD = "9ZZ";
 
+    /** Shortest gap between two "dataset is empty" WARNs: an outage must be visible, not a log flood. */
+    private static final long EMPTY_DATASET_WARN_INTERVAL_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(5);
+
     private final PostcodeCentroidRepository repository;
+
+    /** {@code System.nanoTime()} of the last empty-dataset WARN; 0 = never (guarded by {@link #emptyDatasetWarned}). */
+    private final AtomicLong lastEmptyDatasetWarnNanos = new AtomicLong();
+    private volatile boolean emptyDatasetWarned;
 
     public PostcodeGeocoder(PostcodeCentroidRepository repository) {
         this.repository = repository;
@@ -119,6 +127,55 @@ public class PostcodeGeocoder {
      *         never an exception.
      */
     public Optional<Coordinate> locate(String address) {
+        return lookup(address, true);
+    }
+
+    /**
+     * {@link #locate(String)} for a postcode a CUSTOMER typed (the checkout's delivery-radius check). Identical
+     * result; a miss is logged at DEBUG, not WARN, for the reason {@code locateDistrict} is: this is reachable
+     * anonymously, a mistyped or Northern Ireland postcode is ordinary input, and a WARN that fires on ordinary
+     * customer input is how the channel operators alert on stops being read. {@code locate} keeps its WARN for a
+     * vendor's authenticated address write, where a miss is rare and actionable.
+     */
+    public Optional<Coordinate> locateCustomerPostcode(String address) {
+        return lookup(address, false);
+    }
+
+    /**
+     * Whether {@code postcode_centroid} holds any rows, i.e. whether a lookup MISS means "unknown postcode" or
+     * "the dataset is not there". The table ships empty and is filled at startup by
+     * {@link PostcodeCentroidImporter}; while it is empty (a slow first start, a failed import) every postcode
+     * misses, and a caller that refuses on a miss would refuse every customer for a dependency failure. Call it
+     * only after a miss: it is one EXISTS probe. An empty table is reported with a rate-limited WARN (at most one
+     * per five minutes) so the outage is visible without one line per order.
+     */
+    public boolean isDatasetLoaded() {
+        boolean loaded;
+        try {
+            loaded = repository.existsAnyRow();
+        } catch (RuntimeException e) {
+            // Cannot tell: treat as NOT loaded, i.e. do not refuse a customer over our own failure.
+            warnEmptyDatasetRateLimited("could not be read: " + e.getClass().getSimpleName());
+            return false;
+        }
+        if (!loaded) {
+            warnEmptyDatasetRateLimited("is empty");
+        }
+        return loaded;
+    }
+
+    private void warnEmptyDatasetRateLimited(String why) {
+        long now = System.nanoTime();
+        long last = lastEmptyDatasetWarnNanos.get();
+        boolean due = !emptyDatasetWarned || now - last >= EMPTY_DATASET_WARN_INTERVAL_NANOS;
+        if (due && lastEmptyDatasetWarnNanos.compareAndSet(last, now)) {
+            emptyDatasetWarned = true;
+            log.warn("postcode_centroid {} (the importer has not loaded the dataset). Delivery-radius checks are "
+                    + "SKIPPED until it is; orders are not refused for it. Logged at most once per 5 minutes.", why);
+        }
+    }
+
+    private Optional<Coordinate> lookup(String address, boolean vendorWrite) {
         if (address == null || address.isBlank()) {
             return Optional.empty();
         }
@@ -138,12 +195,17 @@ public class PostcodeGeocoder {
                 .map(row -> new Coordinate(row.getLatitude(), row.getLongitude()));
 
         if (located.isEmpty()) {
-            // WARN, and name the postcode rather than the whole address line: the postcode is
-            // what an operator needs to act on, and the rest of the address is customer- or
-            // vendor-identifying detail that does not belong in a log.
-            log.warn("Postcode '{}' is not in the Code-Point Open dataset — address not geocoded. "
+            // Name the postcode rather than the whole address line: the postcode is what an operator needs
+            // to act on, and the rest of the address is customer- or vendor-identifying detail that does not
+            // belong in a log. WARN only for the vendor's authenticated write; a customer's checkout is DEBUG.
+            String message = "Postcode '{}' is not in the Code-Point Open dataset — address not geocoded. "
                     + "This is expected for Northern Ireland (the dataset is GB-only) and for "
-                    + "postcodes that do not exist.", key);
+                    + "postcodes that do not exist.";
+            if (vendorWrite) {
+                log.warn(message, key);
+            } else {
+                log.debug(message, key);
+            }
         }
         return located;
     }

@@ -147,8 +147,6 @@ const PUBLIC_ROUTES = [
   "/pricing",
   "/about",
   "/legal/merchant-terms",
-  "/business-model-guide",
-  "/competitive",
 ]
 
 /**

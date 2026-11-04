@@ -1,0 +1,9 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/api/customer-auth
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 4 passed, 4 total
+Tests:       45 passed, 45 total
+Snapshots:   0 total
+Time:        3.626 s
+Ran all test suites matching app/api/customer-auth.

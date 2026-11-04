@@ -201,7 +201,7 @@ class CrossTenantSpoofIntegrationTest {
         // the server, and they are inert here: the tenant gate refuses before any price is compared.
         UUID dummyProductId = UUID.randomUUID();
         String minimalOrderJson = "{\"customerEmail\":\"t@example.com\"," +
-                "\"customerName\":\"T\",\"customerPhone\":\"+447000000000\"," +
+                "\"customerName\":\"Tess Tester\",\"customerPhone\":\"+447000000000\"," +
                 "\"fulfilmentType\":\"COLLECTION\"," +
                 "\"items\":[{\"productId\":\"" + dummyProductId + "\",\"quantity\":1,\"expectedUnitPricePennies\":100}]," +
                 "\"expectedTotalPennies\":100," +

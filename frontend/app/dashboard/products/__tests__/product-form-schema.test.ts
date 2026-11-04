@@ -28,11 +28,23 @@ describe("productSchema — whitespace-only text fields are rejected (A11Y-8)", 
   it.each([
     ["title", "Title is required"],
     ["ingredientsText", "Ingredients are required"],
-    ["sku", "SKU is required"],
   ])("%s = five spaces is rejected with the existing message", (field, message) => {
     const r = parse({ [field]: "     " } as Partial<typeof valid>)
     expect(r.success).toBe(false)
     expect(firstMessage(r, field)).toBe(message)
+  })
+  // #875 / UXT-115: a stall holder has no SKU to type. The server generates one when it is omitted or blank.
+  it("UXT-115: the SKU is optional - omitted, empty and whitespace-only are all accepted", () => {
+    const { sku: _omit, ...withoutSku } = valid
+    expect(productSchema.safeParse(withoutSku).success).toBe(true)
+    expect(parse({ sku: "" }).success).toBe(true)
+    expect(parse({ sku: "     " }).success).toBe(true)
+  })
+  it("UXT-115: a SKU that IS typed keeps its length limit", () => {
+    expect(parse({ sku: "x".repeat(50) }).success).toBe(true)
+    const r = parse({ sku: "x".repeat(51) })
+    expect(r.success).toBe(false)
+    expect(firstMessage(r, "sku")).toBe("SKU too long")
   })
   it("trims BEFORE the length check, so a space-padded 200-char title is still accepted", () => {
     expect(parse({ title: `  ${"x".repeat(200)}  ` }).success).toBe(true)

@@ -43,6 +43,34 @@ again by any other endpoint, including `GET`. Store it before you close the resp
 | `POST /api/v1/webhooks/{id}/pause` | stop delivering (`PAUSED`); events already queued are kept as `HELD` |
 | `POST /api/v1/webhooks/{id}/resume` | deliver again, deliver every `HELD` event, and clear the failure counter |
 | `POST /api/v1/webhooks/{id}/revoke` | terminal (`REVOKED`) |
+| `POST /api/v1/webhooks/{id}/test` | queue one `webhook.test` ping to an `ACTIVE` endpoint (202); see [Send a test event](#send-a-test-event) |
+| `DELETE /api/v1/webhooks/{id}` | delete a `REVOKED` endpoint and its delivery log (204); any other status is a 409 |
+
+### Send a test event
+
+`POST /api/v1/webhooks/{id}/test` queues one ping and answers `202` with `{ deliveryId, eventId, status }`.
+The ping takes the same path as a real event: it is signed with the endpoint's current secret and POSTed to
+the validated address, and it appears in the delivery log (`GET /api/v1/webhooks/{id}/deliveries`) as
+`webhook.test`, where you read the outcome by `deliveryId`. The dashboard has the same button on an endpoint's
+page.
+
+```json
+{ "id": "<eventId>", "type": "webhook.test", "tenantId": "<your tenant uuid>", "occurredAt": "…", "version": "1",
+  "data": { "subscriptionId": "<id>", "message": "This is a test event from J'Toye. …" } }
+```
+
+- A ping gets **one attempt**. It is not retried over hours like a real event, and a failed ping never counts
+  toward [auto-pause](#auto-pause).
+- Only an `ACTIVE` endpoint can be pinged. A paused, auto-paused or revoked one answers a typed `409`
+  (`https://jtoye.uk/errors/webhook-subscription-state`, with `subscriptionStatus`).
+- Each call sends one ping with a new event id. It takes no `Idempotency-Key`: sending it twice is two pings.
+
+`DELETE` is the same typed `409` for an endpoint that is not yet revoked: revoke first, then delete. The
+delivery log goes with the endpoint.
+
+Managing endpoints is deliberately **not** exposed as an MCP tool. Registering an endpoint points the platform's
+order data at an arbitrary URL and returns a signing secret, which is an administrator's decision, not an
+agent's; MCP credentials are scoped to catalogue, order and customer work, and `GROUP_ADMIN` is required here.
 
 Errors are RFC 7807 problem documents, not prose.
 
@@ -83,9 +111,65 @@ The body is a versioned envelope:
 }
 ```
 
-`data` is the full domain payload for the event. Treat it as **additive**: we may add
-fields to it without bumping `version`, so parse leniently and ignore what you do not
-recognise. A breaking change to the envelope's own shape bumps `version`.
+`data` is the event's own payload, and what is in it depends on the family (see
+[What `data` holds](#what-data-holds)). Treat it as **additive**: we may add fields to it
+without bumping `version`, so parse leniently and ignore what you do not recognise. A
+breaking change to the envelope's own shape bumps `version`.
+
+### What `data` holds
+
+**`order.*` (`ORDER_STATE_CHANGED`)** carries the order summary, so a receiver can build a
+row without calling back. Amounts are integer pence. Members after `shopId` were added in
+#864; `dataVersion: 2` marks a payload that has them, so test that one field rather than
+probing for the others.
+
+```json
+{
+  "orderId": "5a4b3c2d-1e0f-4998-8877-665544332211",
+  "tenantId": "7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910",
+  "orderNumber": "JT-1042",
+  "previousStatus": "PREPARING",
+  "newStatus": "READY",
+  "timestamp": "2026-01-15T09:30:00Z",
+  "shopId": "3e2d1c0b-9a87-4655-8443-2211ffeeddcc",
+  "dataVersion": 2,
+  "fulfilmentType": "DELIVERY",
+  "paymentStatus": "CAPTURED",
+  "items": [
+    { "productId": "…", "name": "Jollof rice", "quantity": 2,
+      "unitPricePennies": 899, "totalPricePennies": 1798 }
+  ],
+  "subtotalPennies": 1798,
+  "deliveryFeePennies": 250,
+  "vatAmountPennies": 341,
+  "totalPennies": 2048,
+  "customer": { "name": "Ravi Shah", "email": "ravi@example.com", "phone": "+447700900111" },
+  "deliveryAddress": { "line1": "12 Peckham High Street", "line2": null, "city": "London", "postcode": "SE15 5EB" }
+}
+```
+
+- `items[].name` is the name **at the time of the order**, not the live product title.
+- `deliveryAddress` is present only on a `DELIVERY` order that has one. Absent members are
+  omitted, not sent as `null` (the `line2` above is shown only to name the field).
+- The original seven members (`orderId` … `shopId`) are unchanged, so a receiver written
+  against the thin event keeps working.
+- Not included, on purpose: the customer's free-text notes and allergy note, and any
+  payment reference. Fetch the order with `GET /api/v1/orders/{id}` and an
+  integration credential ([`security-scopes.md`](security-scopes.md)) if you need them.
+- If the order cannot be read when the event is prepared (for example it was deleted in the
+  meantime), the event is still delivered as the original seven-member payload with no
+  `dataVersion`. Never assume the additions are present on every delivery.
+
+**Personal data.** The customer and address members are the order's own contact details.
+Only a tenant administrator can register a webhook endpoint, and it receives the tenant's
+orders, which that administrator can already read through the API. The kitchen-role
+minimisation (no customer email for STAFF) does not apply to this endpoint, but it is
+**your** endpoint: serve it over HTTPS (we require it), keep the signing secret safe and do
+not log request bodies. When a customer is erased under Article 17, the customer and
+address members are removed from the copy we store (including deliveries still queued or
+held), and the order facts stay. A copy your receiver has already stored is yours to erase.
+
+**`order.refunded`, `onboarding.*`, `payment.*`** carry their event record unchanged.
 
 ### Event types
 
@@ -162,7 +246,7 @@ implementation is correct you will compute the same `v1` hex, byte for byte.
 | Body length | 430 bytes |
 | Signed message length | 441 bytes (`"1750000000."` is 11 bytes) |
 
-**Payload** — one line, UTF-8, no trailing newline, no whitespace between tokens:
+**Payload** — the original seven-member `order.ready` shape, kept short on purpose: this is a *signing* vector, fixed so the digest below never changes. A live `order.*` delivery carries more members in `data` ([What `data` holds](#what-data-holds)); sign and verify whatever bytes you receive. One line, UTF-8, no trailing newline, no whitespace between tokens:
 
 ```
 {"id":"2b4d0f9a-1c3e-4f57-8a6b-9d0e1f2a3b4c","type":"order.ready","tenantId":"7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910","occurredAt":"2026-01-15T09:30:00Z","version":"1","data":{"orderId":"5a4b3c2d-1e0f-4998-8877-665544332211","tenantId":"7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910","orderNumber":"JT-1042","previousStatus":"PREPARING","newStatus":"READY","timestamp":"2026-01-15T09:30:00Z","shopId":"3e2d1c0b-9a87-4655-8443-2211ffeeddcc"}}
@@ -271,6 +355,15 @@ worse than none — it is confidently wrong.
 
 ## 5. Delivery, retries, and failure
 
+### Redirects are not followed
+
+A `3xx` answer counts as a failed attempt: we do not follow redirects. This is deliberate. The address is
+validated as public and HTTPS at registration and again at every attempt, and the connection is made to that
+validated address; following a `Location` would send the signed body to an address nobody validated, which is
+the SSRF hole the check exists to close. If your receiver sits behind a redirect (a Google Apps Script web app
+is a common one: it answers a POST with a redirect), register the **final** URL the
+redirect lands on, or put a small relay that answers `2xx` in front of it.
+
 ### Responding
 
 Return **2xx** to acknowledge. Anything else — and any timeout, connection refusal or TLS
@@ -282,26 +375,36 @@ and will be retried, which makes the load worse.
 
 ### Retry schedule
 
-Up to **8 attempts** per delivery, with exponential backoff from a 1-second base:
+Up to **15 attempts** per delivery, with exponential backoff from a 30-second base,
+capped at 4 hours (`WEBHOOK_DELIVERY_MAX_ATTEMPTS`, `WEBHOOK_DELIVERY_BACKOFF_BASE_MS`,
+`WEBHOOK_DELIVERY_BACKOFF_CAP_MS`):
 
 | After attempt | Next attempt in |
 |---|---|
-| 1 | 1s |
-| 2 | 2s |
-| 3 | 4s |
-| 4 | 8s |
-| 5 | 16s |
-| 6 | 32s |
-| 7 | 64s |
-| 8 | — terminal `FAILED` |
+| 1 | 30s |
+| 2 | 1m |
+| 3 | 2m |
+| 4 | 4m |
+| 5 | 8m |
+| 6 | 16m |
+| 7 | 32m |
+| 8 | 1h 4m |
+| 9 | 2h 8m |
+| 10 – 14 | 4h each (the cap) |
+| 15 | — terminal `FAILED` |
 
-The delivery worker polls every 5 seconds, so short gaps round up to the next tick. There
-is a 1-hour backoff cap configured, but at the default 8 attempts and 1-second base it is
-never reached: **the whole retry sequence finishes in roughly two minutes.**
+The delivery worker polls every 5 seconds, so short gaps round up to the next tick. **The
+whole retry sequence spans about 24 hours** (24 h 16 m), so an endpoint that is down for a
+deploy, a certificate renewal or an overnight outage still receives the event once it is
+back. Until #587 the sequence finished in about two minutes (8 attempts from a 1-second
+base), and an event raised during a ten-minute deploy was lost to automatic retry.
 
-Plan for that. An endpoint down for a ten-minute deploy will exhaust every attempt for
-every event in that window. Retries cover a blip, not an outage — for an outage, use the
-delivery log to replay.
+If the endpoint is still down after the last attempt, use the delivery log to replay.
+
+While a delivery waits out a backoff it is `RETRYING`; the auto-pause rule below counts a
+delivery only once it has used every attempt, so an endpoint that is down now is paused
+about three days later at the earliest, not minutes later. Pause it yourself
+(`POST /api/v1/webhooks/{id}/pause`) if you know it is going away.
 
 ### What terminal `FAILED` means to you
 
@@ -316,7 +419,7 @@ a replay will not re-run a handler that already succeeded. If you need us to re-
 you need the event to occur again.
 
 A delivery is not attempted while the subscription is `PAUSED` or `AUTO_PAUSED`: it is
-`HELD`, and `POST /api/v1/webhooks/{id}/resume` delivers it with a fresh set of 8 attempts.
+`HELD`, and `POST /api/v1/webhooks/{id}/resume` delivers it with a fresh set of 15 attempts.
 `GET /api/v1/webhooks/{id}` reports how many are waiting as `heldCount`. Held events are
 pruned with the rest of the log after the retention window (30 days by default). A delivery
 still goes straight to `FAILED`, without retrying, if the subscription is revoked.
@@ -324,7 +427,7 @@ still goes straight to `FAILED`, without retrying, if the subscription is revoke
 ### Auto-pause
 
 The subscription counts **consecutive failed deliveries**: an event counts once it has
-used all 8 of its attempts without a 2xx. At **3** such events in a row
+used all 15 of its attempts (about 24 hours) without a 2xx. At **3** such events in a row
 (`WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES`) the subscription flips to
 `AUTO_PAUSED`. Any delivered event resets the counter to zero.
 

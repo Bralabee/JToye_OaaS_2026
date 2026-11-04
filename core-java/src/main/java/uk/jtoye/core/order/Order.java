@@ -236,6 +236,13 @@ public class Order {
     @Column(name = "payment_reference", length = 255)
     private String paymentReference;
 
+    /**
+     * V92 (#868): the DEPOSIT PaymentIntent of a deposit-split order, kept when the balance intent overwrites
+     * {@link #paymentReference}. Null = not recorded (never paid in two stages, or paid before V92).
+     */
+    @Column(name = "deposit_payment_reference", length = 255)
+    private String depositPaymentReference;
+
     @Column(name = "payment_method", length = 100)
     private String paymentMethod;
 
@@ -256,6 +263,30 @@ public class Order {
      */
     @Column(name = "scheduled_window_label", length = 64)
     private String scheduledWindowLabel;
+
+    /**
+     * V91 (#825, owner ruling 2026-11-04): the ESTIMATED ready-by instant, a snapshot of (placed-at or
+     * accepted-at) plus the shop's preparation time at that moment. An estimate, labelled as one wherever it
+     * is shown. NULL = none (the shop set no prep time, a scheduled-slot order, or the order predates V91).
+     */
+    @Column(name = "estimated_ready_at")
+    private OffsetDateTime estimatedReadyAt;
+
+    /**
+     * V91 (#821, owner ruling 2026-11-04): when the unaccepted-order sweep alerted the vendor and emailed
+     * the customer. Written once, in the claim statement; NULL = not alerted.
+     *
+     * <p>READ-ONLY to JPA ({@code insertable = false, updatable = false}): only {@code UnacceptedOrderSweep}'s
+     * native claim writes it, and it deliberately does not bump {@code version}. Were this column updatable,
+     * any Order loaded before the claim would flush a full-column UPDATE and write its stale NULL back over
+     * the stamp (the customer emailed, nothing recording it, and a PENDING-preserving writer would then be
+     * alerted a second time). It is also {@link NotAudited}: Envers would copy that same stale in-memory value
+     * into {@code orders_aud}, claiming a stamp was cleared when nobody cleared it. The claim is an operational
+     * stamp, not a business revision, so the V91 {@code orders_aud} mirror column simply stays NULL.
+     */
+    @NotAudited
+    @Column(name = "unaccepted_notified_at", insertable = false, updatable = false)
+    private OffsetDateTime unacceptedNotifiedAt;
 
     /**
      * ADR-0007 / V87: Upfront deposit charged at checkout in pennies when settled under
@@ -585,6 +616,14 @@ public class Order {
         this.paymentReference = paymentReference;
     }
 
+    public String getDepositPaymentReference() {
+        return depositPaymentReference;
+    }
+
+    public void setDepositPaymentReference(String depositPaymentReference) {
+        this.depositPaymentReference = depositPaymentReference;
+    }
+
     public String getPaymentMethod() {
         return paymentMethod;
     }
@@ -695,6 +734,22 @@ public class Order {
 
     public void setScheduledWindowLabel(String scheduledWindowLabel) {
         this.scheduledWindowLabel = scheduledWindowLabel;
+    }
+
+    public OffsetDateTime getEstimatedReadyAt() {
+        return estimatedReadyAt;
+    }
+
+    public void setEstimatedReadyAt(OffsetDateTime estimatedReadyAt) {
+        this.estimatedReadyAt = estimatedReadyAt;
+    }
+
+    public OffsetDateTime getUnacceptedNotifiedAt() {
+        return unacceptedNotifiedAt;
+    }
+
+    public void setUnacceptedNotifiedAt(OffsetDateTime unacceptedNotifiedAt) {
+        this.unacceptedNotifiedAt = unacceptedNotifiedAt;
     }
 
     @Column(name = "phone_verified")

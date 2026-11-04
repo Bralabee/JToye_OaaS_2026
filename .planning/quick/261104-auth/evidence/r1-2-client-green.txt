@@ -1,0 +1,9 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' lib/__tests__/customer-session-single-flight.test.ts lib/__tests__/customer-session-transition.test.ts
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 2 passed, 2 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        1.747 s
+Ran all test suites matching lib/__tests__/customer-session-single-flight.test.ts|lib/__tests__/customer-session-transition.test.ts.

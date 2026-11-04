@@ -140,6 +140,13 @@ class OrderIdempotencyIntegrationTest {
                     .isEqualTo(first.getBody().getOrderNumber());
             assertThat(second.getStatusCode().value()).isEqualTo(201);
 
+            // #879 / UXT-123 (P2-RAV-17): a replay is identifiable. The body and status are the original's, so
+            // without a marker an integrator cannot tell "created now" from "returned from an earlier call".
+            assertThat(first.getHeaders().containsHeader("Idempotent-Replayed"))
+                    .as("a fresh create carries no replay marker").isFalse();
+            assertThat(second.getHeaders().getFirst("Idempotent-Replayed"))
+                    .as("the replay says so").isEqualTo("true");
+
             assertThat(countOrders(fx.shopId))
                     .as("exactly one order row despite the repeated key")
                     .isEqualTo(1);

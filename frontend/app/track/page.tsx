@@ -1,5 +1,6 @@
 "use client"
 
+import { EstimatedReadyBy } from "@/components/storefront/estimated-ready-by"
 import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
@@ -13,6 +14,7 @@ import { lookupGuestOrder } from "@/lib/order-lookup"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import { CancelOrderPanel } from "@/components/storefront/cancel-order-panel"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
@@ -43,6 +45,13 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
    * omits it and a pre-V45 row has none, and then READY is described neutrally (37-F review F2).
    */
   fulfilmentType?: string | null
+  /** NONE, CAPTURED, REFUNDED ...: whether a card payment was taken (decides the refund sentence, #868). */
+  paymentStatus?: string | null
+  /** Deposit-split orders (V87): what was charged up front and what is still due. Absent on ordinary orders. */
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
+  /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
+  estimatedReadyAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -485,8 +494,10 @@ function TrackOrderContent() {
       </form>
 
       {/* Error */}
+      {/* MAR-13 (#850): a role=alert, so a failed lookup is read out the moment it appears. A SUCCESSFUL
+          lookup stays silent on purpose (37-51: a lookup is not a change). */}
       {error && (
-        <div className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
+        <div role="alert" className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
           <p className="text-sm text-red-700">{error}</p>
         </div>
       )}
@@ -522,6 +533,8 @@ function TrackOrderContent() {
                   {formatPrice(order.totalAmountPennies)}
                 </p>
                 <p className="mt-1 font-mono text-xs text-slate-600">{order.orderNumber}</p>
+                {/* #825: an ESTIMATE, labelled as one; nothing when the shop set no prep time. */}
+                <EstimatedReadyBy estimatedReadyAt={order.estimatedReadyAt} status={order.status} className="mt-2 justify-start" />
               </div>
               {isCancelled ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
@@ -552,6 +565,29 @@ function TrackOrderContent() {
               )}
             </div>
           </div>
+
+          {/* #868 (owner ruling 2026-11-04): cancel while the kitchen has not accepted it; after that,
+              contact the shop. A signed-in customer sends no email (the server reads their cookie);
+              a guest sends the one they looked the order up with. Core re-checks both. */}
+          <CancelOrderPanel
+            orderNumber={order.orderNumber}
+            shopName={order.shopName}
+            status={order.status}
+            paymentStatus={order.paymentStatus}
+            totalAmountPennies={order.totalAmountPennies}
+            depositAmountPennies={order.depositAmountPennies}
+            balanceDuePennies={order.balanceDuePennies}
+            email={orderFromList ? "" : email}
+            onCancelled={(result) =>
+              showOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })
+            }
+            onRefused={() => {
+              if (!email.trim()) return
+              void lookupGuestOrder<OrderStatus>(order.orderNumber, email.trim())
+                .then((res) => showOrder(res.data))
+                .catch(() => {})
+            }}
+          />
 
           {/* Progress */}
           {!isCancelled && !isRefunded && (
@@ -637,12 +673,16 @@ function TrackOrderContent() {
                   transition={{ duration: 0.5, ease: "easeOut" }}
                 />
               </div>
-              <p className="mt-2 text-center text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
-                  Auto-refreshing
-                </span>
-              </p>
+              {/* UXT-111 (#877): the label only while the page really refreshes. The poll stops on a
+                  terminal status (the effect above), so a COMPLETED order is not "auto-refreshing". */}
+              {!TERMINAL_STATUSES.includes(order.status) && (
+                <p className="mt-2 text-center text-xs text-slate-600">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
+                    Auto-refreshing
+                  </span>
+                </p>
+              )}
             </div>
           )}
 

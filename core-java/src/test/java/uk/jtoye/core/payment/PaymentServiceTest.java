@@ -876,6 +876,49 @@ class PaymentServiceTest {
         }
     }
 
+    @Test
+    @DisplayName("#868 V92: the balance stage keeps the DEPOSIT intent before overwriting the order's payment reference, once")
+    void handlePaymentSucceeded_balanceStage_keepsTheDepositIntent() throws Exception {
+        testOrder.setStatus(OrderStatus.PENDING);
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+        testOrder.setPaymentReference("pi_deposit_868");
+
+        deliverBalanceSucceeded("pi_bal_868", "evt_bal_868_1");
+
+        assertEquals("pi_deposit_868", testOrder.getDepositPaymentReference());
+        assertEquals("pi_bal_868", testOrder.getPaymentReference());
+
+        // A redelivery finds the reference already the balance intent: it must not become the "deposit".
+        testOrder.setBalanceDuePennies(7000L);
+        deliverBalanceSucceeded("pi_bal_868", "evt_bal_868_2");
+        assertEquals("pi_deposit_868", testOrder.getDepositPaymentReference());
+    }
+
+    private void deliverBalanceSucceeded(String intentId, String eventId) throws Exception {
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn(intentId);
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString(),
+                "payment_stage", "BALANCE"));
+        when(mockIntent.getLatestCharge()).thenReturn(null);
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.succeeded");
+        when(mockEvent.getId()).thenReturn(eventId);
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+            when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+            paymentService.handleWebhookEvent("{}", "sig_test");
+        }
+    }
+
     // --- Phase 30-05 (issue #958): a successful payment never moves an order backwards ---
 
     @Test

@@ -203,6 +203,8 @@ function undeclaredAllergenNames(warnings: ProductAllergenWarning[] | null | und
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
+  /** #858: products with an availability PATCH in flight. */
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(() => new Set())
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [currentPage, setCurrentPage] = useState(0)
@@ -304,6 +306,44 @@ export default function ProductsPage() {
       setShops(await fetchAllMyShops())
     } catch {
       // Shops are optional — fail silently
+    }
+  }
+
+  /**
+   * #858: put a product on / take it off sale from its row. Optimistic, rolled back with the server's
+   * reason on failure. PATCH carries ONLY `available` (37-39: it cannot express an allergen or an
+   * ingredient), absolute and so idempotent. One request in flight per product.
+   */
+  const toggleAvailability = async (product: Product) => {
+    if (togglingIds.has(product.id)) return
+    const next = !product.available
+    const setAvailableOnRow = (value: boolean) =>
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, available: value } : p)))
+    setTogglingIds((prev) => new Set(prev).add(product.id))
+    setAvailableOnRow(next)
+    try {
+      await apiClient.patch(`/api/v1/products/${product.id}`, { available: next })
+      toast({
+        title: next ? `${product.title} is back on sale` : `${product.title} marked sold out`,
+        description: next
+          ? "Customers can order it again."
+          : "Customers can no longer order it. Tap again to put it back.",
+      })
+    } catch (error: unknown) {
+      setAvailableOnRow(!next)
+      const problem = await readProblem(error)
+      toast({
+        variant: "destructive",
+        title: `Couldn't update ${product.title}`,
+        description:
+          problem.detail ?? "Check your connection and try again. Nothing was changed.",
+      })
+    } finally {
+      setTogglingIds((prev) => {
+        const rest = new Set(prev)
+        rest.delete(product.id)
+        return rest
+      })
     }
   }
 
@@ -735,7 +775,7 @@ export default function ProductsPage() {
       if (currentPage === 0) fetchProducts()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      // SW-ADE-09 (swarm epic #964): a product an order still references is refused with a typed
+      // SW-ADE-09 (swarm epic #964), narrowed by #832: a product on an order that is still open is refused with a typed
       // 409 (errors/in-use). Say why and what to do instead, rather than the raw axios string.
       const res = (error as { response?: { status?: number; data?: { type?: unknown } } } | null)
         ?.response
@@ -749,7 +789,7 @@ export default function ProductsPage() {
               variant: "destructive",
               title: `${deletingProduct.title} can't be deleted`,
               description:
-                "It is on past orders, so it stays in your records. To take it off your menu, edit it and untick Available.",
+                "It is on an order that is still open. Complete or cancel that order, then delete it. To stop selling it now, edit it and untick Available.",
             }
           : {
               variant: "destructive",
@@ -899,6 +939,8 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead>SKU</TableHead>
                     <TableHead>Title</TableHead>
+                    {/* #875 / UXT-117: under All shops, which kitchen a product belongs to. */}
+                    {!contextShopId && <TableHead>Shop</TableHead>}
                     <TableHead>Category</TableHead>
                     <TableHead>Allergens</TableHead>
                     <TableHead className="text-right">Price</TableHead>
@@ -953,6 +995,13 @@ export default function ProductsPage() {
                             </div>
                           </div>
                         </TableCell>
+                        {!contextShopId && (
+                          <TableCell className="text-sm">
+                            {product.shopId
+                              ? (shops.find((s) => s.id === product.shopId)?.name ?? "Another shop")
+                              : <span className="text-muted-foreground">No shop</span>}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             {product.category ? (
@@ -996,11 +1045,34 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {product.available ? (
-                              <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
-                            ) : (
-                              <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
-                            )}
+                            {/* #858: one tap to 86 an item (or put it back), through the narrow PATCH that
+                                can only change availability. The icon stays as the visual state; the
+                                button is the 44px target. */}
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={!!product.available}
+                              aria-label={
+                                product.available
+                                  ? `${product.title}: available. Tap to mark sold out`
+                                  : `${product.title}: sold out. Tap to mark available`
+                              }
+                              title={product.available ? "Available - tap to mark sold out" : "Sold out - tap to mark available"}
+                              disabled={togglingIds.has(product.id)}
+                              onClick={() => toggleAvailability(product)}
+                              className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                                product.available
+                                  ? "text-emerald-800 hover:bg-emerald-50"
+                                  : "text-slate-700 hover:bg-slate-100"
+                              }`}
+                            >
+                              {product.available ? (
+                                <Eye className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                              ) : (
+                                <EyeOff className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                              )}
+                              <span aria-hidden="true">{product.available ? "On" : "Sold out"}</span>
+                            </button>
                             {product.featured && (
                               <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
                             )}
@@ -1161,12 +1233,16 @@ export default function ProductsPage() {
 
               <Input
                 id="sku"
-                placeholder="e.g., PROD-001"
+                placeholder="Optional, e.g. PROD-001"
                 aria-invalid={errors.sku ? "true" : undefined}
-                aria-describedby={errors.sku ? "sku-error" : undefined}
+                aria-describedby={errors.sku ? "sku-error" : "sku-hint"}
                 {...register("sku")}
 
               />
+              {/* #875 / UXT-115: a stall holder has no stock code; leaving it blank is fine. */}
+              <p id="sku-hint" className="text-xs text-slate-500">
+                Your own stock code. Leave it blank and we&apos;ll make one.
+              </p>
 
               {errors.sku && (
                 <p id="sku-error" className="text-sm text-red-600">{errors.sku.message}</p>
@@ -1735,7 +1811,8 @@ export default function ProductsPage() {
             <DialogDescription>
               Are you sure you want to delete{" "}
               <span className="font-semibold">{deletingProduct?.title}</span>? This
-              action cannot be undone.
+              action cannot be undone. If customers have ordered it before, it leaves your menu and lists
+              but stays in your order history.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

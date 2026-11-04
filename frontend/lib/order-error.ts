@@ -45,6 +45,31 @@ interface ApiErrorLike {
 
 export const GENERIC_ORDER_ERROR = "Failed to place order. Please try again."
 
+/**
+ * #876 UXT-103: the request never got an answer. That is the one failure where the order MAY exist (the
+ * request can have reached the server and only the reply been lost), so "Failed to place order" is the
+ * wrong sentence: it invites a second order from someone who may already have one. Says what is known,
+ * where to look, and that the basket is untouched. Retrying is still safe on this page, which keeps the
+ * same Idempotency-Key for an unchanged basket, but the copy does not lean on that.
+ */
+export const OFFLINE_ORDER_ERROR =
+  "You appear to be offline. Your order may already have been placed, so check My Orders or Track order before you place it again. Your basket is safe."
+
+export const UNREACHABLE_ORDER_ERROR =
+  "We couldn't reach the shop, so we can't tell whether your order went through. It may already have been placed: check My Orders or Track order before you place it again. Your basket is safe."
+
+/** An axios failure that produced no HTTP response: a dropped connection, a refused one, a timeout. */
+function isNetworkFailure(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const { code, message } = err as { code?: unknown; message?: unknown }
+  return (
+    code === "ERR_NETWORK" ||
+    code === "ECONNABORTED" ||
+    code === "ETIMEDOUT" ||
+    message === "Network Error"
+  )
+}
+
 /** Read Retry-After regardless of header casing; returns null when unusable. */
 export function retryAfterSeconds(err: unknown): number | null {
   const headers = (err as ApiErrorLike)?.response?.headers
@@ -92,7 +117,14 @@ export function secondsFromMessage(message?: string): number | null {
  */
 export function describeOrderError(err: unknown): string {
   const res = (err as ApiErrorLike)?.response
-  if (!res) return GENERIC_ORDER_ERROR
+  if (!res) {
+    // UXT-103: no answer at all. A browser that knows it is offline says so; a transport failure
+    // that the browser cannot explain still says the order may exist. Anything else that threw
+    // without a response (not a transport failure) keeps the generic sentence.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return OFFLINE_ORDER_ERROR
+    if (isNetworkFailure(err)) return UNREACHABLE_ORDER_ERROR
+    return GENERIC_ORDER_ERROR
+  }
 
   if (res.status === 429) {
     // FOUR sources, most authoritative first. Each one exists because the one

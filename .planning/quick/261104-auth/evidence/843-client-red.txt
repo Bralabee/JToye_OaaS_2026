@@ -1,0 +1,26 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' lib/__tests__/customer-session-single-flight.test.ts
+  Using tsconfig file: tsconfig.build.json
+FAIL lib/__tests__/customer-session-single-flight.test.ts
+  ● getCustomerSession — single flight (#843) › collapses overlapping calls into one request
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 1
+    Received number of calls: 3
+
+      43 |     const [ra, rb, rc] = await Promise.all([a, b, c])
+      44 |
+    > 45 |     expect(fetchMock).toHaveBeenCalledTimes(1)
+         |                       ^
+      46 |     expect(ra?.profile.sub).toBe("u1")
+      47 |     expect(rb?.profile.sub).toBe("u1")
+      48 |     expect(rc?.profile.sub).toBe("u1")
+
+      at Object.toHaveBeenCalledTimes (lib/__tests__/customer-session-single-flight.test.ts:45:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 2 passed, 3 total
+Snapshots:   0 total
+Time:        0.589 s, estimated 6 s
+Ran all test suites matching lib/__tests__/customer-session-single-flight.test.ts.

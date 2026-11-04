@@ -885,6 +885,8 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "customerId" : {
@@ -892,9 +894,13 @@
             "type" : "string"
           },
           "customerName" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string"
           },
           "customerPhone" : {
+            "maxLength" : 50,
+            "minLength" : 0,
             "type" : "string"
           },
           "fulfilmentType" : {
@@ -925,6 +931,11 @@
           "submit" : {
             "description" : "Submit the order on creation. true: the order is created and moved DRAFT -> PENDING in the same transaction, so it appears in the kitchen's New lane for the vendor to accept (it is never confirmed automatically). Absent or false: the order is created as a DRAFT, to be submitted later with POST /api/v1/orders/{id}/submit.",
             "example" : true,
+            "type" : "boolean"
+          },
+          "walkIn" : {
+            "description" : "Set true for a walk-in sale with no customer to contact. Without it, an order needs customerId, or at least one of customerName, customerPhone, customerEmail.",
+            "example" : false,
             "type" : "boolean"
           }
         },
@@ -1046,10 +1057,10 @@
             "type" : "string"
           },
           "sku" : {
-            "description" : "Stock Keeping Unit (unique per tenant)",
+            "description" : "Stock Keeping Unit (unique per tenant). Optional: omitted or blank, one is generated (JTP-XXXXXXXX). On an update, blank keeps the stored SKU.",
             "example" : "YAM-5KG",
             "maxLength" : 100,
-            "minLength" : 1,
+            "minLength" : 0,
             "type" : "string"
           },
           "title" : {
@@ -1081,7 +1092,6 @@
           "allergenMask",
           "ingredientsText",
           "pricePennies",
-          "sku",
           "title"
         ],
         "type" : "object"
@@ -1223,6 +1233,16 @@
           "deliveryInfo" : {
             "type" : "string"
           },
+          "deliveryRadiusKm" : {
+            "description" : "How far the shop delivers, in km (0.1 to 100) from its location. A DELIVERY order to a postcode beyond it is refused 422 delivery-out-of-range. null means no limit. Absent keeps the stored value; an explicit null clears it.",
+            "format" : "double",
+            "maximum" : 100,
+            "minimum" : 0.1,
+            "type" : [
+              "number",
+              "null"
+            ]
+          },
           "depositBps" : {
             "description" : "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR. Absent keeps the stored value (10000 on create).",
             "format" : "int32",
@@ -1324,6 +1344,16 @@
           },
           "phone" : {
             "type" : "string"
+          },
+          "prepTimeMinutes" : {
+            "description" : "Default preparation time in minutes (#825, 1..480). The order confirmation, tracking page and kitchen ticket show an ESTIMATED ready-by time built from it. null means not set (no estimate is shown). Absent keeps the stored value; an explicit null clears it.",
+            "format" : "int32",
+            "maximum" : 480,
+            "minimum" : 1,
+            "type" : [
+              "integer",
+              "null"
+            ]
           },
           "published" : {
             "type" : "boolean"
@@ -1892,6 +1922,48 @@
         },
         "type" : "object"
       },
+      "CustomerCancelRequest" : {
+        "description" : "Proof of ownership for a customer cancel: the email the order was placed with. Omit it when sending a verified customer token.",
+        "properties" : {
+          "email" : {
+            "description" : "The email address the order was placed with (guests).",
+            "example" : "alice@example.com",
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CustomerCancelResult" : {
+        "description" : "The outcome of a customer cancelling their own order.",
+        "properties" : {
+          "orderNumber" : {
+            "example" : "ORD-20261104-0001",
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "description" : "The order's payment status after the cancel: REFUNDED when a card payment was returned, otherwise as it was (NONE for pay-on-delivery).",
+            "example" : "REFUNDED",
+            "type" : "string"
+          },
+          "refundAmountPennies" : {
+            "description" : "The amount refunded to the card in pennies; null when nothing was refunded.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "refunded" : {
+            "description" : "True when a card payment was refunded as part of this cancel.",
+            "type" : "boolean"
+          },
+          "status" : {
+            "description" : "The order's status after the cancel: always CANCELLED.",
+            "example" : "CANCELLED",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "CustomerDto" : {
         "properties" : {
           "allergenRestrictions" : {
@@ -2014,6 +2086,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop gave no preparation time.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentType" : {
             "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
             "enum" : [
@@ -2065,6 +2142,13 @@
           },
           "shopName" : {
             "type" : "string"
+          },
+          "shopSlug" : {
+            "description" : "The slug of the shop the order was placed at, so a past order can link to that shop (Order again, Rate your order). Only on the signed-in history, which has always carried the shop's name. Null when the shop is no longer published.",
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "status" : {
             "type" : "string"
@@ -2123,6 +2207,38 @@
         },
         "type" : "object"
       },
+      "Delivery" : {
+        "description" : "The delivery details the order was placed with.",
+        "properties" : {
+          "addressCity" : {
+            "description" : "Town or city.",
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "description" : "Address line 1.",
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "description" : "Address line 2.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "description" : "Postcode.",
+            "type" : "string"
+          },
+          "phone" : {
+            "description" : "The phone number given at checkout.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type" : "object"
+      },
       "DirectoryEntryDto" : {
         "properties" : {
           "displayName" : {
@@ -2137,6 +2253,15 @@
           },
           "userId" : {
             "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "DisplayNameResponse" : {
+        "description" : "The display name as saved.",
+        "properties" : {
+          "displayName" : {
             "type" : "string"
           }
         },
@@ -2659,6 +2784,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed. An estimate, not a promise. Absent when the shop gave no preparation time.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentSlotId" : {
             "description" : "Reserved scheduled fulfilment slot UUID, when placed for a scheduled slot.",
             "format" : "uuid",
@@ -2951,6 +3081,31 @@
         },
         "type" : "object"
       },
+      "Line" : {
+        "description" : "One order line as it was recorded when the order was placed.",
+        "properties" : {
+          "productId" : {
+            "description" : "The product, to be matched against the shop's live menu.",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "productName" : {
+            "description" : "The product's name when the order was placed.",
+            "type" : "string"
+          },
+          "quantity" : {
+            "description" : "Units ordered.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "unitPricePennies" : {
+            "description" : "The unit price paid, in pennies, when the order was placed.",
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "MediaAcceptDto" : {
         "properties" : {
           "assetId" : {
@@ -3236,6 +3391,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop set no preparation time (or the order is a scheduled-slot order).",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentSlotId" : {
             "description" : "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).",
             "format" : "uuid",
@@ -3329,6 +3489,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "unacceptedNotifiedAt" : {
+            "description" : "When the shop was alerted (and the customer emailed) that this order had waited too long to be accepted (#821). Present = the order is overdue for acceptance; absent = not alerted.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "unitCount" : {
             "format" : "int32",
             "type" : "integer"
@@ -3409,6 +3574,11 @@
             "description" : "Upfront deposit charged in pennies under SPLIT_DEPOSIT_VENDOR_MOR (V87).",
             "format" : "int64",
             "type" : "integer"
+          },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop set no preparation time (or the order is a scheduled-slot order).",
+            "format" : "date-time",
+            "type" : "string"
           },
           "fulfilmentSlotId" : {
             "description" : "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).",
@@ -3498,6 +3668,11 @@
           "totalAmountPennies" : {
             "format" : "int64",
             "type" : "integer"
+          },
+          "unacceptedNotifiedAt" : {
+            "description" : "When the shop was alerted (and the customer emailed) that this order had waited too long to be accepted (#821). Present = the order is overdue for acceptance; absent = not alerted.",
+            "format" : "date-time",
+            "type" : "string"
           },
           "unitCount" : {
             "format" : "int32",
@@ -3660,6 +3835,74 @@
         "required" : [
           "email"
         ],
+        "type" : "object"
+      },
+      "OrderReviewRequest" : {
+        "description" : "A rating and an optional comment for one of the signed-in customer's own completed orders. The reviewer and the order are identified by the customer token and the path, never by this body.",
+        "properties" : {
+          "comment" : {
+            "description" : "What the customer wants to say. Published, with first name and initial, on the shop's page.",
+            "maxLength" : 1000,
+            "minLength" : 0,
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "deliveryRating" : {
+            "description" : "Delivery rating, 1 to 5, for an order that was delivered.",
+            "example" : 4,
+            "format" : "int32",
+            "maximum" : 5,
+            "minimum" : 1,
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "foodRating" : {
+            "description" : "Food rating, 1 to 5.",
+            "example" : 5,
+            "format" : "int32",
+            "maximum" : 5,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        },
+        "required" : [
+          "foodRating"
+        ],
+        "type" : "object"
+      },
+      "OrderTimelineEventDto" : {
+        "description" : "One entry of an order's activity timeline: what changed, when, and who did it.",
+        "properties" : {
+          "actorName" : {
+            "type" : "string"
+          },
+          "actorType" : {
+            "type" : "string"
+          },
+          "at" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "detail" : {
+            "type" : "string"
+          },
+          "fromStatus" : {
+            "type" : "string"
+          },
+          "kind" : {
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "Outcome" : {
@@ -4656,6 +4899,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop gave no preparation time.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentType" : {
             "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
             "enum" : [
@@ -4850,6 +5098,11 @@
           },
           "deliveryInfo" : {
             "type" : "string"
+          },
+          "deliveryRadiusKm" : {
+            "description" : "How far the shop delivers, in km from its location. Absent: no limit. A DELIVERY order beyond it is refused 422 delivery-out-of-range.",
+            "format" : "double",
+            "type" : "number"
           },
           "description" : {
             "type" : "string"
@@ -5094,6 +5347,32 @@
         ],
         "type" : "object"
       },
+      "ReorderLinesDto" : {
+        "description" : "The lines of one of the caller's own past orders, to refill a basket. For a delivery order it also returns that order's delivery address and phone number (personal data), to its verified owner only; it carries no email or name.",
+        "properties" : {
+          "delivery" : {
+            "$ref" : "#/components/schemas/Delivery",
+            "description" : "Where and on which phone this order was delivered, so the next checkout can be pre-filled on a browser that has never seen the customer. Null for a collection order, an order with no address, and an order whose personal data has been erased. It is the caller's OWN order returned to the caller (the token's verified email), no-store, and nothing is stored anew: it is the column the order already holds.",
+            "type" : "null"
+          },
+          "lines" : {
+            "description" : "One entry per order line.",
+            "items" : {
+              "$ref" : "#/components/schemas/Line"
+            },
+            "type" : "array"
+          },
+          "orderNumber" : {
+            "description" : "The order these lines belong to.",
+            "type" : "string"
+          },
+          "shopSlug" : {
+            "description" : "The shop the order was placed at, so the basket for that shop can be filled.",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ResolveGateRequest" : {
         "description" : "Gate-resolve decision + optional reason",
         "properties" : {
@@ -5298,6 +5577,11 @@
           "deliveryInfo" : {
             "type" : "string"
           },
+          "deliveryRadiusKm" : {
+            "description" : "How far the shop delivers, in km from its location. Absent: no limit. A DELIVERY order to a postcode beyond it is refused 422 delivery-out-of-range.",
+            "format" : "double",
+            "type" : "number"
+          },
           "depositBps" : {
             "description" : "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR.",
             "format" : "int32",
@@ -5400,6 +5684,11 @@
           },
           "phone" : {
             "type" : "string"
+          },
+          "prepTimeMinutes" : {
+            "description" : "Default preparation time in minutes (#825). Absent: not set, so no ready-by estimate is shown for this shop's orders.",
+            "format" : "int32",
+            "type" : "integer"
           },
           "published" : {
             "type" : "boolean"
@@ -5996,6 +6285,22 @@
         ],
         "type" : "object"
       },
+      "UpdateDisplayNameRequest" : {
+        "description" : "The new display name for the signed-in customer.",
+        "properties" : {
+          "displayName" : {
+            "description" : "The name to show on the account. Trimmed; 1 to 100 characters.",
+            "example" : "Ada Lovelace",
+            "maxLength" : 100,
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "displayName"
+        ],
+        "type" : "object"
+      },
       "UpdateOnboardingRequest" : {
         "description" : "Company-number correction request",
         "properties" : {
@@ -6278,6 +6583,22 @@
           },
           "updatedAt" : {
             "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "WebhookTestEventView" : {
+        "properties" : {
+          "deliveryId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "eventId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "status" : {
             "type" : "string"
           }
         },
@@ -7548,8 +7869,19 @@
     },
     "/api/v1/customers" : {
       "get" : {
-        "description" : "Returns a paginated list of customers for the authenticated tenant",
+        "description" : "Returns a paginated list of customers for the authenticated tenant. Optional q searches EVERY page: a case-insensitive substring of the name, the phone (any spelling: +44, spaces, hyphens, brackets) or - only for a caller who sees every customer's email - the email. q is bounded to 100 characters; blank is no search.",
         "operationId" : "list_4",
+        "parameters" : [
+          {
+            "description" : "Search text; matched over all pages",
+            "in" : "query",
+            "name" : "q",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
         "responses" : {
           "200" : {
             "content" : {
@@ -9369,7 +9701,7 @@
     },
     "/api/v1/orders" : {
       "get" : {
-        "description" : "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant.",
+        "description" : "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant. Optional q searches EVERY page (not just the one returned): a case-insensitive substring of the order number or id, the customer's name, the customer's phone (any spelling: +44, spaces, hyphens, brackets) or - only where the caller sees full customer contact - the customer's email. q is bounded to 100 characters; blank is no search.",
         "operationId" : "getAllOrders",
         "parameters" : [
           {
@@ -9378,6 +9710,14 @@
             "required" : false,
             "schema" : {
               "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "q",
+            "required" : false,
+            "schema" : {
               "type" : "string"
             }
           },
@@ -10155,7 +10495,7 @@
     "/api/v1/orders/{id}/cancel" : {
       "post" : {
         "description" : "Cancel an order at any stage (ANY → CANCELLED). Optionally send {reasonCode} (SUSPECTED_FAKE | CANNOT_FULFIL | CUSTOMER_REQUEST | OTHER) to keep why on the order for the vendor's records; it is never sent to the customer. No body records no reason.",
-        "operationId" : "cancelOrder",
+        "operationId" : "cancelOrder_2",
         "parameters" : [
           {
             "in" : "path",
@@ -10662,6 +11002,67 @@
           }
         ],
         "summary" : "Submit order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/timeline" : {
+      "get" : {
+        "description" : "Who changed the order, to what, and when, oldest first: placed, each status change, payment changes and a void, read from the order's audit history. A change made by a signed-in person names them (actorType STAFF); one made with no one signed in - the customer at checkout, a payment webhook, a scheduled job - is actorType SYSTEM. Requires at least STAFF on the order's shop.",
+        "operationId" : "timeline",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/OrderTimelineEventDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The timeline, oldest first (may be empty for an order with no recorded history)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "shop-access-denied: the caller holds no STAFF grant on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Order activity timeline",
         "tags" : [
           "Orders"
         ]
@@ -11518,7 +11919,7 @@
     },
     "/api/v1/products/{id}" : {
       "delete" : {
-        "description" : "Deletes a product for the authenticated tenant",
+        "description" : "Deletes a product for the authenticated tenant. A product that past orders still name is archived instead (removed from lists and the storefront, kept for order history). Its photos are released either way.",
         "operationId" : "delete_2",
         "parameters" : [
           {
@@ -11534,7 +11935,7 @@
         ],
         "responses" : {
           "204" : {
-            "description" : "Product deleted successfully"
+            "description" : "Product deleted or archived"
           },
           "404" : {
             "content" : {
@@ -11545,6 +11946,16 @@
               }
             },
             "description" : "Product not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The product is on an order that is still open (type in-use)"
           }
         },
         "security" : [
@@ -12573,6 +12984,89 @@
         ]
       }
     },
+    "/api/v1/public/customer/profile" : {
+      "put" : {
+        "description" : "Sets the name on the customer's sign-in account. The account is the one the verified X-Customer-Token proves; the body names no account. Idempotent (a PUT of the desired state).",
+        "operationId" : "updateDisplayName_1",
+        "parameters" : [
+          {
+            "description" : "The signed-in customer's jtoye-customers access token.",
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateDisplayNameRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DisplayNameResponse"
+                }
+              }
+            },
+            "description" : "The name as saved"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "A blank, over-long or control-character name"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or invalid customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No account for this token"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Name changes are unavailable right now (errors/profile-update-unavailable)"
+          }
+        },
+        "summary" : "Change the signed-in customer's display name",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/featured-shops" : {
       "get" : {
         "description" : "An editorial, per-environment ordering hint for the landing page, never paid placement. Published shops only, in configured order. Configured slugs that are unknown or unpublished are skipped. An empty array when none are configured.",
@@ -12997,6 +13491,126 @@
         ]
       }
     },
+    "/api/v1/public/orders/{orderNumber}/cancel" : {
+      "post" : {
+        "description" : "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the path and the email address the order was placed with in the body; a signed-in customer sends X-Customer-Token and no email. A card-paid order is refunded what was actually paid, to the card: in full, or for a deposit order the deposit (and the balance if it was paid), one refund per charge; a pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 (errors/order-not-cancellable-by-customer, contactShop true): contact the shop. A payment that has not settled, or a deposit order whose deposit charge was not recorded, is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key replays the outcome and never refunds twice; the same key for another order is refused 422 (errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a cancelled order is a 200 that changes nothing.",
+        "operationId" : "cancelOrder",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "A signed-in customer's jtoye-customers access token; replaces the email in the body.",
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CustomerCancelRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CustomerCancelResult"
+                }
+              }
+            },
+            "description" : "The order is cancelled (now, or already was). refunded says whether a card payment was returned."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Neither an email nor a customer token was supplied"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "X-Customer-Token was supplied and did not verify"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No order with this number and email"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The kitchen has accepted the order or its payment is not settled (errors/order-not-cancellable-by-customer), or the order changed while cancelling"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Idempotency-Key was used for a different order"
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The order IS cancelled but the card refund has not completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry the refund, or contact the shop"
+          }
+        },
+        "summary" : "Cancel your own order (before the kitchen accepts it)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/orders/{orderNumber}/lookup" : {
       "post" : {
         "description" : "Look up order status by order number, with the email address the order was placed with in the request body. Both must match. Read-only: a repeated call changes nothing.",
@@ -13376,6 +13990,15 @@
             }
           },
           {
+            "description" : "Allergen names (UK FSA 14, comma separated, any case), e.g. Peanuts,Gluten. Keeps only kitchens with an available dish whose VENDOR-DECLARED allergens include one of them. This reflects what each kitchen has declared; a kitchen that is not listed is not confirmed free of the allergen. Combines with 'q', not with a distance search. An unknown name is a 400.",
+            "in" : "query",
+            "name" : "declares",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
             "in" : "query",
             "name" : "pageable",
             "required" : true,
@@ -13611,6 +14234,162 @@
         ]
       }
     },
+    "/api/v1/public/shops/{slug}/orders/{orderNumber}/reorder" : {
+      "get" : {
+        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order and, for a delivery order, the delivery address and phone number it was placed with (personal data, returned to the order's verified owner only; no email or name is returned, and the response must not be logged or cached as non-personal). Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
+        "operationId" : "getReorderLines",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReorderLinesDto"
+                }
+              }
+            },
+            "description" : "The order's lines"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "The lines of one of my past orders, to order again (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/shops/{slug}/orders/{orderNumber}/review" : {
+      "post" : {
+        "description" : "Leave a review for a completed order of the signed-in customer. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the reviewer is the token's verified email, never a parameter, and the order is named by its number. One review per order, enforced by a unique key, so a replay is refused rather than duplicated. The review is published at once under the reviewer's first name and the initial of their last name. An order that does not exist and one that is not the caller's are the same 404.",
+        "operationId" : "createReviewForOrder",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OrderReviewRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReviewDto"
+                }
+              }
+            },
+            "description" : "The published review"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Not completed, already reviewed, a rating out of range, or the order was not placed at this shop"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "Review one of my completed orders (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/shops/{slug}/phone-verification/send" : {
       "post" : {
         "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
@@ -13808,7 +14587,8 @@
         ]
       },
       "post" : {
-        "description" : "Leave a review for a completed order. One review per order.",
+        "deprecated" : true,
+        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
         "operationId" : "createReview",
         "parameters" : [
           {
@@ -13850,7 +14630,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "Submit a review",
+        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]
@@ -14329,7 +15109,7 @@
     },
     "/api/v1/shops/{id}" : {
       "delete" : {
-        "description" : "Deletes a shop for the authenticated tenant",
+        "description" : "Deletes a shop for the authenticated tenant. Refused (409, type shop-has-products, with productCount) while the shop still has products: move or delete them first.",
         "operationId" : "delete",
         "parameters" : [
           {
@@ -14356,6 +15136,16 @@
               }
             },
             "description" : "Shop not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The shop still has products (type shop-has-products, productCount)"
           }
         },
         "security" : [
@@ -15780,6 +16570,58 @@
       }
     },
     "/api/v1/webhooks/{id}" : {
+      "delete" : {
+        "description" : "Permanently deletes a REVOKED subscription and its delivery log. Idempotent in effect: a repeat answers 404. Any other status answers 409 (type webhook-subscription-state): revoke it first.",
+        "operationId" : "delete_5",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "204" : {
+            "description" : "Deleted"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Subscription not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The subscription is not REVOKED"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Delete a revoked subscription",
+        "tags" : [
+          "Webhooks"
+        ]
+      },
       "get" : {
         "description" : "Returns a single subscription by id. Never includes the signing secret.",
         "operationId" : "get",
@@ -15989,6 +16831,67 @@
           }
         ],
         "summary" : "Rotate the signing secret",
+        "tags" : [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{id}/test" : {
+      "post" : {
+        "description" : "Queues one `webhook.test` ping for an ACTIVE endpoint and answers 202. It travels the production path (signed with the current secret, POSTed to the validated address) and appears in the delivery log, where its outcome is read by `deliveryId`. It gets one attempt, is never retried and never counts toward auto-pause. Deliberately repeatable (each call sends one ping with a new event id), so it takes no Idempotency-Key.",
+        "operationId" : "sendTestEvent",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "202" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WebhookTestEventView"
+                }
+              }
+            },
+            "description" : "Ping queued"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Subscription not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The endpoint is not ACTIVE (type webhook-subscription-state)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Send a test event",
         "tags" : [
           "Webhooks"
         ]
@@ -16267,6 +17170,89 @@
         ]
       }
     },
+    "/public/customer/profile" : {
+      "put" : {
+        "description" : "Sets the name on the customer's sign-in account. The account is the one the verified X-Customer-Token proves; the body names no account. Idempotent (a PUT of the desired state).",
+        "operationId" : "updateDisplayName",
+        "parameters" : [
+          {
+            "description" : "The signed-in customer's jtoye-customers access token.",
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateDisplayNameRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DisplayNameResponse"
+                }
+              }
+            },
+            "description" : "The name as saved"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "A blank, over-long or control-character name"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or invalid customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No account for this token"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Name changes are unavailable right now (errors/profile-update-unavailable)"
+          }
+        },
+        "summary" : "Change the signed-in customer's display name",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/public/featured-shops" : {
       "get" : {
         "description" : "An editorial, per-environment ordering hint for the landing page, never paid placement. Published shops only, in configured order. Configured slugs that are unknown or unpublished are skipped. An empty array when none are configured.",
@@ -16486,6 +17472,126 @@
           }
         },
         "summary" : "Create remaining-balance PaymentIntent for a deposit order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/orders/{orderNumber}/cancel" : {
+      "post" : {
+        "description" : "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the path and the email address the order was placed with in the body; a signed-in customer sends X-Customer-Token and no email. A card-paid order is refunded what was actually paid, to the card: in full, or for a deposit order the deposit (and the balance if it was paid), one refund per charge; a pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 (errors/order-not-cancellable-by-customer, contactShop true): contact the shop. A payment that has not settled, or a deposit order whose deposit charge was not recorded, is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key replays the outcome and never refunds twice; the same key for another order is refused 422 (errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a cancelled order is a 200 that changes nothing.",
+        "operationId" : "cancelOrder_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "A signed-in customer's jtoye-customers access token; replaces the email in the body.",
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CustomerCancelRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CustomerCancelResult"
+                }
+              }
+            },
+            "description" : "The order is cancelled (now, or already was). refunded says whether a card payment was returned."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Neither an email nor a customer token was supplied"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "X-Customer-Token was supplied and did not verify"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No order with this number and email"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The kitchen has accepted the order or its payment is not settled (errors/order-not-cancellable-by-customer), or the order changed while cancelling"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Idempotency-Key was used for a different order"
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The order IS cancelled but the card refund has not completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry the refund, or contact the shop"
+          }
+        },
+        "summary" : "Cancel your own order (before the kitchen accepts it)",
         "tags" : [
           "Public Storefront"
         ]
@@ -16870,6 +17976,15 @@
             }
           },
           {
+            "description" : "Allergen names (UK FSA 14, comma separated, any case), e.g. Peanuts,Gluten. Keeps only kitchens with an available dish whose VENDOR-DECLARED allergens include one of them. This reflects what each kitchen has declared; a kitchen that is not listed is not confirmed free of the allergen. Combines with 'q', not with a distance search. An unknown name is a 400.",
+            "in" : "query",
+            "name" : "declares",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
             "in" : "query",
             "name" : "pageable",
             "required" : true,
@@ -17105,6 +18220,162 @@
         ]
       }
     },
+    "/public/shops/{slug}/orders/{orderNumber}/reorder" : {
+      "get" : {
+        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order and, for a delivery order, the delivery address and phone number it was placed with (personal data, returned to the order's verified owner only; no email or name is returned, and the response must not be logged or cached as non-personal). Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
+        "operationId" : "getReorderLines_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReorderLinesDto"
+                }
+              }
+            },
+            "description" : "The order's lines"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "The lines of one of my past orders, to order again (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/orders/{orderNumber}/review" : {
+      "post" : {
+        "description" : "Leave a review for a completed order of the signed-in customer. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the reviewer is the token's verified email, never a parameter, and the order is named by its number. One review per order, enforced by a unique key, so a replay is refused rather than duplicated. The review is published at once under the reviewer's first name and the initial of their last name. An order that does not exist and one that is not the caller's are the same 404.",
+        "operationId" : "createReviewForOrder_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OrderReviewRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReviewDto"
+                }
+              }
+            },
+            "description" : "The published review"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Not completed, already reviewed, a rating out of range, or the order was not placed at this shop"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "Review one of my completed orders (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/public/shops/{slug}/phone-verification/send" : {
       "post" : {
         "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
@@ -17302,7 +18573,8 @@
         ]
       },
       "post" : {
-        "description" : "Leave a review for a completed order. One review per order.",
+        "deprecated" : true,
+        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
         "operationId" : "createReview_1",
         "parameters" : [
           {
@@ -17344,7 +18616,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "Submit a review",
+        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]

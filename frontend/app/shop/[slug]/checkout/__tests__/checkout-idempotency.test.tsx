@@ -196,6 +196,8 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  // UXT-104: the per-tab checkout draft (lib/checkout-memory.ts) must not leak into the next test.
+  sessionStorage.clear()
 })
 
 describe("Checkout idempotency contract (Cluster E client half)", () => {

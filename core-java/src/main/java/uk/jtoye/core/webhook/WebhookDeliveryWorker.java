@@ -243,6 +243,10 @@ public class WebhookDeliveryWorker {
         }
     }
 
+    private static boolean isTestEvent(WebhookDelivery delivery) {
+        return WebhookDelivery.TEST_EVENT_TYPE.equals(delivery.getEventType());
+    }
+
     private void recordSuccess(WebhookDelivery delivery, WebhookSubscription sub, int statusCode) {
         delivery.setAttemptCount(delivery.getAttemptCount() + 1);
         delivery.setStatus(WebhookDelivery.Status.DELIVERED);
@@ -250,6 +254,12 @@ public class WebhookDeliveryWorker {
         delivery.setLastError(null);
         deliveryRepository.save(delivery);
 
+        if (isTestEvent(delivery)) {
+            // #879: a ping proves reachability; it is not a real event, so it does not touch the auto-pause counter.
+            log.info("event=webhook_test_event_delivered delivery={} subscription={} http={}",
+                    delivery.getId(), sub.getId(), statusCode);
+            return;
+        }
         if (sub.getConsecutiveFailures() != 0) {
             sub.setConsecutiveFailures(0); // a success clears the auto-pause counter
             subscriptionRepository.save(sub);
@@ -264,6 +274,17 @@ public class WebhookDeliveryWorker {
         delivery.setAttemptCount(attempts);
         delivery.setLastHttpStatus(statusCode);
         delivery.setLastError(truncate(error));
+
+        if (isTestEvent(delivery)) {
+            // #879: a "send test event" ping gets ONE attempt. The retry schedule (hours) is for real events, an
+            // integrator wants the answer now, and a ping at a broken endpoint is testing, not the endpoint
+            // failing in production, so it never counts toward auto-pause.
+            delivery.setStatus(WebhookDelivery.Status.FAILED);
+            deliveryRepository.save(delivery);
+            log.info("event=webhook_test_event_failed delivery={} subscription={} http={}",
+                    delivery.getId(), sub.getId(), statusCode);
+            return;
+        }
 
         if (attempts >= properties.getDelivery().getMaxAttempts()) {
             delivery.setStatus(WebhookDelivery.Status.FAILED);

@@ -11,7 +11,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - SDK/Client: `com.stripe:stripe-java:33.4.2` (server); `@stripe/react-stripe-js` 6.12.0 + `@stripe/stripe-js` 9.17.0 (browser Elements)
   - Client classes: `core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java`, `StripeRefundClient.java`, `StripeProperties.java`
   - Auth: `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (both default empty — feature is inert without them)
-  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:1006-1012` — `sliding-window-size` 10, `failure-rate-threshold` 50)
+  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:1016-1022` — `sliding-window-size` 10, `failure-rate-threshold` 50)
   - Config: `stripe.currency` (default `gbp`), `stripe.platform-fee-bps` (basis points, default 0), `stripe.connect.country` (default `GB`)
   - **LOCAL-DEV and STAGING/PROD identical mechanism** — Stripe is a real external API in every environment; only the key differs (test vs live).
 
@@ -158,7 +158,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 **Outgoing:**
 - Platform webhook delivery engine (Phase 22 COMMS-05) — `uk.jtoye.core.webhook` package: `WebhookSubscriptionController`/`Service` (tenant-managed subscriptions), `WebhookDeliveryWorker` (delivery loop, exponential backoff, auto-pause after `webhook.delivery.auto-pause-threshold` consecutive failures, default 10), `WebhookSigner` (HMAC request signing), `WebhookUrlValidator` + `SsrfGuardAddressResolverGroup` (blocks private IP ranges by default, `webhook.target.block-private-ranges=true`, re-guards against DNS rebinding at delivery time), `WebhookRetentionCleanup` (30-day default retention on `webhook_delivery` rows).
-- Config: `webhook.delivery.max-attempts` (8), `backoff-base-ms`/`backoff-cap-ms` (1s/1h), `timeout-seconds` (10), `signature-tolerance-seconds` (300).
+- Config: `webhook.delivery.max-attempts` (15), `backoff-base-ms`/`backoff-cap-ms` (30s/4h, ~24h window, #587), `timeout-seconds` (10), `signature-tolerance-seconds` (300).
 - Backed by `webhook_subscription` (V55) and `webhook_delivery` (V56) tables, plus `webhook.envelope.version` for the payload envelope schema.
 
 ## MCP Server (AI Agent Surface)

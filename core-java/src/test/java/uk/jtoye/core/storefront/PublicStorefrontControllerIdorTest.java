@@ -56,6 +56,10 @@ class PublicStorefrontControllerIdorTest {
     @MockitoBean
     private ReviewService reviewService;
 
+    // #868: the customer-cancel handler's collaborator; not exercised here, but the controller needs the bean.
+    @MockitoBean
+    private uk.jtoye.core.order.CustomerOrderCancellationService cancellationService;
+
     // Issue #179: controller dependency for /public/orders/mine — the
     // session-authenticated variant has its own IDOR coverage in
     // PublicStorefrontControllerMyOrdersTest; the verify-gated contract locked

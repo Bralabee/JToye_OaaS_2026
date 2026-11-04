@@ -13,6 +13,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import uk.jtoye.core.common.ListSearch;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerContactRule;
 import uk.jtoye.core.customer.CustomerRepository;
@@ -125,6 +126,15 @@ public class OrderService {
      */
     private final TransactionTemplate perOrderTransaction;
     private final uk.jtoye.core.shop.ShopFulfilmentSlotService slotService;
+    /** Places the order's delivery postcode for the shop's delivery-radius rule (#460). */
+    private final uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder;
+
+    /**
+     * Whether the seller has declared a VAT number (#962, owner ruling 2026-11-04). {@code null} only in
+     * the narrow unit-test constructors, where it means "treat the seller as registered" (the pre-ruling
+     * behaviour); the Spring-wired constructor always supplies it.
+     */
+    private final uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -144,7 +154,7 @@ public class OrderService {
         this(orderRepository, productRepository, shopRepository, customerRepository,
                 stateMachineService, orderMapper, eventPublisher, financialTransactionService,
                 stockService, refundService, shopAccessService, orderNumberGenerator,
-                orderLimits, bulkCancelLimit, transactionManager, null);
+                orderLimits, bulkCancelLimit, transactionManager, null, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -163,7 +173,9 @@ public class OrderService {
                        OrderLimits orderLimits,
                        BulkCancelLimit bulkCancelLimit,
                        PlatformTransactionManager transactionManager,
-                       uk.jtoye.core.shop.ShopFulfilmentSlotService slotService) {
+                       uk.jtoye.core.shop.ShopFulfilmentSlotService slotService,
+                       uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder,
+                       uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -181,6 +193,8 @@ public class OrderService {
         this.perOrderTransaction = new TransactionTemplate(transactionManager);
         this.perOrderTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.slotService = slotService;
+        this.postcodeGeocoder = postcodeGeocoder;
+        this.traderIdentityService = traderIdentityService;
     }
 
     /**
@@ -282,6 +296,10 @@ public class OrderService {
         FulfilmentPolicy.requireOffered(shop, fulfilmentType);
         FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
                 request.getAddressCity(), request.getAddressPostcode());
+        // #460 / UXT-030: refuse a delivery beyond the shop's radius, exactly as the storefront does.
+        FulfilmentPolicy.requireWithinDeliveryRadius(shop, fulfilmentType, request.getAddressPostcode(),
+                postcode -> postcodeGeocoder.locateCustomerPostcode(postcode),
+                () -> postcodeGeocoder.isDatasetLoaded());
         if (fulfilmentType == FulfilmentType.DELIVERY) {
             order.setAddressLine1(request.getAddressLine1());
             order.setAddressLine2(request.getAddressLine2());
@@ -374,8 +392,12 @@ public class OrderService {
                         .toList(),
                 order.getItems().stream().mapToLong(OrderItem::getTotalPricePennies).sum());
 
-        // Resolve the order's single predominant VAT rate before totalling.
-        order.setVatRate(VatCalculator.predominantRate(lineRates));
+        // Resolve the order's single predominant VAT rate before totalling. #962 (owner ruling 2026-11-04,
+        // persona close-out): a seller with no declared VAT number charges none, so the order, the ledger
+        // row it produces and the access export all record ZERO. Applied at placement only.
+        boolean sellerVatRegistered = traderIdentityService == null
+                || traderIdentityService.isVatRegistered(tenantId);
+        order.setVatRate(VatCalculator.forSeller(VatCalculator.predominantRate(lineRates), sellerVatRegistered));
 
         // COR-1: the delivery fee, server-authoritative and computed from the SHOP's own
         // configuration — never from anything the caller sent. COLLECTION is £0; DELIVERY is the
@@ -391,6 +413,8 @@ public class OrderService {
 
         // Calculate total
         order.calculateTotal();
+        // #825 (owner ruling 2026-11-04): the ESTIMATED ready-by time, placed-at plus the shop's prep time.
+        order.setEstimatedReadyAt(ReadyByEstimate.of(shop, OffsetDateTime.now(), order));
 
         // Save order. QA-council cluster P1 (API-3 rider): saveAndFlush, not save — createdAt is
         // a @CreationTimestamp generated at FLUSH time, so a bare save() would leave it null in
@@ -547,6 +571,58 @@ public class OrderService {
         }
         CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return orderRepository.findByShopIdIn(granted, pageable)
+                .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
+    }
+
+    /** A never-matching id that keeps an IN list non-empty (a Postgres {@code IN ()} is a syntax error). */
+    private static final UUID NO_SHOP = new UUID(0L, 0L);
+
+    /**
+     * The orders list SEARCH (issue #822): {@code q} matched in the query over every page, not over
+     * the one page the browser holds.
+     *
+     * <p><b>Scope is the same as the unsearched list, applied at the query.</b> With a {@code shopId}
+     * the caller needs STAFF on it (VSA-02 / D-02, exactly {@link #getOrdersByShop}); without one,
+     * GROUP_ADMIN sees the tenant and anyone else only their granted shops (no grant, no rows).
+     * RLS and an explicit tenant predicate sit underneath.
+     *
+     * <p><b>The email is not an oracle.</b> The customer email is searched only on shops where the
+     * caller sees full contact (issue #856); a STAFF caller's response carries no email, so a search
+     * that matched one would confirm an address the response hides. The response is minimised by the
+     * same {@link CustomerContactMinimiser} the list uses.
+     */
+    @Transactional(readOnly = true)
+    public Page<OrderDto> searchOrders(UUID shopId, String q, Pageable pageable) {
+        ListSearch search = ListSearch.of(q);
+        if (search == null) {
+            return shopId != null ? getOrdersByShop(shopId, pageable) : getAllOrders(pageable);
+        }
+        boolean allShops;
+        Set<UUID> shopIds;
+        if (shopId != null) {
+            shopAccessService.require(shopId, ShopRole.STAFF);
+            allShops = false;
+            shopIds = Set.of(shopId);
+        } else if (shopAccessService.isGroupAdmin()) {
+            allShops = true;
+            shopIds = Set.of(NO_SHOP);
+        } else {
+            Set<UUID> granted = shopAccessService.grantedShopIds();
+            if (granted.isEmpty()) {
+                return Page.empty(pageable);
+            }
+            allShops = false;
+            shopIds = granted;
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
+        boolean emailAllShops = contactScope != null && contactScope.allShops();
+        Set<UUID> emailShopIds = contactScope == null || contactScope.managedShopIds().isEmpty()
+                ? Set.of(NO_SHOP)
+                : contactScope.managedShopIds();
+        return orderRepository.search(tenantId, allShops, shopIds, emailAllShops, emailShopIds,
+                        search.text(), search.searchesPhone(), search.phone(), pageable)
                 .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
     }
 
@@ -813,6 +889,20 @@ public class OrderService {
         // #856: decided once, after the gate; applied to the response below.
         CustomerContactScope contactScope = shopAccessService.customerContactScope();
 
+        Order moved = applyTransition(order, event, cancelReason);
+        return CustomerContactMinimiser.apply(orderMapper.toDto(moved), contactScope);
+    }
+
+    /**
+     * The transition itself, with NO caller authorisation: state machine, payment gate, stock and slot
+     * bookkeeping, outbox event and ledger side effects. {@link #transitionOrder} runs it after the
+     * STAFF-on-shop gate; {@code CustomerOrderCancellationService} (#868, same package, hence the
+     * package-private visibility) runs it for a customer who has proven ownership of their own PENDING
+     * order by number and email. Nothing outside this package can reach it.
+     */
+    Order applyTransition(Order order, OrderEvent event, CancelReason cancelReason) {
+        UUID orderId = order.getId();
+
         // Phase 37-10 (D-10): a voided order is out of the books and off the kitchen board, so it does not
         // move again. Above all it must not reach COMPLETED: completion writes the order's SALE, and a sale
         // written after the void would never be reversed.
@@ -845,6 +935,17 @@ public class OrderService {
         // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
         order.setUpdatedAt(OffsetDateTime.now());
+        // #825 (owner ruling 2026-11-04): the estimate is "accepted-at + prep time", so accepting restamps it
+        // from the moment the shop took the order (the placement estimate assumed it would be accepted at once).
+        // Only when the shop still has a prep time: clearing the setting later must not blank an estimate the
+        // customer was already shown. A scheduled-slot order never has one (ReadyByEstimate).
+        if (newStatus == OrderStatus.CONFIRMED && order.getShopId() != null) {
+            Shop acceptingShop = shopRepository.findByIdAndTenantId(order.getShopId(), order.getTenantId()).orElse(null);
+            OffsetDateTime restamped = ReadyByEstimate.of(acceptingShop, OffsetDateTime.now(), order);
+            if (restamped != null) {
+                order.setEstimatedReadyAt(restamped);
+            }
+        }
         // Phase 37-29 (D-18): why the vendor cancelled, kept on the row in the same save. Only on a
         // cancel that the state machine has just accepted, so a refused transition records no reason.
         if (newStatus == OrderStatus.CANCELLED && cancelReason != null) {
@@ -911,7 +1012,7 @@ public class OrderService {
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }
 
-        return CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope);
+        return order;
     }
 
     /**
@@ -1131,7 +1232,7 @@ public class OrderService {
         );
     }
 
-    private static boolean isAwaitingUpfrontOrDepositPayment(Order order) {
+    static boolean isAwaitingUpfrontOrDepositPayment(Order order) {
         PaymentStatus ps = order.getPaymentStatus();
         if (ps == PaymentStatus.PENDING || ps == PaymentStatus.FAILED) {
             return true;

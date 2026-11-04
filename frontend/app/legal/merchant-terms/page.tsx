@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { openGraphWithDefaultImage } from "@/lib/og-image"
 
 import {
   LEGAL_PROSE_LINK_CLASS,
@@ -33,12 +34,13 @@ export const metadata: Metadata = {
   title: "Merchant terms (draft) — J'Toye",
   description: DESCRIPTION,
   alternates: { canonical: "/legal/merchant-terms" },
-  openGraph: {
+  // SW-CLR-08: a page's own openGraph replaces the root's, so the default share image is added here.
+  openGraph: openGraphWithDefaultImage({
     title: "Merchant terms (draft) — J'Toye",
     description: DESCRIPTION,
     url: "/legal/merchant-terms",
     type: "website",
-  },
+  }),
 }
 
 /**
@@ -271,9 +273,10 @@ export default function MerchantTermsPage() {
         <p>
           You must be registered with your local authority as a food business,
           keep that registration current, and tell us if your food hygiene rating
-          changes. Before a shop can be published we check that the business is
-          verified, that it has a food hygiene rating, that its allergen data is
-          complete and that its trader identity is on file. These checks decide
+          changes. Before a shop can be published it goes through our automatic
+          checks of its business details, its food hygiene rating record, its
+          allergen data and its trader identity, and a shop that cannot be
+          matched automatically is reviewed by hand. These checks decide
           whether a shop can go live; they are not a certification of your food
           or your kitchen.
         </p>

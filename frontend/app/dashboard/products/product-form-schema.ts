@@ -35,7 +35,8 @@ export const productSchema = z.object({
   // and a blank ingredientsText feeds the V63 advisory allergen reconciliation
   // as "declared" rather than "missing". .max() stays after .trim() so a
   // space-padded 200-char title is not rejected.
-  sku: z.string().trim().min(1, "SKU is required").max(50, "SKU too long"),
+  // #875 / UXT-115: optional - a stall holder has no SKU. Blank or omitted, the server generates one.
+  sku: z.string().trim().max(50, "SKU too long").optional(),
   title: z.string().trim().min(1, "Title is required").max(200, "Title too long"),
   ingredientsText: z
     .string()

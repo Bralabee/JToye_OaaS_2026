@@ -23,6 +23,7 @@ import {
 } from "@/components/dashboard/kitchen/kds-card-parts"
 import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
 import { KdsScheduledWindowBadge } from "@/components/dashboard/kitchen/kds-cook-sheet-panel"
+import { KdsReadyByBadge, KdsUnacceptedBadge } from "@/components/dashboard/kitchen/kds-time-badges"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
 import { AwaitingPaymentBadge } from "@/components/dashboard/orders/awaiting-payment-badge"
@@ -401,6 +402,9 @@ function KdsNewCard({
             scheduledWindowLabel={order.scheduledWindowLabel}
             scheduledForDate={order.scheduledForDate}
           />
+          {/* #825: the ESTIMATED ready-by time; #821: the "waiting too long" alert (shown while PENDING). */}
+          <KdsReadyByBadge estimatedReadyAt={order.estimatedReadyAt} />
+          <KdsUnacceptedBadge status={order.status} unacceptedNotifiedAt={order.unacceptedNotifiedAt} />
           {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link order. Accept stays enabled: the badge
               warns before the tap and the server's refusal (the alert below) explains after it. */}
           <AwaitingPaymentBadge
@@ -447,7 +451,7 @@ function KdsNewCard({
           <UnverifiedContactBadge contactVerified={order.contactVerified} />
         </div>
         <KdsCustomerNote note={order.notes} />
-        <KdsItemList items={order.items} />
+        <KdsItemList items={order.items} unitCount={order.unitCount} />
         <div className="flex items-center gap-1 text-xs text-slate-500">
           <Clock className="h-3 w-3" />
           {elapsedText(order.createdAt)}

@@ -130,7 +130,7 @@ public class OrderController {
         IdempotencyOutcome<OrderDto> outcome = idempotencyService.execute(
                 "orders.create", idempotencyKey, request, OrderDto.class,
                 () -> orderService.createOrder(request));
-        return ResponseEntity.status(outcome.status()).body(outcome.value());
+        return outcome.toResponse();
     }
 
     /**
@@ -145,13 +145,18 @@ public class OrderController {
      * yields an empty page (no existence disclosure).
      */
     @GetMapping
-    @Operation(summary = "List all orders", description = "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant.")
+    @Operation(summary = "List all orders", description = "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant. "
+            + "Optional q searches EVERY page (not just the one returned): a case-insensitive substring of the order number or id, the customer's name, the customer's phone "
+            + "(any spelling: +44, spaces, hyphens, brackets) or - only where the caller sees full customer contact - the customer's email. q is bounded to 100 characters; blank is no search.")
     public ResponseEntity<Page<OrderDto>> getAllOrders(
             @RequestParam(required = false) UUID shopId,
+            @RequestParam(required = false) String q,
             Pageable pageable) {
-        Page<OrderDto> orders = shopId != null
-                ? orderService.getOrdersByShop(shopId, pageable)
-                : orderService.getAllOrders(pageable);
+        Page<OrderDto> orders = (q != null && !q.isBlank())
+                ? orderService.searchOrders(shopId, q, pageable)
+                : shopId != null
+                        ? orderService.getOrdersByShop(shopId, pageable)
+                        : orderService.getAllOrders(pageable);
         return ResponseEntity.ok(orders);
     }
 
