@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Catalogue and Shop Admin: Persona Close-Out — 2026-11-04
+
+Quick 261104-catalogue. Five persona findings, each re-checked on main first: issue 831, issue 832, issue 833, issue 835 and the remainder of issue 799.
+
+- **Banner no longer overwritten by the logo (issue 831):** the shop logo and banner endpoints return the whole shop, and the uploader took the first non-empty of three urls, so a banner upload on a shop with a logo handed the logo to the banner slot and Update Shop saved it. The uploader now takes the field of the slot it uploaded for.
+- **Products can be deleted (issue 832, V90):** a delete now removes the product's photo links and releases their assets (the object is deleted only when nothing else references it). A product that any order still names, even a cancelled one, is archived: `products.archived_at`, unavailable, off every list, the storefront and the SKU index (the SKU unique index becomes partial, so the SKU can be reused), while the order keeps the name it snapshotted. A product on an order still in flight is refused with the typed 409 `in-use`, now with the true reason. Dashboard copy follows.
+- **A shop with products cannot be deleted (issue 833):** refused with the typed 409 `shop-has-products` and `productCount`, instead of orphaning its products. The dialog says how many, and links to Products. Archived products do not count.
+- **No publish checkbox on the shop form (issue 835):** the onboarding state machine is the only writer of `published`, so the form shows "Live on the storefront" or "Not live yet" with a link to Onboarding and never sends `published`. A shop edit can no longer be discarded because of it, and an older server's refusal is shown in plain words.
+- **CSV import takes allergen names (issue 799, remainder):** an `allergens` column, or names in the `allergen_mask` cell: the 14 UK allergens, any capitals, separated by commas or semicolons, combined with the number. An unknown name, a garbled value or a number outside 0 to 16383 is a per-row error naming it, where a garbled value used to import as "no allergens". The page documents both. An EPOS or Square import is out of scope and not started.
+- **Migration:** V90 adds `products.archived_at` and the `products_aud` mirror, and makes `idx_products_tenant_sku` partial. No UPDATE, no policy change.
+- **Proof:** every new test was red before its fix (see the quick task summary); the OpenAPI snapshot is regenerated.
+
 ### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
 
 Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.
