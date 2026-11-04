@@ -14,6 +14,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
+import uk.jtoye.core.review.dto.OrderReviewRequest;
 import uk.jtoye.core.review.dto.ReviewDto;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
@@ -77,47 +78,90 @@ public class ReviewService {
                 throw new IllegalArgumentException("You can only review your own orders");
             }
 
-            // 37-26 (D-21, UXT-005 P0): the order must have been placed AT THIS SHOP. RLS scopes
-            // findById to the TENANT, not the shop, so without this a customer who bought once from
-            // shop A could leave a "verified" review on every other shop of the tenant. The order is
-            // a proof of purchase from the shop reviewed, or it is no proof at all. Typed 400, after
-            // the ownership check (a stranger's order is refused as a stranger's first) and before
-            // the status and one-per-order gates.
-            if (!shop.getId().equals(order.getShopId())) {
-                throw new ReviewOrderShopMismatchException();
-            }
-
-            // Validate: order must be completed
-            if (order.getStatus() != OrderStatus.COMPLETED) {
-                throw new IllegalArgumentException("Can only review completed orders");
-            }
-
-            // Validate: no duplicate review
-            if (reviewRepository.existsByOrderId(request.getOrderId())) {
-                throw new IllegalArgumentException("You have already reviewed this order");
-            }
-
-            requireOwnReviewPhotos(request.getPhotoUrls(), tenantId, request.getOrderId());
-
-            Review review = new Review();
-            review.setTenantId(tenantId);
-            review.setShopId(shop.getId());
-            review.setOrderId(request.getOrderId());
-            review.setCustomerEmail(customerEmail);
-            review.setCustomerName(order.getCustomerName());
-            review.setFoodRating(request.getFoodRating());
-            review.setDeliveryRating(request.getDeliveryRating());
-            review.setComment(request.getComment());
-            review.setPhotoUrls(request.getPhotoUrls());
-
-            review = reviewRepository.save(review);
-            log.info("Review created for shop {} order {} — food:{} delivery:{}",
-                    shop.getName(), order.getOrderNumber(), request.getFoodRating(), request.getDeliveryRating());
-
-            return toDto(review);
+            return saveReview(shop, order, customerEmail, request.getFoodRating(), request.getDeliveryRating(),
+                    request.getComment(), request.getPhotoUrls());
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * #846 (persona close-out 2026-11-04): a SIGNED-IN customer reviews one of their own orders, named by its
+     * number, with the reviewer identified by the verified customer token and never by a parameter. The
+     * controller passes the email {@code CustomerJwtVerifier} proved; nothing the client sends can change it.
+     *
+     * <p>The shop's published slug pins the tenant (SEC-01) before the order is read, so RLS scopes the read.
+     * An order that does not exist and an order that is another customer's are the SAME
+     * {@link ResourceNotFoundException}: unlike {@link #createReview} (kept, unchanged, for the API clients that
+     * address an order by id and name the email themselves), this surface is addressed by a guessable
+     * order number, and a 400 "you can only review your own orders" would tell a stranger which numbers exist
+     * (D-05, the VanishedRowStatus contract: never 403, never a distinguishable answer). The remaining gates
+     * (this shop, COMPLETED, one per order) are shared with {@link #createReview} through {@link #saveReview}.
+     *
+     * <p>Idempotent in effect rather than by key: {@code reviews.order_id} is UNIQUE (V27) and
+     * {@code saveReview} refuses a second review first, so a replay can never create a second row.
+     */
+    @Transactional
+    public ReviewDto createReviewForOrder(String shopSlug, String orderNumber, String customerEmail,
+                                          OrderReviewRequest request) {
+        Shop shop = resolvePublicShopForSlug(shopSlug);
+        try {
+            Order order = orderRepository.findByOrderNumber(orderNumber)
+                    .filter(o -> customerEmail.equalsIgnoreCase(o.getCustomerEmail()))
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+            return saveReview(shop, order, customerEmail, request.foodRating(), request.deliveryRating(),
+                    request.comment(), null);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * The gates and the write both review endpoints share, run with the tenant already pinned and the
+     * order already shown to belong to {@code customerEmail}.
+     */
+    private ReviewDto saveReview(Shop shop, Order order, String customerEmail, Integer foodRating,
+                                 Integer deliveryRating, String comment, List<String> photoUrls) {
+        UUID tenantId = shop.getTenantId();
+
+        // 37-26 (D-21, UXT-005 P0): the order must have been placed AT THIS SHOP. RLS scopes
+        // findById to the TENANT, not the shop, so without this a customer who bought once from
+        // shop A could leave a "verified" review on every other shop of the tenant. The order is
+        // a proof of purchase from the shop reviewed, or it is no proof at all. Typed 400, after
+        // the ownership check (a stranger's order is refused as a stranger's first) and before
+        // the status and one-per-order gates.
+        if (!shop.getId().equals(order.getShopId())) {
+            throw new ReviewOrderShopMismatchException();
+        }
+
+        // Validate: order must be completed
+        if (order.getStatus() != OrderStatus.COMPLETED) {
+            throw new IllegalArgumentException("Can only review completed orders");
+        }
+
+        // Validate: no duplicate review
+        if (reviewRepository.existsByOrderId(order.getId())) {
+            throw new IllegalArgumentException("You have already reviewed this order");
+        }
+
+        requireOwnReviewPhotos(photoUrls, tenantId, order.getId());
+
+        Review review = new Review();
+        review.setTenantId(tenantId);
+        review.setShopId(shop.getId());
+        review.setOrderId(order.getId());
+        review.setCustomerEmail(customerEmail);
+        review.setCustomerName(order.getCustomerName());
+        review.setFoodRating(foodRating);
+        review.setDeliveryRating(deliveryRating);
+        review.setComment(comment);
+        review.setPhotoUrls(photoUrls);
+
+        review = reviewRepository.save(review);
+        log.info("Review created for shop {} order {} — food:{} delivery:{}",
+                shop.getName(), order.getOrderNumber(), foodRating, deliveryRating);
+
+        return toDto(review);
     }
 
     /**

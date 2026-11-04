@@ -25,6 +25,8 @@ import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.ClientIpResolver;
 import uk.jtoye.core.security.CustomerJwtVerifier;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
+import uk.jtoye.core.review.dto.OrderReviewRequest;
+import uk.jtoye.core.storefront.dto.ReorderLinesDto;
 import uk.jtoye.core.review.dto.ReviewDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
@@ -428,8 +430,70 @@ public class PublicStorefrontController {
         return reviewService.getShopReviews(slug, pageable);
     }
 
+    /**
+     * #846 / #813 (persona close-out 2026-11-04): a signed-in customer reviews one of their own COMPLETED orders,
+     * identified by the verified customer token, with the order named by its number. The email is never a
+     * parameter here and never in the URL.
+     */
+    @PostMapping("/shops/{slug}/orders/{orderNumber}/review")
+    @Operation(summary = "Review one of my completed orders (session-authenticated)",
+            description = "Leave a review for a completed order of the signed-in customer. Requires a valid "
+                    + "jtoye-customers realm access token in the X-Customer-Token header; the reviewer is the "
+                    + "token's verified email, never a parameter, and the order is named by its number. One review "
+                    + "per order, enforced by a unique key, so a replay is refused rather than duplicated. The "
+                    + "review is published at once under the reviewer's first name and the initial of their last "
+                    + "name. An order that does not exist and one that is not the caller's are the same 404.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "The published review"),
+            @ApiResponse(responseCode = "400", description = "Not completed, already reviewed, a rating out of range, or the order was not placed at this shop"),
+            @ApiResponse(responseCode = "401", description = "Missing or unverifiable customer token"),
+            @ApiResponse(responseCode = "404", description = "No such order for this customer at this shop")
+    })
+    public ResponseEntity<ReviewDto> createReviewForOrder(
+            @PathVariable String slug,
+            @PathVariable String orderNumber,
+            @RequestHeader(name = "X-Customer-Token", required = false) String customerToken,
+            @Valid @RequestBody OrderReviewRequest request) {
+        // Throws ResponseStatusException -> 401 on any verification failure; the order is only ever read
+        // with a proven email.
+        String email = customerJwtVerifier.verifiedEmail(customerToken);
+        ReviewDto review = reviewService.createReviewForOrder(slug, orderNumber, email, request);
+        return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(review);
+    }
+
+    /**
+     * #845 (persona close-out 2026-11-04): the lines of one of the signed-in customer's own past orders, so the
+     * storefront can refill a basket ("Order again"). Same identity model as the review above.
+     */
+    @GetMapping("/shops/{slug}/orders/{orderNumber}/reorder")
+    @Operation(summary = "The lines of one of my past orders, to order again (session-authenticated)",
+            description = "Returns the product, name, quantity and unit price paid for each line of the signed-in "
+                    + "customer's own order. Requires a valid jtoye-customers realm access token in the "
+                    + "X-Customer-Token header; the order is the caller's by the token's verified email, never by a "
+                    + "parameter. Carries no personal data. An order that does not exist, is not the caller's, or "
+                    + "was placed at a different shop is the same 404. Not cached.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "The order's lines"),
+            @ApiResponse(responseCode = "401", description = "Missing or unverifiable customer token"),
+            @ApiResponse(responseCode = "404", description = "No such order for this customer at this shop")
+    })
+    public ResponseEntity<ReorderLinesDto> getReorderLines(
+            @PathVariable String slug,
+            @PathVariable String orderNumber,
+            @RequestHeader(name = "X-Customer-Token", required = false) String customerToken) {
+        String email = customerJwtVerifier.verifiedEmail(customerToken);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(storefrontService.getReorderLines(slug, orderNumber, email));
+    }
+
     @PostMapping("/shops/{slug}/reviews")
-    @Operation(summary = "Submit a review", description = "Leave a review for a completed order. One review per order.")
+    @Operation(summary = "Submit a review (email in the query string)", deprecated = true,
+            description = "Leave a review for a completed order. One review per order. Deprecated because the "
+                    + "customer's email travels in the URL, unauthenticated, where history and access logs keep it "
+                    + "(#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's "
+                    + "identity from their verified token. Kept so existing API clients keep working; the frontend "
+                    + "never called it.")
     public ResponseEntity<ReviewDto> createReview(
             @PathVariable String slug,
             @RequestParam String email,

@@ -52,6 +52,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
+import uk.jtoye.core.storefront.dto.ReorderLinesDto;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
 import uk.jtoye.core.storefront.dto.PublicPromotionDto;
 import uk.jtoye.core.storefront.dto.ShopConfigDto;
@@ -793,8 +794,39 @@ public class PublicStorefrontService {
         return findCustomerOrderPage(email, pageable).map(order -> {
             CustomerOrderStatus status = toCustomerHistoryStatus(new CustomerOrderStatus(), order);
             status.setAllergyNote(Boolean.TRUE.equals(order.getContactVerified()) ? order.getAllergyNote() : null);
+            // #845: which shop the order is from, so a past order can link to it. The same entity
+            // lookup toCustomerHistoryStatus did for the name (served from the session cache), under
+            // the same visibility: a shop that is no longer published reads as null.
+            status.setShopSlug(shopRepository.findById(order.getShopId()).map(Shop::getSlug).orElse(null));
             return status;
         });
+    }
+
+    /**
+     * #845 (persona close-out 2026-11-04): the lines of one of the SIGNED-IN customer's own past orders, for
+     * "Order again". Call it only with an email proven by {@code CustomerJwtVerifier}.
+     *
+     * <p>The tenant is pinned from the published shop slug (SEC-01), so the orders table (FORCE RLS) is read
+     * only inside that tenant. The order must be this customer's (their verified email) AND be at this shop:
+     * anything else, and an order number that does not exist, is the SAME {@code ResourceNotFoundException},
+     * so the order number cannot be used to learn whether an order exists or whose it is (D-05, the
+     * VanishedRowStatus contract: never 403). Returns what was bought and what was paid, never the person.
+     */
+    public ReorderLinesDto getReorderLines(String slug, String orderNumber, String customerEmail) {
+        Shop shop = resolvePublicShopForSlug(slug);
+        try {
+            Order order = orderRepository.findByOrderNumber(orderNumber)
+                    .filter(o -> customerEmail.equalsIgnoreCase(o.getCustomerEmail()))
+                    .filter(o -> shop.getId().equals(o.getShopId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+            List<ReorderLinesDto.Line> lines = order.getItems().stream()
+                    .map(item -> new ReorderLinesDto.Line(
+                            item.getProductId(), item.getProductName(), item.getQuantity(), item.getUnitPricePennies()))
+                    .toList();
+            return new ReorderLinesDto(order.getOrderNumber(), shop.getSlug(), lines);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     /** The history page for one address, under the transaction-local customer-email GUC (Issue #95). */
