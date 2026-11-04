@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Roadmap: 999.x Backlog for Six Unplanned Persona Findings — 2026-11-04 (#1113)
+
+Owner ruling 2026-11-04 (persona-test close-out): issues 208 (WhatsApp channel), 870 (menu modifiers), 873 (campaigns and loyalty), 874 (custom domains), 869 (server-side basket) and 863 (MCP OAuth discovery) are closed as not planned for v2.3 and recorded as backlog entries 999.1 to 999.6 in `.planning/ROADMAP.md`. Docs only.
+
 ### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
 
 Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.
