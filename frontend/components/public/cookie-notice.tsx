@@ -56,15 +56,38 @@ import { ConsentBanner } from "./consent-banner"
  * exactly or `/pay/<anything>`, never a bare prefix: `/payments` is not the
  * payment-link page.
  *
- * The ConsentBanner branch is checked FIRST, on /pay as everywhere. The reasoning
+ * NOR ON /invite (swarm SW-TND-03, same ruling shape). The staff-invitation page is a form a
+ * person fills in on a phone, and the fixed notice sat over its Last name and Password fields
+ * before the first tap. /invite writes nothing to local or session storage (invite-client.tsx
+ * header: the route's source names neither API) and loads no third-party script, so unlike /pay
+ * there is not even a Stripe cookie to disclose; its footer, from PublicShell, links /legal/cookies
+ * exactly as /pay's does. The notice informs and gates nothing, so withholding it here withholds
+ * no choice. Same exactness: `/invite` or `/invite/<anything>`, never a bare prefix.
+ *
+ * The ConsentBanner branch is checked FIRST, on /pay and /invite as everywhere. The reasoning
  * above holds only while there is nothing to choose; the day a non-essential
  * category is registered the banner is a consent gate, and a gate that a route
  * can opt out of is not one.
+ *
+ * COMPACT ON A PHONE (#854; swarm SW-CLR-12). The card was a stacked block (title, sentence,
+ * two controls) of about 170 px on an 844 px screen, 20% of it, over the seller panel and the hero
+ * on first paint. The brief is no more than ~10% of a 390x664 viewport (66 px), measured by
+ * e2e/cookie-notice-compact.spec.ts. Below `sm` the card is therefore one row: the sentence, with
+ * "Cookie policy" at its end as a link, beside a 44 px "Got it"; it sits flush with the screen edges
+ * (no outer margin: a margin is a band the page cannot use either) and the visible title is spoken
+ * by the region's name instead of drawn. From `sm` up nothing changes except where the policy link
+ * sits. The sentence is the same legally operative string, character for character. The shell still
+ * publishes the covered band as `scroll-padding-bottom`, so a focused element is scrolled clear
+ * (WCAG 2.4.11) and the notice is still the first thing in DOM order (37-52).
  */
 
-/** The payment-link page and anything under it (it has no sub-routes today). */
-function isPaymentLinkPage(pathname: string | null): boolean {
-  return pathname === "/pay" || (pathname ?? "").startsWith("/pay/")
+/** Routes that never show the essential-cookies notice (see "NOT ON /pay" and "NOR ON /invite"). */
+const NOTICE_FREE_ROUTES = ["/pay", "/invite"] as const
+
+/** A carved-out page and anything under it: the route exactly, or `<route>/<anything>`, never a bare prefix. */
+function isNoticeFreePage(pathname: string | null): boolean {
+  const path = pathname ?? ""
+  return NOTICE_FREE_ROUTES.some((route) => path === route || path.startsWith(`${route}/`))
 }
 
 /** POSITIONING, STACKING AND ZERO CLS all live in `BottomNoticeShell` now — see
@@ -134,39 +157,61 @@ export function CookieNotice() {
   // A real choice outranks an informational notice.
   if (choosableCategories().length > 0) return <ConsentBanner />
 
-  // After the banner, never before it: see "NOT ON /pay" above.
-  if (isPaymentLinkPage(pathname)) return null
+  // After the banner, never before it: see "NOT ON /pay" and "NOR ON /invite" above.
+  if (isNoticeFreePage(pathname)) return null
 
   if (!show) return null
 
   return (
     <BottomNoticeShell
       label="Cookie notice"
-      cardClassName="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      // Below `sm`: one row, flush with the screen edges, tighter padding (the shell's own card class
+      // is merged underneath, so pointer-events-auto cannot be dropped by accident). From `sm` up the
+      // shell's inset, right-aligned card is unchanged.
+      cardClassName={cn(
+        "flex flex-row items-center gap-2 sm:justify-between sm:gap-3",
+        "max-sm:mx-0 max-sm:mb-0 max-sm:rounded-b-none max-sm:px-3 max-sm:pt-1.5",
+        "max-sm:pb-[max(0.375rem,env(safe-area-inset-bottom))]"
+      )}
     >
       <>
         <div className="min-w-0">
           {/* h2, at the same 14px/600 as the actions: this is chrome, and it
-              must not compete with the page's own <h1>. */}
-          <h2 className="text-sm font-semibold leading-[1.5]">{"Cookies on J'Toye"}</h2>
+              must not compete with the page's own <h1>. Drawn from `sm` up; on a
+              phone it is still the first thing a screen reader meets, but not a
+              line of the 66 px budget. */}
+          <h2 className="text-sm font-semibold leading-[1.5] max-sm:sr-only">{"Cookies on J'Toye"}</h2>
           {/* R-07 symptom (5): compacted to one sentence so it does not truncate
               in the mobile band. Every element of the legal intent survives —
               cookies AND browser storage (PECR treats localStorage as storage on
               terminal equipment exactly as a cookie is, and this site uses it for
               the basket), strictly necessary, and nothing to accept or reject.
-              The detail now lives where it always did, behind /legal/cookies. */}
-          <p className="mt-1 text-sm leading-[1.5] text-cream/85">
+              The detail now lives where it always did, behind /legal/cookies,
+              which the link ends the sentence with (an inline link in a sentence
+              is exempt from the 24 px target rule, WCAG 2.5.8; the 44 px control
+              is "Got it"). */}
+          <p className="text-xs leading-4 text-cream/85 sm:mt-1 sm:text-sm sm:leading-[1.5]">
             We use cookies and browser storage only where strictly necessary to run this
-            site — there is nothing to accept or reject.
+            site — there is nothing to accept or reject.{" "}
+            <Link
+              href="/legal/cookies"
+              className={cn(
+                "rounded-sm font-semibold text-cream underline underline-offset-4",
+                "transition-colors hover:text-white",
+                FOCUS_RING
+              )}
+            >
+              Cookie policy
+            </Link>
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center">
           <button
             type="button"
             onClick={acknowledgeCookieNotice}
             className={cn(
-              "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-4",
+              "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2.5 sm:px-4",
               "text-sm font-semibold leading-[1.5] bg-cream text-oxblood",
               "transition-colors hover:bg-white",
               FOCUS_RING
@@ -174,17 +219,6 @@ export function CookieNotice() {
           >
             Got it
           </button>
-          <Link
-            href="/legal/cookies"
-            className={cn(
-              "inline-flex min-h-11 items-center rounded-md px-1",
-              "text-sm font-semibold leading-[1.5] text-cream underline underline-offset-4",
-              "transition-colors hover:text-white",
-              FOCUS_RING
-            )}
-          >
-            Cookie policy
-          </Link>
         </div>
       </>
     </BottomNoticeShell>

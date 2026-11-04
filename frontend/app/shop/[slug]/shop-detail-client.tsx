@@ -27,6 +27,7 @@ import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
 import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
+import { PaymentMethodChip } from "@/components/storefront/payment-method-note"
 
 /**
  * The "Opening hours" rows (37-21; deferred-items "From 37-22"). A vendor's saved hours live in
@@ -736,8 +737,14 @@ export function ShopDetailClient({
                   </span>
                 )}
                 {reviewCount > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs text-amber-300">
-                    <Star className="h-3 w-3 fill-amber-300" />
+                  // UXT-110 (#877): one image with a name that carries the unit. A bare "4.7 (3)"
+                  // was read "4.7, 3" with no hint of what out of what; the sighted text is unchanged.
+                  <span
+                    role="img"
+                    aria-label={`Rated ${avgRating} out of 5 stars, ${reviewCount} ${reviewCount === 1 ? "review" : "reviews"}`}
+                    className="inline-flex items-center gap-1 text-xs text-amber-300"
+                  >
+                    <Star className="h-3 w-3 fill-amber-300" aria-hidden="true" />
                     {avgRating} ({reviewCount})
                   </span>
                 )}
@@ -807,6 +814,8 @@ export function ShopDetailClient({
             ) : (
               <span className="text-emerald-700 font-medium">Free delivery</span>
             )}
+            {/* #829: how you pay, above the menu and not first met at the bottom of checkout. */}
+            <PaymentMethodChip shop={shop} className="font-medium text-slate-700" />
           </div>
 
           {shop.description && (
@@ -893,9 +902,10 @@ export function ShopDetailClient({
                         single word as given) since 37-35; the page renders it as is. No name is a
                         "Customer" — "Anonymous" claimed a choice the reviewer never made. */}
                     <span className="text-xs font-medium text-slate-700">{review.customerName?.trim() || "Customer"}</span>
-                    <div className="flex items-center gap-0.5">
+                    {/* UXT-110: five icons were five nothings to a screen reader. */}
+                    <div role="img" aria-label={`${review.foodRating} out of 5 stars`} className="flex items-center gap-0.5">
                       {[1, 2, 3, 4, 5].map((s) => (
-                        <Star key={s} className={`h-3 w-3 ${s <= review.foodRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
+                        <Star key={s} aria-hidden="true" className={`h-3 w-3 ${s <= review.foodRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
                       ))}
                     </div>
                   </div>

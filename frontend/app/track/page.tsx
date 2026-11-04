@@ -485,8 +485,10 @@ function TrackOrderContent() {
       </form>
 
       {/* Error */}
+      {/* MAR-13 (#850): a role=alert, so a failed lookup is read out the moment it appears. A SUCCESSFUL
+          lookup stays silent on purpose (37-51: a lookup is not a change). */}
       {error && (
-        <div className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
+        <div role="alert" className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
           <p className="text-sm text-red-700">{error}</p>
         </div>
       )}
@@ -637,12 +639,16 @@ function TrackOrderContent() {
                   transition={{ duration: 0.5, ease: "easeOut" }}
                 />
               </div>
-              <p className="mt-2 text-center text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
-                  Auto-refreshing
-                </span>
-              </p>
+              {/* UXT-111 (#877): the label only while the page really refreshes. The poll stops on a
+                  terminal status (the effect above), so a COMPLETED order is not "auto-refreshing". */}
+              {!TERMINAL_STATUSES.includes(order.status) && (
+                <p className="mt-2 text-center text-xs text-slate-600">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
+                    Auto-refreshing
+                  </span>
+                </p>
+              )}
             </div>
           )}
 

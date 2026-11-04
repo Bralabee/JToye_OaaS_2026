@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   Package, Clock, CheckCircle2, ChefHat, CircleDot,
-  XCircle, ArrowRight, Loader2, Store, AlertTriangle, RefreshCw
+  XCircle, ArrowRight, Loader2, Store, AlertTriangle, RefreshCw, RotateCcw
 } from "lucide-react"
+import { ReviewOrder } from "@/components/storefront/review-order"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { CustomerSignInPrompt } from "@/components/storefront/customer-signin-prompt"
 import {
@@ -136,6 +137,11 @@ const CARD_MOTION =
   "motion-reduce:transition-none motion-reduce:active:scale-100 " +
   "motion-reduce:[@media(hover:hover)_and_(pointer:fine)]:group-hover:translate-y-0"
 
+/** A finished order, the kind "Order again" is for: it is not in flight and it is not an unpaid draft. */
+function isPastOrder(order: OrderSummary): boolean {
+  return order.status === "COMPLETED" || order.status === "CANCELLED" || order.status === "REFUNDED"
+}
+
 function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?: string; email?: string }) {
   // `OrderSummary.status` is a WIRE string — `toOrdersLoad` casts the page
   // content without validating it — so the cast happens here, at the boundary,
@@ -226,6 +232,26 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
         <span className="sr-only"> for order {order.orderNumber}</span>
       </Link>
     </div>
+    {/* #845 / #846: what a customer does with a PAST order. Siblings of the card link, like the row above.
+        Both need the shop's page to go to, so a shop that is no longer published offers neither. The
+        review form posts through the signed-in proxy: this page never sends, or knows to send, an email. */}
+    {order.shopSlug && (isPastOrder(order) || order.status === "COMPLETED") && (
+      <div data-testid={`order-actions-${order.orderNumber}`} className="mt-1.5 space-y-2">
+        {isPastOrder(order) && (
+          <Link
+            href={`/shop/${order.shopSlug}/reorder/${order.orderNumber}`}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-cream-100 bg-white px-3 text-sm font-semibold text-oxblood transition-colors duration-150 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Order again
+            <span className="sr-only"> from {order.shopName}</span>
+          </Link>
+        )}
+        {order.status === "COMPLETED" && (
+          <ReviewOrder shopSlug={order.shopSlug} orderNumber={order.orderNumber} shopName={order.shopName} />
+        )}
+      </div>
+    )}
     {/* SW-PRY-06 (T-31.1-46): the customer's own note, on this signed-in page only. The server sends
         it solely on /public/orders/mine and solely for a contact-verified order; it is rendered as
         text (React escapes it) and never stored. */}

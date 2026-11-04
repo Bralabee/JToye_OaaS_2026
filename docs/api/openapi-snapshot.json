@@ -2066,6 +2066,13 @@
           "shopName" : {
             "type" : "string"
           },
+          "shopSlug" : {
+            "description" : "The slug of the shop the order was placed at, so a past order can link to that shop (Order again, Rate your order). Only on the signed-in history, which has always carried the shop's name. Null when the shop is no longer published.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
           "status" : {
             "type" : "string"
           },
@@ -2119,6 +2126,38 @@
               "$ref" : "#/components/schemas/ReviewExport"
             },
             "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "Delivery" : {
+        "description" : "The delivery details the order was placed with.",
+        "properties" : {
+          "addressCity" : {
+            "description" : "Town or city.",
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "description" : "Address line 1.",
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "description" : "Address line 2.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "description" : "Postcode.",
+            "type" : "string"
+          },
+          "phone" : {
+            "description" : "The phone number given at checkout.",
+            "type" : [
+              "string",
+              "null"
+            ]
           }
         },
         "type" : "object"
@@ -2951,6 +2990,31 @@
         },
         "type" : "object"
       },
+      "Line" : {
+        "description" : "One order line as it was recorded when the order was placed.",
+        "properties" : {
+          "productId" : {
+            "description" : "The product, to be matched against the shop's live menu.",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "productName" : {
+            "description" : "The product's name when the order was placed.",
+            "type" : "string"
+          },
+          "quantity" : {
+            "description" : "Units ordered.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "unitPricePennies" : {
+            "description" : "The unit price paid, in pennies, when the order was placed.",
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "MediaAcceptDto" : {
         "properties" : {
           "assetId" : {
@@ -3659,6 +3723,43 @@
         },
         "required" : [
           "email"
+        ],
+        "type" : "object"
+      },
+      "OrderReviewRequest" : {
+        "description" : "A rating and an optional comment for one of the signed-in customer's own completed orders. The reviewer and the order are identified by the customer token and the path, never by this body.",
+        "properties" : {
+          "comment" : {
+            "description" : "What the customer wants to say. Published, with first name and initial, on the shop's page.",
+            "maxLength" : 1000,
+            "minLength" : 0,
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "deliveryRating" : {
+            "description" : "Delivery rating, 1 to 5, for an order that was delivered.",
+            "example" : 4,
+            "format" : "int32",
+            "maximum" : 5,
+            "minimum" : 1,
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "foodRating" : {
+            "description" : "Food rating, 1 to 5.",
+            "example" : 5,
+            "format" : "int32",
+            "maximum" : 5,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        },
+        "required" : [
+          "foodRating"
         ],
         "type" : "object"
       },
@@ -5123,6 +5224,32 @@
         "required" : [
           "reason"
         ],
+        "type" : "object"
+      },
+      "ReorderLinesDto" : {
+        "description" : "The lines of one of the caller's own past orders, to refill a basket. For a delivery order it also returns that order's delivery address and phone number (personal data), to its verified owner only; it carries no email or name.",
+        "properties" : {
+          "delivery" : {
+            "$ref" : "#/components/schemas/Delivery",
+            "description" : "Where and on which phone this order was delivered, so the next checkout can be pre-filled on a browser that has never seen the customer. Null for a collection order, an order with no address, and an order whose personal data has been erased. It is the caller's OWN order returned to the caller (the token's verified email), no-store, and nothing is stored anew: it is the column the order already holds.",
+            "type" : "null"
+          },
+          "lines" : {
+            "description" : "One entry per order line.",
+            "items" : {
+              "$ref" : "#/components/schemas/Line"
+            },
+            "type" : "array"
+          },
+          "orderNumber" : {
+            "description" : "The order these lines belong to.",
+            "type" : "string"
+          },
+          "shopSlug" : {
+            "description" : "The shop the order was placed at, so the basket for that shop can be filled.",
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "ResolveGateRequest" : {
@@ -13732,6 +13859,162 @@
         ]
       }
     },
+    "/api/v1/public/shops/{slug}/orders/{orderNumber}/reorder" : {
+      "get" : {
+        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order and, for a delivery order, the delivery address and phone number it was placed with (personal data, returned to the order's verified owner only; no email or name is returned, and the response must not be logged or cached as non-personal). Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
+        "operationId" : "getReorderLines",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReorderLinesDto"
+                }
+              }
+            },
+            "description" : "The order's lines"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "The lines of one of my past orders, to order again (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/shops/{slug}/orders/{orderNumber}/review" : {
+      "post" : {
+        "description" : "Leave a review for a completed order of the signed-in customer. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the reviewer is the token's verified email, never a parameter, and the order is named by its number. One review per order, enforced by a unique key, so a replay is refused rather than duplicated. The review is published at once under the reviewer's first name and the initial of their last name. An order that does not exist and one that is not the caller's are the same 404.",
+        "operationId" : "createReviewForOrder",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OrderReviewRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReviewDto"
+                }
+              }
+            },
+            "description" : "The published review"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Not completed, already reviewed, a rating out of range, or the order was not placed at this shop"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "Review one of my completed orders (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/shops/{slug}/phone-verification/send" : {
       "post" : {
         "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
@@ -13929,7 +14212,8 @@
         ]
       },
       "post" : {
-        "description" : "Leave a review for a completed order. One review per order.",
+        "deprecated" : true,
+        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
         "operationId" : "createReview",
         "parameters" : [
           {
@@ -13971,7 +14255,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "Submit a review",
+        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]
@@ -17236,6 +17520,162 @@
         ]
       }
     },
+    "/public/shops/{slug}/orders/{orderNumber}/reorder" : {
+      "get" : {
+        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order and, for a delivery order, the delivery address and phone number it was placed with (personal data, returned to the order's verified owner only; no email or name is returned, and the response must not be logged or cached as non-personal). Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
+        "operationId" : "getReorderLines_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReorderLinesDto"
+                }
+              }
+            },
+            "description" : "The order's lines"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "The lines of one of my past orders, to order again (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/orders/{orderNumber}/review" : {
+      "post" : {
+        "description" : "Leave a review for a completed order of the signed-in customer. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the reviewer is the token's verified email, never a parameter, and the order is named by its number. One review per order, enforced by a unique key, so a replay is refused rather than duplicated. The review is published at once under the reviewer's first name and the initial of their last name. An order that does not exist and one that is not the caller's are the same 404.",
+        "operationId" : "createReviewForOrder_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "path",
+            "name" : "orderNumber",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OrderReviewRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ReviewDto"
+                }
+              }
+            },
+            "description" : "The published review"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Not completed, already reviewed, a rating out of range, or the order was not placed at this shop"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or unverifiable customer token"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No such order for this customer at this shop"
+          }
+        },
+        "summary" : "Review one of my completed orders (session-authenticated)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/public/shops/{slug}/phone-verification/send" : {
       "post" : {
         "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
@@ -17433,7 +17873,8 @@
         ]
       },
       "post" : {
-        "description" : "Leave a review for a completed order. One review per order.",
+        "deprecated" : true,
+        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
         "operationId" : "createReview_1",
         "parameters" : [
           {
@@ -17475,7 +17916,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "Submit a review",
+        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]

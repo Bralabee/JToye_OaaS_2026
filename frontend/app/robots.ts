@@ -42,6 +42,8 @@ const DISALLOW = [
   "/shop/*/cart",
   "/shop/*/checkout",
   "/shop/*/orders/",
+  // #845: "Order again", a per-customer action reached from My Orders: a state, not a destination.
+  "/shop/*/reorder/",
   "/track",
   "/unsubscribe",
   // 37-09: the staff-invitation accept page. Reached only from an emailed link whose

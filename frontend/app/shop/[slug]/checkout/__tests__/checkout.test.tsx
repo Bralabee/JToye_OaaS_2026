@@ -377,9 +377,10 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /place order/i }))
 
-    expect(
-      await screen.findByText(/Enter a valid UK postcode \(e\.g\. SW1A 1AA\)/i)
-    ).toBeTruthy()
+    // The message is in the field's own error AND the error summary's link to it (UXT-105): the
+    // field's, with its id, is the one the input is described by.
+    expect((await screen.findAllByText(/Enter a valid UK postcode \(e\.g\. SW1A 1AA\)/i)).length).toBe(2)
+    expect(document.getElementById("postcode-error")).toHaveTextContent(/Enter a valid UK postcode/i)
     expect(mockedPost).not.toHaveBeenCalled()
   })
 })

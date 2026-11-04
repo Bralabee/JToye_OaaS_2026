@@ -36,6 +36,14 @@ public class CustomerOrderStatus extends PublicOrderStatus {
             + "the email-verified history carry only this flag.")
     public Boolean getAllergyNoteProvided() { return super.getAllergyNoteProvided(); }
 
+    @Schema(description = "The slug of the shop the order was placed at, so a past order can link to that shop "
+            + "(Order again, Rate your order). Only on the signed-in history, which has always carried the shop's name. "
+            + "Null when the shop is no longer published.", nullable = true)
+    private String shopSlug;
+
+    public String getShopSlug() { return shopSlug; }
+    public void setShopSlug(String shopSlug) { this.shopSlug = shopSlug; }
+
     public String getAllergyNote() { return allergyNote; }
     public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
 
