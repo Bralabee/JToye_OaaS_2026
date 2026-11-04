@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Sign-in: A Slow Network No Longer Signs the Customer Out, Reset and Verification Links Last, and the Keycloak Pages Meet the Accessibility Bar — 2026-11-04 (#PR)
+### Sign-in: A Slow Network No Longer Signs the Customer Out, Reset and Verification Links Last, and the Keycloak Pages Meet the Accessibility Bar — 2026-11-04 (#1114)
 
 Persona close-out, lane `auth`: #843, #847, #848 and the swarm findings SW-JRD-06, SW-MRC-12 and SW-SAM-10.
 
