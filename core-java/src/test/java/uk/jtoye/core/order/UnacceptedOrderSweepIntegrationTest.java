@@ -284,6 +284,14 @@ class UnacceptedOrderSweepIntegrationTest {
             TenantContext.clear();
         }
         assertThat(statusOf(TENANT_A, overdue)).isEqualTo("CONFIRMED");
+        // The accept's full-column UPDATE must not write its stale NULL back over the sweep's stamp: the
+        // customer was emailed "not yet accepted", and the stamp is the only record that they were.
+        assertThat(stampOf(TENANT_A, overdue)).as("the stamp survives the accept").isNotNull();
+        // And the audit trail must not claim a cleared stamp: the column is not audited, so no row says NULL.
+        assertThat(inTenant(TENANT_A, () -> jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders_aud WHERE tenant_id = ? AND id = ? AND unaccepted_notified_at IS NOT NULL",
+                Integer.class, TENANT_A, overdue)))
+                .as("the audit mirror column is never written (neither a stamp nor a falsely-cleared one)").isZero();
     }
 
     private String emailOf(UUID tenant, UUID orderId) {

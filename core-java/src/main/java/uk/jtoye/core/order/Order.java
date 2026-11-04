@@ -268,8 +268,17 @@ public class Order {
     /**
      * V91 (#821, owner ruling 2026-11-04): when the unaccepted-order sweep alerted the vendor and emailed
      * the customer. Written once, in the claim statement; NULL = not alerted.
+     *
+     * <p>READ-ONLY to JPA ({@code insertable = false, updatable = false}): only {@code UnacceptedOrderSweep}'s
+     * native claim writes it, and it deliberately does not bump {@code version}. Were this column updatable,
+     * any Order loaded before the claim would flush a full-column UPDATE and write its stale NULL back over
+     * the stamp (the customer emailed, nothing recording it, and a PENDING-preserving writer would then be
+     * alerted a second time). It is also {@link NotAudited}: Envers would copy that same stale in-memory value
+     * into {@code orders_aud}, claiming a stamp was cleared when nobody cleared it. The claim is an operational
+     * stamp, not a business revision, so the V91 {@code orders_aud} mirror column simply stays NULL.
      */
-    @Column(name = "unaccepted_notified_at")
+    @NotAudited
+    @Column(name = "unaccepted_notified_at", insertable = false, updatable = false)
     private OffsetDateTime unacceptedNotifiedAt;
 
     /**
