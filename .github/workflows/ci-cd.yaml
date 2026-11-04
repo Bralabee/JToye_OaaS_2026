@@ -1519,7 +1519,7 @@ jobs:
 
       # Owner ruling 2026-11-02: the J'Toye wordmark on every Keycloak page (sign-in,
       # register, reset, email verification) links home. The header is each realm's
-      # displayNameHtml (the jtoye theme is CSS-only), so both templates must hold an
+      # displayNameHtml (no FTL override touches it), so both templates must hold an
       # anchor whose href is the PUBLIC_APP_ORIGIN placeholder, and every compose
       # envsubst that renders a realm must list it, or the realm ships the literal token
       # as its href. The staging render is asserted by staging-realm-import.sh --selftest.
@@ -1529,6 +1529,20 @@ jobs:
         run: |
           bash scripts/check-keycloak-wordmark-home.sh --selftest
           bash scripts/check-keycloak-wordmark-home.sh
+
+      # #848 / #847. The jtoye login theme carries three small FTL overrides (template, login,
+      # register) added for accessibility, and the realms carry the action-token lifespans of the
+      # reset and verification links. The recorded reason against forking a template was silent
+      # rot at the next Keycloak upgrade; this makes it loud: each override's JTOYE-BASE-KEYCLOAK
+      # marker must equal the pinned image, the accessibility properties must survive, the
+      # password-rules sentence must agree with the realms' passwordPolicy, the lifespans must
+      # stay at or above their floors, and the k8s component must mount every override.
+      #
+      # Static by construction: reads files only, no stack, no network.
+      - name: Assert the Keycloak theme overrides and action-token lifespans (#847, #848)
+        run: |
+          bash scripts/check-keycloak-theme-ftl.sh --selftest
+          bash scripts/check-keycloak-theme-ftl.sh
 
       # Phase 37-04 (D-06, threat T-37-07). Strict scoping is ON by default: ungranted means no
       # access. D-06 says compose and the k8s overlays must never override it back to false,

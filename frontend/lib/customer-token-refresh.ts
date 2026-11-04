@@ -13,6 +13,8 @@
  * another HttpOnly cookie.
  */
 
+import { createHash } from "crypto"
+
 interface RefreshedTokens {
   accessToken: string
   refreshToken: string
@@ -49,25 +51,48 @@ function clientId(): string {
 }
 
 /**
- * Single-flight guard, keyed by the refresh token being redeemed.
+ * What a redemption came to. Three outcomes, because the route must treat them differently:
  *
- * This is not defensive padding — it is required by the realm configuration.
- * `revokeRefreshToken=true` with `refreshTokenMaxReuse=0` means a refresh token
- * is single-use: the second redemption of the same token is rejected AND can
- * revoke the session. StorefrontNav probes the session on mount, focus,
- * visibilitychange, storage events and on a 1s interval for the first 5s after
- * mount, so several probes crossing the expiry boundary together is the normal
- * case, not a rare race. Without this, the fix for #465 would itself log
- * customers out.
+ *   - `renewed`   the IdP issued new tokens;
+ *   - `refused`   the IdP answered with a client error (invalid_grant: the token is spent,
+ *                 expired or its session was revoked). The session is, as far as the IdP is
+ *                 concerned, not renewable with THIS token;
+ *   - `transient` the IdP could not be asked or did not answer usefully: a network failure, a
+ *                 5xx or 429, an unreadable body. Says nothing about the session.
  *
- * Scope is one server instance. Across replicas the IdP remains the arbiter —
- * which is why a failed refresh clears the session rather than retrying.
+ * Collapsing the last two (as this module first did) made one IdP blip clear the cookies and sign
+ * the customer out for good.
  */
-const inFlight = new Map<string, Promise<RefreshedTokens | null>>()
+type RefreshOutcome =
+  | { kind: "renewed"; tokens: RefreshedTokens }
+  | { kind: "refused" }
+  | { kind: "transient" }
 
-async function redeem(refreshToken: string): Promise<RefreshedTokens | null> {
+/**
+ * Single-flight guard, keyed by the SHA-256 of the refresh token being redeemed (never the raw
+ * credential), and holding a promise only WHILE the redemption is in flight: nothing is retained
+ * once it settles, so there is no server-side copy of any token to outlive a sign-out.
+ *
+ * It is required by the realm configuration. `revokeRefreshToken=true` with
+ * `refreshTokenMaxReuse=0` means a refresh token is single-use, and MEASURED on Keycloak 26.8.1
+ * (evidence/reuse-detection-measured.txt) the second redemption is refused AND revokes the whole
+ * session, so even the successor token dies. Probes that overlap in one process must therefore
+ * share one redemption.
+ *
+ * What this does NOT cover, on purpose: a probe that reaches the server AFTER the first settled,
+ * or one that lands on another pod (staging runs up to 10). Both would redeem a spent token. They
+ * are prevented where they start, in the browser: `getCustomerSession()` serialises probes across
+ * tabs, so a probe never leaves carrying a cookie that an earlier probe is about to replace.
+ */
+const inFlight = new Map<string, Promise<RefreshOutcome>>()
+
+function digest(token: string): string {
+  return createHash("sha256").update(token).digest("hex")
+}
+
+async function redeem(refreshToken: string): Promise<RefreshOutcome> {
   const url = tokenEndpoint()
-  if (!url) return null
+  if (!url) return { kind: "transient" }
 
   let res: Response
   try {
@@ -82,45 +107,49 @@ async function redeem(refreshToken: string): Promise<RefreshedTokens | null> {
       cache: "no-store",
     })
   } catch {
-    // Network/DNS failure to the IdP. Treated as "cannot refresh", never as
-    // "session is valid" — failing closed is the only safe direction here.
-    return null
+    // Network/DNS failure to the IdP. Never "session is valid" and never "session is dead".
+    return { kind: "transient" }
   }
 
-  if (!res.ok) return null
+  if (!res.ok) {
+    // A client error (400 invalid_grant and kin) is the IdP saying no to THIS token. Timeouts and
+    // rate limits are 4xx too but say nothing about the token, so they are transient.
+    const refused = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
+    return refused ? { kind: "refused" } : { kind: "transient" }
+  }
 
   let data: TokenResponse
   try {
     data = (await res.json()) as TokenResponse
   } catch {
-    return null
+    return { kind: "transient" }
   }
 
-  if (!data.access_token || !data.id_token) return null
+  if (!data.access_token || !data.id_token) return { kind: "transient" }
 
   return {
-    accessToken: data.access_token,
-    // Persist the ROTATED refresh token. Falling back to the incoming one is
-    // correct only when the IdP omitted a new one (rotation disabled); on this
-    // realm it always sends one, and keeping the old value would guarantee the
-    // next refresh is rejected.
-    refreshToken: data.refresh_token || refreshToken,
-    idToken: data.id_token,
-    expiresAt: Math.floor(Date.now() / 1000) + (Number(data.expires_in) || 300),
+    kind: "renewed",
+    tokens: {
+      accessToken: data.access_token,
+      // Persist the ROTATED refresh token. Falling back to the incoming one is correct only when
+      // the IdP omitted a new one (rotation disabled); on this realm it always sends one.
+      refreshToken: data.refresh_token || refreshToken,
+      idToken: data.id_token,
+      expiresAt: Math.floor(Date.now() / 1000) + (Number(data.expires_in) || 300),
+    },
   }
 }
 
-export async function refreshCustomerTokens(
-  refreshToken: string
-): Promise<RefreshedTokens | null> {
-  const existing = inFlight.get(refreshToken)
+export async function refreshCustomerTokens(refreshToken: string): Promise<RefreshOutcome> {
+  const key = digest(refreshToken)
+  const existing = inFlight.get(key)
   if (existing) return existing
 
   const attempt = redeem(refreshToken).finally(() => {
-    inFlight.delete(refreshToken)
+    inFlight.delete(key)
   })
-  inFlight.set(refreshToken, attempt)
+  inFlight.set(key, attempt)
   return attempt
 }
 
-export type { RefreshedTokens }
+export type { RefreshedTokens, RefreshOutcome }

@@ -68,13 +68,13 @@ function profileFrom(claims: IdTokenClaims) {
 }
 
 /** The anonymous / unrecoverable answer. Never 401 — see the note above. */
-function unauthenticated() {
-  return NextResponse.json({ authenticated: false })
+function unauthenticated(extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ authenticated: false, ...extra })
 }
 
 /**
- * Clear all three cookies alongside the negative answer. Used when a refresh was
- * attempted and refused: leaving a dead refresh cookie in place would make every
+ * Clear all three cookies alongside the negative answer. Used only when a refresh was refused
+ * TWICE (the retry marker below): leaving a dead refresh cookie in place would make every
  * subsequent page load retry a redemption the IdP has already rejected.
  */
 function unauthenticatedAndCleared() {
@@ -84,6 +84,18 @@ function unauthenticatedAndCleared() {
   }
   return res
 }
+
+/**
+ * The retry marker (#843): the query parameter `?retry=1`. The browser re-probes ONCE with it after
+ * an answer that said `refreshRefused`. That second probe carries the browser's cookie as it is by
+ * then, so a refusal the first time that was only a stale cookie in flight is answered with the
+ * current one. A refusal on a probe that carries the marker is final.
+ *
+ * A query parameter and not a custom request header: a header the browser adds is a CORS
+ * allow-list matter (INV-24 refuses one the Ingress does not list), and this call is same-origin,
+ * so widening CORS for it would be widening for nothing.
+ */
+const RETRY_PARAM = "retry"
 
 export async function GET(_req: NextRequest) {
   const access = _req.cookies.get(ACCESS_COOKIE)?.value
@@ -106,8 +118,24 @@ export async function GET(_req: NextRequest) {
   // refresh cookie has itself aged out. Answer exactly as before.
   if (!refresh) return unauthenticated()
 
-  const renewed = await refreshCustomerTokens(refresh)
-  if (!renewed) return unauthenticatedAndCleared()
+  const outcome = await refreshCustomerTokens(refresh)
+
+  // A transient failure (network, 5xx, 429, unreadable answer) says nothing about the session:
+  // answer "not signed in right now" and touch no cookie, so one IdP blip cannot sign anyone out.
+  if (outcome.kind === "transient") return unauthenticated()
+
+  if (outcome.kind === "refused") {
+    // The IdP said no to this token. The cookies stay put unless this probe is the browser's
+    // retry: a first refusal may be a late probe carrying a cookie an earlier probe has already
+    // replaced, and clearing here would overwrite the cookies that probe just issued (#843).
+    // Nothing is cached or re-issued server-side either way, so a probe that raced a sign-out can
+    // never bring the session back.
+    return _req.nextUrl.searchParams.get(RETRY_PARAM) === "1"
+      ? unauthenticatedAndCleared()
+      : unauthenticated({ refreshRefused: true })
+  }
+
+  const renewed = outcome.tokens
 
   const newClaims = decodeJwtPayload(renewed.idToken)
   if (!newClaims) return unauthenticatedAndCleared()

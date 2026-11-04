@@ -38,6 +38,10 @@
   "maxDeltaTimeSeconds" : 43200,
   "failureFactor" : 30,
   "passwordPolicy" : "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername",
+  "actionTokenGeneratedByUserLifespan" : 3600,
+  "attributes" : {
+    "actionTokenGeneratedByUserLifespan.verify-email" : "86400"
+  },
   "roles" : {
     "realm" : [ {
       "name" : "default-roles-jtoye-customers",

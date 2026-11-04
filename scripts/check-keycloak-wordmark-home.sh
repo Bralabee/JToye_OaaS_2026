@@ -6,7 +6,8 @@
 #
 #   A tester who registered on the storefront landed on Keycloak's "Email verification"
 #   page and had no way back to the site: the header wordmark was a <span>, not a link.
-#   The `jtoye` login theme is deliberately CSS-only (no FTL overrides; see
+#   The `jtoye` login theme carries no FTL override for the header (three FTL overrides exist for
+#   accessibility, #848, none of them touches it; see
 #   infra/keycloak/themes/jtoye/login/theme.properties), so the header text comes from
 #   each realm's displayNameHtml. The fix makes that value an anchor to the
 #   environment's public app origin:

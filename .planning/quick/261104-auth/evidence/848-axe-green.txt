@@ -1,0 +1,22 @@
+PASS [sign-in] html has a lang — en
+PASS [sign-in] exactly one main landmark — found 1
+PASS [sign-in] no positive tabindex
+PASS [sign-in] title names the page — Sign in to your account - J'Toye
+PASS [sign-in] axe: zero violations
+PASS [register] html has a lang — en
+PASS [register] exactly one main landmark — found 1
+PASS [register] no positive tabindex
+PASS [register] title says "Register" — Register - J'Toye
+PASS [register] password rules are on the page up front, visible, and tied to the field — At least 12 characters, with an uppercase letter, a lowercase letter, a number and a special character. It cannot be the
+PASS [register] privacy notice link present — http://localhost:3000/legal/privacy
+PASS [register] axe: zero violations
+PASS [register-after-empty-submit] html has a lang — en
+PASS [register-after-empty-submit] exactly one main landmark — found 1
+PASS [register-after-empty-submit] no positive tabindex
+PASS [register-after-empty-submit] axe: zero violations
+PASS [forgot-password] html has a lang — en
+PASS [forgot-password] exactly one main landmark — found 1
+PASS [forgot-password] no positive tabindex
+PASS [forgot-password] axe: zero violations
+
+ALL PASS

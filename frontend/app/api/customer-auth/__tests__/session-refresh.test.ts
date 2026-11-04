@@ -37,9 +37,9 @@ function futureJwt(sub = "user-1") {
 }
 
 /** A request carrying an EXPIRED access state plus a live refresh cookie. */
-function expiredWithRefresh(refreshValue: string): NextRequest {
+function expiredWithRefresh(refreshValue: string, retry = false): NextRequest {
   const expiredId = fakeJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) - 60 })
-  return new NextRequest("http://localhost/api/customer-auth/session", {
+  return new NextRequest(`http://localhost/api/customer-auth/session${retry ? "?retry=1" : ""}`, {
     headers: {
       cookie: [
         `jtoye-customer-id=${expiredId}`,
@@ -176,12 +176,12 @@ describe("/api/customer-auth/session — renewal (#465)", () => {
     expect(calls).toBe(1)
   })
 
-  it("clears all three cookies when the IdP refuses the refresh token", async () => {
+  it("clears all three cookies when the IdP refuses the refresh token AGAIN on the browser's retry (#843)", async () => {
     global.fetch = jest.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })
     ) as unknown as typeof fetch
 
-    const res = await sessionGET(expiredWithRefresh("dead-token"))
+    const res = await sessionGET(expiredWithRefresh("dead-token", true))
     const body = await res.json()
 
     expect(res.status).toBe(200) // still never a 401 — backlog #13

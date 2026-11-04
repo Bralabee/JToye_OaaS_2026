@@ -263,6 +263,12 @@ spec:
             path: resources/fonts/work-sans-latin.woff2
           - key: messages_en.properties
             path: messages/messages_en.properties
+          - key: template.ftl
+            path: template.ftl
+          - key: login.ftl
+            path: login.ftl
+          - key: register.ftl
+            path: register.ftl
 ---
 apiVersion: v1
 kind: Service
