@@ -14,6 +14,7 @@ import {
 import {
   DELIVERY_RADIUS_UNRECOGNISED_TYPE,
   DELIVERY_OUT_OF_RANGE_TYPE,
+  deliveryRadiusFieldCopy,
   deliveryRadiusHintCopy,
   readDeliveryRadiusProblem,
 } from "../delivery-radius"
@@ -77,6 +78,16 @@ describe("delivery radius problems (#460)", () => {
         response: { status: 422, data: { type: DELIVERY_RADIUS_UNRECOGNISED_TYPE, deliveryRadiusKm: 10 } },
       }),
     ).toEqual({ kind: "POSTCODE_NOT_RECOGNISED", deliveryRadiusKm: 10, distanceKm: null })
+  })
+
+  it("tells a customer whose postcode cannot be placed to contact the shop, and still refuses it (2026-11-04 ruling)", () => {
+    const p = { kind: "POSTCODE_NOT_RECOGNISED" as const, deliveryRadiusKm: 10, distanceKm: null }
+    const withCollection = deliveryRadiusFieldCopy(p, true)
+    expect(withCollection).toBe(
+      "We couldn't place that postcode to check it is within 10 km. Check it, or choose collection. If it is correct, contact the shop to arrange delivery.",
+    )
+    expect(deliveryRadiusFieldCopy(p, false)).toContain("contact the shop")
+    expect(deliveryRadiusFieldCopy({ kind: "OUT_OF_RANGE", deliveryRadiusKm: 10, distanceKm: 12.3 }, true)).not.toContain("contact the shop")
   })
 
   it("is null for any other problem", () => {

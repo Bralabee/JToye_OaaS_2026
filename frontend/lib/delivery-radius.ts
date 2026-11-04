@@ -45,7 +45,7 @@ export function deliveryRadiusHintCopy(radiusKm: number | null | undefined): str
 export function deliveryRadiusFieldCopy(p: DeliveryRadiusProblem, collectionOffered: boolean): string {
   const choose = collectionOffered ? "Choose collection, or a delivery address closer to the kitchen." : "Try a delivery address closer to the kitchen."
   if (p.kind === "POSTCODE_NOT_RECOGNISED") {
-    return `We couldn't place that postcode to check it is within ${km(p.deliveryRadiusKm)} km. Check it, or ${collectionOffered ? "choose collection" : "try another address"}.`
+    return `We couldn't place that postcode to check it is within ${km(p.deliveryRadiusKm)} km. Check it, or ${collectionOffered ? "choose collection" : "try another address"}. If it is correct, contact the shop to arrange delivery.`
   }
   const away = p.distanceKm != null ? ` and that address is about ${km(p.distanceKm)} km away` : ""
   return `This kitchen delivers within ${km(p.deliveryRadiusKm)} km${away}. ${choose}`

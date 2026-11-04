@@ -182,8 +182,10 @@ class DeliveryRadiusIntegrationTest {
         setRadius(f, 10);
 
         String email = "unknown-" + UUID.randomUUID() + "@example.com";
-        assertProblem(perform(post(storefrontUrl(f)), storefrontBody(email, "DELIVERY", "ZZ99 9ZZ", f)), 422,
-                UNRECOGNISED, "DELIVERY_POSTCODE_UNRECOGNISED");
+        JsonNode unrecognised = assertProblem(perform(post(storefrontUrl(f)),
+                storefrontBody(email, "DELIVERY", "ZZ99 9ZZ", f)), 422, UNRECOGNISED, "DELIVERY_POSTCODE_UNRECOGNISED");
+        assertThat(unrecognised.path("detail").asString()).as("owner ruling 2026-11-04: tell them to contact the shop")
+                .contains("contact the shop");
         assertProblem(performVendor(vendorBody(f, email, "DELIVERY", "ZZ99 9ZZ")), 422, UNRECOGNISED,
                 "DELIVERY_POSTCODE_UNRECOGNISED");
         assertThat(countOrders(email)).isZero();

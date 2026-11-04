@@ -44,7 +44,7 @@ public class DeliveryRadiusException extends RuntimeException {
     public static DeliveryRadiusException postcodeNotRecognised(double deliveryRadiusKm) {
         return new DeliveryRadiusException(Reason.POSTCODE_NOT_RECOGNISED,
                 "This shop delivers within " + trim(deliveryRadiusKm) + " km, and we couldn't place that postcode "
-                        + "to check the distance. Check the postcode, or choose collection.",
+                        + "to check the distance. Check the postcode, or choose collection. If it is correct, contact the shop to arrange delivery.",
                 deliveryRadiusKm, null);
     }
 
