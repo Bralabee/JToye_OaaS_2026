@@ -293,6 +293,13 @@ def jt: tojson;
   ((.displayNameHtml // "") as $h
     | if ($h | contains("<a href=\"https://\($host)\"") | not) then "displayNameHtml does not link home: \($h | jt), expected an <a href=\"https://\($host)\"> wordmark" else empty end),
 
+  # the user-initiated action-token lifespan (#847): a reset or verification link must outlive
+  # the Keycloak default of 300 s, or a person who reads the email late is told "Action expired" and
+  # abandons. Read back live too, so a realm imported before the fix is named until the owner
+  # applies docs/runbooks/keycloak-action-token-lifespan.md.
+  ((.actionTokenGeneratedByUserLifespan // 300) as $l
+    | if $l < 1800 then "actionTokenGeneratedByUserLifespan is \($l) s, expected >= 1800 (reset and verification links expired after 5 minutes, #847)" else empty end),
+
   # every remaining dollar-brace token must be a Keycloak built-in
   ([$r | .. | strings | scan("\\$\\{[^}]*\\}")] | map(select(test("^\\$\\{[a-z]") | not)) | unique[] as $t
     | if ($names | any(. == $t[2:-1])) then "substitution-list placeholder survived: \($t)" else "non-builtin dollar-brace token: \($t)" end),
@@ -346,6 +353,8 @@ def jt: tojson;
              (if $k.baseUrl != "https://\($host)/shop/signin" then "storefront-client baseUrl is \($k.baseUrl | jt), expected \"https://\($host)/shop/signin\" (the way back from the info page, SW-JRD-04)" else empty end)
          end),
      (if .verifyEmail != true then "verifyEmail is \(.verifyEmail | jt), expected true (#859)" else empty end),
+     (((.attributes // {})["actionTokenGeneratedByUserLifespan.verify-email"] // "0" | tonumber) as $v
+       | if $v < 43200 then "verify-email link lifespan is \($v) s, expected >= 43200 (#847)" else empty end),
      ([.identityProviders[]? | select(.alias == "google")] as $g
        | if ($g | length) == 0 then empty
          else $g[0] as $i
@@ -726,6 +735,24 @@ selftest() {
   else why="no transformed vendor render to plant into"; fi
   if [ -z "$why" ]; then _st_result "PASS survived-placeholder rc=1"
   else _st_result "FAIL survived-placeholder $why"; fails=$((fails + 1)); fi
+
+  # --- short-lifespan: the 5-minute default is REFUSED on both counts (#847) -
+  why=""
+  if [ -f "$tmp/customer.json" ]; then
+    jq '.actionTokenGeneratedByUserLifespan = 300 | .attributes["actionTokenGeneratedByUserLifespan.verify-email"] = "600"' "$tmp/customer.json" > "$tmp/customer-short.json"
+    _st_child --assert "$tmp/customer-short.json" --kind customer
+    if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'actionTokenGeneratedByUserLifespan is 300 s' <<<"$ST_OUT"; then why="the 300 s lifespan was not named"
+    elif ! command grep -qF 'verify-email link lifespan is 600 s' <<<"$ST_OUT"; then why="the short verify-email lifespan was not named"
+    fi
+    # and the transform itself must carry the template's values through, not only the assertion refuse short ones
+    if [ -z "$why" ]; then
+      want=$(jq -r '[.actionTokenGeneratedByUserLifespan, .attributes["actionTokenGeneratedByUserLifespan.verify-email"]] | @tsv' "$tmp/customer.json")
+      [ "$want" = "$(printf '3600\t86400')" ] || why="rendered customer realm carries lifespans [$want], expected 3600/86400"
+    fi
+  else why="no transformed customer render to plant into"; fi
+  if [ -z "$why" ]; then _st_result "PASS short-lifespan rc=1"
+  else _st_result "FAIL short-lifespan $why"; fails=$((fails + 1)); fi
 
   # --- builtin-count: the template's built-ins all survive, by multiset -----
   why=""
