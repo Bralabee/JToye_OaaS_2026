@@ -345,6 +345,29 @@ class UnacceptedOrderSweepIntegrationTest {
         assertThat(stampOf(TENANT_A, paidEarlier)).as("PENDING for 20 minutes").isNotNull();
     }
 
+    @Test
+    @DisplayName("hotfix: an order PENDING for 3 days is neither stamped nor emailed (max age); one PENDING for 15 minutes is")
+    void anOrderOlderThanTheMaxAgeIsNeverAlerted() {
+        // 3 days = 4320 minutes, far past the 120-minute default max age: the first sweep after deploy must not
+        // email the customer of every old PENDING order in the table.
+        UUID threeDays = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 3 * 24 * 60, false);
+        UUID justPastMaxAge = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 125, false);
+        UUID insideMaxAge = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 115, false);
+        UUID fifteenMinutes = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 15, false);
+
+        int alerted = sweep.sweep();
+
+        assertThat(stampOf(TENANT_A, fifteenMinutes)).as("15 minutes: inside [threshold, max age], alerted").isNotNull();
+        assertThat(stampOf(TENANT_A, insideMaxAge)).as("115 minutes: inside the 120-minute max age").isNotNull();
+        assertThat(stampOf(TENANT_A, threeDays)).as("3 days: never stamped").isNull();
+        assertThat(stampOf(TENANT_A, justPastMaxAge)).as("125 minutes: past the max age, never alerted").isNull();
+        assertThat(alerted).as("only the two orders inside the window").isEqualTo(2);
+        verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, threeDays)), any());
+        verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, justPastMaxAge)), any());
+        verify(emailService, times(2)).sendOrderAwaitingAcceptance(any(), any(), any());
+        assertThat(statusOf(TENANT_A, threeDays)).as("and still PENDING: no auto-cancel").isEqualTo("PENDING");
+    }
+
     /** An Envers revision of the order carrying {@code status}, made {@code minutesAgo} minutes ago. */
     private void seedStatusRevision(UUID tenant, UUID orderId, String status, int minutesAgo) {
         inTenant(tenant, () -> {
