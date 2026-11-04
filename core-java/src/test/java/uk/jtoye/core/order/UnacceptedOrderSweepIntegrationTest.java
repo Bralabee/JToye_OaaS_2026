@@ -98,6 +98,7 @@ class UnacceptedOrderSweepIntegrationTest {
         }
         assertThat(jdbcTemplate.queryForObject("SELECT rolsuper FROM pg_roles WHERE rolname = ?", Boolean.class, APP_ROLE))
                 .as("PRECONDITION: FORCE RLS applies to the role under test").isFalse();
+        jdbcTemplate.update("UPDATE tenants SET status = 'ACTIVE' WHERE id IN (?, ?)", TENANT_A, TENANT_B);
         shopA = seedShopIdempotent(TENANT_A, "shop-821-a");
         shopB = seedShopIdempotent(TENANT_B, "shop-821-b");
         // Earlier arms leave stamped / old PENDING rows behind in the same container; every arm starts clean.
@@ -294,6 +295,68 @@ class UnacceptedOrderSweepIntegrationTest {
                 .as("the audit mirror column is never written (neither a stamp nor a falsely-cleared one)").isZero();
     }
 
+    @Test
+    @DisplayName("review 1 (PR 1122): a SUSPENDED or OFFBOARDED tenant's overdue order is neither stamped nor emailed; an ACTIVE tenant's is")
+    void aSuspendedOrOffboardedTenantIsNotSwept() {
+        UUID overdueA = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 30, false);
+        UUID overdueB = seedOrder(TENANT_B, shopB, "PENDING", "NONE", null, 30, false);
+        for (String lifecycle : List.of("SUSPENDED", "OFFBOARDED")) {
+            jdbcTemplate.update("UPDATE tenants SET status = ? WHERE id = ?", lifecycle, TENANT_B);
+
+            sweep.sweep();
+
+            assertThat(stampOf(TENANT_B, overdueB)).as(lifecycle + " tenant: no stamp").isNull();
+            assertThat(stampOf(TENANT_A, overdueA)).as("ACTIVE control in the same run").isNotNull();
+            verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_B, overdueB)), any());
+            jdbcTemplate.update("UPDATE orders SET unaccepted_notified_at = NULL WHERE id = ? AND tenant_id = ?",
+                    overdueA, TENANT_A);
+        }
+    }
+
+    @Test
+    @DisplayName("review 1 (PR 1122): the clock runs from placement, not the last touch - an allergy-note acknowledgement at minute 9 does not push the alert back")
+    void aLaterTouchDoesNotRestartTheOverdueClock() {
+        // Placed 12 minutes ago (threshold 10), last touched (allergy-note ack) 3 minutes ago.
+        UUID touched = seedOrderTouched(TENANT_A, shopA, "PENDING", "NONE", null, 12, 3, false, true, "STOREFRONT");
+        // Control: placed 5 minutes ago and touched 1 minute ago is genuinely young.
+        UUID young = seedOrderTouched(TENANT_A, shopA, "PENDING", "NONE", null, 5, 1, false, true, "STOREFRONT");
+
+        sweep.sweep();
+
+        assertThat(stampOf(TENANT_A, touched)).as("placed 12 min ago: overdue regardless of the touch").isNotNull();
+        assertThat(stampOf(TENANT_A, young)).as("placed 5 min ago: still inside the threshold").isNull();
+    }
+
+    @Test
+    @DisplayName("review 1 (PR 1122): a card order measures from the moment it became PENDING (its audit revision), not from the draft it was created as")
+    void aPaidCardOrderIsMeasuredFromItsPendingEntry() {
+        // Created as a DRAFT 600 minutes ago; paid and moved to PENDING 3 minutes ago: not overdue.
+        UUID justPaid = seedOrderTouched(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_paid_1", 600, 3, false, true, "STOREFRONT");
+        seedStatusRevision(TENANT_A, justPaid, "DRAFT", 600);
+        seedStatusRevision(TENANT_A, justPaid, "PENDING", 3);
+        // Control: became PENDING 20 minutes ago: overdue.
+        UUID paidEarlier = seedOrderTouched(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_paid_2", 600, 1, false, true, "STOREFRONT");
+        seedStatusRevision(TENANT_A, paidEarlier, "DRAFT", 600);
+        seedStatusRevision(TENANT_A, paidEarlier, "PENDING", 20);
+
+        sweep.sweep();
+
+        assertThat(stampOf(TENANT_A, justPaid)).as("PENDING for 3 minutes").isNull();
+        assertThat(stampOf(TENANT_A, paidEarlier)).as("PENDING for 20 minutes").isNotNull();
+    }
+
+    /** An Envers revision of the order carrying {@code status}, made {@code minutesAgo} minutes ago. */
+    private void seedStatusRevision(UUID tenant, UUID orderId, String status, int minutesAgo) {
+        inTenant(tenant, () -> {
+            Integer rev = jdbcTemplate.queryForObject("SELECT nextval('revinfo_seq')::int", Integer.class);
+            jdbcTemplate.update("INSERT INTO revinfo (rev, revtstmp) VALUES (?, ?)", rev,
+                    System.currentTimeMillis() - minutesAgo * 60_000L);
+            jdbcTemplate.update("INSERT INTO orders_aud (id, rev, revtype, tenant_id, status) VALUES (?, ?, 0, ?, ?)",
+                    orderId, rev, tenant, status);
+            return null;
+        });
+    }
+
     private String emailOf(UUID tenant, UUID orderId) {
         return inTenant(tenant, () -> jdbcTemplate.queryForObject(
                 "SELECT customer_email FROM orders WHERE tenant_id = ? AND id = ?", String.class, tenant, orderId));
@@ -316,6 +379,14 @@ class UnacceptedOrderSweepIntegrationTest {
      */
     private UUID seedOrder(UUID tenant, UUID shop, String status, String paymentStatus, String paymentReference,
                            int minutesAgo, boolean voided, boolean withEmail, String placedVia) {
+        return seedOrderTouched(tenant, shop, status, paymentStatus, paymentReference, minutesAgo, minutesAgo,
+                voided, withEmail, placedVia);
+    }
+
+    /** As {@link #seedOrder}, but {@code updated_at} (the last touch) differs from {@code created_at}. */
+    private UUID seedOrderTouched(UUID tenant, UUID shop, String status, String paymentStatus, String paymentReference,
+                                  int createdMinutesAgo, int touchedMinutesAgo, boolean voided, boolean withEmail,
+                                  String placedVia) {
         return inTenant(tenant, () -> {
             UUID id = UUID.randomUUID();
             jdbcTemplate.update(
@@ -329,7 +400,7 @@ class UnacceptedOrderSweepIntegrationTest {
                             + (voided ? "now(), 'tester', 'test')" : "NULL, NULL, NULL)"),
                     id, tenant, shop, "ORD-821-" + id.toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT),
                     status, withEmail ? "sweep-" + id + "@example.com" : null, paymentStatus, paymentReference,
-                    minutesAgo, minutesAgo, placedVia);
+                    createdMinutesAgo, touchedMinutesAgo, placedVia);
             return id;
         });
     }

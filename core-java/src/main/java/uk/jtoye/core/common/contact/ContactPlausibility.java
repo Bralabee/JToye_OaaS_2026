@@ -27,7 +27,16 @@ public final class ContactPlausibility {
     private static final Pattern EMAIL = Pattern.compile(
             "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
                     + "(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.[A-Za-z]{2,}$");
-    private static final Pattern PHONE_CHARS = Pattern.compile("^\\+?[0-9\\s().-]+$");
+    /**
+     * JavaScript's {@code \s} / {@code String.prototype.trim} set (WhiteSpace plus LineTerminator), spelled out so
+     * core accepts exactly what the checkout's {@code /\s/} accepts. Java's own {@code \s} is ASCII only, and
+     * {@code (?U)} / {@code Character.isWhitespace} would differ in the other direction (they include U+0085 and
+     * exclude U+00A0, U+2007 and U+202F), so neither is used. See {@code ContactPlausibilityWhitespaceParityTest}.
+     */
+    private static final String JS_WHITESPACE =
+            "\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF";
+    private static final Pattern PHONE_CHARS = Pattern.compile("^\\+?[0-9" + JS_WHITESPACE + "().-]+$");
+    private static final Pattern JS_TRIM = Pattern.compile("^[" + JS_WHITESPACE + "]+|[" + JS_WHITESPACE + "]+$");
 
     private ContactPlausibility() {
     }
@@ -63,7 +72,7 @@ public final class ContactPlausibility {
         if (phone == null) {
             return null;
         }
-        String trimmed = phone.trim();
+        String trimmed = JS_TRIM.matcher(phone).replaceAll("");
         if (trimmed.isEmpty() || !PHONE_CHARS.matcher(trimmed).matches()) {
             return null;
         }

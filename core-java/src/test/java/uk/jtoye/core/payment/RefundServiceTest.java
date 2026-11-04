@@ -211,6 +211,31 @@ class RefundServiceTest {
         verify(orderRepository, never()).findById(any());
     }
 
+    // Review round 1 (#1122): the "cancel-" key prefix is what marks a CUSTOMER-cancel Refund row, so a
+    // staff refund must never be able to carry it. Otherwise hasCancelRefund / cancelRefundedPennies /
+    // allLegsRefunded would count a vendor's row as the customer's cancellation.
+    @Test
+    @DisplayName("a staff refund whose Idempotency-Key starts with the cancel prefix is refused, no row, no Stripe call")
+    void createRefund_clientKeyWithCancelPrefix_isRefusedBeforeAnyRowOrStripeCall() throws StripeException {
+        assertThatThrownBy(() -> refundService.createRefund(
+                orderId, req(500L, RefundReason.REQUESTED_BY_CUSTOMER, null), "cancel-abc"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cancel-");
+
+        verify(refundRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(stripeRefundClient);
+    }
+
+    @Test
+    @DisplayName("the cancel-prefix refusal is also checked before the replay lookup, so a vendor cannot replay a customer's cancel row")
+    void createRefund_clientKeyWithCancelPrefix_doesNotReplayACustomerCancelRow() throws StripeException {
+        assertThatThrownBy(() -> refundService.createRefund(
+                orderId, req(500L, RefundReason.REQUESTED_BY_CUSTOMER, null), "cancel-0123456789abcdef"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(refundRepository, never()).findByTenantIdAndIdempotencyKey(any(), any());
+    }
+
     // ------------------------------------------------------------------
     // Idempotency: order already REFUNDED
     // ------------------------------------------------------------------

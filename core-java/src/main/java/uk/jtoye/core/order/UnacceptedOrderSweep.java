@@ -58,13 +58,18 @@ import java.util.UUID;
  *   <li>an order already alerted.</li>
  * </ul>
  *
- * <p>"Left PENDING" is measured from {@code updated_at}. The V5 trigger {@code update_orders_updated_at}
- * stamps it on every UPDATE of the row, so for a PENDING order it is the moment it became PENDING
- * (placement for cash, payment for card) or the last time anyone touched it while it waited. That can only
- * DELAY an alert (a touch restarts the clock), never raise one early, and a touch (an allergy-note
- * acknowledgement, say) is itself evidence somebody at the shop has seen the order. Measuring from
- * {@code created_at} instead would alert a card order the moment it was paid if the customer dawdled at the
- * checkout.
+ * <p>"Left PENDING" is measured from the moment the order BECAME PENDING, never from its last touch
+ * (review of PR 1122, finding 4): {@link #PENDING_SINCE_SQL} is the earliest Envers revision of the order
+ * whose status is PENDING (placement for a cash order; the payment that moved a card order out of DRAFT),
+ * and falls back to {@code created_at} for an order with no such revision. {@code updated_at} is NOT the
+ * clock: the V5 trigger resets it on every UPDATE, so an allergy-note acknowledgement, a payment-link touch or
+ * a vendor edit would restart it, and a shop that read the note but never accepted would avoid the alert.
+ * Plain {@code created_at} is wrong for a card order, which is a DRAFT until paid and would be alerted the
+ * moment it was captured if the customer dawdled at the checkout.
+ *
+ * <p>Only ACTIVE tenants are swept: a SUSPENDED or OFFBOARDED tenant's traffic is rejected by
+ * {@code TenantStatusInterceptor}, and telling its customers "the shop has not accepted your order" after the
+ * business has been suspended or offboarded would be wrong.
  */
 @Component
 public class UnacceptedOrderSweep {
@@ -98,10 +103,20 @@ public class UnacceptedOrderSweep {
                     + "AND COALESCE(payment_status, 'NONE') NOT IN ('PENDING', 'FAILED') "
                     + "AND (payment_reference IS NULL OR COALESCE(payment_status, 'NONE') IN ('CAPTURED', 'AUTHORIZED'))";
 
+    /**
+     * When the order became PENDING: its earliest PENDING audit revision, else {@code created_at}. Correlated on
+     * the outer {@code orders} row (alias {@code o}); {@code orders_aud} is keyed (id, rev) and read under the
+     * pinned tenant like {@code orders}.
+     */
+    static final String PENDING_SINCE_SQL =
+            "COALESCE((SELECT to_timestamp(min(r.revtstmp) / 1000.0) FROM orders_aud a "
+                    + "JOIN revinfo r ON r.rev = a.rev WHERE a.id = o.id AND a.status = 'PENDING'), o.created_at)";
+
     private static final String CANDIDATES_SQL =
-            "SELECT id FROM orders WHERE tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + " "
-                    + "AND updated_at < now() - make_interval(secs => :secs) "
-                    + "ORDER BY updated_at LIMIT " + BATCH;
+            "SELECT id FROM (SELECT o.id, " + PENDING_SINCE_SQL + " AS pending_since FROM orders o "
+                    + "WHERE o.tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + ") t "
+                    + "WHERE pending_since < now() - make_interval(secs => :secs) "
+                    + "ORDER BY pending_since LIMIT " + BATCH;
 
     /**
      * The claim: a narrow UPDATE that touches ONLY the stamp. It deliberately does NOT bump {@code version}: the
@@ -248,7 +263,7 @@ public class UnacceptedOrderSweep {
     @SuppressWarnings("unchecked")
     private List<UUID> listTenantIds() {
         List<Object> raw = transactionTemplate.execute(status ->
-                entityManager.createNativeQuery("SELECT id FROM tenants").getResultList());
+                entityManager.createNativeQuery("SELECT id FROM tenants WHERE status = 'ACTIVE'").getResultList());
         List<UUID> ids = new ArrayList<>();
         if (raw != null) {
             for (Object o : raw) {

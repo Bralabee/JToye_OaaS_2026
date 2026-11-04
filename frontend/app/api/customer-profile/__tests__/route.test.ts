@@ -133,6 +133,69 @@ describe("PUT /api/customer-profile", () => {
     expect(res.status).toBe(502)
   })
 
+  // Review round 1 (#1122): when the FIRST renewal succeeded the old refresh token is already revoked
+  // (revokeRefreshToken=true, refreshTokenMaxReuse=0), so the renewed tokens must reach the browser on
+  // EVERY outcome, or the next session probe signs the customer out.
+  describe("a first renewal that succeeded is written to the cookies on every outcome", () => {
+    const cookiesWith = { "jtoye-customer-refresh": "ref" } // access expired -> renewed first
+
+    function setCookie(res: Response): string {
+      return res.headers.get("set-cookie") ?? ""
+    }
+
+    it("core answers 400: the renewed tokens are still set", async () => {
+      global.fetch = jest.fn().mockResolvedValue({ status: 400, json: async () => ({ title: "bad name" }) }) as unknown as typeof fetch
+      mockRefresh.mockResolvedValueOnce({ kind: "renewed", tokens: renewed })
+      const res = await PUT(req({ displayName: "" }, cookiesWith))
+      expect(res.status).toBe(400)
+      expect(setCookie(res)).toContain("jtoye-customer-refresh=new-refresh")
+      expect(setCookie(res)).toContain("jtoye-customer-access=new-access")
+      expect(mockRefresh).toHaveBeenCalledTimes(1)
+    })
+
+    it("core answers 503 (admin seam off): the renewed tokens are still set", async () => {
+      global.fetch = jest.fn().mockResolvedValue({ status: 503, json: async () => ({}) }) as unknown as typeof fetch
+      mockRefresh.mockResolvedValueOnce({ kind: "renewed", tokens: renewed })
+      const res = await PUT(req({ displayName: "Ada" }, cookiesWith))
+      expect(res.status).toBe(503)
+      expect(setCookie(res)).toContain("jtoye-customer-refresh=new-refresh")
+    })
+
+    it("core is unreachable (502): the renewed tokens are still set", async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error("down")) as unknown as typeof fetch
+      mockRefresh.mockResolvedValueOnce({ kind: "renewed", tokens: renewed })
+      const res = await PUT(req({ displayName: "Ada" }, cookiesWith))
+      expect(res.status).toBe(502)
+      expect(setCookie(res)).toContain("jtoye-customer-refresh=new-refresh")
+    })
+
+    it("core 2xx but the second renewal is refused: the first renewal's tokens are set", async () => {
+      global.fetch = jest.fn().mockResolvedValue({ status: 200, json: async () => ({ displayName: "Ada" }) }) as unknown as typeof fetch
+      mockRefresh.mockResolvedValueOnce({ kind: "renewed", tokens: renewed }).mockResolvedValueOnce({ kind: "refused" })
+      const res = await PUT(req({ displayName: "Ada" }, cookiesWith))
+      expect(res.status).toBe(200)
+      expect(setCookie(res)).toContain("jtoye-customer-refresh=new-refresh")
+      expect(setCookie(res)).toContain("jtoye-customer-access=new-access")
+    })
+
+    it("core 2xx but the second renewal is transient: the first renewal's tokens are set", async () => {
+      global.fetch = jest.fn().mockResolvedValue({ status: 200, json: async () => ({ displayName: "Ada" }) }) as unknown as typeof fetch
+      mockRefresh.mockResolvedValueOnce({ kind: "renewed", tokens: renewed }).mockResolvedValueOnce({ kind: "transient" })
+      const res = await PUT(req({ displayName: "Ada" }, cookiesWith))
+      expect(setCookie(res)).toContain("jtoye-customer-refresh=new-refresh")
+    })
+
+    it("core 2xx and the second renewal succeeds: the SECOND tokens replace the first", async () => {
+      global.fetch = jest.fn().mockResolvedValue({ status: 200, json: async () => ({ displayName: "Ada" }) }) as unknown as typeof fetch
+      const second = { accessToken: "second-access", refreshToken: "second-refresh", idToken: "d.e.f", expiresAt: 9999999999 }
+      mockRefresh.mockResolvedValueOnce({ kind: "renewed", tokens: renewed }).mockResolvedValueOnce({ kind: "renewed", tokens: second })
+      const res = await PUT(req({ displayName: "Ada" }, cookiesWith))
+      expect(setCookie(res)).toContain("jtoye-customer-refresh=second-refresh")
+      expect(setCookie(res)).not.toContain("new-refresh")
+      expect(mockRefresh).toHaveBeenNthCalledWith(2, "new-refresh")
+    })
+  })
+
   it("a body that is not a name is a 400 and core is not called", async () => {
     const fetchSpy = jest.fn()
     global.fetch = fetchSpy as unknown as typeof fetch

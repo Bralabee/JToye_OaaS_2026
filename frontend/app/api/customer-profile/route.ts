@@ -61,6 +61,13 @@ export async function PUT(req: NextRequest) {
   }
   if (!access) return NextResponse.json({ error: "not_authenticated" }, { status: 401 })
 
+  // Whatever happens next, a first renewal that succeeded has already consumed the old refresh token
+  // (the realm revokes it on use), so its tokens MUST reach the browser on every outcome below.
+  const finish = (res: NextResponse, tokens: RefreshedTokens | null) => {
+    if (tokens) sessionCookies(res, tokens)
+    return res
+  }
+
   try {
     const upstream = await fetch(`${coreBaseUrl()}/public/customer/profile`, {
       method: "PUT",
@@ -76,13 +83,13 @@ export async function PUT(req: NextRequest) {
     const res = NextResponse.json(data, { status: upstream.status, headers: { "Cache-Control": "no-store" } })
     if (upstream.status >= 200 && upstream.status < 300) {
       // Bring the new name into the ID token. Best effort: the change is already made, so a failed
-      // renewal here only means the old name shows until the next ordinary renewal.
+      // renewal here only means the old name shows until the next ordinary renewal (or, when the first
+      // renewal ran, that its tokens are kept).
       const again = refresh ? await refreshCustomerTokens(refresh) : null
-      const fresh = again ? (again.kind === "renewed" ? again.tokens : null) : renewedFirst
-      if (fresh) sessionCookies(res, fresh)
+      return finish(res, again?.kind === "renewed" ? again.tokens : renewedFirst)
     }
-    return res
+    return finish(res, renewedFirst)
   } catch {
-    return NextResponse.json({ error: "upstream_unavailable" }, { status: 502 })
+    return finish(NextResponse.json({ error: "upstream_unavailable" }, { status: 502 }), renewedFirst)
   }
 }

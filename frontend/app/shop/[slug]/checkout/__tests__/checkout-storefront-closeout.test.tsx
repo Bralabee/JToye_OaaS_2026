@@ -15,6 +15,7 @@ import CheckoutPage from "@/app/shop/[slug]/checkout/page"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
+import { CONTACT_COPY } from "@/lib/contact-plausibility"
 
 if (!globalThis.crypto || typeof globalThis.crypto.randomUUID !== "function") {
   Object.defineProperty(globalThis, "crypto", {
@@ -320,9 +321,26 @@ describe("#876 UXT-105: an empty submit is ONE pass with a summary", () => {
     placeOrder()
     const summary = await screen.findByRole("alert", { name: /please fix/i })
     expect(within(summary).getAllByRole("link")).toHaveLength(1)
-    expect(within(summary).getByRole("link")).toHaveTextContent("Enter a valid email address, like ade@example.com.")
+    expect(within(summary).getByRole("link")).toHaveTextContent(CONTACT_COPY.email)
     expect(mockedPost).not.toHaveBeenCalled()
   })
+
+  it.each(["ade@", "name@example", "a@b.c"])(
+    "review 1 (PR 1122): %p gets the ONE email message (the plausibility copy), whichever check would have caught it",
+    async (bad) => {
+      seedCart()
+      renderCheckout()
+      await screen.findByTestId("order-allergen-panel")
+      fillDetails()
+      fillAddress()
+      fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: bad } })
+      placeOrder()
+      const summary = await screen.findByRole("alert", { name: /please fix/i })
+      expect(within(summary).getByRole("link")).toHaveTextContent(CONTACT_COPY.email)
+      expect(within(summary).getByRole("link")).not.toHaveTextContent("ade@example.com")
+      expect(mockedPost).not.toHaveBeenCalled()
+    },
+  )
 
   it("CONTROL: a complete form shows no summary and places the order", async () => {
     mockedPost.mockResolvedValue({ data: COD_CONFIRMATION })

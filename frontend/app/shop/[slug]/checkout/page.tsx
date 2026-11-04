@@ -426,8 +426,6 @@ const CHECKOUT_FIELD_ID: Record<CheckoutFieldKey, string> = {
   email: "email",
   phone: "phone",
 }
-/** Deliberately plain: it refuses the obviously wrong, and the server's address check stays the authority. */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
@@ -981,7 +979,6 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     if (!customerName.trim()) errs.name = "Enter your full name."
     else if (!isPlausibleName(customerName)) errs.name = CONTACT_COPY.name
     if (!customerEmail.trim()) errs.email = "Enter your email address."
-    else if (!EMAIL_SHAPE.test(customerEmail.trim())) errs.email = "Enter a valid email address, like ade@example.com."
     else if (!isPlausibleEmail(customerEmail)) errs.email = CONTACT_COPY.email
     if (!customerPhone.trim()) errs.phone = "Enter a phone number the shop can reach you on."
     else if (!isPlausiblePhone(customerPhone)) errs.phone = CONTACT_COPY.phone

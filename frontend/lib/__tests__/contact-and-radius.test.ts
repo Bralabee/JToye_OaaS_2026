@@ -31,6 +31,20 @@ describe("phone (mirrors core)", () => {
   ])("accepts %p", (p) => expect(isPlausiblePhone(p)).toBe(true))
 })
 
+// Review of PR 1122: core's ContactPlausibilityWhitespaceParityTest runs these same code points. JavaScript's
+// \s (and trim) cover the Unicode spaces a phone pasted from a contact card carries; core must agree.
+describe("phone whitespace (mirrors core's ContactPlausibilityWhitespaceParityTest)", () => {
+  const accepted = [0x00a0, 0x202f, 0x2009, 0x3000, 0xfeff, 0x1680, 0x2000, 0x200a, 0x205f, 0x2028, 0x2029, 0x0009, 0x000b, 0x000c]
+  it.each(accepted)("accepts U+%s as a separator and as padding", (cp) => {
+    const space = String.fromCodePoint(cp)
+    expect(isPlausiblePhone(`07700${space}900123`)).toBe(true)
+    expect(isPlausiblePhone(`${space}07700 900123${space}`)).toBe(true)
+  })
+  it.each([0x200b, 0x0085, 0x00ad, 0x2060])("refuses U+%s: not whitespace to \\s", (cp) => {
+    expect(isPlausiblePhone(`07700${String.fromCodePoint(cp)}900123`)).toBe(false)
+  })
+})
+
 describe("email (mirrors core)", () => {
   it.each(["name@example", "name@", "@example.com", "name example@x.com", "a@b", "a@b.c", "plain", "a@@b.com", "a@b..com"])(
     "refuses %p", (e) => expect(isPlausibleEmail(e)).toBe(false))

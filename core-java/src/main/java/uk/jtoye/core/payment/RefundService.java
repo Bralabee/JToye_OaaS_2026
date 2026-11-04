@@ -132,6 +132,14 @@ public class RefundService {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
+        // The cancel prefix is what marks a CUSTOMER-cancel row (isCancelRow), so a staff-supplied key may
+        // not carry it: refused before the replay lookup (which would otherwise hand a vendor a customer's
+        // cancel row) and before any row is stored.
+        if (clientIdempotencyKey != null && clientIdempotencyKey.startsWith(CANCEL_KEY_PREFIX)) {
+            throw new IllegalArgumentException(
+                    "Idempotency-Key must not start with \"" + CANCEL_KEY_PREFIX + "\" (reserved)");
+        }
+
         // Step 1 — Endpoint-level dedup (X-Idempotency-Key)
         if (clientIdempotencyKey != null && !clientIdempotencyKey.isBlank()) {
             Optional<Refund> existing = refundRepository
@@ -195,7 +203,10 @@ public class RefundService {
     // #868 customer self-cancel: reserve (inside the cancel's transaction) -> Stripe (no transaction) -> finish.
     // ------------------------------------------------------------------
 
-    /** Marks a Refund row as the one a customer's own cancellation made; its Stripe key shares the prefix. */
+    /**
+     * Marks a Refund row as the one a customer's own cancellation made; its Stripe key shares the prefix.
+     * Reserved: {@link #createRefund} refuses a client Idempotency-Key that starts with it.
+     */
     static final String CANCEL_KEY_PREFIX = "cancel-";
 
     /** What Stripe is asked, built inside a short read transaction so the Stripe call itself holds none. */
