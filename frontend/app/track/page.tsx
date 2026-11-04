@@ -485,8 +485,10 @@ function TrackOrderContent() {
       </form>
 
       {/* Error */}
+      {/* MAR-13 (#850): a role=alert, so a failed lookup is read out the moment it appears. A SUCCESSFUL
+          lookup stays silent on purpose (37-51: a lookup is not a change). */}
       {error && (
-        <div className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
+        <div role="alert" className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
           <p className="text-sm text-red-700">{error}</p>
         </div>
       )}

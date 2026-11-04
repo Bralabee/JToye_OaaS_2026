@@ -397,7 +397,19 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           >
             <Copy className="h-3 w-3" aria-hidden="true" />
           </button>
-          {copied && <span className="text-xs text-emerald-600">Copied!</span>}
+          {/* MAR-08 (#850): the press is announced through a polite region that is mounted empty and
+              then filled (one added together with its text is often not read). `sr-only` is absolutely
+              positioned, so it adds no flex gap. It is aria-live, not a second role=status: the page
+              keeps exactly one status region (order-live-region.test.tsx). The visible text is hidden
+              from the accessibility tree so it is not read twice. */}
+          <span aria-live="polite" className="sr-only">
+            {copied ? "Order number copied" : ""}
+          </span>
+          {copied && (
+            <span aria-hidden="true" className="text-xs text-emerald-700">
+              Copied!
+            </span>
+          )}
         </div>
         {order && (
           <div className="mt-2 flex items-center justify-center gap-3 text-xs text-slate-600">
@@ -655,7 +667,8 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
     <div className="mx-auto max-w-lg px-4 py-10">
       <div className="text-center mb-6">
         <Package className="mx-auto h-12 w-12 text-slate-300" />
-        <h2 className="mt-4 text-lg font-semibold text-slate-900">Track your order</h2>
+        {/* MAR-14 (#850): this state had no <h1>, so the page had no title for a screen reader. */}
+        <h1 className="mt-4 text-lg font-semibold text-slate-900">Track your order</h1>
         <p className="mt-2 text-sm text-slate-600">
           Enter the email you used when placing this order.
         </p>
@@ -663,9 +676,16 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
       <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
         <p className="text-xs font-mono text-slate-600 mb-3">{orderNumber}</p>
         <form onSubmit={(e) => { e.preventDefault(); if (emailInput.trim()) onSubmit(emailInput.trim()) }}>
+          {/* MAR-14 (#850): the field was named only by its placeholder, which disappears on typing and
+              is not a name. The label is visible, as the /track form's are. */}
+          <label htmlFor="order-email" className="mb-1.5 block text-xs font-medium text-slate-600">
+            Email used for this order
+          </label>
           <input
+            id="order-email"
             type="email"
             required
+            autoComplete="email"
             value={emailInput}
             onChange={(e) => setEmailInput(e.target.value)}
             placeholder="your@email.com"
