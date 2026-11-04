@@ -143,7 +143,6 @@ export default function CustomersPage() {
   useEffect(() => {
     const quiet = quietNextFetchRef.current
     quietNextFetchRef.current = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     fetchCustomers({ quiet })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, appliedQuery])
@@ -344,7 +343,7 @@ export default function CustomersPage() {
               <LoadErrorPanel
                 subject="customers"
                 message={loadErrorMessage}
-                onRetry={fetchCustomers}
+                onRetry={() => fetchCustomers()}
               />
             ) : customers.length === 0 && (appliedQuery || searchQuery.trim()) ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -514,7 +513,7 @@ export default function CustomersPage() {
                 : "Add a new customer to your system."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <Input

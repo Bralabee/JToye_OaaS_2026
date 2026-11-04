@@ -211,7 +211,6 @@ export default function FinancePage() {
     }
     const quiet = quietNextLoad.current
     quietNextLoad.current = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     fetchData({ quiet })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, contextShopId, gate, range.from, range.to])

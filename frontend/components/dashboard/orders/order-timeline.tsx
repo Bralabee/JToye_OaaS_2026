@@ -120,9 +120,9 @@ export function OrderTimeline({ orderId, orderNumber, refreshKey }: OrderTimelin
   }, [orderId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch-on-change effect; the load is async and its setState runs after the await, never synchronously in the effect body
     void load()
     // refreshKey is a re-read trigger, not a value the effect reads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, refreshKey])
 
   const download = () => {

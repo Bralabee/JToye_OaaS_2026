@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Kitchen, Orders and Finance: Persona Close-out (kitchen lane) — 2026-11-04
+
+Quick 261104-kitchen. Issues 818, 820, 822, 824, 866, 858, 827 and 857 from the persona run, each re-checked on main first.
+
+- **Double-tap on Start Preparing (issue 818):** the bump keeps one request in flight per order and the button is disabled while it is. The server needs no change: each step is its own legal transition, so a skipped step is already refused, and a double-tap is indistinguishable from a fast cook there.
+- **Orders-list Cancel (issue 820):** the row Cancel opens the reject dialog in a single-order cancel mode (required reason, kept on the order, never sent to the customer) instead of cancelling on one tap. It posts the single cancel, because bulk-cancel refuses an accepted order. Row actions are 44px on a coarse pointer.
+- **Search (issue 822):** `GET /orders?q=` and `GET /customers?q=` search every page in the query: order number or id, name, phone with spaces ignored, and email only where the caller sees it (issue 856 would otherwise make the box an email oracle). Scope, tenant predicate, the 100-character bound and LIKE escaping are in the query. The Orders and Customers boxes debounce, re-read from page 0 in place, and drop stale answers.
+- **Board order and size (issue 824):** the grid is oldest-first like the New lane, and a ticket's summary counts units (`unitCount`), falling back to lines for rows that do not record it.
+- **Feed honesty (issue 866):** a socket frame advances the last-synced stamp only once its order has loaded; a failed load flags the feed ("Not updating") and re-reads the board.
+- **One-tap Sold out (issue 858, partly):** a 44px switch on each product row sends only `{available}` through PATCH. Inline price edit is not done: PATCH refuses price by design (37-39).
+- **Finance range (issue 827, partly):** Today, Last 7 days, This month and All time plus two date inputs feed the figures, the ledger and the CSV export. The cash/card split is not done: see the PR (what a cash order's payment record is remains open with issue 828).
+- **Order timeline (issue 857):** `GET /orders/{id}/timeline` reads `orders_aud` and `revinfo` and shows placed, each status change, payment, void and cancel reason with who and when, under the order, with a Download CSV. No migration; the OpenAPI snapshot gains the two `q` parameters and the new path.
+
 ### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
 
 Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.
