@@ -1664,3 +1664,14 @@ Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
 - [x] 34-10-PLAN.md (Wave 5) — Closeout: `docs/metrics.json` + prose reconciliation, the deferred/N-A register, the rebuilt runtime proven by content and identity, and the skip budget re-earned on a fresh digest-matching report
 
 **UI hint**: no
+
+## Backlog (999.x): unplanned capabilities
+
+Recorded by owner ruling 2026-11-04 (persona-test close-out). Each was a persona finding closed as "not planned" for v2.3; none has a phase. Promote one with `/gsd-review-backlog` when the owner schedules it.
+
+- **999.1 WhatsApp conversational ordering channel** (issue 208): Meta-direct versus a BSP must be chosen first; the edge parser and the Meta GET verification handshake are incomplete.
+- **999.2 Menu item modifiers** (issue 870): option groups and add-ons; touches the allergen model (a modifier can add an allergen) and the V63 order-line snapshot.
+- **999.3 Email campaigns, loyalty and vouchers** (issue 873): marketing consent (D-04) applies.
+- **999.4 Custom storefront domains** (issue 874): TLS issuance, the CSP and the canonical URL per domain.
+- **999.5 Server-side basket** (issue 869): restore on sign-in and share across devices; the client-persisted identity lifecycle contract applies.
+- **999.6 MCP OAuth discovery for hosted connectors** (issue 863): ADR-0006 D-05 suppressed discovery on Core; the auth model for hosted ChatGPT/Claude connectors is an owner decision.
