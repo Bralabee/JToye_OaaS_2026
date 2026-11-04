@@ -487,11 +487,12 @@ public class ProductService {
     }
 
     /**
-     * Phase 37-39 (RWO-016 / UXT-016, P0): {@code PATCH /products/{id}} — change stock and availability only.
+     * Phase 37-39 (RWO-016 / UXT-016, P0): {@code PATCH /products/{id}} — change stock, availability and (#858)
+     * the price only.
      *
      * <p>The same gate as {@link #updateProduct} (SHOP_MANAGER on the product's own shop; the controller adds
-     * {@code SCOPE_catalog:write}). Every property other than {@code available}, {@code quantityInStock} and
-     * {@code trackInventory} is refused by name before anything is applied, and the entity is changed field by
+     * {@code SCOPE_catalog:write}). Every property other than {@code available}, {@code quantityInStock},
+     * {@code trackInventory} and {@code pricePennies} is refused by name before anything is applied, and the entity is changed field by
      * field here — never through {@link ProductMapper#updateEntity} — so no path from this body reaches the
      * allergen mask, the emphasis spans, the may-contain mask or the ingredients. The spans are not re-parsed:
      * the ingredients cannot have changed.
@@ -505,7 +506,7 @@ public class ProductService {
             Map<String, String> refused = new LinkedHashMap<>();
             for (String name : request.getUnknownProperties()) {
                 refused.put(name, "Not accepted by PATCH /products/{id}, which changes only available, "
-                        + "quantityInStock and trackInventory; use PUT to change other fields");
+                        + "quantityInStock, trackInventory and pricePennies; use PUT to change other fields");
             }
             throw new InvalidRequestFieldsException(refused);
         }
@@ -517,13 +518,19 @@ public class ProductService {
         if (request.getQuantityInStock() != null) {
             product.setQuantityInStock(request.getQuantityInStock());
         }
+        // #858: an absolute price. Orders already placed carry their own unit-price snapshot
+        // (order_items.unit_price_pennies), so this changes what is charged from now on and nothing before.
+        if (request.getPricePennies() != null) {
+            product.setPricePennies(request.getPricePennies());
+        }
         applyStockTracking(request.getTrackInventory(), product);
 
         product = productRepository.saveAndFlush(product);
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
-        log.info("Patched product {} (SKU '{}'): available={}, quantityInStock={}",
-                product.getId(), product.getSku(), product.getAvailable(), product.getQuantityInStock());
+        log.info("Patched product {} (SKU '{}'): available={}, quantityInStock={}, pricePennies={}",
+                product.getId(), product.getSku(), product.getAvailable(), product.getQuantityInStock(),
+                product.getPricePennies());
         return resolveDetail(productMapper.toDto(product));
     }
 

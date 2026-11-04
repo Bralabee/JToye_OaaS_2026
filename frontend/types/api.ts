@@ -786,6 +786,11 @@ export interface FinancialTransaction {
   reversesTransactionId?: string | null
   /** 37-11: the row's shop; null for MANUAL. */
   shopId?: string | null
+  /**
+   * #827: whether the order behind the row was paid online (card, through the platform). false for a
+   * cash order and for a MANUAL row. Absent from an older server: then no label is shown.
+   */
+  paidOnline?: boolean | null
 }
 
 export interface VatBreakdown {
@@ -802,6 +807,12 @@ export interface FinancialSummary {
   totalVatPennies: number
   transactionCount: number
   vatBreakdown: VatBreakdown[]
+  /**
+   * #827: revenue split by how it was paid; the two add up to `totalRevenuePennies`. Absent from an
+   * older server: then no split is shown (never a made-up £0.00).
+   */
+  paidOnlineRevenuePennies?: number
+  notPaidOnlineRevenuePennies?: number
   /**
    * 37-11: the scope these figures were filtered on (FinanceScopeDto). Read it for the
    * "Showing …" banner, never the switcher. Absent from an older server.

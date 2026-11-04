@@ -10,6 +10,9 @@ package uk.jtoye.core.finance.dto;
  * an empty-result query produces {@code FinancialAggregateRow(0L, 0L, 0L, 0L)}
  * rather than triggering a NullPointerException on primitive bind.
  *
+ * <p>#827: {@code paidOnlineRevenuePennies} is the part of {@code totalRevenuePennies} whose order was paid online
+ * ({@link uk.jtoye.core.finance.PaidOnline}), summed in the same statement through a LEFT JOIN on the order.
+ *
  * <p>Introduced by CQ-02 (Phase 14 Plan 02) to replace the legacy
  * {@code findAll() + 4 stream reductions} implementation of
  * {@link uk.jtoye.core.finance.FinancialTransactionService#getSummary()}.
@@ -18,5 +21,12 @@ public record FinancialAggregateRow(
         long totalRevenuePennies,
         long totalExpensesPennies,
         long totalVatPennies,
-        long transactionCount
-) {}
+        long transactionCount,
+        long paidOnlineRevenuePennies
+) {
+    /** The pre-#827 shape: no online revenue (the CQ-02 service tests build rows this way). */
+    public FinancialAggregateRow(long totalRevenuePennies, long totalExpensesPennies, long totalVatPennies,
+                                 long transactionCount) {
+        this(totalRevenuePennies, totalExpensesPennies, totalVatPennies, transactionCount, 0L);
+    }
+}

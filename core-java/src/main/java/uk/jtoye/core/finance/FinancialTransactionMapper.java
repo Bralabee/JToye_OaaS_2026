@@ -26,6 +26,8 @@ public interface FinancialTransactionMapper {
      */
     @Mapping(target = "vatAmountPennies", expression = "java(transaction.calculateVatAmount())")
     @Mapping(target = "description", source = "reference")
+    // #827: derived from the order behind the row; the service sets it for the rows it lists.
+    @Mapping(target = "paidOnline", ignore = true)
     FinancialTransactionDto toDto(FinancialTransaction transaction);
 
     /**

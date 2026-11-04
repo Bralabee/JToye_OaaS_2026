@@ -31,6 +31,22 @@ public record FinancialTransactionDto(
         UUID reversesTransactionId,
         @Schema(description = "The shop the row belongs to (Phase 37-11): the order's shop for a SALE, the "
                 + "sale's shop for a REVERSAL; null for a MANUAL row, which only the tenant-wide view lists.")
-        UUID shopId
+        UUID shopId,
+        @Schema(description = "#827: whether the order behind the row was paid online (card, through the platform): "
+                + "Paid online. false for a cash order and for a MANUAL row (Not paid online). Present on the "
+                + "list; null where it was not computed (the create response).", nullable = true)
+        Boolean paidOnline
 ) {
+    /** The pre-#827 shape, with the paid-online flag not computed. */
+    public FinancialTransactionDto(UUID id, UUID tenantId, Long amountPennies, VatRate vatRate,
+                                   Long vatAmountPennies, String description, OffsetDateTime createdAt,
+                                   EntryKind entryKind, UUID orderId, UUID reversesTransactionId, UUID shopId) {
+        this(id, tenantId, amountPennies, vatRate, vatAmountPennies, description, createdAt, entryKind, orderId,
+                reversesTransactionId, shopId, null);
+    }
+
+    public FinancialTransactionDto withPaidOnline(boolean paidOnline) {
+        return new FinancialTransactionDto(id, tenantId, amountPennies, vatRate, vatAmountPennies, description,
+                createdAt, entryKind, orderId, reversesTransactionId, shopId, paidOnline);
+    }
 }

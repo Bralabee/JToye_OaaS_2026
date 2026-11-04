@@ -57,7 +57,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Storefront-wiring confirmation finding (per
  * {@code 16.1-CONTEXT.md <decisions>} Item 4 verification ask): the production
- * storefront review-submit path is {@code ReviewService.createReview}, which
+ * storefront review-submit path is {@code ReviewService.createReviewForOrder}, which
  * calls {@code TenantContext.set(shop.getTenantId())}. The
  * {@code TenantSetLocalAspect} then issues
  * {@code set_config('app.current_tenant_id', ?, true)} on the connection
@@ -226,7 +226,7 @@ class ReviewsRlsPolicyIntegrationTest {
      * The first OR-branch of the WITH CHECK fires; the customer branch is
      * never evaluated. INSERT succeeds.
      *
-     * <p>This is the production code path: {@code ReviewService.createReview}
+     * <p>This is the production code path: {@code ReviewService.createReviewForOrder}
      * sets {@link TenantContext} → the aspect issues
      * {@code set_config('app.current_tenant_id', ?, true)} → INSERT.
      */

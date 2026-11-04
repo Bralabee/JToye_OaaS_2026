@@ -278,7 +278,22 @@ public class FinancialTransactionService {
                 ? financialTransactionRepository.findAll(pageable)
                 : financialTransactionRepository.findForScope(scope.allShops(), scope.shopIdOrPlaceholder(),
                         scope.fromInclusive(), scope.toExclusive(), pageable);
-        return page.map(financialTransactionMapper::toDto);
+        return withPaidOnline(page.map(financialTransactionMapper::toDto));
+    }
+
+    /**
+     * #827: stamps every row of a listed page with whether its order was paid online ({@link PaidOnline}), from
+     * one statement for the whole page. A row with no order (MANUAL) is not paid online.
+     */
+    private Page<FinancialTransactionDto> withPaidOnline(Page<FinancialTransactionDto> page) {
+        java.util.Set<UUID> orderIds = page.getContent().stream()
+                .map(FinancialTransactionDto::orderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Set<UUID> online = orderIds.isEmpty()
+                ? java.util.Set.of()
+                : new java.util.HashSet<>(financialTransactionRepository.findPaidOnlineOrderIds(orderIds));
+        return page.map(dto -> dto.withPaidOnline(dto.orderId() != null && online.contains(dto.orderId())));
     }
 
     /**
@@ -361,7 +376,9 @@ public class FinancialTransactionService {
                 aggregate.totalVatPennies(),
                 (int) aggregate.transactionCount(),
                 vatBreakdown,
-                scope.toDto()
+                scope.toDto(),
+                aggregate.paidOnlineRevenuePennies(),
+                aggregate.totalRevenuePennies() - aggregate.paidOnlineRevenuePennies()
         );
     }
 

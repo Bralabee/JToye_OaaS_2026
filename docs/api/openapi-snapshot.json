@@ -1174,44 +1174,6 @@
         ],
         "type" : "object"
       },
-      "CreateReviewRequest" : {
-        "properties" : {
-          "comment" : {
-            "maxLength" : 1000,
-            "minLength" : 0,
-            "type" : "string"
-          },
-          "deliveryRating" : {
-            "format" : "int32",
-            "maximum" : 5,
-            "minimum" : 1,
-            "type" : "integer"
-          },
-          "foodRating" : {
-            "format" : "int32",
-            "maximum" : 5,
-            "minimum" : 1,
-            "type" : "integer"
-          },
-          "orderId" : {
-            "format" : "uuid",
-            "type" : "string"
-          },
-          "photoUrls" : {
-            "items" : {
-              "type" : "string"
-            },
-            "maxItems" : 5,
-            "minItems" : 0,
-            "type" : "array"
-          }
-        },
-        "required" : [
-          "foodRating",
-          "orderId"
-        ],
-        "type" : "object"
-      },
       "CreateShopRequest" : {
         "description" : "Shop creation request",
         "properties" : {
@@ -2072,6 +2034,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "cancellationReason" : {
+            "description" : "#820: for a CANCELLED order, why, as a plain-English category sentence (for example \"The shop could not make or deliver this order.\"). Never a code and never free text. Absent when the order is not cancelled or no reason was recorded.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2141,6 +2107,10 @@
             "type" : "string"
           },
           "shopName" : {
+            "type" : "string"
+          },
+          "shopPhone" : {
+            "description" : "#820: for a CANCELLED order, the shop's public phone, so the customer can call. Absent when the order is not cancelled or the shop has no phone.",
             "type" : "string"
           },
           "shopSlug" : {
@@ -2508,6 +2478,16 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "notPaidOnlineRevenuePennies" : {
+            "description" : "#827: the rest of totalRevenuePennies: cash orders and MANUAL entries. Not paid online.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paidOnlineRevenuePennies" : {
+            "description" : "#827: the part of totalRevenuePennies whose order was paid online (card, through the platform): Paid online. paidOnlineRevenuePennies + notPaidOnlineRevenuePennies = totalRevenuePennies.",
+            "format" : "int64",
+            "type" : "integer"
+          },
           "scope" : {
             "$ref" : "#/components/schemas/FinanceScopeDto",
             "description" : "The scope these figures were filtered on (Phase 37-11): read it for the \"Showing ...\" banner rather than the shop switcher's own value."
@@ -2567,6 +2547,13 @@
             "description" : "The order this row belongs to; null for a MANUAL row.",
             "format" : "uuid",
             "type" : "string"
+          },
+          "paidOnline" : {
+            "description" : "#827: whether the order behind the row was paid online (card, through the platform): Paid online. false for a cash order and for a MANUAL row (Not paid online). Present on the list; null where it was not computed (the create response).",
+            "type" : [
+              "boolean",
+              "null"
+            ]
           },
           "reversesTransactionId" : {
             "description" : "For a REVERSAL, the id of the SALE it reverses; null otherwise.",
@@ -4771,12 +4758,20 @@
       },
       "ProductPatchRequest" : {
         "additionalProperties" : false,
-        "description" : "Stock and availability patch for one product. Accepts only available, quantityInStock and trackInventory; any other property (allergen, ingredient, price, ...) is refused with a 400 errors/validation naming it, and nothing is changed. Omitted fields keep their stored value.",
+        "description" : "Stock, availability and price patch for one product. Accepts only available, quantityInStock, trackInventory and pricePennies; any other property (allergen, ingredient, ...) is refused with a 400 errors/validation naming it, and nothing is changed. Omitted fields keep their stored value.",
         "properties" : {
           "available" : {
             "description" : "Whether the product can be ordered. Omit to keep the current value.",
             "example" : false,
             "type" : "boolean"
+          },
+          "pricePennies" : {
+            "description" : "Absolute price in pennies (#858); the bounds are PUT's. Omit to keep the stored price. Orders already placed keep the price they were placed at.",
+            "example" : 1250,
+            "format" : "int64",
+            "maximum" : 1000000000,
+            "minimum" : 0,
+            "type" : "integer"
           },
           "quantityInStock" : {
             "description" : "Absolute quantity in stock; setting it tracks stock. Omit to keep the stored quantity.",
@@ -4885,6 +4880,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "cancellationReason" : {
+            "description" : "#820: for a CANCELLED order, why, as a plain-English category sentence (for example \"The shop could not make or deliver this order.\"). Never a code and never free text. Absent when the order is not cancelled or no reason was recorded.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -4954,6 +4953,10 @@
             "type" : "string"
           },
           "shopName" : {
+            "type" : "string"
+          },
+          "shopPhone" : {
+            "description" : "#820: for a CANCELLED order, the shop's public phone, so the customer can call. Absent when the order is not cancelled or the shop has no phone.",
             "type" : "string"
           },
           "status" : {
@@ -12052,7 +12055,7 @@
         ]
       },
       "patch" : {
-        "description" : "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations that must never touch allergen or ingredient data. Any other property is refused with a 400 naming it and nothing is changed. Omitted fields keep their stored value; values are absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's shop, like PUT.",
+        "description" : "Changes only available, quantityInStock, trackInventory and pricePennies (an absolute price in pennies; orders already placed keep the price they were placed at), for EPOS and agent integrations that must never touch allergen or ingredient data. Any other property is refused with a 400 naming it and nothing is changed. Omitted fields keep their stored value; values are absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's shop, like PUT.",
         "operationId" : "patch",
         "parameters" : [
           {
@@ -12095,7 +12098,7 @@
                 }
               }
             },
-            "description" : "errors/validation: a property other than available, quantityInStock and trackInventory (named in errors), trackInventory true without quantityInStock or false with one, or a negative quantityInStock; errors/unreadable-request: the body is not JSON"
+            "description" : "errors/validation: a property other than available, quantityInStock, trackInventory and pricePennies (named in errors), trackInventory true without quantityInStock or false with one, a negative quantityInStock, or a pricePennies outside 0..1000000000; errors/unreadable-request: the body is not JSON"
           },
           "401" : {
             "content" : {
@@ -12146,7 +12149,7 @@
             "bearer-jwt" : [ ]
           }
         ],
-        "summary" : "Patch product stock and availability",
+        "summary" : "Patch product stock, availability and price",
         "tags" : [
           "Products"
         ]
@@ -14582,55 +14585,6 @@
           }
         },
         "summary" : "Get shop reviews",
-        "tags" : [
-          "Public Storefront"
-        ]
-      },
-      "post" : {
-        "deprecated" : true,
-        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
-        "operationId" : "createReview",
-        "parameters" : [
-          {
-            "in" : "path",
-            "name" : "slug",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          },
-          {
-            "in" : "query",
-            "name" : "email",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          }
-        ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/CreateReviewRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ReviewDto"
-                }
-              }
-            },
-            "description" : "OK"
-          }
-        },
-        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]
@@ -18568,55 +18522,6 @@
           }
         },
         "summary" : "Get shop reviews",
-        "tags" : [
-          "Public Storefront"
-        ]
-      },
-      "post" : {
-        "deprecated" : true,
-        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
-        "operationId" : "createReview_1",
-        "parameters" : [
-          {
-            "in" : "path",
-            "name" : "slug",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          },
-          {
-            "in" : "query",
-            "name" : "email",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          }
-        ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/CreateReviewRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ReviewDto"
-                }
-              }
-            },
-            "description" : "OK"
-          }
-        },
-        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]

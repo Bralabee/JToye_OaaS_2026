@@ -123,6 +123,22 @@ public class PublicOrderStatus {
             + "order was placed or accepted. An estimate, not a promise. Absent when the shop gave no preparation time.")
     private OffsetDateTime estimatedReadyAt;
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "#820: for a CANCELLED order, why, as a plain-English category sentence (for example "
+            + "\"The shop could not make or deliver this order.\"). Never a code and never free text. Absent when the "
+            + "order is not cancelled or no reason was recorded.")
+    private String cancellationReason;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "#820: for a CANCELLED order, the shop's public phone, so the customer can call. Absent "
+            + "when the order is not cancelled or the shop has no phone.")
+    private String shopPhone;
+
+    public String getCancellationReason() { return cancellationReason; }
+    public void setCancellationReason(String cancellationReason) { this.cancellationReason = cancellationReason; }
+    public String getShopPhone() { return shopPhone; }
+    public void setShopPhone(String shopPhone) { this.shopPhone = shopPhone; }
+
     public OffsetDateTime getEstimatedReadyAt() { return estimatedReadyAt; }
     public void setEstimatedReadyAt(OffsetDateTime estimatedReadyAt) { this.estimatedReadyAt = estimatedReadyAt; }
 

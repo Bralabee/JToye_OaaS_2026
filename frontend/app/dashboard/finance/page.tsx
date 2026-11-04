@@ -522,6 +522,47 @@ export default function FinancePage() {
         </m.div>
       )}
 
+      {/* #827 (owner ruling 2026-11-04): what was taken, split by how it was paid. The server derives it
+          from the order behind each ledger row; the two figures add up to Revenue. An older server sends
+          neither field, and then no split is shown rather than a made-up £0.00. */}
+      {summary &&
+        summary.paidOnlineRevenuePennies != null &&
+        summary.notPaidOnlineRevenuePennies != null && (
+          <div
+            data-testid="finance-payment-split"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+          >
+            <Card data-testid="finance-paid-online">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Paid online</CardTitle>
+                <CardDescription>Card payments taken through J&apos;Toye</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-paid-online-amount"
+                  className="text-2xl font-bold tabular-nums text-green-700 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.paidOnlineRevenuePennies)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card data-testid="finance-not-paid-online">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Not paid online</CardTitle>
+                <CardDescription>Cash and manual entries</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-not-paid-online-amount"
+                  className="text-2xl font-bold tabular-nums text-slate-800 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.notPaidOnlineRevenuePennies)}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
       {/* GAP-GTM-07: Merchant Value & ROI Telemetry (Direct GTV, 28% Aggregator Commission Saved, Repeat Buyers, V81 Cash Abuse Protection) */}
       {summary && (
         <m.div
@@ -629,6 +670,7 @@ export default function FinancePage() {
                     <TableHead>Amount</TableHead>
                     <TableHead>VAT Rate</TableHead>
                     <TableHead>VAT Amount</TableHead>
+                    <TableHead>Payment</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -668,6 +710,17 @@ export default function FinancePage() {
                         </TableCell>
                         <TableCell>
                           {formatPennies(tx.vatAmountPennies)}
+                        </TableCell>
+                        <TableCell>
+                          {tx.paidOnline == null ? null : tx.paidOnline ? (
+                            <Badge variant="outline" className="border-green-200 bg-green-50 text-green-800">
+                              Paid online
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-slate-700">
+                              Not paid online
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-slate-600">
                           {formatDistanceToNow(new Date(tx.createdAt), {

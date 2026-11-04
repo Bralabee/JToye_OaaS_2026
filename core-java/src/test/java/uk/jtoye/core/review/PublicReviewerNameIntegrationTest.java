@@ -16,11 +16,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.security.CustomerJwtVerifier;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
@@ -29,6 +31,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -36,7 +40,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * Phase 37-35 (RWO-044 / UXT-044, T-37-85): a public review names its author as "First L.", never by
  * the full name the customer typed at checkout.
  *
- * <p>{@code ReviewService.createReview} stores {@code order.getCustomerName()} on the review and the
+ * <p>{@code ReviewService.createReviewForOrder} stores {@code order.getCustomerName()} on the review and the
  * public list returned it as is, so every storefront review published a customer's full name to the
  * internet. The display form is derived at READ time by {@link ReviewerDisplayName}; the stored name is
  * kept, because it is the subject's data that an Article 17 erasure scrubs (V67) and an Article 15
@@ -69,6 +73,9 @@ class PublicReviewerNameIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
 
+    /** The IT has no Keycloak: a token "tok:{email}" proves {email} (CustomerJwtVerifierTest covers the real one). */
+    @MockitoBean CustomerJwtVerifier customerJwtVerifier;
+
     private UUID tenant;
     private UUID shop;
     private String slug;
@@ -76,6 +83,8 @@ class PublicReviewerNameIntegrationTest {
     @BeforeEach
     void setUp() {
         TenantContext.clear();
+        when(customerJwtVerifier.verifiedEmail(anyString()))
+                .thenAnswer(inv -> ((String) inv.getArgument(0)).substring("tok:".length()));
         tenant = UUID.randomUUID();
         jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
                 tenant, "37-35 reviewer-name tenant " + tenant);
@@ -154,13 +163,14 @@ class PublicReviewerNameIntegrationTest {
     }
 
     private MvcResult postReview(String email, UUID orderId) throws Exception {
+        String number = inTenant(() -> jdbc.queryForObject(
+                "SELECT order_number FROM orders WHERE id = ?", String.class, orderId));
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("orderId", orderId);
         body.put("foodRating", 5);
         body.put("deliveryRating", 4);
         body.put("comment", "Lovely jollof");
-        return mockMvc.perform(post("/api/v1/public/shops/" + slug + "/reviews")
-                        .param("email", email)
+        return mockMvc.perform(post("/api/v1/public/shops/" + slug + "/orders/" + number + "/review")
+                        .header("X-Customer-Token", "tok:" + email)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonMapper.writeValueAsString(body)))
                 .andReturn();

@@ -1,7 +1,9 @@
 package uk.jtoye.core.finance.dto;
 
 import uk.jtoye.core.finance.EntryKind;
+import uk.jtoye.core.finance.PaidOnline;
 import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.order.PaymentStatus;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -12,6 +14,7 @@ import java.util.UUID;
  *
  * @param orderNumber null for a row with no order (MANUAL)
  * @param shopName    null for a row with no shop (MANUAL, or a legacy order-less row)
+ * @param orderPaymentStatus the order's payment status; null for a row with no order (#827)
  */
 public record FinanceExportRow(
         UUID id,
@@ -21,6 +24,11 @@ public record FinanceExportRow(
         EntryKind entryKind,
         long amountPennies,
         VatRate vatRate,
-        String shopName
+        String shopName,
+        PaymentStatus orderPaymentStatus
 ) {
+    /** #827: whether the row's order was paid online; a row with no order (MANUAL) is not. */
+    public boolean paidOnline() {
+        return PaidOnline.of(orderPaymentStatus);
+    }
 }

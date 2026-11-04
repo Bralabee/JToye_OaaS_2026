@@ -1,6 +1,7 @@
 "use client"
 
 import { EstimatedReadyBy } from "@/components/storefront/estimated-ready-by"
+import { CancelledNotice } from "@/components/storefront/cancelled-notice"
 import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
@@ -52,6 +53,13 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
   balanceDuePennies?: number | null
   /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
   estimatedReadyAt?: string | null
+  /**
+   * #820: for a CANCELLED order, why, in the shop's category words (plain English from the server, never
+   * a code). ABSENT = no reason recorded, or the order is not cancelled.
+   */
+  cancellationReason?: string | null
+  /** #820: for a CANCELLED order, the shop's public phone. ABSENT = the shop has none, or not cancelled. */
+  shopPhone?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -588,6 +596,11 @@ function TrackOrderContent() {
                 .catch(() => {})
             }}
           />
+
+          {/* #820: why a shop cancelled (category words from the server) and the shop's phone. */}
+          {isCancelled && (
+            <CancelledNotice reason={order.cancellationReason} phone={order.shopPhone} shopName={order.shopName} />
+          )}
 
           {/* Progress */}
           {!isCancelled && !isRefunded && (

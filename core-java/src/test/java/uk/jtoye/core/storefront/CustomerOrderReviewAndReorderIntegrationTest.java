@@ -220,6 +220,41 @@ class CustomerOrderReviewAndReorderIntegrationTest {
         assertThat(countReviews(order)).isZero();
     }
 
+    @Test
+    @DisplayName("D-21 control: a cross-shop attempt does not spend the order's one review: the owner can still review shop A afterwards")
+    void crossShopRefusalLeavesTheOrderReviewable() throws Exception {
+        UUID atA = seedOrder(shopA, OWNER_EMAIL, "COMPLETED", "ORD-4604-" + shortId());
+        assertProblem(review(slugB, orderNumber(atA), OWNER_TOKEN, 5, null, null), 400, MISMATCH_TYPE);
+
+        MvcResult created = review(slugA, orderNumber(atA), OWNER_TOKEN, 5, 4, "Lovely");
+        assertThat(created.getResponse().getStatus()).as(text(created)).isEqualTo(201);
+        assertThat(countReviews(atA)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("#846 (owner ruling 2026-11-04): the old unauthenticated POST /public/shops/{slug}/reviews?email= is REMOVED: no review is written, whoever holds the email and the order id")
+    void oldEmailInUrlReviewEndpointIsGone() throws Exception {
+        UUID order = seedOrder(shopA, OWNER_EMAIL, "COMPLETED", "ORD-4604-" + shortId());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("orderId", order);
+        body.put("foodRating", 5);
+        body.put("deliveryRating", 4);
+        body.put("comment", "Lovely");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/public/shops/" + slugA + "/reviews")
+                        .param("email", OWNER_EMAIL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonMapper.writeValueAsString(body)))
+                .andReturn();
+
+        assertThat(result.getResponse().getStatus())
+                .as("the route accepts no POST any more (404 or 405), never a 201 or a 400 from the service: " + text(result))
+                .isIn(404, 405);
+        assertThat(countReviews(order)).as("nothing was written").isZero();
+        assertThat(mockMvc.perform(get("/api/v1/public/shops/" + slugA + "/reviews")).andReturn().getResponse().getStatus())
+                .as("the public reviews LIST is unaffected").isEqualTo(200);
+    }
+
     // ============================== order again ==============================
 
     @Test

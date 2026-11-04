@@ -356,8 +356,9 @@ public class ProductController {
 
     @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // 37-39: the same scope as PUT
     @PatchMapping("/{id}")
-    @Operation(summary = "Patch product stock and availability",
-            description = "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations "
+    @Operation(summary = "Patch product stock, availability and price",
+            description = "Changes only available, quantityInStock, trackInventory and pricePennies (an absolute price "
+                    + "in pennies; orders already placed keep the price they were placed at), for EPOS and agent integrations "
                     + "that must never touch allergen or ingredient data. Any other property is refused with a 400 "
                     + "naming it and nothing is changed. Omitted fields keep their stored value; values are "
                     + "absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's "
@@ -365,9 +366,9 @@ public class ProductController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Product patched; the full product is returned"),
             @ApiResponse(responseCode = "400",
-                    description = "errors/validation: a property other than available, quantityInStock and "
-                            + "trackInventory (named in errors), trackInventory true without quantityInStock or "
-                            + "false with one, or a negative quantityInStock; errors/unreadable-request: the body is "
+                    description = "errors/validation: a property other than available, quantityInStock, "
+                            + "trackInventory and pricePennies (named in errors), trackInventory true without quantityInStock or "
+                            + "false with one, a negative quantityInStock, or a pricePennies outside 0..1000000000; errors/unreadable-request: the body is "
                             + "not JSON"),
             @ApiResponse(responseCode = "401",
                     description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),

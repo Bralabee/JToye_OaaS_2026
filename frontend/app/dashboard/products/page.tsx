@@ -79,6 +79,7 @@ import {
   parseDurabilityInputs,
   productSchema,
   toPricePennies,
+  parseQuickPricePennies,
   type DurabilityInputs,
   type ProductFormData,
 } from "./product-form-schema"
@@ -343,6 +344,41 @@ export default function ProductsPage() {
         const rest = new Set(prev)
         rest.delete(product.id)
         return rest
+      })
+    }
+  }
+
+  /**
+   * #858 (owner ruling 2026-11-04): change a price from its row. PATCH carries ONLY `pricePennies`
+   * (absolute, so idempotent), never the whole product: it cannot resend an allergen declaration or an
+   * ingredient list. The editor stays open with the server's reason if the request is refused; orders
+   * already placed keep the price they were placed at (server-side snapshot).
+   */
+  const [priceEdit, setPriceEdit] = useState<{ id: string; value: string; error: string | null; saving: boolean } | null>(null)
+
+  const savePrice = async (product: Product) => {
+    if (!priceEdit || priceEdit.id !== product.id || priceEdit.saving) return
+    const pennies = parseQuickPricePennies(priceEdit.value)
+    if (pennies === null) {
+      setPriceEdit({ ...priceEdit, error: "Enter a price in pounds, like 9 or 9.50 (up to £10,000,000)." })
+      return
+    }
+    setPriceEdit({ ...priceEdit, error: null, saving: true })
+    try {
+      await apiClient.patch(`/api/v1/products/${product.id}`, { pricePennies: pennies })
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, pricePennies: pennies } : p)))
+      setPriceEdit(null)
+      toast({
+        title: `${product.title} is now £${(pennies / 100).toFixed(2)}`,
+        description: "Orders already placed keep the price they were placed at.",
+      })
+    } catch (error: unknown) {
+      setPriceEdit((cur) => (cur && cur.id === product.id ? { ...cur, saving: false } : cur))
+      const problem = await readProblem(error)
+      toast({
+        variant: "destructive",
+        title: `Couldn't change the price of ${product.title}`,
+        description: problem.detail ?? "Check your connection and try again. Nothing was changed.",
       })
     }
   }
@@ -1039,9 +1075,77 @@ export default function ProductsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold">
-                          {product.pricePennies != null
-                            ? `£${(product.pricePennies / 100).toFixed(2)}`
-                            : "—"}
+                          {priceEdit?.id === product.id ? (
+                            <div className="flex flex-col items-end gap-1">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span aria-hidden="true">£</span>
+                                <Input
+                                  value={priceEdit.value}
+                                  inputMode="decimal"
+                                  autoFocus
+                                  aria-label={`New price of ${product.title} in pounds`}
+                                  aria-invalid={priceEdit.error ? "true" : undefined}
+                                  disabled={priceEdit.saving}
+                                  onChange={(e) => setPriceEdit({ ...priceEdit, value: e.target.value, error: null })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault()
+                                      void savePrice(product)
+                                    } else if (e.key === "Escape") {
+                                      setPriceEdit(null)
+                                    }
+                                  }}
+                                  className="h-11 w-24 text-right"
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={priceEdit.saving}
+                                  onClick={() => void savePrice(product)}
+                                  aria-label={`Save price for ${product.title}`}
+                                  className="min-h-11"
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={priceEdit.saving}
+                                  onClick={() => setPriceEdit(null)}
+                                  aria-label={`Cancel price change for ${product.title}`}
+                                  className="min-h-11"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                              {priceEdit.error && (
+                                <p role="alert" className="text-xs font-medium text-red-700">
+                                  {priceEdit.error}
+                                </p>
+                              )}
+                            </div>
+                          ) : product.pricePennies != null ? (
+                            <button
+                              type="button"
+                              aria-label={`Change price of ${product.title}, now £${(product.pricePennies / 100).toFixed(2)}`}
+                              title="Change price"
+                              onClick={() =>
+                                setPriceEdit({
+                                  id: product.id,
+                                  value: ((product.pricePennies ?? 0) / 100).toFixed(2),
+                                  error: null,
+                                  saving: false,
+                                })
+                              }
+                              className="inline-flex min-h-11 items-center justify-end gap-1.5 rounded-md px-2 font-semibold underline decoration-dotted underline-offset-4 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {`£${(product.pricePennies / 100).toFixed(2)}`}
+                              <Pencil className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                            </button>
+                          ) : (
+                            "—"
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1.5">

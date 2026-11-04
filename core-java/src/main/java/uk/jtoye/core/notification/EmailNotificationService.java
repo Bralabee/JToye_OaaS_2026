@@ -143,6 +143,29 @@ public class EmailNotificationService {
         return CUSTOMER_STATUS_LABELS.getOrDefault(status, status.name());
     }
 
+    /** frontend/lib/ready-by.ts READY_BY_ESTIMATE_NOTE: an estimate is never a promise. */
+    public static final String READY_BY_ESTIMATE_NOTE = "This is an estimate, not a promise.";
+
+    /** "18:45", or "18:45 on 15 June" when it is not today in London. */
+    private static final DateTimeFormatter READY_BY_TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.UK);
+    private static final DateTimeFormatter READY_BY_DAY = DateTimeFormatter.ofPattern("HH:mm 'on' d MMMM", Locale.UK);
+
+    /**
+     * #825 (owner ruling 2026-11-04): the order's estimated ready-by time as a customer in the UK reads it,
+     * labelled as an estimate, as a paragraph break plus a line; the empty string when the order has no
+     * estimate (the shop has no prep time), so the email says nothing rather than a placeholder.
+     */
+    static String readyByParagraph(CustomerEmailContext ctx) {
+        OffsetDateTime at = ctx.estimatedReadyAt();
+        if (at == null) {
+            return "";
+        }
+        var local = at.atZoneSameInstant(ClockConfig.UK_ZONE);
+        boolean today = local.toLocalDate().equals(java.time.LocalDate.now(ClockConfig.UK_ZONE));
+        return "\n\nEstimated ready by " + local.format(today ? READY_BY_TIME : READY_BY_DAY) + ". "
+                + READY_BY_ESTIMATE_NOTE;
+    }
+
     /** The From display-name suffix (D-13). */
     static final String VIA_PLATFORM = " via J'Toye";
     static final String PLATFORM_NAME = "J'Toye";
@@ -200,7 +223,8 @@ public class EmailNotificationService {
         CustomerEmailContext ctx = orUnknown(context);
         String lead = """
                 Your order %s has been sent to %s They will confirm it shortly, and you'll get another \
-                email when they start preparing it.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
+                email when they start preparing it.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)))
+                + readyByParagraph(ctx);
         // #981: order-received is the statutory CCR 2013 reg 16 durable-medium contract
         // confirmation — never carries List-Unsubscribe.
         send(event, recipientEmail, "order-received", subject(event, "Received"), lead, ctx, true, false);
@@ -234,7 +258,8 @@ public class EmailNotificationService {
         String lead = """
                 Great news! Your order %s has been confirmed by %s
 
-                Preparation will begin soon.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
+                Preparation will begin soon.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)))
+                + readyByParagraph(ctx);
         send(event, recipientEmail, "order-confirmed", subject(event, "Confirmed"), lead, ctx, false, true);
     }
 
@@ -309,11 +334,16 @@ public class EmailNotificationService {
         // the event carries no previous status, rather than "null".
         String previous = event.previousStatus() == null ? ""
                 : "It was cancelled while it was: " + customerStatusLabel(event.previousStatus()) + ".\n";
+        // #820 (owner ruling 2026-11-04): the reason CATEGORY in plain English, and the shop's public phone.
+        // Never the enum name, never free text; nothing at all when no reason was recorded.
+        String reason = ctx.cancelReason() == null ? "" : ctx.cancelReason().customerText() + "\n";
+        String phone = oneLine(ctx.shopPhone());
+        String call = phone == null ? "" : "\n\nCall " + shopLabel(ctx) + " on " + phone + ".";
         String lead = """
                 Your order %s from %s has been cancelled.
 
-                %sIf this was unexpected, please contact %s directly.""".formatted(
-                event.orderNumber(), shopLabel(ctx), previous, shopLabel(ctx));
+                %s%sIf this was unexpected, please contact %s directly.""".formatted(
+                event.orderNumber(), shopLabel(ctx), previous, reason, shopLabel(ctx)) + call;
         // #981: order-cancelled is a non-suppressible transactional notice — never carries List-Unsubscribe.
         send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false, false);
     }
