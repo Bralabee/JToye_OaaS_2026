@@ -22,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Consumes the {@code webhook.deliveries} fanout queue (declared by 22-04, bound
@@ -62,46 +63,49 @@ public class WebhookFanoutListener {
     private final JsonMapper jsonMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
+    private final OrderWebhookDataFactory orderWebhookData;
 
     public WebhookFanoutListener(WebhookSubscriptionRepository subscriptionRepository,
                                  WebhookDeliveryRepository deliveryRepository,
                                  WebhookProperties properties,
                                  JsonMapper jsonMapper,
                                  EntityManager entityManager,
-                                 PlatformTransactionManager transactionManager) {
+                                 PlatformTransactionManager transactionManager,
+                                 OrderWebhookDataFactory orderWebhookData) {
         this.subscriptionRepository = subscriptionRepository;
         this.deliveryRepository = deliveryRepository;
         this.properties = properties;
         this.jsonMapper = jsonMapper;
         this.entityManager = entityManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.orderWebhookData = orderWebhookData;
     }
 
     @RabbitHandler
     public void onOrderState(OrderStateChangeEvent event) {
         fanout(event.tenantId(), WebhookEventType.ORDER_STATE_CHANGED,
                 "order." + event.newStatus().name().toLowerCase(Locale.ROOT),
-                event.timestamp(), event);
+                event.timestamp(), () -> orderWebhookData.build(event));
     }
 
     @RabbitHandler
     public void onRefund(RefundEvent event) {
         fanout(event.tenantId(), WebhookEventType.ORDER_REFUNDED,
-                "order.refunded", event.occurredAt(), event);
+                "order.refunded", event.occurredAt(), () -> event);
     }
 
     @RabbitHandler
     public void onOnboarding(OnboardingStateChangeEvent event) {
         fanout(event.tenantId(), WebhookEventType.ONBOARDING_STATE_CHANGED,
                 "onboarding." + event.status().name().toLowerCase(Locale.ROOT),
-                event.occurredAt(), event);
+                event.occurredAt(), () -> event);
     }
 
     @RabbitHandler
     public void onPayment(PaymentEvent event) {
         fanout(event.tenantId(), WebhookEventType.PAYMENT_EVENT,
                 "payment." + event.type().name().toLowerCase(Locale.ROOT),
-                event.occurredAt(), event);
+                event.occurredAt(), () -> event);
     }
 
     /**
@@ -121,7 +125,7 @@ public class WebhookFanoutListener {
     }
 
     private void fanout(UUID tenantId, WebhookEventType family, String type,
-                        OffsetDateTime occurredAt, Object data) {
+                        OffsetDateTime occurredAt, Supplier<Object> data) {
         if (tenantId == null) {
             log.warn("event=webhook_fanout_skipped reason=null_tenant type={}", type);
             return;
@@ -136,7 +140,7 @@ public class WebhookFanoutListener {
     }
 
     private void insertPendingRows(UUID tenantId, WebhookEventType family, String type,
-                                   OffsetDateTime occurredAt, Object data) {
+                                   OffsetDateTime occurredAt, Supplier<Object> data) {
         pinTenantGuc(tenantId);
 
         // ACTIVE subscriptions get a PENDING row; AUTO_PAUSED ones a HELD row (UXT-038: the platform
@@ -157,7 +161,7 @@ public class WebhookFanoutListener {
         String payload;
         try {
             payload = jsonMapper.writeValueAsString(new WebhookEventEnvelope(
-                    eventId, type, tenantId, occurredAt, properties.getEnvelope().getVersion(), data));
+                    eventId, type, tenantId, occurredAt, properties.getEnvelope().getVersion(), data.get()));
         } catch (JacksonException e) {
             // 38-07: Jackson 3's exception is unchecked, so nothing forces this catch any more.
             // It is kept deliberately: a payload that cannot be serialized skips this event's

@@ -69,6 +69,34 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
                                   @Param("eventType") String eventType,
                                   Pageable pageable);
 
+    /**
+     * Article 17 (#864): strip the customer's contact details and delivery address out of the STORED payload of
+     * every {@code order.*} delivery for the given orders. The payload is the exact JSON the worker signs and
+     * POSTs, and since #864 it carries {@code data.customer} and {@code data.deliveryAddress}; a copy that
+     * outlived the erasure for the 30-day retention window would defeat it (and a still-queued or HELD delivery
+     * would send the details after the erasure). The order facts (lines, totals, status) are kept, as they are on
+     * the order. The next attempt signs the scrubbed bytes with a fresh timestamp, as every retry does.
+     *
+     * <p>Explicit {@code tenant_id} predicate on top of RLS, like every bulk write here. The WHERE clause names
+     * only rows that actually hold one of the two members, so a payload with neither (the thin original, a
+     * refund) is not rewritten.
+     *
+     * @return how many stored payloads were scrubbed
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            UPDATE webhook_delivery
+               SET payload = CAST(CAST(payload AS jsonb) #- '{data,customer}' #- '{data,deliveryAddress}' AS text),
+                   updated_at = now()
+             WHERE tenant_id = :tenantId
+               AND event_type LIKE 'order.%'
+               AND CAST(payload AS jsonb) #>> '{data,orderId}' IN (:orderIds)
+               AND (CAST(payload AS jsonb) #> '{data,customer}' IS NOT NULL
+                    OR CAST(payload AS jsonb) #> '{data,deliveryAddress}' IS NOT NULL)
+            """, nativeQuery = true)
+    int scrubOrderCustomerDetails(@Param("tenantId") UUID tenantId,
+                                  @Param("orderIds") Collection<String> orderIds);
+
     /** Fetch a delivery scoped to its owning subscription (replay lookup). */
     Optional<WebhookDelivery> findByIdAndSubscriptionId(UUID id, UUID subscriptionId);
 

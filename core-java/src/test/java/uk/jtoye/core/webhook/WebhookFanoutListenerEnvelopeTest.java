@@ -14,6 +14,7 @@ import tools.jackson.databind.exc.InvalidDefinitionException;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 import uk.jtoye.core.boot4.GoldenSamples;
+import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.testsupport.BootJsonMapper;
 
@@ -71,7 +72,7 @@ class WebhookFanoutListenerEnvelopeTest {
 
     private WebhookFanoutListener listener(JsonMapper mapper) {
         return new WebhookFanoutListener(subscriptions, deliveries, new WebhookProperties(), mapper,
-                entityManager, transactionManager);
+                entityManager, transactionManager, new OrderWebhookDataFactory(mock(OrderRepository.class)));
     }
 
     /** Drives the listener with the golden order event and returns the one saved delivery row. */

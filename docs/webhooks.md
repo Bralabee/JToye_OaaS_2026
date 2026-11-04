@@ -83,9 +83,65 @@ The body is a versioned envelope:
 }
 ```
 
-`data` is the full domain payload for the event. Treat it as **additive**: we may add
-fields to it without bumping `version`, so parse leniently and ignore what you do not
-recognise. A breaking change to the envelope's own shape bumps `version`.
+`data` is the event's own payload, and what is in it depends on the family (see
+[What `data` holds](#what-data-holds)). Treat it as **additive**: we may add fields to it
+without bumping `version`, so parse leniently and ignore what you do not recognise. A
+breaking change to the envelope's own shape bumps `version`.
+
+### What `data` holds
+
+**`order.*` (`ORDER_STATE_CHANGED`)** carries the order summary, so a receiver can build a
+row without calling back. Amounts are integer pence. Members after `shopId` were added in
+#864; `dataVersion: 2` marks a payload that has them, so test that one field rather than
+probing for the others.
+
+```json
+{
+  "orderId": "5a4b3c2d-1e0f-4998-8877-665544332211",
+  "tenantId": "7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910",
+  "orderNumber": "JT-1042",
+  "previousStatus": "PREPARING",
+  "newStatus": "READY",
+  "timestamp": "2026-01-15T09:30:00Z",
+  "shopId": "3e2d1c0b-9a87-4655-8443-2211ffeeddcc",
+  "dataVersion": 2,
+  "fulfilmentType": "DELIVERY",
+  "paymentStatus": "CAPTURED",
+  "items": [
+    { "productId": "…", "name": "Jollof rice", "quantity": 2,
+      "unitPricePennies": 899, "totalPricePennies": 1798 }
+  ],
+  "subtotalPennies": 1798,
+  "deliveryFeePennies": 250,
+  "vatAmountPennies": 341,
+  "totalPennies": 2048,
+  "customer": { "name": "Ravi Shah", "email": "ravi@example.com", "phone": "+447700900111" },
+  "deliveryAddress": { "line1": "12 Peckham High Street", "line2": null, "city": "London", "postcode": "SE15 5EB" }
+}
+```
+
+- `items[].name` is the name **at the time of the order**, not the live product title.
+- `deliveryAddress` is present only on a `DELIVERY` order that has one. Absent members are
+  omitted, not sent as `null` (the `line2` above is shown only to name the field).
+- The original seven members (`orderId` … `shopId`) are unchanged, so a receiver written
+  against the thin event keeps working.
+- Not included, on purpose: the customer's free-text notes and allergy note, and any
+  payment reference. Fetch the order with `GET /api/v1/orders/{id}` and an
+  integration credential ([`security-scopes.md`](security-scopes.md)) if you need them.
+- If the order cannot be read when the event is prepared (for example it was deleted in the
+  meantime), the event is still delivered as the original seven-member payload with no
+  `dataVersion`. Never assume the additions are present on every delivery.
+
+**Personal data.** The customer and address members are the order's own contact details.
+Only a tenant administrator can register a webhook endpoint, and it receives the tenant's
+orders, which that administrator can already read through the API. The kitchen-role
+minimisation (no customer email for STAFF) does not apply to this endpoint, but it is
+**your** endpoint: serve it over HTTPS (we require it), keep the signing secret safe and do
+not log request bodies. When a customer is erased under Article 17, the customer and
+address members are removed from the copy we store (including deliveries still queued or
+held), and the order facts stay. A copy your receiver has already stored is yours to erase.
+
+**`order.refunded`, `onboarding.*`, `payment.*`** carry their event record unchanged.
 
 ### Event types
 
@@ -162,7 +218,7 @@ implementation is correct you will compute the same `v1` hex, byte for byte.
 | Body length | 430 bytes |
 | Signed message length | 441 bytes (`"1750000000."` is 11 bytes) |
 
-**Payload** — one line, UTF-8, no trailing newline, no whitespace between tokens:
+**Payload** — the original seven-member `order.ready` shape, kept short on purpose: this is a *signing* vector, fixed so the digest below never changes. A live `order.*` delivery carries more members in `data` ([What `data` holds](#what-data-holds)); sign and verify whatever bytes you receive. One line, UTF-8, no trailing newline, no whitespace between tokens:
 
 ```
 {"id":"2b4d0f9a-1c3e-4f57-8a6b-9d0e1f2a3b4c","type":"order.ready","tenantId":"7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910","occurredAt":"2026-01-15T09:30:00Z","version":"1","data":{"orderId":"5a4b3c2d-1e0f-4998-8877-665544332211","tenantId":"7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910","orderNumber":"JT-1042","previousStatus":"PREPARING","newStatus":"READY","timestamp":"2026-01-15T09:30:00Z","shopId":"3e2d1c0b-9a87-4655-8443-2211ffeeddcc"}}
