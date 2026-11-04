@@ -134,6 +134,12 @@ describe("Products list: inline price edit through PATCH (issue #858)", () => {
     expect(priceInput("Jollof Rice")).toHaveValue("10")
   })
 
+  it("opening the editor puts the cursor in the price field (focus by effect, not the autoFocus prop the a11y lint refuses)", async () => {
+    await loaded()
+    openPriceEditor("Jollof Rice", "£9.00")
+    expect(priceInput("Jollof Rice")).toHaveFocus()
+  })
+
   it("the price control and its buttons are 44px targets", async () => {
     await loaded()
     expect(screen.getByRole("button", { name: "Change price of Jollof Rice, now £9.00" }).className).toContain("min-h-11")

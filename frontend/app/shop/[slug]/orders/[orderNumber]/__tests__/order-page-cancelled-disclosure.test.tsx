@@ -5,7 +5,7 @@
  * recorded reason says no reason, and a shop with no phone gets no call line.
  */
 import { Suspense } from "react"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import OrderTrackingPage from "@/app/shop/[slug]/orders/[orderNumber]/page"
 import { getCustomerSession } from "@/lib/customer-auth"
 
@@ -83,5 +83,50 @@ describe("Cancelled order page: reason category and the shop's phone (issue #820
     expect(notice).toHaveTextContent("please contact the shop")
     expect(screen.queryByRole("link", { name: /call/i })).toBeNull()
     expect(notice).not.toHaveTextContent("null")
+  })
+})
+
+/**
+ * PR #1124 review round 1 (the same defect the /track page had): the cancel response carries only status and
+ * payment status, so the page re-reads the order after the customer cancels. Without it the person who just
+ * pressed Cancel was shown the no-reason, no-phone fallback instead of "cancelled at your request" + the phone.
+ */
+describe("Order page right after the customer cancels (PR #1124 review)", () => {
+  it("re-reads the order, so the notice shows the recorded reason and the shop's phone", async () => {
+    // The server's answer follows the cancel: PENDING until the POST has been made, the recorded cancel after it.
+    let cancelPosted = false
+    mockLookup.mockReset()
+    mockLookup.mockImplementation(() =>
+      Promise.resolve({
+        data: cancelPosted
+          ? order({ cancellationReason: "This order was cancelled at your request.", shopPhone: "0121 496 0000" })
+          : order({ status: "PENDING" }),
+      })
+    )
+    ;(getCustomerSession as jest.Mock).mockResolvedValue(null)
+    localStorage.clear()
+    sessionStorage.clear()
+    localStorage.setItem(`jtoye-checkout-email-${SLUG}`, "ade@example.com")
+    global.fetch = jest.fn().mockImplementation(async () => {
+      cancelPosted = true
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ orderNumber: ORDER_NUMBER, status: "CANCELLED", paymentStatus: "NONE" }),
+      }
+    }) as unknown as typeof fetch
+    render(
+      <Suspense fallback={<div>loading</div>}>
+        <OrderTrackingPage params={resolvedThenable({ slug: SLUG, orderNumber: ORDER_NUMBER })} />
+      </Suspense>
+    )
+
+    fireEvent.click(await screen.findByRole("button", { name: /cancel this order/i }))
+    fireEvent.click(screen.getByRole("button", { name: /yes, cancel order/i }))
+
+    const notice = await screen.findByTestId("cancelled-notice")
+    await waitFor(() => expect(notice).toHaveTextContent("This order was cancelled at your request."))
+    expect(notice).not.toHaveTextContent("please contact the shop")
+    expect(screen.getByRole("link", { name: /call mama ade's kitchen on 0121 496 0000/i })).toHaveAttribute("href", "tel:01214960000")
   })
 })

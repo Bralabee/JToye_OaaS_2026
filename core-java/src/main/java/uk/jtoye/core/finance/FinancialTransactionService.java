@@ -77,6 +77,7 @@ public class FinancialTransactionService {
      */
     public FinancialTransactionDto createTransactionForCaller(CreateTransactionRequest request) {
         UUID shopId = request.shopId();
+        Long paidOnlinePennies = 0L;
         if (request.orderId() != null) {
             UUID tenantId = TenantContext.get()
                     .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
@@ -87,11 +88,12 @@ public class FinancialTransactionService {
                         "shopId must be the shop of the order named by orderId (or omitted)"));
             }
             shopId = order.getShopId();
+            paidOnlinePennies = PaidOnline.settledOnlinePennies(order);
         } else if (shopId != null) {
             shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
         }
         return createTransaction(new CreateTransactionRequest(request.amountPennies(), request.vatRate(),
-                request.description(), request.orderId(), shopId));
+                request.description(), request.orderId(), shopId), paidOnlinePennies);
     }
 
     /**
@@ -124,6 +126,36 @@ public class FinancialTransactionService {
      * MANUAL row.
      */
     public FinancialTransactionDto createTransaction(CreateTransactionRequest request) {
+        return createTransaction(request, defaultPaidOnlinePennies(request));
+    }
+
+    /**
+     * The channel for a caller that did not state one (the admin ledger endpoint, tests): a MANUAL row (no order)
+     * is 0; an order's SALE is read once, here, from the order as it stands NOW (see
+     * {@link PaidOnline#settledOnlinePennies}) and then stored; an order that cannot be loaded is NULL (not
+     * recorded) rather than a guess. The order writers do not use this: they hold the order and state it.
+     */
+    private Long defaultPaidOnlinePennies(CreateTransactionRequest request) {
+        if (request.orderId() == null) {
+            return 0L;
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        return orderRepository.findByIdAndTenantId(request.orderId(), tenantId)
+                .map(PaidOnline::settledOnlinePennies)
+                .orElse(null);
+    }
+
+    /**
+     * {@link #createTransaction(CreateTransactionRequest)} with the payment channel stated by the writer (V93,
+     * #827): of the SALE's amount, how many pennies were captured online at the moment the row is written. The
+     * three SALE writers (card settlement, balance-stage settlement, COMPLETED cash path) pass
+     * {@link PaidOnline#settledOnlinePennies} of the order they already hold. Ignored for a MANUAL row, which is
+     * always 0, and by the idempotent no-op: an existing SALE keeps the channel it was written with, which is
+     * what keeps a closed period closed (a counter-completed order later paid by a link stays "not paid online").
+     * A figure outside 0..amount is refused here before the database CHECK would refuse it.
+     */
+    public FinancialTransactionDto createTransaction(CreateTransactionRequest request, Long paidOnlinePennies) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
@@ -150,6 +182,10 @@ public class FinancialTransactionService {
         // never does, even if a request names one: it has no order to attribute it to, and it belongs to the
         // tenant-wide view only.
         transaction.setShopId(request.orderId() != null ? request.shopId() : null);
+        // V93: the channel is recorded NOW, on the row, and never re-derived. MANUAL is never online.
+        transaction.setPaidOnlinePennies(request.orderId() == null
+                ? Long.valueOf(0L)
+                : boundedPaidOnline(paidOnlinePennies, request.amountPennies()));
 
         // Save transaction. Explicit flush() forces the INSERT so a partial
         // unique-index violation surfaces HERE (inside the try) rather than
@@ -177,6 +213,16 @@ public class FinancialTransactionService {
                 transaction.getVatRate(), transaction.calculateVatAmount());
 
         return financialTransactionMapper.toDto(transaction);
+    }
+
+    /** The stated channel clamped into 0..amount (the V93 CHECK's range); null stays null (not recorded). */
+    private static Long boundedPaidOnline(Long paidOnlinePennies, Long amountPennies) {
+        if (paidOnlinePennies == null) {
+            return null;
+        }
+        long amount = amountPennies == null ? 0L : amountPennies;
+        return amount >= 0 ? Math.max(0L, Math.min(paidOnlinePennies, amount))
+                : Math.min(0L, Math.max(paidOnlinePennies, amount));
     }
 
     /**
@@ -217,6 +263,9 @@ public class FinancialTransactionService {
         // Phase 37-11: the reversal belongs to the same shop as the sale it takes back out, so a shop's
         // figures net the void exactly as the tenant's do.
         reversal.setShopId(sale.getShopId());
+        // V93: the reversal takes back exactly the channel split its sale recorded (online revenue is SALE minus
+        // REVERSAL, like revenue); a sale whose channel was never recorded has a reversal that is not recorded.
+        reversal.setPaidOnlinePennies(sale.getPaidOnlinePennies() == null ? null : -sale.getPaidOnlinePennies());
 
         try {
             reversal = financialTransactionRepository.save(reversal);
@@ -278,22 +327,7 @@ public class FinancialTransactionService {
                 ? financialTransactionRepository.findAll(pageable)
                 : financialTransactionRepository.findForScope(scope.allShops(), scope.shopIdOrPlaceholder(),
                         scope.fromInclusive(), scope.toExclusive(), pageable);
-        return withPaidOnline(page.map(financialTransactionMapper::toDto));
-    }
-
-    /**
-     * #827: stamps every row of a listed page with whether its order was paid online ({@link PaidOnline}), from
-     * one statement for the whole page. A row with no order (MANUAL) is not paid online.
-     */
-    private Page<FinancialTransactionDto> withPaidOnline(Page<FinancialTransactionDto> page) {
-        java.util.Set<UUID> orderIds = page.getContent().stream()
-                .map(FinancialTransactionDto::orderId)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-        java.util.Set<UUID> online = orderIds.isEmpty()
-                ? java.util.Set.of()
-                : new java.util.HashSet<>(financialTransactionRepository.findPaidOnlineOrderIds(orderIds));
-        return page.map(dto -> dto.withPaidOnline(dto.orderId() != null && online.contains(dto.orderId())));
+        return page.map(financialTransactionMapper::toDto);
     }
 
     /**
@@ -379,6 +413,8 @@ public class FinancialTransactionService {
                 scope.toDto(),
                 aggregate.paidOnlineRevenuePennies(),
                 aggregate.totalRevenuePennies() - aggregate.paidOnlineRevenuePennies()
+                        - aggregate.paymentNotRecordedRevenuePennies(),
+                aggregate.paymentNotRecordedRevenuePennies()
         );
     }
 

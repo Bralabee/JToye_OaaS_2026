@@ -787,10 +787,12 @@ export interface FinancialTransaction {
   /** 37-11: the row's shop; null for MANUAL. */
   shopId?: string | null
   /**
-   * #827: whether the order behind the row was paid online (card, through the platform). false for a
-   * cash order and for a MANUAL row. Absent from an older server: then no label is shown.
+   * #827 (V93): of `amountPennies`, how many pennies were taken online (card, through the platform), recorded
+   * when the row was written. Same sign as the amount. 0 = Not paid online; equal to the amount = Paid online;
+   * between = Part paid online (a deposit by card, the balance in cash); null = not recorded (a legacy row).
+   * Absent from an older server: then no label is shown.
    */
-  paidOnline?: boolean | null
+  paidOnlinePennies?: number | null
 }
 
 export interface VatBreakdown {
@@ -808,11 +810,14 @@ export interface FinancialSummary {
   transactionCount: number
   vatBreakdown: VatBreakdown[]
   /**
-   * #827: revenue split by how it was paid; the two add up to `totalRevenuePennies`. Absent from an
-   * older server: then no split is shown (never a made-up £0.00).
+   * #827 (V93): revenue split by how it was paid, as recorded on each ledger row when it was written. The
+   * three add up to `totalRevenuePennies`; `paymentNotRecordedRevenuePennies` is the part on legacy rows whose
+   * channel was never recorded (0 on any ledger written from V93 on). Absent from an older server: then no
+   * split is shown (never a made-up £0.00).
    */
   paidOnlineRevenuePennies?: number
   notPaidOnlineRevenuePennies?: number
+  paymentNotRecordedRevenuePennies?: number
   /**
    * 37-11: the scope these figures were filtered on (FinanceScopeDto). Read it for the
    * "Showing …" banner, never the switcher. Absent from an older server.

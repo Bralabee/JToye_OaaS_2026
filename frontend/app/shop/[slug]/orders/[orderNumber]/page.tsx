@@ -657,6 +657,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               lastStatusRef.current = result.status
               setOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })
               setStatusUpdate(statusUpdateAnnouncement(result.status, order.fulfilmentType) ?? "Your order has been cancelled.")
+              // The cancel response carries only status and payment status; re-read so the cancelled notice
+              // shows what the server recorded (the reason and the shop's phone), not its no-reason fallback.
+              void fetchStatus()
             }}
             onRefused={() => void fetchStatus()}
           />

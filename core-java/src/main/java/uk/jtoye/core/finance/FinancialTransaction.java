@@ -87,6 +87,17 @@ public class FinancialTransaction {
     @Column(name = "shop_id")
     private UUID shopId;
 
+    /**
+     * Of {@link #amountPennies}, how many pennies were taken ONLINE (card, through the platform), recorded when
+     * the row is written (V93, #827). A pennies figure, not a flag, because one SALE can be part online and part
+     * cash (deposit by card, balance in cash) while the ledger keeps one SALE per order. Same sign as the
+     * amount: a REVERSAL stores the negative of its sale's figure. 0 = none online (cash, every MANUAL row),
+     * the amount = wholly online. {@code null} = not recorded (a legacy row the order could not prove).
+     * Never updated.
+     */
+    @Column(name = "paid_online_pennies")
+    private Long paidOnlinePennies;
+
     // Constructors
 
     public FinancialTransaction() {
@@ -170,6 +181,14 @@ public class FinancialTransaction {
 
     public void setShopId(UUID shopId) {
         this.shopId = shopId;
+    }
+
+    public Long getPaidOnlinePennies() {
+        return paidOnlinePennies;
+    }
+
+    public void setPaidOnlinePennies(Long paidOnlinePennies) {
+        this.paidOnlinePennies = paidOnlinePennies;
     }
 
     /**

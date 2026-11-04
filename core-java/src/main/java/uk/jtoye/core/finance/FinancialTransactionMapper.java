@@ -26,8 +26,6 @@ public interface FinancialTransactionMapper {
      */
     @Mapping(target = "vatAmountPennies", expression = "java(transaction.calculateVatAmount())")
     @Mapping(target = "description", source = "reference")
-    // #827: derived from the order behind the row; the service sets it for the rows it lists.
-    @Mapping(target = "paidOnline", ignore = true)
     FinancialTransactionDto toDto(FinancialTransaction transaction);
 
     /**
@@ -44,5 +42,7 @@ public interface FinancialTransactionMapper {
     @Mapping(target = "reversesTransactionId", ignore = true)
     // Phase 37-11: the shop is set by the service, and only beside an order (a MANUAL row never has one).
     @Mapping(target = "shopId", ignore = true)
+    // V93: the channel is recorded by the service from the order at write time, never taken from a request.
+    @Mapping(target = "paidOnlinePennies", ignore = true)
     FinancialTransaction toEntity(CreateTransactionRequest request);
 }

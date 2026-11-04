@@ -1,8 +1,9 @@
 /**
  * #827 (owner ruling 2026-11-04): the Finance page splits what was taken into "Paid online" and
- * "Not paid online". The server derives it from the order behind each ledger row and sends
- * `paidOnlineRevenuePennies` / `notPaidOnlineRevenuePennies` on the summary and `paidOnline` on every
- * listed row; the page shows them under exactly those two labels.
+ * "Not paid online". The server records the channel ON each ledger row when it is written (V93,
+ * `paidOnlinePennies`: how many of the row's pennies came in by card) and sums it into
+ * `paidOnlineRevenuePennies` / `notPaidOnlineRevenuePennies` (+ `paymentNotRecordedRevenuePennies` for legacy
+ * rows it could not prove); the page labels a row by comparing the stored figure to the row's own amount.
  *
  * Through the real page inside the real ShopSwitcherProvider (only the network and the shop list are
  * faked). An older server that sends neither field gets no split at all, never a made-up £0.00.
@@ -46,8 +47,8 @@ const ROW = {
   entryKind: "SALE",
 }
 const ROWS = [
-  { ...ROW, id: "tx-card", amountPennies: 3000, description: "Order ORD-CARD", paidOnline: true },
-  { ...ROW, id: "tx-cash", amountPennies: 1500, description: "Order ORD-CASH", paidOnline: false },
+  { ...ROW, id: "tx-card", amountPennies: 3000, description: "Order ORD-CARD", paidOnlinePennies: 3000 },
+  { ...ROW, id: "tx-cash", amountPennies: 1500, description: "Order ORD-CASH", paidOnlinePennies: 0 },
 ]
 
 function summaryBody(extra: Record<string, unknown>) {
@@ -124,12 +125,51 @@ describe("Finance paid online / not paid online (issue #827)", () => {
   })
 
   it("shows no split at all when the server sent neither field (an older server), never a made-up £0.00", async () => {
-    serve(summaryBody({}), [{ ...ROWS[0], paidOnline: undefined }])
+    serve(summaryBody({}), [{ ...ROWS[0], paidOnlinePennies: undefined }])
     await renderLoaded()
 
     await screen.findByText("Order ORD-CARD")
     expect(screen.queryByTestId("finance-payment-split")).not.toBeInTheDocument()
     expect(screen.queryByText("Paid online")).not.toBeInTheDocument()
     expect(screen.queryByText("Not paid online")).not.toBeInTheDocument()
+  })
+
+  it("labels a deposit-split sale 'Part paid online' (deposit by card, balance in cash), and its reversal the same", async () => {
+    const split = [
+      { ...ROW, id: "tx-split", amountPennies: 10000, description: "Order ORD-SPLIT", paidOnlinePennies: 2000 },
+      { ...ROW, id: "tx-split-rev", amountPennies: -10000, description: "Reversal of ORD-SPLIT", entryKind: "REVERSAL", paidOnlinePennies: -2000 },
+      { ...ROW, id: "tx-reversed-card", amountPennies: -3000, description: "Reversal of ORD-CARD", entryKind: "REVERSAL", paidOnlinePennies: -3000 },
+    ]
+    serve(summaryBody({ paidOnlineRevenuePennies: 0, notPaidOnlineRevenuePennies: 0 }), split)
+    await renderLoaded()
+
+    const sale = (await screen.findByText("Order ORD-SPLIT")).closest("tr") as HTMLElement
+    const reversal = (await screen.findByText("Reversal of ORD-SPLIT")).closest("tr") as HTMLElement
+    const reversedCard = (await screen.findByText("Reversal of ORD-CARD")).closest("tr") as HTMLElement
+    expect(within(sale).getByText("Part paid online")).toBeInTheDocument()
+    expect(within(reversal).getByText("Part paid online")).toBeInTheDocument()
+    expect(within(reversedCard).getByText("Paid online")).toBeInTheDocument()
+  })
+
+  it("a legacy row whose channel was never recorded reads 'Not recorded', never 'Not paid online'", async () => {
+    serve(summaryBody({ paidOnlineRevenuePennies: 3000, notPaidOnlineRevenuePennies: 0, paymentNotRecordedRevenuePennies: 1500 }), [
+      ROWS[0],
+      { ...ROWS[1], paidOnlinePennies: null },
+    ])
+    await renderLoaded()
+
+    const legacy = (await screen.findByText("Order ORD-CASH")).closest("tr") as HTMLElement
+    expect(within(legacy).getByText("Not recorded")).toBeInTheDocument()
+    expect(within(legacy).queryByText("Not paid online")).not.toBeInTheDocument()
+    const notRecorded = await screen.findByTestId("finance-payment-not-recorded")
+    expect(within(notRecorded).getByTestId("finance-payment-not-recorded-amount")).toHaveTextContent("£15.00")
+  })
+
+  it("shows no 'Not recorded' card when every row has its channel (a ledger written since V93)", async () => {
+    serve(summaryBody({ paidOnlineRevenuePennies: 3000, notPaidOnlineRevenuePennies: 1500, paymentNotRecordedRevenuePennies: 0 }), ROWS)
+    await renderLoaded()
+
+    await screen.findByTestId("finance-payment-split")
+    expect(screen.queryByTestId("finance-payment-not-recorded")).not.toBeInTheDocument()
   })
 })

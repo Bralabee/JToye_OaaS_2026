@@ -82,9 +82,10 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
      * not a NullPointerException when JPA binds to primitive {@code long}
      * fields of the constructor-expression target.
      *
-     * <p>#827: the fifth column is the part of the revenue whose order was paid online ({@link PaidOnline}),
-     * through a LEFT JOIN on the order (a MANUAL row has none and counts as not paid online). It is the same
-     * revenue CASE, so paid online plus the rest is exactly the first column.
+     * <p>#827 (V93): the fifth column is the part of the revenue recorded as taken online, the sixth the part on
+     * legacy rows whose channel was never recorded (NULL). Both are the same revenue CASE over the stored
+     * {@code paid_online_pennies}, with no join on the order and no reading of its current payment status, so a
+     * closed period cannot move: paid online + the sixth + the rest (not paid online) is exactly the first column.
      *
      * <p>Qualified-enum literals in the CASE WHEN (e.g.
      * {@code uk.jtoye.core.finance.VatRate.REDUCED}) are supported in
@@ -106,15 +107,17 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
                 ELSE 0L END), 0L),
               COUNT(ft),
               COALESCE(SUM(CASE
-                WHEN o.paymentStatus IN (uk.jtoye.core.order.PaymentStatus.CAPTURED, uk.jtoye.core.order.PaymentStatus.REFUNDED)
-                  THEN (CASE
-                    WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.amountPennies
-                    WHEN ft.amountPennies > 0 THEN ft.amountPennies
-                    ELSE 0L END)
+                WHEN ft.paidOnlinePennies IS NULL THEN 0L
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.paidOnlinePennies
+                WHEN ft.amountPennies > 0 THEN ft.paidOnlinePennies
+                ELSE 0L END), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.paidOnlinePennies IS NOT NULL THEN 0L
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.amountPennies
+                WHEN ft.amountPennies > 0 THEN ft.amountPennies
                 ELSE 0L END), 0L)
             )
             FROM FinancialTransaction ft
-            LEFT JOIN Order o ON o.id = ft.orderId
             """)
     FinancialAggregateRow aggregateForCurrentTenant();
 
@@ -178,15 +181,17 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
                 ELSE 0L END), 0L),
               COUNT(ft),
               COALESCE(SUM(CASE
-                WHEN o.paymentStatus IN (uk.jtoye.core.order.PaymentStatus.CAPTURED, uk.jtoye.core.order.PaymentStatus.REFUNDED)
-                  THEN (CASE
-                    WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.amountPennies
-                    WHEN ft.amountPennies > 0 THEN ft.amountPennies
-                    ELSE 0L END)
+                WHEN ft.paidOnlinePennies IS NULL THEN 0L
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.paidOnlinePennies
+                WHEN ft.amountPennies > 0 THEN ft.paidOnlinePennies
+                ELSE 0L END), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.paidOnlinePennies IS NOT NULL THEN 0L
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.amountPennies
+                WHEN ft.amountPennies > 0 THEN ft.amountPennies
                 ELSE 0L END), 0L)
             )
             FROM FinancialTransaction ft
-            LEFT JOIN Order o ON o.id = ft.orderId
             WHERE (:allShops = true OR ft.shopId = :shopId)
               AND ft.createdAt >= :fromTs
               AND ft.createdAt < :toTs
@@ -239,7 +244,7 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     @Query("""
             SELECT new uk.jtoye.core.finance.dto.FinanceExportRow(
               ft.id, ft.createdAt, ft.reference, o.orderNumber, ft.entryKind, ft.amountPennies, ft.vatRate, s.name,
-              o.paymentStatus)
+              ft.paidOnlinePennies)
             FROM FinancialTransaction ft
             LEFT JOIN Order o ON o.id = ft.orderId
             LEFT JOIN Shop s ON s.id = ft.shopId
@@ -252,15 +257,4 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
                                           @Param("shopId") UUID shopId,
                                           @Param("fromTs") OffsetDateTime fromTs,
                                           @Param("toTs") OffsetDateTime toTs);
-
-    /**
-     * #827: of these order ids, the ones whose payment was taken online ({@link PaidOnline}: CAPTURED, or
-     * REFUNDED after capture). One statement for a page of ledger rows, tenant-scoped by RLS like every read here.
-     */
-    @Query("""
-            SELECT o.id FROM Order o
-            WHERE o.id IN :orderIds
-              AND o.paymentStatus IN (uk.jtoye.core.order.PaymentStatus.CAPTURED, uk.jtoye.core.order.PaymentStatus.REFUNDED)
-            """)
-    List<UUID> findPaidOnlineOrderIds(@Param("orderIds") java.util.Collection<UUID> orderIds);
 }

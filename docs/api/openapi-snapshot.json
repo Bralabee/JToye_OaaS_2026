@@ -2479,12 +2479,17 @@
             "type" : "integer"
           },
           "notPaidOnlineRevenuePennies" : {
-            "description" : "#827: the rest of totalRevenuePennies: cash orders and MANUAL entries. Not paid online.",
+            "description" : "#827 (V93): the part of totalRevenuePennies recorded as not taken online: cash, the cash balance of a deposit-split order, MANUAL entries. Not paid online.",
             "format" : "int64",
             "type" : "integer"
           },
           "paidOnlineRevenuePennies" : {
-            "description" : "#827: the part of totalRevenuePennies whose order was paid online (card, through the platform): Paid online. paidOnlineRevenuePennies + notPaidOnlineRevenuePennies = totalRevenuePennies.",
+            "description" : "#827 (V93): the part of totalRevenuePennies recorded as taken online (card, through the platform) when its ledger row was written: Paid online. The deposit of a deposit-split order counts here, its cash balance does not. paidOnline + notPaidOnline + paymentNotRecorded = totalRevenuePennies.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentNotRecordedRevenuePennies" : {
+            "description" : "V93: the part of totalRevenuePennies on legacy rows whose payment channel was never recorded (the order could not prove it). In neither figure above; 0 on any ledger written from V93 on.",
             "format" : "int64",
             "type" : "integer"
           },
@@ -2548,10 +2553,11 @@
             "format" : "uuid",
             "type" : "string"
           },
-          "paidOnline" : {
-            "description" : "#827: whether the order behind the row was paid online (card, through the platform): Paid online. false for a cash order and for a MANUAL row (Not paid online). Present on the list; null where it was not computed (the create response).",
+          "paidOnlinePennies" : {
+            "description" : "#827 (V93): of amountPennies, how many pennies were taken online (card, through the platform), recorded when the row was written. Same sign as amountPennies. 0 = Not paid online (cash, a MANUAL row); equal to amountPennies = Paid online; between = Part paid online (a deposit by card, the balance in cash). null = not recorded (a legacy row the order could not prove).",
+            "format" : "int64",
             "type" : [
-              "boolean",
+              "integer",
               "null"
             ]
           },

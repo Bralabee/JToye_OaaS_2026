@@ -366,6 +366,23 @@ function TrackOrderContent() {
     }
   }
 
+  // Re-read one order by number + the email that proves it (the guest lookup, also what a signed-in customer's
+  // pre-filled session email goes through). Used after the customer cancels and when core refuses a cancel: both
+  // change what the server records, and the page must show what it records. A failed read keeps what is on
+  // screen; the newest read wins.
+  const rereadOrder = (number: string) => {
+    if (!email.trim()) return
+    const seq = ++readSeq.current
+    void lookupGuestOrder<OrderStatus>(number, email.trim())
+      .then((res) => {
+        if (seq !== readSeq.current) return
+        trackedByNumber.current = res.data.orderNumber
+        showOrder(res.data)
+        setOrderFromList(false)
+      })
+      .catch(() => {})
+  }
+
   const currentStep = order ? STEPS.findIndex((s) => s.key === order.status) : -1
   const isCancelled = order?.status === "CANCELLED"
   const isRefunded = order?.status === "REFUNDED"
@@ -586,15 +603,15 @@ function TrackOrderContent() {
             depositAmountPennies={order.depositAmountPennies}
             balanceDuePennies={order.balanceDuePennies}
             email={orderFromList ? "" : email}
-            onCancelled={(result) =>
+            onCancelled={(result) => {
+              // Show the new status at once, then RE-READ the order (PR #1124 review): the cancel response
+              // carries only status and payment status, so without the re-read the person who just pressed
+              // Cancel is shown the no-reason, no-phone fallback ("If this was unexpected, please contact the
+              // shop") instead of the server's "cancelled at your request" and the shop's phone.
               showOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })
-            }
-            onRefused={() => {
-              if (!email.trim()) return
-              void lookupGuestOrder<OrderStatus>(order.orderNumber, email.trim())
-                .then((res) => showOrder(res.data))
-                .catch(() => {})
+              rereadOrder(order.orderNumber)
             }}
+            onRefused={() => rereadOrder(order.orderNumber)}
           />
 
           {/* #820: why a shop cancelled (category words from the server) and the shop's phone. */}

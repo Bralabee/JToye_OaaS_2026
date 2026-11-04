@@ -10,6 +10,8 @@ import { fetchAllMyShops } from "@/lib/shops-api"
 import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import { shopAdminCapabilities } from "@/lib/shop-admin-capabilities"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import {
   Card,
@@ -270,6 +272,9 @@ export default function ProductsPage() {
   const { toast } = useToast()
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
+  // What to OFFER the caller (the same helper the Shops page uses for its manager-only controls): the inline
+  // price edit needs SHOP_MANAGER on the product's shop. No provider (a bare mount) offers everything.
+  const shopCaps = shopAdminCapabilities(useOptionalShopSwitcherData())
 
   // WR-04 (#280): the shop narrow now happens SERVER-side via `?shopId=`
   // (ProductService.getProductsByShop, gated by the 23-03 grant check), so the
@@ -355,6 +360,13 @@ export default function ProductsPage() {
    * already placed keep the price they were placed at (server-side snapshot).
    */
   const [priceEdit, setPriceEdit] = useState<{ id: string; value: string; error: string | null; saving: boolean } | null>(null)
+  // The editor takes focus when it opens (an effect, not the autoFocus prop, which jsx-a11y refuses): the
+  // person tapped the price to type a new one. Keyed on the product id, so typing never re-focuses.
+  const priceInputRef = useRef<HTMLInputElement>(null)
+  const priceEditId = priceEdit?.id ?? null
+  useEffect(() => {
+    if (priceEditId) priceInputRef.current?.focus()
+  }, [priceEditId])
 
   const savePrice = async (product: Product) => {
     if (!priceEdit || priceEdit.id !== product.id || priceEdit.saving) return
@@ -1082,7 +1094,7 @@ export default function ProductsPage() {
                                 <Input
                                   value={priceEdit.value}
                                   inputMode="decimal"
-                                  autoFocus
+                                  ref={priceInputRef}
                                   aria-label={`New price of ${product.title} in pounds`}
                                   aria-invalid={priceEdit.error ? "true" : undefined}
                                   disabled={priceEdit.saving}
@@ -1125,6 +1137,11 @@ export default function ProductsPage() {
                                 </p>
                               )}
                             </div>
+                          ) : product.pricePennies != null && !shopCaps.canEditShop(product.shopId ?? "") ? (
+                            // PR #1124 review: the price PATCH needs SHOP_MANAGER on the product's shop
+                            // (ProductService.patchProduct). A STAFF member sees the price, not a control that
+                            // can only end in a 403 after they have typed. The server stays the boundary.
+                            <span data-testid="price-readonly">{`£${(product.pricePennies / 100).toFixed(2)}`}</span>
                           ) : product.pricePennies != null ? (
                             <button
                               type="button"

@@ -33,7 +33,7 @@ export function CancelledNotice({
             href={`tel:${dial}`}
             className="inline-flex min-h-11 items-center font-semibold underline underline-offset-2"
           >
-            Call {name} on {phoneText}
+            call {name} on {phoneText}
           </a>
           .
         </p>

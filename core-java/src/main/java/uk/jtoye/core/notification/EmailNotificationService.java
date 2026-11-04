@@ -22,6 +22,7 @@ import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderStateChangeEvent;
+import uk.jtoye.core.order.CancelReason;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 import uk.jtoye.core.security.access.ShopRole;
@@ -31,6 +32,8 @@ import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -155,13 +158,15 @@ public class EmailNotificationService {
      * labelled as an estimate, as a paragraph break plus a line; the empty string when the order has no
      * estimate (the shop has no prep time), so the email says nothing rather than a placeholder.
      */
-    static String readyByParagraph(CustomerEmailContext ctx) {
+    String readyByParagraph(CustomerEmailContext ctx) {
         OffsetDateTime at = ctx.estimatedReadyAt();
         if (at == null) {
             return "";
         }
         var local = at.atZoneSameInstant(ClockConfig.UK_ZONE);
-        boolean today = local.toLocalDate().equals(java.time.LocalDate.now(ClockConfig.UK_ZONE));
+        // The injected Clock, read in the UK zone (ClockConfig's contract): a fixed UTC test clock or a container
+        // in UTC cannot shift the date the customer reads.
+        boolean today = local.toLocalDate().equals(LocalDate.now(clock.withZone(ClockConfig.UK_ZONE)));
         return "\n\nEstimated ready by " + local.format(today ? READY_BY_TIME : READY_BY_DAY) + ". "
                 + READY_BY_ESTIMATE_NOTE;
     }
@@ -179,6 +184,7 @@ public class EmailNotificationService {
     private final JavaMailSender mailSender;
     private final NotificationProperties notificationProperties;
     private final UnsubscribeTokenService unsubscribeTokenService;
+    private final Clock clock;
 
     @Value("${notification.email.from:noreply@jtoye.uk}")
     private String fromAddress;
@@ -203,16 +209,30 @@ public class EmailNotificationService {
     private String platformRegisteredOffice;
 
     public EmailNotificationService(JavaMailSender mailSender) {
-        this(mailSender, null, null);
+        this(mailSender, null, null, null);
     }
 
-    @Autowired
     public EmailNotificationService(JavaMailSender mailSender,
                                     @Nullable NotificationProperties notificationProperties,
                                     @Nullable UnsubscribeTokenService unsubscribeTokenService) {
+        this(mailSender, notificationProperties, unsubscribeTokenService, null);
+    }
+
+    /**
+     * @param clock the application's {@code Clock} bean ({@link ClockConfig}); {@code null} (the unit tests that
+     *              build the service by hand) means the system clock. "Today" in an email is resolved through it,
+     *              in {@link ClockConfig#UK_ZONE}, so a test can fix "now" and the today/not-today choice around
+     *              UK midnight is testable.
+     */
+    @Autowired
+    public EmailNotificationService(JavaMailSender mailSender,
+                                    @Nullable NotificationProperties notificationProperties,
+                                    @Nullable UnsubscribeTokenService unsubscribeTokenService,
+                                    @Nullable Clock clock) {
         this.mailSender = mailSender;
         this.notificationProperties = notificationProperties;
         this.unsubscribeTokenService = unsubscribeTokenService;
+        this.clock = clock == null ? Clock.system(ClockConfig.UK_ZONE) : clock;
     }
 
     // ---- One method per status; one send per call -------------------------------------------------
@@ -338,12 +358,23 @@ public class EmailNotificationService {
         // Never the enum name, never free text; nothing at all when no reason was recorded.
         String reason = ctx.cancelReason() == null ? "" : ctx.cancelReason().customerText() + "\n";
         String phone = oneLine(ctx.shopPhone());
-        String call = phone == null ? "" : "\n\nCall " + shopLabel(ctx) + " on " + phone + ".";
-        String lead = """
-                Your order %s from %s has been cancelled.
+        String lead;
+        if (ctx.cancelReason() == CancelReason.CUSTOMER_REQUEST) {
+            // PR #1124 review: the customer cancelled it themselves. "If this was unexpected, please contact the
+            // shop" and a "Call the shop" prompt contradict "cancelled at your request"; only a shop-initiated
+            // (or unrecorded) cancel gets them.
+            lead = """
+                    Your order %s from %s has been cancelled.
 
-                %s%sIf this was unexpected, please contact %s directly.""".formatted(
-                event.orderNumber(), shopLabel(ctx), previous, reason, shopLabel(ctx)) + call;
+                    %s%s""".formatted(event.orderNumber(), shopLabel(ctx), previous, reason).stripTrailing();
+        } else {
+            String call = phone == null ? "" : "\n\nCall " + shopLabel(ctx) + " on " + phone + ".";
+            lead = """
+                    Your order %s from %s has been cancelled.
+
+                    %s%sIf this was unexpected, please contact %s directly.""".formatted(
+                    event.orderNumber(), shopLabel(ctx), previous, reason, shopLabel(ctx)) + call;
+        }
         // #981: order-cancelled is a non-suppressible transactional notice — never carries List-Unsubscribe.
         send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false, false);
     }
