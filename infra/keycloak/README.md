@@ -380,7 +380,7 @@ Everything else in them is the stock file byte for byte.
 `docker-compose.full-stack.yml`, `infra/docker-compose*.yml` and the k8s component, so a Keycloak
 bump cannot ship a stale fork. It also fails when a property the overrides exist for is dropped
 (`<main>`, banner `<header>`, page-naming `<title>`, no positive tabindex, the rules, the privacy
-link), when the rules sentence and the realms' `passwordPolicy` length disagree, when either realm
+link), when the rules sentence differs from the one DERIVED from the realms' `passwordPolicy` (every rule, not only the length; a term the sentence cannot express fails closed), when either realm
 template sets a user-initiated action-token lifespan below 30 minutes, and when the k8s component
 does not mount every override.
 

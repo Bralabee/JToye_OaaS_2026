@@ -17,12 +17,13 @@
 #     2. the accessibility properties the overrides exist for are still in them (a re-derivation
 #        that drops one fails): <main>, a banner <header>, the page-naming <title>, no positive
 #        tabindex, the register page's password rules and privacy link;
-#     3. the password rules sentence in messages_en.properties names the same length as the realm
-#        passwordPolicy in BOTH realm templates, so a changed policy cannot leave the page telling
-#        people the old rule;
+#     3. the password rules sentence in messages_en.properties is DERIVED from the realm
+#        passwordPolicy (length, upperCase, lowerCase, digits, specialChars, notUsername) and
+#        compared whole, in BOTH realm templates, so dropping or adding any rule cannot leave the
+#        page telling people the old one. A policy term the sentence cannot express fails closed;
 #     4. the user-initiated action-token lifespan is at least 30 minutes in both realm templates
-#        and the customer realm's verify-email override is at least 12 hours (#847: the reset and
-#        verification links expired after 5 minutes);
+#        and the customer realm's verify-email override (quoted or numeric JSON) is at least 12
+#        hours (#847: the reset and verification links expired after 5 minutes);
 #     5. every file of the theme that Keycloak needs is mounted by the k8s component (the
 #        ConfigMap keys AND the Deployment volume items), so a template added under infra/ cannot
 #        be forgotten on staging. Byte parity of the copies is scripts/check-k8s-copy-parity.sh.
@@ -53,6 +54,43 @@ K8S_KUSTOMIZATION=k8s/components/keycloak/kustomization.yaml
 
 MIN_USER_LIFESPAN=1800
 MIN_VERIFY_LIFESPAN=43200
+
+# expected_hint POLICY — the rules sentence the register page must show for a Keycloak passwordPolicy.
+# Prints the sentence; returns 1 (and prints why on stderr) for a policy it cannot express, so an
+# unknown or multi-count term fails closed instead of being silently left out of the sentence.
+expected_hint() {
+  local policy="$1" term name n len="" parts=() notuser="" out i last
+  while IFS= read -r term; do
+    [ -n "$term" ] || continue
+    name=${term%%(*}; n=${term#*\(}; n=${n%\)}
+    case "$name" in
+      length) len="$n" ;;
+      upperCase|lowerCase|digits|specialChars)
+        [ "$n" = "1" ] || { echo "$name($n): the rules sentence says \"a\"/\"an\", so only a count of 1 can be expressed" >&2; return 1; } ;;
+      notUsername) notuser=1 ;;
+      *) echo "policy term '$term' has no wording in the rules sentence" >&2; return 1 ;;
+    esac
+  done < <(printf '%s' "$policy" | command grep -oE '[A-Za-z]+(\([0-9]+\))?' | command grep -vx 'and')
+  [ -n "$len" ] || { echo "the policy has no length(N)" >&2; return 1; }
+  case " $policy " in *upperCase*) parts+=("an uppercase letter") ;; esac
+  case " $policy " in *lowerCase*) parts+=("a lowercase letter") ;; esac
+  case " $policy " in *digits*) parts+=("a number") ;; esac
+  case " $policy " in *specialChars*) parts+=("a special character") ;; esac
+  out="At least $len characters"
+  if [ "${#parts[@]}" -eq 1 ]; then out="$out, with ${parts[0]}"
+  elif [ "${#parts[@]}" -gt 1 ]; then
+    last=${parts[$((${#parts[@]} - 1))]}
+    out="$out, with "
+    for ((i = 0; i < ${#parts[@]} - 1; i++)); do
+      [ "$i" -eq 0 ] || out="$out, "
+      out="$out${parts[$i]}"
+    done
+    out="$out and $last"
+  fi
+  out="$out."
+  [ -z "$notuser" ] || out="$out It cannot be the same as your email address."
+  printf '%s' "$out"
+}
 
 check_tree() {
   local root="$1" defects=0 f v pinned img n pol want got
@@ -93,23 +131,24 @@ check_tree() {
   command grep -q 'aria-describedby="kc-password-policy' "$root/$THEME/register.ftl" || d "$THEME/register.ftl: the password field is not described by the rules"
   command grep -q 'registerPrivacyNotice' "$root/$THEME/register.ftl" || d "$THEME/register.ftl no longer links the privacy notice"
 
-  # ---- 3. the rules sentence names the realm policy's length ----------------------------------
+  # ---- 3. the rules sentence is derived from the realm policy --------------------------------
   [ -r "$root/$MESSAGES" ] || { echo "VOID: cannot read $MESSAGES" >&2; return 2; }
-  got=$(command grep -E '^passwordPolicyHint=' "$root/$MESSAGES" | command grep -oE 'At least [0-9]+' | command grep -oE '[0-9]+' | head -1)
-  [ -n "$got" ] || d "$MESSAGES holds no passwordPolicyHint of the form \"At least N characters ...\""
+  got=$(command grep -E '^passwordPolicyHint=' "$root/$MESSAGES" | head -1 | sed -E 's/^passwordPolicyHint=//')
+  [ -n "$got" ] || d "$MESSAGES holds no passwordPolicyHint"
   command grep -qE '^registerPrivacyNotice=.*<a href="\{0\}">' "$root/$MESSAGES" || d "$MESSAGES holds no registerPrivacyNotice linking {0}"
   for f in "${REALMS[@]}"; do
     [ -r "$root/$f" ] || { echo "VOID: cannot read $f" >&2; return 2; }
-    pol=$(command grep -E '^[[:space:]]*"passwordPolicy"' "$root/$f" | command grep -oE 'length\([0-9]+\)' | command grep -oE '[0-9]+' | head -1)
-    if [ -z "$pol" ]; then d "$f has no passwordPolicy length(N)"
-    elif [ -n "$got" ] && [ "$pol" != "$got" ]; then d "$f passwordPolicy length($pol) but $MESSAGES tells people $got"; fi
+    pol=$(command grep -E '^[[:space:]]*"passwordPolicy"' "$root/$f" | sed -E 's/^[^:]*:[[:space:]]*"(.*)"[[:space:]]*,?[[:space:]]*$/\1/')
+    if [ -z "$pol" ]; then d "$f has no passwordPolicy"
+    elif ! want=$(expected_hint "$pol" 2>&1); then d "$f passwordPolicy \"$pol\" cannot be expressed in the rules sentence: $want"
+    elif [ -n "$got" ] && [ "$want" != "$got" ]; then d "$f passwordPolicy \"$pol\" requires the sentence \"$want\" but $MESSAGES tells people \"$got\""; fi
 
     # ---- 4. action-token lifespans --------------------------------------------------------------
     want=$(command grep -E '^[[:space:]]*"actionTokenGeneratedByUserLifespan"[[:space:]]*:' "$root/$f" | command grep -oE ':[[:space:]]*[0-9]+' | command grep -oE '[0-9]+' | head -1)
     if [ -z "$want" ]; then d "$f sets no actionTokenGeneratedByUserLifespan (Keycloak's default is 300 s)"
     elif [ "$want" -lt "$MIN_USER_LIFESPAN" ]; then d "$f actionTokenGeneratedByUserLifespan is $want s, below $MIN_USER_LIFESPAN s (#847)"; fi
   done
-  want=$(command grep -E '"actionTokenGeneratedByUserLifespan\.verify-email"' "$root/$CUSTOMER_REALM" | command grep -oE ':[[:space:]]*"[0-9]+"' | command grep -oE '[0-9]+' | head -1)
+  want=$(command grep -E '"actionTokenGeneratedByUserLifespan\.verify-email"' "$root/$CUSTOMER_REALM" | command grep -oE ':[[:space:]]*"?[0-9]+"?' | command grep -oE '[0-9]+' | head -1)
   if [ -z "$want" ]; then d "$CUSTOMER_REALM sets no actionTokenGeneratedByUserLifespan.verify-email override"
   elif [ "$want" -lt "$MIN_VERIFY_LIFESPAN" ]; then d "$CUSTOMER_REALM verify-email link lifespan is $want s, below $MIN_VERIFY_LIFESPAN s (#847)"; fi
 
@@ -140,9 +179,9 @@ selftest() {
     printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<title><#if jtPageHeadingText?has_content>x</#if></title>\n<header id="kc-header">\n<main id="kc-main">\n</main>\n' > "$r/$THEME/template.ftl"
     printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<input id="username">\n' > "$r/$THEME/login.ftl"
     printf '<#-- JTOYE-BASE-KEYCLOAK: 26.8.1 -->\n<input id="password" aria-describedby="kc-password-policy">\n<span id="kc-password-policy">x</span>\n${msg("registerPrivacyNotice")}\n' > "$r/$THEME/register.ftl"
-    printf 'passwordPolicyHint=At least 12 characters, x.\nregisterPrivacyNotice=See our <a href="{0}">privacy notice</a>.\n' > "$r/$MESSAGES"
+    printf 'passwordPolicyHint=At least 12 characters, with an uppercase letter, a lowercase letter, a number and a special character. It cannot be the same as your email address.\nregisterPrivacyNotice=See our <a href="{0}">privacy notice</a>.\n' > "$r/$MESSAGES"
     for x in "${REALMS[@]}"; do
-      printf '{\n  "passwordPolicy" : "length(12) and upperCase(1)",\n  "actionTokenGeneratedByUserLifespan" : 3600,\n  "attributes" : {\n    "actionTokenGeneratedByUserLifespan.verify-email" : "86400"\n  }\n}\n' > "$r/$x"
+      printf '{\n  "passwordPolicy" : "length(12) and digits(1) and upperCase(1) and lowerCase(1) and specialChars(1) and notUsername",\n  "actionTokenGeneratedByUserLifespan" : 3600,\n  "attributes" : {\n    "actionTokenGeneratedByUserLifespan.verify-email" : "86400"\n  }\n}\n' > "$r/$x"
     done
     for x in "${IMAGE_FILES[@]}"; do
       mkdir -p "$r/$(dirname "$x")"
@@ -193,7 +232,25 @@ selftest() {
   arm privacy-removed 1 "no longer links the privacy notice" "$t/noprivacy"
 
   plant "$t/polchg"; sed -i 's/length(12)/length(14)/' "$t/polchg/${REALMS[1]}"
-  arm policy-changed-text-stale 1 "tells people 12" "$t/polchg"
+  arm policy-length-changed-text-stale 1 "requires the sentence" "$t/polchg"
+
+  plant "$t/nospecial"; sed -i 's/ and specialChars(1)//' "$t/nospecial/${REALMS[1]}"
+  arm policy-drops-specialChars-text-stale 1 "At least 12 characters, with an uppercase letter, a lowercase letter and a number." "$t/nospecial"
+
+  plant "$t/noupper"; sed -i 's/ and upperCase(1)//' "$t/noupper/${REALMS[0]}"
+  arm policy-drops-upperCase-text-stale 1 "requires the sentence" "$t/noupper"
+
+  plant "$t/nonotuser"; sed -i 's/ and notUsername//' "$t/nonotuser/${REALMS[1]}"
+  arm policy-drops-notUsername-text-stale 1 "requires the sentence" "$t/nonotuser"
+
+  plant "$t/addrule"; sed -i 's/ and notUsername/ and notUsername and notEmail/' "$t/addrule/${REALMS[1]}"
+  arm policy-adds-unknown-term-fails-closed 1 "has no wording in the rules sentence" "$t/addrule"
+
+  plant "$t/count2"; sed -i 's/digits(1)/digits(2)/' "$t/count2/${REALMS[1]}"
+  arm policy-count-2-fails-closed 1 "only a count of 1 can be expressed" "$t/count2"
+
+  plant "$t/hintedit"; sed -i 's/a special character/a symbol/' "$t/hintedit/$MESSAGES"
+  arm hint-reworded-without-policy 1 "requires the sentence" "$t/hintedit"
 
   plant "$t/short"; sed -i 's/"actionTokenGeneratedByUserLifespan" : 3600/"actionTokenGeneratedByUserLifespan" : 300/' "$t/short/${REALMS[1]}"
   arm reset-lifespan-300 1 "below 1800" "$t/short"
@@ -203,6 +260,12 @@ selftest() {
 
   plant "$t/verify"; sed -i 's/"86400"/"600"/' "$t/verify/${REALMS[1]}"
   arm verify-lifespan-short 1 "verify-email link lifespan" "$t/verify"
+
+  plant "$t/vnum"; sed -i 's/"86400"/86400/' "$t/vnum/${REALMS[1]}"
+  arm verify-lifespan-numeric-json-accepted 0 "PASS:" "$t/vnum"
+
+  plant "$t/vnumshort"; sed -i 's/"86400"/600/' "$t/vnumshort/${REALMS[1]}"
+  arm verify-lifespan-numeric-short 1 "verify-email link lifespan is 600" "$t/vnumshort"
 
   plant "$t/noverify"; sed -i '/verify-email/d' "$t/noverify/${REALMS[1]}"
   arm verify-override-missing 1 "no actionTokenGeneratedByUserLifespan.verify-email" "$t/noverify"
