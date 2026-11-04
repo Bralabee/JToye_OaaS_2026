@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Vendor Rulings: Zero VAT for Unregistered Sellers, Ready-By Estimate, Unaccepted-Order Alert — 2026-11-04
+
+Quick 261104-vendor-rulings. Owner rulings 2026-11-04 (persona close-out) for issues 962, 825 and 821. Issue 452 gap 1 is design only (see the quick SUMMARY).
+
+- **Zero VAT for an unregistered seller (issue 962):** an order placed by a seller with no declared VAT number (no trader identity, or one with no VAT number) is recorded with 0 VAT in the order, the ledger and so the access export. The rate is stamped when the order is placed, on both the storefront and the vendor/API/MCP writers, so the ledger, summary and CSV follow. VAT-registered sellers are unchanged. There is deliberately no backfill: rewriting past ledger rows would fabricate a record. The checkout line "no VAT is shown" is now true of what is stored.
+- **Ready-by estimate (issue 825):** each shop has a default preparation time in minutes (shop settings, empty = not set). The order page, `/track`, the kitchen cards and the printed ticket show an "Estimated ready by" time, always labelled an estimate; a shop with no preparation time shows nothing, and a scheduled-slot order shows its own window instead. The time is a snapshot taken at placement and re-taken when the shop accepts. V91 adds `shops.prep_time_minutes` and `orders.estimated_ready_at` with their `_aud` mirrors.
+- **Unaccepted-order alert (issue 821):** an order left PENDING past `jtoye.orders.unaccepted-alert.threshold` (default 10 minutes) raises a "Waiting too long" badge on the kitchen New lane and a dashboard banner, and the customer gets one email saying the shop has not yet accepted. No auto-cancel. A per-tenant scheduled sweep stamps `orders.unaccepted_notified_at` (V91, `_aud` mirror, no backfill) to notify once per order; voided orders and orders awaiting payment are skipped.
+- **Proof:** the VAT and sweep ITs were red on the unfixed tree or, for the sweep, red 4 of 4 with the tenant pin removed under NOSUPERUSER; see the quick SUMMARY.
+
 ### Privacy: STAFF Sees Customer Name and Phone, Not Email or a Collection Address — 2026-11-03 (#1112)
 
 Quick 261103-r4c. Closes issue 856 and SW-TND-08 (epic issue 964). Owner ruling 2026-11-03, UK GDPR Art 5(1)(c): option B stays (any honoured grant still reads customers and orders), and field minimisation is enforced in the API.

@@ -1,0 +1,9 @@
+uk.jtoye.core.finance.SellerVatRegistrationIntegrationTest  tests=8 failures=5 errors=0
+ok   storefrontOrderOfARegisteredSellerIsUnchanged()
+FAIL ledgerOfAnUnregisteredSellerCarriesZeroVat() | org.opentest4j.AssertionFailedError: expected: "ZERO" but was: "STANDARD"
+ok   anOrderPlacedWhileRegisteredKeepsItsVatAfterTheSellerDeregisters()
+FAIL aTenantWithNoTraderIdentityAtAllDeclaresNoVatNumberSoIsZeroRated() | org.opentest4j.AssertionFailedError: expected: "ZERO" but was: "STANDARD"
+ok   vendorOrderOfARegisteredSellerIsUnchanged()
+FAIL ledgerOfARegisteredSellerIsUnchanged() | org.opentest4j.AssertionFailedError: expected: 166L but was: 498L
+FAIL vendorOrderOfAnUnregisteredSellerRecordsZeroVat() | org.opentest4j.AssertionFailedError: expected: "ZERO" but was: "STANDARD"
+FAIL storefrontOrderOfAnUnregisteredSellerRecordsZeroVat() | org.opentest4j.AssertionFailedError: [no declared VAT number, so the order is zero-rated] expected: "ZERO" but was: "STANDARD"

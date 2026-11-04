@@ -1,0 +1,5 @@
+uk.jtoye.core.order.UnacceptedOrderSweepIntegrationTest  tests=4 failures=0 errors=0
+ok   #821: the stamp reaches the vendor DTOs the kitchen board and dashboard read
+ok   #821: no email address means a vendor alert and no email
+ok   #821: each order is notified once - the second sweep alerts nothing and emails nobody
+ok   #821: an overdue PENDING order is stamped in tenants A and B under NOSUPERUSER; young, confirmed, voided and u
