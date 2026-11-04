@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Kitchen, Orders and Finance: Persona Close-out (kitchen lane) — 2026-11-04
+### Kitchen, Orders and Finance: Persona Close-out (kitchen lane) — 2026-11-04 (#1118)
 
 Quick 261104-kitchen. Issues 818, 820, 822, 824, 866, 858, 827 and 857 from the persona run, each re-checked on main first.
 
