@@ -7548,8 +7548,19 @@
     },
     "/api/v1/customers" : {
       "get" : {
-        "description" : "Returns a paginated list of customers for the authenticated tenant",
+        "description" : "Returns a paginated list of customers for the authenticated tenant. Optional q searches EVERY page: a case-insensitive substring of the name, the phone (spaces ignored) or - only for a caller who sees every customer's email - the email. q is bounded to 100 characters; blank is no search.",
         "operationId" : "list_4",
+        "parameters" : [
+          {
+            "description" : "Search text; matched over all pages",
+            "in" : "query",
+            "name" : "q",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
         "responses" : {
           "200" : {
             "content" : {
@@ -9369,7 +9380,7 @@
     },
     "/api/v1/orders" : {
       "get" : {
-        "description" : "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant.",
+        "description" : "Returns paginated list of orders for the authenticated tenant. Optional shopId query param filters to one shop of the tenant. Optional q searches EVERY page (not just the one returned): a case-insensitive substring of the order number or id, the customer's name, the customer's phone (spaces ignored) or - only where the caller sees full customer contact - the customer's email. q is bounded to 100 characters; blank is no search.",
         "operationId" : "getAllOrders",
         "parameters" : [
           {
@@ -9378,6 +9389,14 @@
             "required" : false,
             "schema" : {
               "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "q",
+            "required" : false,
+            "schema" : {
               "type" : "string"
             }
           },

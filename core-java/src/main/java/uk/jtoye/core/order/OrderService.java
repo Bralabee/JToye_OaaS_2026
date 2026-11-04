@@ -13,6 +13,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import uk.jtoye.core.common.ListSearch;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerContactRule;
 import uk.jtoye.core.customer.CustomerRepository;
@@ -547,6 +548,58 @@ public class OrderService {
         }
         CustomerContactScope contactScope = shopAccessService.customerContactScope();
         return orderRepository.findByShopIdIn(granted, pageable)
+                .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
+    }
+
+    /** A never-matching id that keeps an IN list non-empty (a Postgres {@code IN ()} is a syntax error). */
+    private static final UUID NO_SHOP = new UUID(0L, 0L);
+
+    /**
+     * The orders list SEARCH (issue #822): {@code q} matched in the query over every page, not over
+     * the one page the browser holds.
+     *
+     * <p><b>Scope is the same as the unsearched list, applied at the query.</b> With a {@code shopId}
+     * the caller needs STAFF on it (VSA-02 / D-02, exactly {@link #getOrdersByShop}); without one,
+     * GROUP_ADMIN sees the tenant and anyone else only their granted shops (no grant, no rows).
+     * RLS and an explicit tenant predicate sit underneath.
+     *
+     * <p><b>The email is not an oracle.</b> The customer email is searched only on shops where the
+     * caller sees full contact (issue #856); a STAFF caller's response carries no email, so a search
+     * that matched one would confirm an address the response hides. The response is minimised by the
+     * same {@link CustomerContactMinimiser} the list uses.
+     */
+    @Transactional(readOnly = true)
+    public Page<OrderDto> searchOrders(UUID shopId, String q, Pageable pageable) {
+        ListSearch search = ListSearch.of(q);
+        if (search == null) {
+            return shopId != null ? getOrdersByShop(shopId, pageable) : getAllOrders(pageable);
+        }
+        boolean allShops;
+        Set<UUID> shopIds;
+        if (shopId != null) {
+            shopAccessService.require(shopId, ShopRole.STAFF);
+            allShops = false;
+            shopIds = Set.of(shopId);
+        } else if (shopAccessService.isGroupAdmin()) {
+            allShops = true;
+            shopIds = Set.of(NO_SHOP);
+        } else {
+            Set<UUID> granted = shopAccessService.grantedShopIds();
+            if (granted.isEmpty()) {
+                return Page.empty(pageable);
+            }
+            allShops = false;
+            shopIds = granted;
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        CustomerContactScope contactScope = shopAccessService.customerContactScope();
+        boolean emailAllShops = contactScope != null && contactScope.allShops();
+        Set<UUID> emailShopIds = contactScope == null || contactScope.managedShopIds().isEmpty()
+                ? Set.of(NO_SHOP)
+                : contactScope.managedShopIds();
+        return orderRepository.search(tenantId, allShops, shopIds, emailAllShops, emailShopIds,
+                        search.text(), search.searchesPhone(), search.phone(), pageable)
                 .map(order -> CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope));
     }
 

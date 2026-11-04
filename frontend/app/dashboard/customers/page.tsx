@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -48,6 +48,7 @@ import {
   Calendar,
   ShoppingCart,
   ShieldAlert,
+  Search,
 } from "lucide-react"
 import Link from "next/link"
 import { Pagination } from "@/components/ui/pagination"
@@ -70,10 +71,20 @@ type CustomerFormData = z.infer<typeof customerSchema>
 
 const PAGE_SIZE = 20
 
+/** #822: how long the search box waits after the last keystroke before asking the server. */
+const SEARCH_DEBOUNCE_MS = 300
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(0)
+  /** #822: what is typed in the search box, and (after a pause) what the server was asked for. */
+  const [searchQuery, setSearchQuery] = useState("")
+  const [appliedQuery, setAppliedQuery] = useState("")
+  /** True for the one re-read a new search triggers, so the box keeps its focus instead of the page swapping to its spinner. */
+  const quietNextFetchRef = useRef(false)
+  /** Only the newest list request may write state (a slow answer to "a" must not overwrite "ab"). */
+  const fetchSeqRef = useRef(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -99,17 +110,22 @@ export default function CustomersPage() {
     resolver: zodResolver(customerSchema),
   })
 
-  async function fetchCustomers() {
+  async function fetchCustomers({ quiet = false }: { quiet?: boolean } = {}) {
+    const seq = ++fetchSeqRef.current
     try {
-      setLoading(true)
+      if (!quiet) setLoading(true)
+      // #822: the search runs on the server over every page; encoded so a & or # cannot split the query.
+      const searchScope = appliedQuery ? `&q=${encodeURIComponent(appliedQuery)}` : ""
       const response = await apiClient.get(
-        `/api/v1/customers?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`
+        `/api/v1/customers?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc${searchScope}`
       )
+      if (seq !== fetchSeqRef.current) return
       setCustomers(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
       setLoadFailed(false)
     } catch (error: unknown) {
+      if (seq !== fetchSeqRef.current) return
       const { message } = describeLoadError(error, "Failed to load customers")
       toast({
         variant: "destructive",
@@ -120,15 +136,39 @@ export default function CustomersPage() {
       setLoadFailed(true)
       setLoadErrorMessage(message)
     } finally {
-      setLoading(false)
+      if (seq === fetchSeqRef.current) setLoading(false)
     }
   }
 
   useEffect(() => {
+    const quiet = quietNextFetchRef.current
+    quietNextFetchRef.current = false
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
-    fetchCustomers()
+    fetchCustomers({ quiet })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
+  }, [currentPage, appliedQuery])
+
+  // #822: after a pause in typing, hand the text to the server (from page 0 - a new search is a new
+  // list). One request per pause, not per keystroke.
+  useEffect(() => {
+    const next = searchQuery.trim()
+    if (next === appliedQuery) return
+    const timer = setTimeout(() => {
+      quietNextFetchRef.current = true
+      setAppliedQuery(next)
+      setCurrentPage(0)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [searchQuery, appliedQuery])
+
+  const clearSearch = () => {
+    setSearchQuery("")
+    if (appliedQuery !== "") {
+      quietNextFetchRef.current = true
+      setAppliedQuery("")
+      setCurrentPage(0)
+    }
+  }
 
   const openCreateDialog = () => {
     setEditingCustomer(null)
@@ -271,14 +311,33 @@ export default function CustomersPage() {
         transition={{ delay: 0.1 }}
       >
         <Card>
-          <CardHeader>
-            <CardTitle>All Customers</CardTitle>
-            <CardDescription>
-              {/* #688: never assert a count nothing loaded (see products). */}
-              {loadFailed
-                ? "—"
-                : `${totalElements} customer${totalElements !== 1 ? "s" : ""} in total`}
-            </CardDescription>
+          <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle>All Customers</CardTitle>
+              <CardDescription>
+                {/* #688: never assert a count nothing loaded (see products). */}
+                {loadFailed
+                  ? "—"
+                  : `${totalElements} customer${totalElements !== 1 ? "s" : ""} ${
+                      appliedQuery ? "match" : "in total"
+                    }`}
+              </CardDescription>
+            </div>
+            {/* #822: searches every page on the server (name, phone, and email where it is shown). */}
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                aria-hidden="true"
+              />
+              <Input
+                type="search"
+                aria-label="Search customers"
+                placeholder="Name, phone or email"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-11 w-full pl-9 sm:h-10 sm:w-[260px]"
+              />
+            </div>
           </CardHeader>
           <CardContent>
             {loadFailed ? (
@@ -287,6 +346,19 @@ export default function CustomersPage() {
                 message={loadErrorMessage}
                 onRetry={fetchCustomers}
               />
+            ) : customers.length === 0 && (appliedQuery || searchQuery.trim()) ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Search className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                  No customers match &ldquo;{searchQuery.trim()}&rdquo;
+                </h3>
+                <p className="mb-4 text-sm text-slate-500">
+                  Try another name or phone number.
+                </p>
+                <Button onClick={clearSearch} variant="outline">
+                  Clear search
+                </Button>
+              </div>
             ) : customers.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Users className="mb-4 h-12 w-12 text-slate-300" />

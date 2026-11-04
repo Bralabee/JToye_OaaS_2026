@@ -63,6 +63,42 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
                                               Pageable pageable);
 
     /**
+     * Issue #822: the Customers list search over every page. Matches (case-insensitively, as a
+     * substring) the name, the phone with spaces removed and - only when {@code includeEmail} -
+     * the email. The caller passes {@code includeEmail} true only when it sees every customer's
+     * email (issue #856): searching an address the response hides would confirm it.
+     *
+     * <p>{@code allShops} true is the whole tenant (an Option C allShops caller); false narrows with
+     * the SAME predicate as {@link #findTenantScopedInGrantSet} to {@code shopIds}, which the caller
+     * never passes empty (a Postgres {@code IN ()} is a syntax error). The tenant predicate is
+     * explicit on top of RLS.
+     */
+    @Query("""
+            SELECT c FROM Customer c
+            WHERE c.tenantId = :tenantId
+              AND (:allShops = true
+                   OR c.originShopId IN :shopIds
+                   OR EXISTS (
+                       SELECT 1 FROM Order o
+                       WHERE o.tenantId = :tenantId
+                         AND o.customerId = c.id
+                         AND o.shopId IN :shopIds
+                   ))
+              AND (lower(c.name) LIKE :text ESCAPE '\\'
+                   OR (:searchPhone = true
+                       AND replace(coalesce(c.phone, ''), ' ', '') LIKE :phone ESCAPE '\\')
+                   OR (:includeEmail = true AND lower(c.email) LIKE :text ESCAPE '\\'))
+            """)
+    Page<Customer> search(@Param("tenantId") UUID tenantId,
+                          @Param("allShops") boolean allShops,
+                          @Param("shopIds") Collection<UUID> shopIds,
+                          @Param("includeEmail") boolean includeEmail,
+                          @Param("text") String text,
+                          @Param("searchPhone") boolean searchPhone,
+                          @Param("phone") String phone,
+                          Pageable pageable);
+
+    /**
      * Option C (Phase 39-08): single-customer lookup narrowed to {@code shopIds} for
      * non-{@code allShops} callers. Out-of-scope customer IDs return {@link Optional#empty()}
      * so callers translate to HTTP 404 (no existence oracle).
