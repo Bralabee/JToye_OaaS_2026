@@ -2,9 +2,10 @@
  * "Order again" (#845): /shop/{slug}/reorder/{orderNumber}, reached from a past order on My Orders.
  *
  * It reads the order's lines through the signed-in proxy (no email anywhere), reads the shop's live menu,
- * puts what is still available into THIS shop's basket through the basket provider's own write path, and
- * says what changed: what could not be added, what costs a different price now, what was capped. It never
- * checks out for the customer.
+ * shows what would go into THIS shop's basket and what would not, and on the customer's tap on "Add to
+ * basket" puts it there through the basket provider's own write path. Loading the page (a refresh, Back,
+ * Forward) never writes the basket. It says what changed: what could not be added, what costs a different
+ * price now, what was capped. It never checks out for the customer.
  *
  * IDENTITY. The basket is user-scoped client-persisted state with an owner stamp (R-16). This page adds a
  * second WAY to put items in the basket, so the stamp is asserted by content in localStorage after an
@@ -74,6 +75,21 @@ function renderPage() {
 
 const storedCart = () => JSON.parse(localStorage.getItem(`jtoye-cart-${SLUG}`) ?? "null")
 
+/** The page has loaded and is offering the preview (it has added nothing). */
+async function loaded() {
+  await screen.findByTestId("reorder-preview")
+}
+
+/** Load the page and tap "Add to basket"; resolves with the result panel. */
+async function addToBasket() {
+  await loaded()
+  const button = await screen.findByRole("button", { name: /add to basket/i })
+  await act(async () => {
+    button.click()
+  })
+  return screen.findByTestId("reorder-result")
+}
+
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
@@ -93,7 +109,7 @@ describe("a signed-in customer orders again", () => {
     respond(200, LINES)
     renderPage()
 
-    const result = await screen.findByTestId("reorder-result")
+    const result = await addToBasket()
     // The proxy was asked for this shop's order, with no email, and nothing else was fetched with identity.
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url] = fetchMock.mock.calls[0] as [string]
@@ -130,7 +146,7 @@ describe("a signed-in customer orders again", () => {
     )
     respond(200, LINES)
     renderPage()
-    const result = await screen.findByTestId("reorder-result")
+    const result = await addToBasket()
     expect(result).toHaveTextContent(/already in your basket/i)
     await waitFor(() => expect(storedCart().items.find((i: { productId: string }) => i.productId === "p2").quantity).toBe(2))
   })
@@ -145,20 +161,68 @@ describe("a signed-in customer orders again", () => {
       </Suspense>,
       { reactStrictMode: true } as never
     )
-    await screen.findByTestId("reorder-result")
+    await addToBasket()
     await waitFor(() => expect(storedCart()?.items).toHaveLength(2))
     expect(storedCart().items.find((i: { productId: string }) => i.productId === "p1").quantity).toBe(2)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("when nothing on the order is available any more it adds nothing and says so", async () => {
+  it("when nothing on the order is available any more it offers nothing to add, adds nothing and says so", async () => {
     respond(200, { ...LINES, lines: [LINES.lines[2], LINES.lines[3]] })
     renderPage()
-    const result = await screen.findByTestId("reorder-result")
-    expect(result).toHaveTextContent(/nothing from this order is available/i)
+    const panel = await screen.findByTestId("reorder-preview")
+    expect(panel).toHaveTextContent(/nothing from this order can be added/i)
     expect(storedCart()?.items ?? []).toHaveLength(0)
-    expect(within(result).queryByRole("link", { name: /go to checkout|check out/i })).toBeNull()
-    expect(within(result).getByRole("link", { name: /see the menu/i })).toHaveAttribute("href", `/shop/${SLUG}`)
+    expect(screen.queryByRole("button", { name: /add to basket/i })).toBeNull()
+    expect(screen.queryByRole("link", { name: /go to checkout|check out/i })).toBeNull()
+    expect(screen.getByRole("link", { name: /see the menu/i })).toHaveAttribute("href", `/shop/${SLUG}`)
+  })
+
+  it("loading the page adds NOTHING: it shows what would be added, and the basket only changes on the tap", async () => {
+    respond(200, LINES)
+    renderPage()
+    const panel = await screen.findByTestId("reorder-preview")
+    expect(panel).toHaveTextContent("2 \u00d7 Jollof Rice")
+    expect(panel).toHaveTextContent("1 \u00d7 Moin Moin")
+    expect(storedCart()?.items ?? []).toHaveLength(0)
+    expect(screen.queryByTestId("reorder-result")).toBeNull()
+  })
+
+  it("review finding 2: a second mount (refresh, Back then Forward, a reopened tab) adds nothing; only a second tap does", async () => {
+    respond(200, LINES)
+    const first = renderPage()
+    await addToBasket()
+    await waitFor(() => expect(storedCart()?.items).toHaveLength(2))
+    const quantity = (id: string) => storedCart().items.find((i: { productId: string }) => i.productId === id).quantity
+    expect([quantity("p1"), quantity("p2")]).toEqual([2, 1])
+    first.unmount()
+
+    // The page mounts again on the same storage, exactly as a refresh would.
+    renderPage()
+    await loaded()
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    expect([quantity("p1"), quantity("p2")]).toEqual([2, 1])
+    expect(screen.queryByTestId("reorder-result")).toBeNull()
+    // The customer can still choose to add it again, on purpose.
+    await addToBasket()
+    await waitFor(() => expect(quantity("p1")).toBe(4))
+  })
+
+  it("review finding 3: the shop's per-line limit counts what the basket already holds", async () => {
+    mockedGet.mockImplementation((url: string) =>
+      Promise.resolve({ data: url.endsWith("/products") ? MENU : { slug: SLUG, name: "Mama Ade's Kitchen", maxLineQuantity: 5 } })
+    )
+    localStorage.setItem(
+      `jtoye-cart-${SLUG}`,
+      JSON.stringify({ shopSlug: SLUG, items: [{ productId: "p1", title: "Jollof Rice", pricePennies: 1000, quantity: 4, imageUrl: null, category: "Mains" }] })
+    )
+    respond(200, { ...LINES, lines: [{ productId: "p1", productName: "Jollof Rice", quantity: 3, unitPricePennies: 1000 }] })
+    renderPage()
+    const result = await addToBasket()
+    await waitFor(() => expect(storedCart().items.find((i: { productId: string }) => i.productId === "p1").quantity).toBe(5))
+    expect(within(result).getByTestId("reorder-reduced")).toHaveTextContent("Jollof Rice: ordered 3, added 1")
   })
 })
 
@@ -176,7 +240,7 @@ describe("the order's own delivery details pre-fill the next checkout, on a brow
     expect(localStorage.getItem("jtoye-last-delivery")).toBeNull()
     respond(200, { ...LINES, delivery: DELIVERY })
     renderPage()
-    await screen.findByTestId("reorder-result")
+    await addToBasket()
     await waitFor(() =>
       expect(storedLast()).toEqual({
         owner: "user-A",
@@ -194,7 +258,7 @@ describe("the order's own delivery details pre-fill the next checkout, on a brow
     localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", address1: "1 Old Road", address2: "", city: "Leeds", postcode: "LS1 1AA", phone: "07700 900009" }))
     respond(200, { ...LINES, delivery: null })
     renderPage()
-    await screen.findByTestId("reorder-result")
+    await addToBasket()
     expect(storedLast()).toMatchObject({ owner: "user-A", address1: "1 Old Road" })
   })
 
@@ -204,15 +268,26 @@ describe("the order's own delivery details pre-fill the next checkout, on a brow
     signIn("user-B")
     respond(200, { ...LINES, delivery: DELIVERY })
     renderPage()
-    await screen.findByTestId("reorder-result")
+    await addToBasket()
     await waitFor(() => expect(storedLast()).toMatchObject({ owner: "user-B", address1: "12 Coldharbour Lane" }))
     expect(JSON.stringify(storedLast())).not.toContain("Old Road")
+  })
+
+  it("review finding 4: an OLD order's address does not replace the address this customer last used", async () => {
+    signIn("user-A")
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", address1: "1 New Home Road", address2: "", city: "Leeds", postcode: "LS1 1AA", phone: "07700 900009" }))
+    respond(200, { ...LINES, delivery: DELIVERY })
+    renderPage()
+    await addToBasket()
+    await waitFor(() => expect(storedCart()?.items).toHaveLength(2))
+    expect(storedLast()).toEqual({ owner: "user-A", address1: "1 New Home Road", address2: "", city: "Leeds", postcode: "LS1 1AA", phone: "07700 900009" })
+    expect(JSON.stringify(storedLast())).not.toContain("Coldharbour")
   })
 
   it("nobody identified (a session that lapsed mid-page) stores nothing", async () => {
     respond(200, { ...LINES, delivery: DELIVERY })
     renderPage()
-    await screen.findByTestId("reorder-result")
+    await addToBasket()
     expect(localStorage.getItem("jtoye-last-delivery")).toBeNull()
   })
 })
@@ -246,7 +321,7 @@ describe("it never leaves the customer on a blank page", () => {
     await act(async () => {
       within(alert).getByRole("button", { name: /try again/i }).click()
     })
-    await screen.findByTestId("reorder-result")
+    await addToBasket()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

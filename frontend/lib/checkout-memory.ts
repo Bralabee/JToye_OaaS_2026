@@ -229,3 +229,15 @@ export function rememberLastDelivery(details: LastDelivery): void {
     /* storage full or disabled: the prefill is a convenience */
   }
 }
+
+/**
+ * Remember a delivery address ONLY when this customer has none remembered. For a source that is not the
+ * order just placed (reordering an OLD order): its address is not newer than the one they last used, and
+ * replacing it would have the next checkout offer the address they moved away from. Another customer's
+ * entry is not "this customer's", so a signed-in customer with only someone else's entry stored takes the
+ * slot, as `rememberLastDelivery` does.
+ */
+export function rememberLastDeliveryIfNone(details: LastDelivery): void {
+  if (readLastDelivery()) return
+  rememberLastDelivery(details)
+}

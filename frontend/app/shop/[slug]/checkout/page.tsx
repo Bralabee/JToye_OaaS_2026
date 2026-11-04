@@ -550,17 +550,26 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     setDraftReady(true)
   }, [slug])
   // #845: once a customer is confirmed signed in, THEIR OWN last delivery address and phone are offered
-  // (lib/checkout-memory.ts reads it only for exactly that customer), and only into fields still empty: a
-  // restored draft or anything already typed wins. After the draft is read, so a draft is never overwritten.
+  // (lib/checkout-memory.ts reads it only for exactly that customer). ALL OR NOTHING: only when every
+  // address field is still empty. Filling the empty ones one by one would splice the remembered address
+  // onto a restored draft or a half-typed new one (a new street with the old flat number and city), and the
+  // order would go to an address nobody wrote. After the draft is read, so a draft is never overwritten.
+  // The current values reach the effect through a ref, so typing does not re-run it.
+  const addressNowRef = useRef({ address1, address2, city, postcode })
+  useEffect(() => {
+    addressNowRef.current = { address1, address2, city, postcode }
+  })
   useEffect(() => {
     if (!customerSignedIn || !draftReady) return
+    const now = addressNowRef.current
+    if (now.address1 || now.address2 || now.city || now.postcode) return
     const last = readLastDelivery()
     if (!last) return
     /* eslint-disable react-hooks/set-state-in-effect -- localStorage exists only after mount (DOM API) */
-    setAddress1((prev) => prev || last.address1)
-    setAddress2((prev) => prev || last.address2)
-    setCity((prev) => prev || last.city)
-    setPostcode((prev) => prev || last.postcode)
+    setAddress1(last.address1)
+    setAddress2(last.address2)
+    setCity(last.city)
+    setPostcode(last.postcode)
     setCustomerPhone((prev) => prev || last.phone)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [customerSignedIn, draftReady])

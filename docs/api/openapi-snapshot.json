@@ -5196,7 +5196,7 @@
         "type" : "object"
       },
       "ReorderLinesDto" : {
-        "description" : "The lines of one of the caller's own past orders, to refill a basket. Carries no personal data.",
+        "description" : "The lines of one of the caller's own past orders, to refill a basket. For a delivery order it also returns that order's delivery address and phone number (personal data), to its verified owner only; it carries no email or name.",
         "properties" : {
           "delivery" : {
             "$ref" : "#/components/schemas/Delivery",
@@ -13740,7 +13740,7 @@
     },
     "/api/v1/public/shops/{slug}/orders/{orderNumber}/reorder" : {
       "get" : {
-        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. Carries no personal data. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
+        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order and, for a delivery order, the delivery address and phone number it was placed with (personal data, returned to the order's verified owner only; no email or name is returned, and the response must not be logged or cached as non-personal). Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
         "operationId" : "getReorderLines",
         "parameters" : [
           {
@@ -17391,7 +17391,7 @@
     },
     "/public/shops/{slug}/orders/{orderNumber}/reorder" : {
       "get" : {
-        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. Carries no personal data. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
+        "description" : "Returns the product, name, quantity and unit price paid for each line of the signed-in customer's own order and, for a delivery order, the delivery address and phone number it was placed with (personal data, returned to the order's verified owner only; no email or name is returned, and the response must not be logged or cached as non-personal). Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's by the token's verified email, never by a parameter. An order that does not exist, is not the caller's, or was placed at a different shop is the same 404. Not cached.",
         "operationId" : "getReorderLines_1",
         "parameters" : [
           {

@@ -468,10 +468,12 @@ public class PublicStorefrontController {
     @GetMapping("/shops/{slug}/orders/{orderNumber}/reorder")
     @Operation(summary = "The lines of one of my past orders, to order again (session-authenticated)",
             description = "Returns the product, name, quantity and unit price paid for each line of the signed-in "
-                    + "customer's own order. Requires a valid jtoye-customers realm access token in the "
-                    + "X-Customer-Token header; the order is the caller's by the token's verified email, never by a "
-                    + "parameter. Carries no personal data. An order that does not exist, is not the caller's, or "
-                    + "was placed at a different shop is the same 404. Not cached.")
+                    + "customer's own order and, for a delivery order, the delivery address and phone number it was "
+                    + "placed with (personal data, returned to the order's verified owner only; no email or name is "
+                    + "returned, and the response must not be logged or cached as non-personal). Requires a valid "
+                    + "jtoye-customers realm access token in the X-Customer-Token header; the order is the caller's "
+                    + "by the token's verified email, never by a parameter. An order that does not exist, is not the "
+                    + "caller's, or was placed at a different shop is the same 404. Not cached.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "The order's lines"),
             @ApiResponse(responseCode = "401", description = "Missing or unverifiable customer token"),

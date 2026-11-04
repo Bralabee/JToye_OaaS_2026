@@ -9,11 +9,15 @@ import java.util.UUID;
  * The lines of one of the signed-in customer's own past orders, for "Order again" (#845, persona close-out
  * 2026-11-04): {@code GET /public/shops/{slug}/orders/{orderNumber}/reorder}.
  *
- * <p>Just what is needed to refill a basket, and nothing about the person: no email, name, phone or
- * address. The prices are what the customer PAID, so the client can say "price changed" against the live
- * menu; they are never used to charge anything (the server reprices every order at checkout, D-16).
+ * <p>What is needed to refill a basket, plus (for a delivery order) the delivery address and phone the order
+ * was placed with, so the next checkout can be pre-filled. That IS personal data, returned to the verified
+ * owner of the order only; the response carries no email or name. The prices are what the customer PAID, so
+ * the client can say "price changed" against the live menu; they are never used to charge anything (the
+ * server reprices every order at checkout, D-16).
  */
-@Schema(description = "The lines of one of the caller's own past orders, to refill a basket. Carries no personal data.")
+@Schema(description = "The lines of one of the caller's own past orders, to refill a basket. "
+        + "For a delivery order it also returns that order's delivery address and phone number (personal data), "
+        + "to its verified owner only; it carries no email or name.")
 public record ReorderLinesDto(
         @Schema(description = "The order these lines belong to.") String orderNumber,
         @Schema(description = "The shop the order was placed at, so the basket for that shop can be filled.") String shopSlug,

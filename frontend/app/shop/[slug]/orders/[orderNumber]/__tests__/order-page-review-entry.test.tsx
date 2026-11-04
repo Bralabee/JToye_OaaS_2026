@@ -5,9 +5,14 @@
  * A guest (no session) is not offered it: the review is posted with the customer's token, which a guest
  * does not have, so a form they could fill in and then be refused at would be worse than none. An order that
  * is not COMPLETED is not offered it either: the server refuses it, and the button should not promise it.
+ *
+ * It is offered only for an order that is the SIGNED-IN customer's own: this page reads an order by number
+ * and the email in localStorage (a guest order placed under another address), and a review of such an order
+ * is refused with "couldn't find this order on your account". The page knows whose order it read (the email
+ * the successful read was made with), so it offers the button only when that is the signed-in email.
  */
 import { Suspense } from "react"
-import { render, screen } from "@testing-library/react"
+import { act, render, screen } from "@testing-library/react"
 import OrderTrackingPage from "@/app/shop/[slug]/orders/[orderNumber]/page"
 import { getCustomerSession } from "@/lib/customer-auth"
 
@@ -73,6 +78,33 @@ describe("Rate your order on the order page", () => {
   it.each(["PENDING", "PREPARING", "READY", "CANCELLED"])("signed in but %s: not offered", async (status) => {
     renderPage(status, true)
     await screen.findByText("Mama Ade's Kitchen")
+    expect(screen.queryByRole("button", { name: /rate your order/i })).toBeNull()
+  })
+
+  it("signed in, but the order on screen was read with ANOTHER email (a guest order placed under a different address): not offered", async () => {
+    // The tracking read succeeds for the address in localStorage and is refused for the signed-in one.
+    mockLookup.mockImplementation((url: string, body?: { email?: string }) =>
+      url === `/public/orders/${ORDER_NUMBER}/lookup`
+        ? body?.email === "someone.else@example.com"
+          ? Promise.resolve({ data: order("COMPLETED") })
+          : Promise.reject(Object.assign(new Error("404"), { response: { status: 404 } }))
+        : Promise.reject(new Error(`unexpected ${url}`))
+    )
+    ;(getCustomerSession as jest.Mock).mockResolvedValue({ profile: { sub: "u1", email: "ade@example.com", name: "Ade" }, expiresAt: 9999999999 })
+    localStorage.clear()
+    sessionStorage.clear()
+    localStorage.setItem(`jtoye-checkout-email-${SLUG}`, "someone.else@example.com")
+    render(
+      <Suspense fallback={<div>loading</div>}>
+        <OrderTrackingPage params={resolvedThenable({ slug: SLUG, orderNumber: ORDER_NUMBER })} />
+      </Suspense>
+    )
+    await screen.findByText("Mama Ade's Kitchen")
+    // Let the session arrive and the second read (with the signed-in email) settle.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    expect(mockLookup).toHaveBeenCalledWith(`/public/orders/${ORDER_NUMBER}/lookup`, { email: "ade@example.com" })
     expect(screen.queryByRole("button", { name: /rate your order/i })).toBeNull()
   })
 })

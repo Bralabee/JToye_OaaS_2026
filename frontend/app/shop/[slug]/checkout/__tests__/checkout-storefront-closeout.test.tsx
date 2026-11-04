@@ -10,7 +10,7 @@
  */
 
 import { Suspense } from "react"
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import CheckoutPage from "@/app/shop/[slug]/checkout/page"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
@@ -429,6 +429,31 @@ describe("#845: the last delivery address is prefilled for the signed-in custome
     expect(screen.getByLabelText(/phone number/i)).toHaveValue("07700 900001")
     // and the name and email still come from the session, as before
     expect(screen.getByLabelText(/full name/i)).toHaveValue("Ade Johnson")
+  })
+
+  it("all or nothing: a restored draft with a new address is NOT mixed with the remembered one (no flat, city or phone borrowed from the old address)", async () => {
+    signIn("user-A")
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", ...A_ADDRESS }))
+    sessionStorage.setItem(
+      `jtoye-checkout-draft-${SLUG}`,
+      JSON.stringify({
+        owner: "user-A",
+        fields: { fulfilmentType: "DELIVERY", address1: "10 New Street", address2: "", city: "", postcode: "N1 1AA", phone: "", notes: "" },
+      })
+    )
+    seedCart()
+    renderCheckout()
+    await screen.findByTestId("order-allergen-panel")
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toHaveValue("Ade Johnson"))
+    // Let the prefill effect (which runs after the sign-in resolves) settle before asserting its absence.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    expect(screen.getByLabelText(/address line 1/i)).toHaveValue("10 New Street")
+    expect(screen.getByLabelText(/address line 2/i)).toHaveValue("")
+    expect(screen.getByLabelText(/town \/ city/i)).toHaveValue("")
+    expect(screen.getByLabelText(/^postcode/i)).toHaveValue("N1 1AA")
+    expect(screen.getByLabelText(/phone number/i)).toHaveValue("")
   })
 
   it("through the transition: B signing in on the same browser is NOT offered A's address, and the stored stamp is still A's", async () => {

@@ -94,4 +94,33 @@ describe("planReorder", () => {
     const plan = planReorder([line("p1", "Jollof Rice", 1, 1000), line("p1", "Jollof Rice", 2, 1000)], MENU, null)
     expect(plan.add.map((a) => a.quantity)).toEqual([1, 2])
   })
+
+  describe("the per-line limit counts what the basket already holds and every line of the same dish (review finding 3)", () => {
+    it("a basket already holding 4 of a dish with a limit of 5: asking for 3 more adds 1, and says so", () => {
+      const plan = planReorder([line("p1", "Jollof Rice", 3, 1000)], MENU, 5, new Map([["p1", 4]]))
+      expect(plan.add.map((a) => a.quantity)).toEqual([1])
+      expect(plan.reduced).toEqual([{ name: "Jollof Rice", asked: 3, got: 1 }])
+    })
+
+    it("a basket already at the limit adds none of that dish (no zero-quantity addition), and says so", () => {
+      const plan = planReorder([line("p1", "Jollof Rice", 2, 1000), line("p2", "Moin Moin", 1, 800)], MENU, 5, new Map([["p1", 5]]))
+      expect(plan.add.map((a) => a.item.productId)).toEqual(["p2"])
+      expect(plan.reduced).toEqual([{ name: "Jollof Rice", asked: 2, got: 0 }])
+      // a dish that is not added is not also reported as a price change
+      expect(plan.priceChanged).toEqual([])
+    })
+
+    it("the same dish on two lines shares ONE limit: 3 + 3 with a limit of 5 adds 3 then 2", () => {
+      const plan = planReorder([line("p1", "Jollof Rice", 3, 1000), line("p1", "Jollof Rice", 3, 1000)], MENU, 5)
+      expect(plan.add.map((a) => a.quantity)).toEqual([3, 2])
+      expect(plan.reduced).toEqual([{ name: "Jollof Rice", asked: 3, got: 2 }])
+    })
+
+    it("CONTROL: room to spare means no reduction, and no limit still means no client limit", () => {
+      const roomy = planReorder([line("p1", "Jollof Rice", 3, 1000)], MENU, 5, new Map([["p1", 2]]))
+      expect(roomy.add[0].quantity).toBe(3)
+      expect(roomy.reduced).toEqual([])
+      expect(planReorder([line("p1", "Jollof Rice", 30, 1000)], MENU, null, new Map([["p1", 99]])).add[0].quantity).toBe(30)
+    })
+  })
 })

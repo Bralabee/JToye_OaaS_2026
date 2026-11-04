@@ -120,11 +120,21 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   // posted with their token, which a guest does not have). Never the email: the page keeps using the
   // email only for the tracking read, and the review form is not handed it.
   const [signedIn, setSignedIn] = useState(false)
+  // The signed-in customer's email, and the email the order on screen was last READ with. The review is
+  // posted against the signed-in customer's own orders, so it is offered only when the two are the same
+  // address: this page reads by number + email, and an order read with another address (a guest order
+  // placed under a different email, from localStorage) would end in "couldn't find this order on your
+  // account". Compared here, never sent anywhere.
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const [orderReadEmail, setOrderReadEmail] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
     getCustomerSession().then((session) => {
       if (cancelled) return
-      if (session?.profile?.email) setEmail(session.profile.email)
+      if (session?.profile?.email) {
+        setEmail(session.profile.email)
+        setSessionEmail(session.profile.email)
+      }
       if (session?.profile) setSignedIn(true)
     })
     return () => {
@@ -194,6 +204,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         if (update) setStatusUpdate(update)
       }
       setOrder(res.data)
+      setOrderReadEmail(email)
       setError(null)
     } catch {
       if (seq !== readSeqRef.current) return
@@ -647,8 +658,12 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           <Package className="h-4 w-4" />
           Track this order
         </Link>
-        {/* #846: a signed-in customer can review a COMPLETED order here as well as on My Orders. */}
-        {signedIn && order?.status === "COMPLETED" && (
+        {/* #846: a signed-in customer can review their OWN COMPLETED order here as well as on My Orders. */}
+        {signedIn &&
+          order?.status === "COMPLETED" &&
+          sessionEmail !== null &&
+          orderReadEmail !== null &&
+          orderReadEmail.trim().toLowerCase() === sessionEmail.trim().toLowerCase() && (
           <ReviewOrder shopSlug={slug} orderNumber={orderNumber} shopName={order.shopName} />
         )}
         <Link

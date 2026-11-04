@@ -33,6 +33,7 @@ import {
   readCheckoutDraft,
   readLastDelivery,
   rememberLastDelivery,
+  rememberLastDeliveryIfNone,
   writeCheckoutDraft,
 } from "@/lib/checkout-memory"
 import {
@@ -195,6 +196,25 @@ describe("the last delivery address (#845) through the identity transitions", ()
     explicitSignOut()
     expect(localStorage.getItem(LAST_DELIVERY_KEY)).toBeNull()
     expect(readLastDelivery()).toBeNull()
+  })
+
+  it("rememberLastDeliveryIfNone (an OLD order's address) never replaces this customer's remembered address, but fills an empty slot and takes a slot that is another customer's", () => {
+    signIn("user-A")
+    // nothing stored: it fills the slot, stamped A
+    rememberLastDeliveryIfNone(A_LAST)
+    expect(storedLast()).toMatchObject({ owner: "user-A", ...A_LAST })
+    // A's address is stored: an older order's address does not replace it
+    rememberLastDeliveryIfNone(B_LAST)
+    expect(storedLast()).toMatchObject({ owner: "user-A", ...A_LAST })
+    expect(JSON.stringify(storedLast())).not.toContain("Other Road")
+    // B signs in on the same browser: the slot is A's, not B's, so B takes it (nothing of A's survives)
+    signIn("user-B")
+    rememberLastDeliveryIfNone(B_LAST)
+    expect(storedLast()).toMatchObject({ owner: "user-B", ...B_LAST })
+    // a guest writes nothing at all
+    explicitSignOut()
+    rememberLastDeliveryIfNone(A_LAST)
+    expect(localStorage.getItem(LAST_DELIVERY_KEY)).toBeNull()
   })
 
   it("is never written for a guest, or by a live session whose identity is unrecorded", () => {
