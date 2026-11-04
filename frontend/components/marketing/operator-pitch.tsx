@@ -4,12 +4,18 @@ import { useRef } from "react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOperatorEntranceScene } from "@/components/marketing/operator-entrance-scene"
 import { SafeImage } from "@/components/ui/safe-image"
-import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import {
-  formatRate,
+  OPERATOR_APPLICATION_REVIEW_LINE,
+  OPERATOR_CONFIDENTIALITY_LINE,
+  OPERATOR_FBO_LINE,
+} from "@/lib/operator-copy"
+import { LAUNCH_AREA } from "@/lib/positioning"
+import {
   formatSetupLine,
   PRICING,
   PRICING_CARD_FEE_LINE,
+  PRICING_VAT_BASIS_LINE,
+  pricingPlans,
 } from "@/lib/pricing"
 import { StripeUkPricingSentence } from "@/components/marketing/stripe-uk-pricing-sentence"
 
@@ -20,11 +26,7 @@ import { StripeUkPricingSentence } from "@/components/marketing/stripe-uk-pricin
  * only: the tier labels and notes, and which row is the primary one (the hero
  * docket reads it, so the docket and the table cannot disagree).
  */
-const PLANS = [
-  { name: "Standard", note: "Most operators start here.", docket: "of your direct sales", monthly: [`£${PRICING.coreMonthly}`, "per location"], fee: [PRICING.usageLabel, "of direct sales"], primary: true },
-  { name: "Flat", note: "One flat bill.", docket: "of your sales", monthly: [`£${PRICING.flatLow}–£${PRICING.flatHigh}`, "per location"], fee: [formatRate(0), "of sales"], primary: false },
-  { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", docket: "of your direct sales", monthly: ["£0", ""], fee: [PRICING.paygLabel, "of direct sales"], primary: false },
-] as const
+const PLANS = pricingPlans(PRICING)
 
 // The two footnotes live in lib/pricing.ts so /legal/terms quotes the same strings.
 const SETUP_LINE = formatSetupLine(PRICING)
@@ -80,6 +82,7 @@ const COMPLIANCE = [
   ["Allergen engine", "All 14 allergens acknowledged server-side, “may contain” kept separate, customer allergy notes audited."],
   ["Natasha’s Law labels", "PPDS labels for a 62 mm thermal printer."],
   ["Trader disclosures and data rights", "Statutory trader details on your storefront, GDPR export and erasure."],
+  ["Your data stays yours", OPERATOR_CONFIDENTIALITY_LINE],
 ] as const
 
 const PILOT_STEPS = [
@@ -89,9 +92,13 @@ const PILOT_STEPS = [
   ["4", "Review, then expand", "Agree the next step together."],
 ] as const
 
+// OWNER RULING 2026-11-04 (positioning): UK-wide, launching first in Birmingham and
+// the West Midlands. "You trade in London" and the West African-in-London lede are
+// superseded; lib/positioning.ts is the one definition. The "Start your application"
+// calls to action go to /contact#apply, not a sign-in (issue 803).
 const FIT_CRITERIA = [
   "You already run a food business with recurring orders.",
-  "You trade in London.",
+  "You run your food business anywhere in the UK. We are launching first in Birmingham and the West Midlands.",
   "You want direct orders, not a marketplace listing.",
 ] as const
 
@@ -146,9 +153,9 @@ export function OperatorPitch() {
         >
           <div>
             <h1 data-op-headline className="max-w-4xl text-balance text-4xl font-bold leading-[1.08] tracking-[-0.03em] sm:text-5xl">One kitchen. Weekday counter, weekend catering.</h1>
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-cream/80">Direct ordering, scheduled fulfilment and allergen labels for established West African food businesses in London. Customers pay you directly.</p>
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-cream/80">Direct ordering, scheduled fulfilment and allergen labels for established food businesses across the UK, launching first in {LAUNCH_AREA}. Customers pay you directly.</p>
             <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
-              <a href="/dashboard/onboarding" className={CTA_CLASS}>Start your application</a>
+              <a href="/contact#apply" className={CTA_CLASS}>Start your application</a>
               <a href="#pricing" className="text-[15px] font-semibold text-cream underline decoration-gold decoration-2 underline-offset-[5px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300">See pricing</a>
               {/* SW-CLR-04 (persona swarm): a way to ask before applying, which ends at a sign-in. */}
               <a href="/contact" className="text-[15px] font-semibold text-cream underline decoration-gold decoration-2 underline-offset-[5px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300">Contact us</a>
@@ -241,7 +248,7 @@ export function OperatorPitch() {
               ))}
             </tbody>
           </table>
-          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE} <StripeUkPricingSentence linkClassName={INLINE_LINK_CLASS} /> See the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
+          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {PRICING_VAT_BASIS_LINE} {CARD_FEE_LINE} <StripeUkPricingSentence linkClassName={INLINE_LINK_CLASS} /> See the <a href="/pricing" className={INLINE_LINK_CLASS}>pricing page</a>, the <a href="/legal/merchant-terms" className={INLINE_LINK_CLASS}>merchant terms (draft)</a> and the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
         </div>
       </section>
 
@@ -268,7 +275,7 @@ export function OperatorPitch() {
               <h3 className="text-lg font-bold text-oxblood">Is this for your kitchen?</h3>
               <ul className="mb-5 mt-3 grid list-disc gap-1.5 pl-[18px] text-[15px] text-slate-700">{FIT_CRITERIA.map((item) => <li key={item}>{item}</li>)}</ul>
               <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
-                <a href="/dashboard/onboarding" className={CTA_CLASS}>Start your application</a>
+                <a href="/contact#apply" className={CTA_CLASS}>Start your application</a>
                 <a href="/contact" className={INLINE_LINK_CLASS}>Contact us</a>
               </div>
               <p className="mt-3.5 text-sm text-slate-600">{OPERATOR_APPLICATION_REVIEW_LINE}</p>

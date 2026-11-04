@@ -6,8 +6,9 @@ import {
   resolvePublicContact,
 } from "@/lib/company"
 import { OPERATOR_APPLICATION_REVIEW_LINE } from "@/lib/operator-copy"
+import { POSITIONING_LINE } from "@/lib/positioning"
 import { PublicShell } from "@/components/public/public-shell"
-import { LEGAL_LINK_CLASS } from "@/components/legal/policy-page"
+import { LEGAL_LINK_CLASS, LEGAL_PROSE_LINK_CLASS } from "@/components/legal/policy-page"
 
 export const metadata: Metadata = {
   title: "Contact J'Toye",
@@ -122,17 +123,82 @@ export default function ContactPage() {
           </p>
         )}
 
-        <h2 className="mt-14 text-xl font-semibold tracking-tight text-oxblood">
-          Food businesses
-        </h2>
-        <p className="mt-4 text-base leading-relaxed text-slate-600">
-          J&apos;Toye runs an assisted pilot for food businesses.{" "}
-          {OPERATOR_APPLICATION_REVIEW_LINE} See the{" "}
-          <Link href="/for-operators" className={LEGAL_LINK_CLASS}>
-            operator page
-          </Link>{" "}
-          for the pilot and its pricing.
-        </p>
+        {/* Issue 803 (UXT-031): the destination of "Start your application" on
+            /for-operators, /pricing, /about. It used to be a Keycloak sign-in with
+            no register link. There is no self-serve vendor sign-up (a person
+            reviews every application; vendor-realm registration stays off), so the
+            way in is a message to a person. The mailto and tel routes come from
+            the same configuration as the list above and are rendered only when
+            set, never guessed. */}
+        <section id="apply" aria-labelledby="apply-heading" className="scroll-mt-20">
+          <h2
+            id="apply-heading"
+            className="mt-14 text-xl font-semibold tracking-tight text-oxblood"
+          >
+            Apply as a food business
+          </h2>
+          <p className="mt-4 text-base leading-relaxed text-slate-600">
+            J&apos;Toye runs an assisted pilot for food businesses.{" "}
+            {POSITIONING_LINE} {OPERATOR_APPLICATION_REVIEW_LINE}
+          </p>
+          <ol className="mt-4 list-decimal space-y-2 pl-6 text-base leading-relaxed text-slate-600">
+            <li>Tell us your business name, where you trade and what you sell.</li>
+            <li>A person replies to agree a plan and your setup.</li>
+            <li>
+              We set up your storefront with you; you run a real service and we
+              review it together.
+            </li>
+          </ol>
+          {contact.anyRoute ? (
+            <p className="mt-5 text-base leading-relaxed text-slate-600">
+              {contact.emailHref ? (
+                <>
+                  <a
+                    href={`${contact.emailHref}?subject=${encodeURIComponent(
+                      "J'Toye pilot application"
+                    )}`}
+                    className={LEGAL_PROSE_LINK_CLASS}
+                  >
+                    Email us your application
+                  </a>
+                  {contact.phoneHref ? " or " : "."}
+                </>
+              ) : null}
+              {contact.phoneHref ? (
+                <>
+                  <a href={contact.phoneHref} className={LEGAL_PROSE_LINK_CLASS}>
+                    {contact.emailHref ? "call us" : "Call us"}
+                  </a>
+                  .
+                </>
+              ) : null}
+            </p>
+          ) : (
+            <p className="mt-5 text-base leading-relaxed text-slate-600">
+              J&apos;Toye has not yet published an email address or phone number
+              for applications.
+            </p>
+          )}
+          <p className="mt-5 text-base leading-relaxed text-slate-600">
+            See the{" "}
+            <Link href="/for-operators" className={LEGAL_PROSE_LINK_CLASS}>
+              operator page
+            </Link>
+            , the{" "}
+            <Link href="/pricing" className={LEGAL_PROSE_LINK_CLASS}>
+              pricing
+            </Link>{" "}
+            and the{" "}
+            <Link href="/legal/merchant-terms" className={LEGAL_PROSE_LINK_CLASS}>
+              merchant terms (draft)
+            </Link>
+            . Already approved?{" "}
+            <Link href="/auth/signin" className={LEGAL_PROSE_LINK_CLASS}>
+              Sign in to your dashboard
+            </Link>
+            .
+          </p>
+        </section>
 
         <p className="mt-14 text-base">
           <Link

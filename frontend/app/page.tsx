@@ -39,9 +39,11 @@ export const metadata: Metadata = {
   // SW-CLR-03 (swarm epic #964): this description used to promise "go live in a
   // day", while /for-operators says a person reviews every application and the
   // setup is assisted. That promise is removed; "assisted setup" is the
-  // /for-operators wording. The positioning itself (UK-wide here, a West African
-  // London pilot there) is an open owner decision: design/brief.md, confirmed
-  // 2026-11-01, describes independent UK food businesses, so it is not narrowed.
+  // /for-operators wording. The positioning, formerly an open owner decision, is
+  // RULED 2026-11-04: UK-wide, launching first in Birmingham and the West
+  // Midlands (lib/positioning.ts). This page was already UK-wide and stays so;
+  // /for-operators, /about and /contact#apply now say the same thing instead of a
+  // London pilot. design/brief.md (independent UK food businesses) is unchanged.
   //
   // FE-5: canonical + Open Graph were missing on the landing page — the one
   // page most likely to be shared/linked externally. `alternates.canonical`

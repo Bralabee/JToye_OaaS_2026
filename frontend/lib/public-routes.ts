@@ -15,6 +15,12 @@ export const PUBLIC_STATIC_ROUTES: ReadonlyArray<{
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/shop", changeFrequency: "daily", priority: 0.9 },
   { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
+  // Persona close-out (issues 803, 804): the pages a prospective vendor needs. /pricing, /about
+  // and the merchant terms did not exist (404); /contact and /legal/terms existed but were
+  // unlisted. All five are in the footer, so a crawler reaches them by link as well.
+  { path: "/pricing", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/about", changeFrequency: "monthly", priority: 0.5 },
+  { path: "/contact", changeFrequency: "monthly", priority: 0.5 },
   // `/business-model-guide` is NOT here (SW-CLR-05): it is `noindex` and out of the footer since
   // PR 1080, and a sitemap must not offer crawlers a page that tells them not to index it.
   // FE-6 (RESOLVED, was: "a pre-existing inconsistency, left alone"): `/track`
@@ -43,4 +49,6 @@ export const PUBLIC_STATIC_ROUTES: ReadonlyArray<{
   { path: "/legal/cookies", changeFrequency: "yearly", priority: 0.3 },
   { path: "/legal/retention", changeFrequency: "yearly", priority: 0.3 },
   { path: "/legal/accessibility", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/terms", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/merchant-terms", changeFrequency: "yearly", priority: 0.3 },
 ]
