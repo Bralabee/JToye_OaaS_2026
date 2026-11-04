@@ -65,3 +65,43 @@ export const PRICING_CARD_FEE_LINE =
  */
 export const STRIPE_UK_PRICING_URL = "https://stripe.com/gb/pricing"
 export const STRIPE_UK_PRICING_LINK_TEXT = "Stripe's UK pricing page"
+
+/**
+ * The VAT basis of J'Toye's own fees, in one sentence (issue 804 and
+ * SW-CLR-06). OWNER RULING 2026-11-04: prices include VAT for VAT-registered
+ * businesses and carry no VAT for businesses that are not VAT-registered.
+ *
+ * Rendered by /pricing, /for-operators and /legal/merchant-terms from this
+ * constant, so a later ruling is one edit. NO VAT NUMBER and no statement of
+ * J'Toye Digital's own registration is invented here or beside it: the ruling
+ * fixes the basis, not a registration fact.
+ */
+export const PRICING_VAT_BASIS_LINE =
+  "Prices include VAT for VAT-registered businesses and carry no VAT for businesses that are not VAT-registered."
+
+/**
+ * One row of the plan table, shared by /for-operators and /pricing so the two
+ * cannot disagree. A FUNCTION of the pricing object for the reason
+ * formatSetupLine is: operator-pitch-pricing.test.tsx proves the page reads
+ * PRICING by mocking it, and a table built here at module load would carry the
+ * real figures past that mock. Callers pass the PRICING they imported.
+ *
+ * `docket` and `primary` are the /for-operators hero's wording and which row it
+ * reads; /pricing ignores them.
+ */
+export interface PricingPlan {
+  name: string
+  note: string
+  docket: string
+  monthly: readonly [string, string]
+  fee: readonly [string, string]
+  primary: boolean
+}
+
+export function pricingPlans(pricing: typeof PRICING = PRICING): readonly PricingPlan[] {
+  return [
+    { name: "Standard", note: "Most operators start here.", docket: "of your direct sales", monthly: [`£${pricing.coreMonthly}`, "per location"], fee: [pricing.usageLabel, "of direct sales"], primary: true },
+    { name: "Flat", note: "One flat bill.", docket: "of your sales", monthly: [`£${pricing.flatLow}–£${pricing.flatHigh}`, "per location"], fee: [formatRate(0), "of sales"], primary: false },
+    { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", docket: "of your direct sales", monthly: ["£0", ""], fee: [pricing.paygLabel, "of direct sales"], primary: false },
+  ]
+}

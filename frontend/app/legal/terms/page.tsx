@@ -155,6 +155,10 @@ export default function TermsPage() {
           <Link href="/for-operators" className={LEGAL_PROSE_LINK_CLASS}>
             operator page
           </Link>
+          , and the terms for food businesses are being drafted as the{" "}
+          <Link href="/legal/merchant-terms" className={LEGAL_PROSE_LINK_CLASS}>
+            merchant terms
+          </Link>
           .
         </p>
       </PolicySection>

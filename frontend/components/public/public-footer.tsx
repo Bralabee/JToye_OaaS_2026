@@ -53,7 +53,7 @@ import { useCustomerSession } from "@/hooks/use-customer-session"
  * Surfaces where the operator column stays visible to everyone, signed in or not.
  * Prefix-matched, so /for-operators/anything is covered too.
  */
-const OPERATOR_SURFACES = ["/for-operators", "/business-model-guide", "/competitive", "/auth"]
+const OPERATOR_SURFACES = ["/for-operators", "/pricing", "/business-model-guide", "/competitive", "/auth"]
 
 /**
  * Attribution year for the bundled OS Code-Point Open postcode dataset.
@@ -269,6 +269,22 @@ export function PublicFooter() {
                   Terms of use
                 </Link>
               </li>
+              {/* Persona close-out (issue 804): the merchant terms are a DRAFT and
+                  the label says so; the About page is company information. Both
+                  sit in this column because it renders for everyone. */}
+              <li>
+                <Link
+                  href="/legal/merchant-terms"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Merchant terms (draft)
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="text-cream/85 transition-colors hover:text-white">
+                  About J&apos;Toye
+                </Link>
+              </li>
               {/* SW-CLR-04 (swarm epic #964): the contact route lives in this
                   column because it is the one every public route renders for
                   everyone — "For operators" unmounts for a signed-in customer.
@@ -292,6 +308,11 @@ export function PublicFooter() {
                 <li>
                   <Link href="/for-operators" className="text-cream/85 transition-colors hover:text-white">
                     Become a vendor
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/pricing" className="text-cream/85 transition-colors hover:text-white">
+                    Pricing
                   </Link>
                 </li>
                 {/* SW-CLR-05 (swarm epic #964): "Business model guide" and "How we
