@@ -680,8 +680,13 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           stated. The element, its `aria-live="polite"` and its class list are
           unchanged, so the reserved height and the announcement behaviour are
           exactly what they were. */}
+      {/* UXT-112 (#877): the live region is MOUNTED before it has anything to say, and the line is filled
+          into it. A region inserted already holding its text is not announced by many screen readers,
+          so the result count was silent. The wrapper has no margin of its own (the line carries it), so
+          an empty region adds no height and nothing shifts. */}
+      <div data-testid="search-summary-region" aria-live="polite">
       {!loading && !rateLimited && resultsQuery && (
-        <p aria-live="polite" className="mb-4 text-sm text-slate-600">
+        <p className="mb-4 text-sm text-slate-600">
           {summary.kind === "text" ? (
             <>
               {summary.lead}
@@ -713,6 +718,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           )}
         </p>
       )}
+      </div>
 
       {/* Results */}
       {loadFailed ? (

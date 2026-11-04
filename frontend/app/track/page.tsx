@@ -639,12 +639,16 @@ function TrackOrderContent() {
                   transition={{ duration: 0.5, ease: "easeOut" }}
                 />
               </div>
-              <p className="mt-2 text-center text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
-                  Auto-refreshing
-                </span>
-              </p>
+              {/* UXT-111 (#877): the label only while the page really refreshes. The poll stops on a
+                  terminal status (the effect above), so a COMPLETED order is not "auto-refreshing". */}
+              {!TERMINAL_STATUSES.includes(order.status) && (
+                <p className="mt-2 text-center text-xs text-slate-600">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
+                    Auto-refreshing
+                  </span>
+                </p>
+              )}
             </div>
           )}
 

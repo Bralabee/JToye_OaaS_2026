@@ -299,18 +299,32 @@ export function StorefrontNav() {
 
       {profile ? (
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
-            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            <span className="truncate max-w-[100px]">{profile.name || profile.email}</span>
-          </div>
-          <div className="sm:hidden flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-            <User className="h-3.5 w-3.5" />
-          </div>
+          {/* UXT-107 (#877): these two used to be decorative, and a person circle that does nothing reads
+              as an account button that is broken. Both are the account control now (the account page
+              holds the customer's details and data rights). The accessible name is the same on both;
+              only one is displayed at any width. */}
+          <Link
+            href="/shop/account"
+            aria-label="Your account"
+            className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700 transition-colors hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+          >
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+            <span className="truncate max-w-[100px]" aria-hidden="true">{profile.name || profile.email}</span>
+          </Link>
+          <Link
+            href="/shop/account"
+            aria-label="Your account"
+            className="sm:hidden flex h-11 w-11 items-center justify-center rounded-full text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100">
+              <User className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          </Link>
           <button
             onClick={handleSignOut}
             disabled={signingOut}
             aria-busy={signingOut}
-            className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
+            className="flex h-11 w-11 items-center justify-center gap-1 rounded-full text-slate-600 hover:text-slate-800 transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
             // SW-JRD-08: an icon-only control needs a real accessible name; `title` alone is a
             // fallback some assistive technology does not read. `title` stays as the visible
             // tooltip, and the browser specs locate the signed-in control by it.
