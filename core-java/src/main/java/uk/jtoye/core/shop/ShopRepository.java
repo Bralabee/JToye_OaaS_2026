@@ -155,6 +155,158 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
     Page<Shop> fullTextSearchPublished(@Param("q") String query, Pageable pageable);
 
     // ==========================================================================================
+    // Declared-allergen filter (#862, owner ruling 2026-11-04)
+    // ==========================================================================================
+    //
+    // A published shop that has an AVAILABLE dish whose DECLARED allergen_mask shares a bit with
+    // :mask (any-of). This is what the vendor declared, nothing more: a kitchen missing from the
+    // result is NOT thereby free of the allergen, and no wording on any surface may say so.
+    // allergen_mask is NOT NULL DEFAULT 0 (V1/V2), so no NULL arm is needed.
+    //
+    // RLS is the same as the dish arm of FULL_TEXT_SEARCH_PUBLISHED_SQL: an anonymous caller reads
+    // products through V89 products_public_read (available dishes of published shops); a caller
+    // carrying a tenant reads its own tenant's dishes only. Matching the (shop, tenant) PAIR keeps
+    // "the dish and its shop share a tenant". p.available is repeated so the query means the same
+    // under either policy. The ORDER BY is fixed (name, id) and the Pageable passed in must be
+    // unsorted, exactly like the full-text queries above.
+    String DECLARED_ALLERGEN_ARM = """
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.available = true
+                       AND (p.allergen_mask & :mask) <> 0
+            """;
+
+    String DECLARING_PUBLISHED_SQL = """
+            SELECT s.* FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+             ORDER BY s.name ASC, s.id ASC
+            """;
+
+    String DECLARING_PUBLISHED_COUNT_SQL = """
+            SELECT COUNT(*) FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+            """;
+
+    @Query(value = DECLARING_PUBLISHED_SQL, countQuery = DECLARING_PUBLISHED_COUNT_SQL, nativeQuery = true)
+    Page<Shop> findPublishedDeclaring(@Param("mask") int mask, Pageable pageable);
+
+    // The text tier of the public search, narrowed to kitchens that ALSO declare the allergen:
+    // the same two index arms as FULL_TEXT_SEARCH_PUBLISHED_SQL, ANDed with the declared arm.
+    String FULL_TEXT_SEARCH_DECLARING_SQL = """
+            SELECT s.* FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+                    SELECT sh.id, sh.tenant_id FROM shops sh
+                     WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+                    UNION
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.search_vector @@ plainto_tsquery('english', :q)
+                       AND p.available = true)
+               AND (s.id, s.tenant_id) IN (
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+             ORDER BY COALESCE(s.search_vector @@ plainto_tsquery('english', :q), false) DESC,
+                      COALESCE(ts_rank(s.search_vector, plainto_tsquery('english', :q)), 0) DESC,
+                      s.name ASC, s.id ASC
+            """;
+
+    String FULL_TEXT_SEARCH_DECLARING_COUNT_SQL = """
+            SELECT COUNT(*) FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+                    SELECT sh.id, sh.tenant_id FROM shops sh
+                     WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+                    UNION
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.search_vector @@ plainto_tsquery('english', :q)
+                       AND p.available = true)
+               AND (s.id, s.tenant_id) IN (
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+            """;
+
+    @Query(value = FULL_TEXT_SEARCH_DECLARING_SQL, countQuery = FULL_TEXT_SEARCH_DECLARING_COUNT_SQL,
+           nativeQuery = true)
+    Page<Shop> fullTextSearchPublishedDeclaring(@Param("q") String query, @Param("mask") int mask,
+                                                Pageable pageable);
+
+    // The text tier when the WHOLE search term is an allergen name ("peanut"): a kitchen matches on
+    // its own vector, on a dish's vector, OR on a dish that declares the allergen. Same ordering
+    // as FULL_TEXT_SEARCH_PUBLISHED_SQL, so a kitchen that says the word itself still ranks first.
+    String FULL_TEXT_OR_DECLARING_SQL = """
+            SELECT s.* FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+                    SELECT sh.id, sh.tenant_id FROM shops sh
+                     WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+                    UNION
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.search_vector @@ plainto_tsquery('english', :q)
+                       AND p.available = true
+                    UNION
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+             ORDER BY COALESCE(s.search_vector @@ plainto_tsquery('english', :q), false) DESC,
+                      COALESCE(ts_rank(s.search_vector, plainto_tsquery('english', :q)), 0) DESC,
+                      s.name ASC, s.id ASC
+            """;
+
+    String FULL_TEXT_OR_DECLARING_COUNT_SQL = """
+            SELECT COUNT(*) FROM shops s
+             WHERE s.published = true
+               AND (s.id, s.tenant_id) IN (
+                    SELECT sh.id, sh.tenant_id FROM shops sh
+                     WHERE sh.search_vector @@ plainto_tsquery('english', :q)
+                    UNION
+                    SELECT p.shop_id, p.tenant_id FROM products p
+                     WHERE p.search_vector @@ plainto_tsquery('english', :q)
+                       AND p.available = true
+                    UNION
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+            """;
+
+    @Query(value = FULL_TEXT_OR_DECLARING_SQL, countQuery = FULL_TEXT_OR_DECLARING_COUNT_SQL,
+           nativeQuery = true)
+    Page<Shop> fullTextSearchPublishedOrDeclaring(@Param("q") String query, @Param("mask") int mask,
+                                                  Pageable pageable);
+
+    // LIKE tier narrowed to kitchens that also declare the allergen (the fragment typed so far,
+    // "suy", still has to find a declaring kitchen). Native for the bitwise AND.
+    String LIKE_SEARCH_DECLARING_SQL = """
+            SELECT s.* FROM shops s
+             WHERE s.published = true
+               AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%'))
+                    OR LOWER(s.tags) LIKE LOWER(CONCAT('%', :q, '%'))
+                    OR EXISTS (SELECT 1 FROM products p WHERE p.shop_id = s.id AND p.tenant_id = s.tenant_id
+                                  AND p.available = true AND LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%'))))
+               AND (s.id, s.tenant_id) IN (
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+             ORDER BY s.name ASC, s.id ASC
+            """;
+
+    String LIKE_SEARCH_DECLARING_COUNT_SQL = """
+            SELECT COUNT(*) FROM shops s
+             WHERE s.published = true
+               AND (LOWER(s.name) LIKE LOWER(CONCAT('%', :q, '%'))
+                    OR LOWER(s.tags) LIKE LOWER(CONCAT('%', :q, '%'))
+                    OR EXISTS (SELECT 1 FROM products p WHERE p.shop_id = s.id AND p.tenant_id = s.tenant_id
+                                  AND p.available = true AND LOWER(p.title) LIKE LOWER(CONCAT('%', :q, '%'))))
+               AND (s.id, s.tenant_id) IN (
+            """ + DECLARED_ALLERGEN_ARM + """
+                    )
+            """;
+
+    @Query(value = LIKE_SEARCH_DECLARING_SQL, countQuery = LIKE_SEARCH_DECLARING_COUNT_SQL, nativeQuery = true)
+    Page<Shop> searchPublishedDeclaring(@Param("q") String query, @Param("mask") int mask, Pageable pageable);
+
+    // ==========================================================================================
     // Distance-ordered public discovery (33-06 / #460 link 5)
     // ==========================================================================================
     //

@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.ClientIpResolver;
 import uk.jtoye.core.security.CustomerJwtVerifier;
@@ -151,9 +152,20 @@ public class PublicStorefrontController {
             @RequestParam(required = false) Double lat,
             @RequestParam(required = false) Double lon,
             @RequestParam(required = false) Double radiusKm,
+            @Parameter(description = "Allergen names (UK FSA 14, comma separated, any case), e.g. Peanuts,Gluten. "
+                    + "Keeps only kitchens with an available dish whose VENDOR-DECLARED allergens include one of them. "
+                    + "This reflects what each kitchen has declared; a kitchen that is not listed is not confirmed free "
+                    + "of the allergen. Combines with 'q', not with a distance search. An unknown name is a 400.")
+            @RequestParam(required = false) String declares,
             @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable,
             HttpServletResponse response) {
         boolean located = lat != null || lon != null || radiusKm != null;
+        // #862 (owner ruling 2026-11-04): what a vendor DECLARES, never "free from".
+        int declaredMask = declares == null ? 0 : AllergenCatalog.maskForDeclaredFilter(declares);
+        if (located && declaredMask != 0) {
+            throw new IllegalArgumentException(
+                    "'declares' cannot be combined with a distance search ('lat'/'lon'/'radiusKm')");
+        }
         if (located) {
             if (q != null && !q.isBlank()) {
                 throw new IllegalArgumentException(
@@ -169,9 +181,12 @@ public class PublicStorefrontController {
             // asked us to interpret — there is no second, conflicting instruction to reconcile,
             // which is exactly what made the combination ambiguous. The guard stays.
             PublicStorefrontService.SearchOutcome outcome =
-                    storefrontService.searchPublishedShops(q.trim(), pageable);
+                    storefrontService.searchPublishedShops(q.trim(), declaredMask, pageable);
             response.setHeader(SearchInterpretation.HEADER, outcome.interpretation().headerValue());
             return outcome.page();
+        }
+        if (declaredMask != 0) {
+            return storefrontService.listPublishedShopsDeclaring(declaredMask, pageable);
         }
         return storefrontService.listPublishedShops(pageable);
     }

@@ -90,7 +90,7 @@ class PublicStorefrontControllerTest {
     @Test
     void searchShops_delegatesToSearchMethod() throws Exception {
         PublicShopDto shop = buildShopDto("jollof-palace", "Jollof Palace");
-        when(storefrontService.searchPublishedShops(eq("jollof"), any(Pageable.class)))
+        when(storefrontService.searchPublishedShops(eq("jollof"), eq(0), any(Pageable.class)))
                 .thenReturn(new PublicStorefrontService.SearchOutcome(
                         new PageImpl<>(List.of(shop)), SearchInterpretation.text()));
 
@@ -98,7 +98,54 @@ class PublicStorefrontControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].name").value("Jollof Palace"));
 
-        verify(storefrontService).searchPublishedShops(eq("jollof"), any(Pageable.class));
+        verify(storefrontService).searchPublishedShops(eq("jollof"), eq(0), any(Pageable.class));
+    }
+
+    // --- #862 (owner ruling 2026-11-04): the DECLARED-allergen filter ---
+
+    @Test
+    @DisplayName("#862: declares=Peanuts lists via the declaring query with the peanut bit, no interpretation header")
+    void listShops_declaresDelegatesWithMask() throws Exception {
+        PublicShopDto shop = buildShopDto("suya-house", "Suya House");
+        when(storefrontService.listPublishedShopsDeclaring(eq(1 << 4), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(shop)));
+
+        mockMvc.perform(get("/public/shops").param("declares", "Peanuts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].name").value("Suya House"));
+
+        verify(storefrontService).listPublishedShopsDeclaring(eq(1 << 4), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("#862: declares + q passes the mask to the search")
+    void searchShops_declaresAndQ() throws Exception {
+        PublicShopDto shop = buildShopDto("suya-house", "Suya House");
+        when(storefrontService.searchPublishedShops(eq("suya"), eq(1 << 4), any(Pageable.class)))
+                .thenReturn(new PublicStorefrontService.SearchOutcome(
+                        new PageImpl<>(List.of(shop)), SearchInterpretation.text()));
+
+        mockMvc.perform(get("/public/shops").param("q", "suya").param("declares", "peanuts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].name").value("Suya House"));
+    }
+
+    @Test
+    @DisplayName("#862: an unknown allergen name is a 400, never an unfiltered list")
+    void listShops_unknownDeclaresIs400() throws Exception {
+        mockMvc.perform(get("/public/shops").param("declares", "peanut butter"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/public/shops").param("declares", "gluten free"))
+                .andExpect(status().isBadRequest());
+        verify(storefrontService, org.mockito.Mockito.never()).listPublishedShops(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("#862: declares cannot be combined with a distance search")
+    void listShops_declaresWithDistanceIs400() throws Exception {
+        mockMvc.perform(get("/public/shops").param("declares", "Milk")
+                        .param("lat", "51.5").param("lon", "-0.1").param("radiusKm", "3"))
+                .andExpect(status().isBadRequest());
     }
 
     // --- 33-08 / #619: the server-asserted search interpretation ---
@@ -107,7 +154,7 @@ class PublicStorefrontControllerTest {
     @DisplayName("CA-C(api): a text match carries the literal header 'text' — never a proximity claim")
     void searchShops_textMatchDisclosesText() throws Exception {
         PublicShopDto shop = buildShopDto("jollof-palace", "Jollof Palace");
-        when(storefrontService.searchPublishedShops(eq("jollof"), any(Pageable.class)))
+        when(storefrontService.searchPublishedShops(eq("jollof"), eq(0), any(Pageable.class)))
                 .thenReturn(new PublicStorefrontService.SearchOutcome(
                         new PageImpl<>(List.of(shop)), SearchInterpretation.text()));
 
@@ -120,7 +167,7 @@ class PublicStorefrontControllerTest {
     @DisplayName("a proximity match publishes the full grammar 33-09's parser consumes")
     void searchShops_proximityMatchDisclosesTheGrammar() throws Exception {
         PublicShopDto shop = buildShopDto("peckham-jollof", "Peckham Jollof Co.");
-        when(storefrontService.searchPublishedShops(eq("SE22"), any(Pageable.class)))
+        when(storefrontService.searchPublishedShops(eq("SE22"), eq(0), any(Pageable.class)))
                 .thenReturn(new PublicStorefrontService.SearchOutcome(
                         new PageImpl<>(List.of(shop)),
                         SearchInterpretation.proximity("SE22", PostcodeGeocoder.Precision.DISTRICT, 5.0)));

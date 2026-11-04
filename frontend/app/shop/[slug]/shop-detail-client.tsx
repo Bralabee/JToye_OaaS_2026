@@ -21,6 +21,9 @@ import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } fro
 import { lineLimitHintCopy } from "@/components/storefront/product-detail-modal"
 import type { PublicAnnouncement } from "@/types/storefront"
 import { productAllergenStatement } from "@/lib/product-allergens"
+import { ALLERGENS, hasAllergen } from "@/types/api"
+import { DeclaredAllergenFilter } from "@/components/storefront/declared-allergen-filter"
+import { DECLARED_FILTER_HELP, declaredFilterActiveNote } from "@/lib/declared-allergen-filter"
 import { useCart } from "@/components/storefront/cart-provider"
 import { FloatingCartBar } from "@/components/storefront/floating-cart-bar"
 import { SafeImage } from "@/components/ui/safe-image"
@@ -466,6 +469,8 @@ export function ShopDetailClient({
   // HTML with a placeholder on hydration, which is the layout shift this change
   // exists to remove.
   const [loading, setLoading] = useState(initial === null)
+  // #862 (owner ruling 2026-11-04): the allergen (catalogue bit) whose DECLARATION narrows the menu.
+  const [declaredBit, setDeclaredBit] = useState<number | null>(null)
   const [activeCategory, setActiveCategory] = useState<string | null>(
     initial ? (Object.keys(initial.products)[0] ?? null) : null
   )
@@ -563,8 +568,21 @@ export function ShopDetailClient({
     load()
   }, [load])
 
-  const categories = Object.keys(products)
-  const featuredProducts = Object.values(products)
+  // The menu as shown: every dish, or only those whose vendor-DECLARED mask has the chosen bit.
+  // Never the advisory ingredient reconciliation or "may contain": those are other statements.
+  const allCategoryCount = Object.keys(products).length
+  const declaredName =
+    declaredBit === null ? null : (ALLERGENS.find((a) => a.bit === declaredBit)?.name ?? null)
+  const shownProducts: ProductsByCategory =
+    declaredBit === null
+      ? products
+      : Object.fromEntries(
+          Object.entries(products)
+            .map(([cat, list]) => [cat, list.filter((p) => hasAllergen(p.allergenMask ?? 0, declaredBit))] as const)
+            .filter(([, list]) => list.length > 0)
+        )
+  const categories = Object.keys(shownProducts)
+  const featuredProducts = Object.values(shownProducts)
     .flat()
     .filter((p) => p.featured)
 
@@ -949,6 +967,16 @@ export function ShopDetailClient({
 
       {/* Menu. The bottom padding is bound to the basket bar's published height (SW-JRD-10). */}
       <div data-testid="shop-menu" className={`mx-auto max-w-4xl px-4 sm:px-6 pt-6 ${MENU_BOTTOM_PADDING}`}>
+        {allCategoryCount > 0 && (
+          <div className="mb-6">
+            <DeclaredAllergenFilter value={declaredBit} onChange={setDeclaredBit} />
+            {declaredName && (
+              <p className="mt-2 text-sm font-medium text-oxblood">
+                {declaredFilterActiveNote(declaredName, "dishes")}
+              </p>
+            )}
+          </div>
+        )}
         {/* Featured section */}
         {featuredProducts.length > 0 && (
           <section className="mb-8">
@@ -977,7 +1005,7 @@ export function ShopDetailClient({
           >
             <h2 className="text-base font-bold text-oxblood mb-3">{category}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {products[category].map((product) => (
+              {shownProducts[category].map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
@@ -989,7 +1017,15 @@ export function ShopDetailClient({
 
         {/* Menu empty state — a shop with zero assigned products (per-shop
             scoping from 19-02 can now surface this legitimately). */}
-        {categories.length === 0 && (
+        {categories.length === 0 && declaredName && (
+          <div className="flex min-h-[20vh] flex-col items-center justify-center py-8 text-center" role="status">
+            <h2 className="text-lg font-semibold text-oxblood">
+              No dishes at this kitchen declare {declaredName}
+            </h2>
+            <p className="mt-1 max-w-md text-sm text-slate-600">{DECLARED_FILTER_HELP}</p>
+          </div>
+        )}
+        {allCategoryCount === 0 && (
           <div className="flex min-h-[40vh] flex-col items-center justify-center text-center py-12">
             <UtensilsCrossed className="h-12 w-12 text-slate-300" />
             <h2 className="mt-4 text-lg font-semibold text-oxblood">
