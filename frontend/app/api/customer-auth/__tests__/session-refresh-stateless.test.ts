@@ -12,7 +12,7 @@
  *   - a refusal from the IdP (a 4xx: invalid_grant) answers `authenticated:false` and leaves the
  *     cookies alone, and says `refreshRefused` so the browser may probe once more with the cookie
  *     it holds NOW;
- *   - a refusal on a request that carries the retry marker (`x-session-retry: 1`) is final: the
+ *   - a refusal on a request that carries the retry marker (the query parameter `?retry=1`) is final: the
  *     three cookies are cleared;
  *   - a transient failure (5xx, 429, network, an unreadable answer) NEVER clears anything.
  *
@@ -46,8 +46,8 @@ function probe(refreshValue: string | null, retry = false): NextRequest {
   const expiredId = fakeJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) - 60 })
   const cookies = [`jtoye-customer-id=${expiredId}`]
   if (refreshValue) cookies.push(`jtoye-customer-refresh=${refreshValue}`)
-  return new NextRequest("http://localhost/api/customer-auth/session", {
-    headers: { cookie: cookies.join("; "), ...(retry ? { "x-session-retry": "1" } : {}) },
+  return new NextRequest(`http://localhost/api/customer-auth/session${retry ? "?retry=1" : ""}`, {
+    headers: { cookie: cookies.join("; ") },
   })
 }
 

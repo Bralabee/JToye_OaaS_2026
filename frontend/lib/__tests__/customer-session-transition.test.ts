@@ -50,11 +50,13 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks())
 
 describe("getCustomerSession — the one retry (#843)", () => {
-  it("re-probes once WITH the retry marker after a refused answer, and returns the second answer", async () => {
-    const calls: Array<Record<string, string> | undefined> = []
+  it("re-probes once WITH the retry parameter after a refused answer, and returns the second answer", async () => {
+    const calls: string[] = []
     const answers = [refused(), signedIn("u1")]
-    global.fetch = jest.fn(async (_u: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(init?.headers as Record<string, string> | undefined)
+    global.fetch = jest.fn(async (u: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(u))
+      // a custom request header would be a CORS allow-list matter (INV-24): none may be sent
+      expect(init?.headers).toBeUndefined()
       return answers.shift()!
     }) as unknown as typeof fetch
 
@@ -62,8 +64,8 @@ describe("getCustomerSession — the one retry (#843)", () => {
 
     expect(session?.profile.sub).toBe("u1")
     expect(calls).toHaveLength(2)
-    expect(calls[0]?.["x-session-retry"]).toBeUndefined()
-    expect(calls[1]?.["x-session-retry"]).toBe("1")
+    expect(calls[0]).toBe("/api/customer-auth/session")
+    expect(calls[1]).toBe("/api/customer-auth/session?retry=1")
     expect(stored().marker).toBe("true")
   })
 
@@ -192,9 +194,9 @@ describe("getCustomerSession — two tabs against the REAL realm's rules (#843)"
     let revoked = false
     let n = 0
     const sent: string[] = []
-    const fetchImpl = async (_u: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = async (u: RequestInfo | URL) => {
       const cookie = jar.refresh // read at SEND time, like a browser
-      const retry = (init?.headers as Record<string, string> | undefined)?.["x-session-retry"] === "1"
+      const retry = String(u).includes("?retry=1")
       sent.push(`${cookie}${retry ? " (retry)" : ""}`)
       for (let i = 0; i < 5; i += 1) await Promise.resolve() // time on the wire
       if (!cookie) return anonymous()

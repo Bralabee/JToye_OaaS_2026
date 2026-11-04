@@ -86,12 +86,16 @@ function unauthenticatedAndCleared() {
 }
 
 /**
- * The retry marker (#843). The browser re-probes ONCE with this header after an answer that said
- * `refreshRefused`. That second probe carries the browser's cookie as it is by then, so a refusal
- * the first time that was only a stale cookie in flight is answered with the current one. A refusal
- * on a probe that carries the marker is final.
+ * The retry marker (#843): the query parameter `?retry=1`. The browser re-probes ONCE with it after
+ * an answer that said `refreshRefused`. That second probe carries the browser's cookie as it is by
+ * then, so a refusal the first time that was only a stale cookie in flight is answered with the
+ * current one. A refusal on a probe that carries the marker is final.
+ *
+ * A query parameter and not a custom request header: a header the browser adds is a CORS
+ * allow-list matter (INV-24 refuses one the Ingress does not list), and this call is same-origin,
+ * so widening CORS for it would be widening for nothing.
  */
-const RETRY_HEADER = "x-session-retry"
+const RETRY_PARAM = "retry"
 
 export async function GET(_req: NextRequest) {
   const access = _req.cookies.get(ACCESS_COOKIE)?.value
@@ -126,7 +130,7 @@ export async function GET(_req: NextRequest) {
     // replaced, and clearing here would overwrite the cookies that probe just issued (#843).
     // Nothing is cached or re-issued server-side either way, so a probe that raced a sign-out can
     // never bring the session back.
-    return _req.headers.get(RETRY_HEADER) === "1"
+    return _req.nextUrl.searchParams.get(RETRY_PARAM) === "1"
       ? unauthenticatedAndCleared()
       : unauthenticated({ refreshRefused: true })
   }

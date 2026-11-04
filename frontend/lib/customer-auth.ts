@@ -605,10 +605,11 @@ type ProbeAnswer =
 
 async function probeOnce(retry: boolean): Promise<ProbeAnswer> {
   try {
-    const res = await fetch("/api/customer-auth/session", {
+    // The retry marker is a query parameter, not a header (a custom request header would be a
+    // CORS allow-list matter, INV-24; this call is same-origin and needs neither).
+    const res = await fetch(retry ? "/api/customer-auth/session?retry=1" : "/api/customer-auth/session", {
       credentials: "include",
       cache: "no-store",
-      ...(retry ? { headers: { "x-session-retry": "1" } } : {}),
     })
     if (!res.ok) {
       // Defensive fallback: an unexpected 5xx/network error, not the normal

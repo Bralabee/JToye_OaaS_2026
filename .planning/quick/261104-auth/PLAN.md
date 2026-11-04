@@ -23,7 +23,7 @@ replay must never be SENT, and no stateless server rule can rescue one that was.
 
 1. Server, stateless: no token is kept; the in-flight collapse is keyed by digest and holds only while
    the redemption runs. A refusal (4xx other than 408/429) answers `authenticated:false` +
-   `refreshRefused:true` and clears nothing; with the `x-session-retry: 1` header it clears the three
+   `refreshRefused:true` and clears nothing; with the `?retry=1` query parameter (not a header: INV-24 refuses a browser-sent custom header the Ingress CORS list omits) it clears the three
    cookies. A transient failure (5xx, 429, network, unreadable body) never clears anything.
 2. Browser: `getCustomerSession()` (a) joins an in-flight probe only within the same identity
    generation (bumped by every setMarker/clearMarker) and a stale probe's answer writes no marker;

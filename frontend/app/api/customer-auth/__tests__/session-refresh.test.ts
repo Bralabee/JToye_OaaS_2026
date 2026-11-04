@@ -39,9 +39,8 @@ function futureJwt(sub = "user-1") {
 /** A request carrying an EXPIRED access state plus a live refresh cookie. */
 function expiredWithRefresh(refreshValue: string, retry = false): NextRequest {
   const expiredId = fakeJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) - 60 })
-  return new NextRequest("http://localhost/api/customer-auth/session", {
+  return new NextRequest(`http://localhost/api/customer-auth/session${retry ? "?retry=1" : ""}`, {
     headers: {
-      ...(retry ? { "x-session-retry": "1" } : {}),
       cookie: [
         `jtoye-customer-id=${expiredId}`,
         `jtoye-customer-refresh=${refreshValue}`,
