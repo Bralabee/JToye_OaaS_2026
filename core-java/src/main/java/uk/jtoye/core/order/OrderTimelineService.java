@@ -28,9 +28,12 @@ import java.util.UUID;
  * <p><b>Access</b> is exactly the order detail's: STAFF on the order's shop (VSA-02 / D-02), a foreign or
  * unknown id is a 404 with no existence oracle, and the lookup is tenant-explicit on top of RLS.
  *
- * <p><b>Who.</b> A revision with a subject is a STAFF action, named from the tenant's user directory (display
- * name, else email); one without is SYSTEM - the customer checking out, a payment webhook, a scheduled job -
- * because nobody was signed in. The raw subject is never returned.
+ * <p><b>Who.</b> A revision is a STAFF action only when its user id resolves to a row of THIS tenant's user
+ * directory, i.e. a team member. Anything else is SYSTEM: no one signed in, Spring's anonymous token (recorded
+ * as the literal "anonymousUser" for a guest checkout), or a signed-in storefront customer with no directory
+ * row - the customer checking out, a payment webhook, a scheduled job. A team member is named by display name
+ * only; a colleague's login email is never returned (issue 856, field minimisation), so a member with no
+ * display name is unnamed. The raw subject is never returned.
  */
 @Service
 public class OrderTimelineService {
@@ -63,7 +66,7 @@ public class OrderTimelineService {
         RevisionRow prev = null;
         for (RevisionRow row : revisions) {
             Instant at = row.getRevtstmp() == null ? null : Instant.ofEpochMilli(row.getRevtstmp());
-            String actorType = row.getUserId() == null || row.getUserId().isBlank() ? "SYSTEM" : "STAFF";
+            String actorType = isTeamMember(row) ? "STAFF" : "SYSTEM";
             String actorName = "STAFF".equals(actorType) ? nameOf(row) : null;
 
             if (prev == null) {
@@ -98,9 +101,12 @@ public class OrderTimelineService {
         if (row.getDisplayName() != null && !row.getDisplayName().isBlank()) {
             return row.getDisplayName();
         }
-        if (row.getEmail() != null && !row.getEmail().isBlank()) {
-            return row.getEmail();
-        }
         return null;
+    }
+
+    /** A team member = the revision's user id resolved to a row of this tenant's user directory. */
+    private static boolean isTeamMember(RevisionRow row) {
+        return row.getUserId() != null && !row.getUserId().isBlank()
+                && row.getDirectoryUserId() != null && !row.getDirectoryUserId().isBlank();
     }
 }

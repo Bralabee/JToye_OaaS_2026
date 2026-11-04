@@ -250,6 +250,40 @@ class OrderAndCustomerSearchIntegrationTest {
         assertThat(ids(asManager)).containsExactly(f.targetOrder());
     }
 
+    /**
+     * Review round 1, finding 3: a phone is found however it was typed or stored. The term and the
+     * column are both reduced to digits and a leading 44 (or 440) becomes 0, in SQL on the column side.
+     */
+    @Test
+    @DisplayName("#822 review: +44, hyphen, bracket and space spellings of a phone all find it, on orders and customers, whichever spelling is stored")
+    void phoneMatchesAcrossSpellings() throws Exception {
+        Fixture f = seed();
+        UUID admin = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant(), admin, null, "GROUP_ADMIN", "admin-" + admin + "@example.com");
+        // 9 distinctive digits per fixture so no other row can match by accident.
+        String tail = String.format("%09d", Math.abs(f.token().hashCode()) % 1_000_000_000L);
+        String local = "07" + tail;                 // 07xxxxxxxxx
+        String intl = "+44 " + local.substring(1, 5) + " " + local.substring(5);  // +44 7xxx xxxxxx
+        UUID stored07 = seedOrder(f.tenant(), f.shopA(), "P07", "Phone Zero " + f.token(), "p0-" + f.token() + "@x.test", local, 5);
+        UUID storedIntl = seedOrder(f.tenant(), f.shopA(), "PINT", "Phone Intl " + f.token(), "p1-" + f.token() + "@x.test", intl, 6);
+        UUID storedBrackets = seedOrder(f.tenant(), f.shopA(), "PBR", "Phone Brk " + f.token(), "p2-" + f.token() + "@x.test",
+                "(" + local.substring(0, 5) + ") " + local.substring(5, 8) + "-" + local.substring(8), 7);
+        seedOrder(f.tenant(), f.shopA(), "PDECOY", "Phone Decoy " + f.token(), "p3-" + f.token() + "@x.test", "07" + new StringBuilder(tail).reverse(), 8);
+
+        List<String> spellings = List.of(local, "+44" + local.substring(1), "+44 (0)" + local.substring(1),
+                "(" + local.substring(0, 5) + ") " + local.substring(5), local.substring(0, 5) + "-" + local.substring(5));
+        for (String q : spellings) {
+            assertThat(ids(json(get("/api/v1/orders").param("q", q), f.tenant(), admin)))
+                    .as("q=%s", q).containsExactlyInAnyOrder(stored07, storedIntl, storedBrackets);
+        }
+
+        UUID custIntl = seedCustomer(f.tenant(), "Cust Intl " + f.token(), "ci-" + f.token() + "@x.test", intl, f.shopA());
+        for (String q : List.of(local, "+44" + local.substring(1), "(" + local.substring(0, 5) + ") " + local.substring(5))) {
+            assertThat(ids(json(get("/api/v1/customers").param("q", q), f.tenant(), admin)))
+                    .as("customers q=%s", q).contains(custIntl);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Customers
     // ------------------------------------------------------------------

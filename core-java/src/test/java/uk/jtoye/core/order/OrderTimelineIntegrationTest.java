@@ -71,6 +71,8 @@ class OrderTimelineIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
     @Autowired ShopAccessService shopAccessService;
+    @Autowired OrderRepository orderRepository;
+    @Autowired org.springframework.transaction.PlatformTransactionManager txManager;
 
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000085700");
     private static final UUID OTHER_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000085701");
@@ -131,8 +133,12 @@ class OrderTimelineIntegrationTest {
         JsonNode ready = firstStatus(events, "READY");
         assertThat(confirm.path("actorType").asString()).isEqualTo("STAFF");
         assertThat(confirm.path("actorName").asString()).as("display name wins: " + body).isEqualTo("Ade Cook");
-        assertThat(prep.path("actorName").asString()).as("email is the fallback name").isEqualTo("bola@kitchen.test");
-        assertThat(ready.path("actorName").asString()).isEqualTo("bola@kitchen.test");
+        // Never a colleague's login email (#856): with no display name there is no name at all, and the
+        // page says "A team member".
+        assertThat(prep.path("actorType").asString()).isEqualTo("STAFF");
+        assertThat(prep.path("actorName").isNull()).as(body).isTrue();
+        assertThat(ready.path("actorName").isNull()).isTrue();
+        assertThat(body).doesNotContain("bola@kitchen.test").doesNotContain("ade@kitchen.test");
         assertThat(prep.path("fromStatus").asString()).isEqualTo("CONFIRMED");
         // Chronological, and a real timestamp on each.
         assertThat(java.time.Instant.parse(confirm.path("at").asString()))
@@ -141,6 +147,78 @@ class OrderTimelineIntegrationTest {
                 .isBeforeOrEqualTo(java.time.Instant.parse(ready.path("at").asString()));
         // Names, not identifiers: the JWT subject is not part of the response.
         assertThat(body).doesNotContain(ADE.toString()).doesNotContain(BOLA.toString());
+    }
+
+    /**
+     * Review round 1, finding 1: the REAL TenantRevisionListener writes the revision (an audited entity
+     * save under each security context), not a hand-inserted revinfo row. Spring's anonymous token is
+     * recorded as the literal user_id "anonymousUser", and a signed-in storefront customer's JWT subject
+     * has no user_directory row; neither is a team member.
+     */
+    @Test
+    @DisplayName("#857 review: a guest checkout (anonymousUser) and a signed-in customer with no directory row are 'Customer or automatic', never STAFF - revisions written by the real listener")
+    void guestAndUnknownActorsAreNotStaff() throws Exception {
+        UUID orderId = seedPendingOrder();
+        // Guest: Spring's anonymous token, exactly what an unauthenticated storefront request carries.
+        auditedStatusChange(orderId, OrderStatus.CONFIRMED,
+                new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                        "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        // Signed-in storefront customer: a JWT whose subject is in no tenant's directory.
+        UUID customerSub = UUID.randomUUID();
+        org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt
+                .withTokenValue("t").header("alg", "none").subject(customerSub.toString()).build();
+        auditedStatusChange(orderId, OrderStatus.PREPARING,
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(customerJwt, List.of(new SimpleGrantedAuthority("ROLE_customer"))));
+        // Control: a real team member, through the HTTP path.
+        transition(orderId, "mark-ready", admin(ADE));
+
+        // What the listener really stored for the first two:
+        assertThat(jdbc.queryForList("SELECT DISTINCT user_id FROM revinfo WHERE tenant_id = ?", String.class, TENANT_ID))
+                .contains("anonymousUser", customerSub.toString());
+
+        MvcResult res = mockMvc.perform(get("/api/v1/orders/" + orderId + "/timeline").with(admin(ADE))).andReturn();
+        String body = res.getResponse().getContentAsString();
+        assertThat(res.getResponse().getStatus()).as(body).isEqualTo(200);
+        JsonNode events = jsonMapper.readTree(body);
+        assertThat(firstStatus(events, "CONFIRMED").path("actorType").asString()).as(body).isEqualTo("SYSTEM");
+        assertThat(firstStatus(events, "PREPARING").path("actorType").asString()).as(body).isEqualTo("SYSTEM");
+        assertThat(firstStatus(events, "READY").path("actorType").asString()).as("the control is still STAFF: " + body)
+                .isEqualTo("STAFF");
+        assertThat(body).doesNotContain("anonymousUser").doesNotContain(customerSub.toString());
+    }
+
+    @Test
+    @DisplayName("#857 review / #856: a STAFF caller never receives a colleague's email - not in the timeline, whichever way the colleague signs in")
+    void staffCallerNeverSeesAColleaguesEmail() throws Exception {
+        UUID orderId = seedPendingOrder();
+        transition(orderId, "confirm", admin(BOLA));   // Bola: an email claim, no display name
+        UUID staff = UUID.randomUUID();
+        uk.jtoye.core.testsupport.ShopGrants.grantOperator(jdbc, TENANT_ID, staff, shopId, "STAFF", "staff-" + staff + "@kitchen.test");
+
+        MvcResult res = mockMvc.perform(get("/api/v1/orders/" + orderId + "/timeline").with(shopUser(staff))).andReturn();
+        String body = res.getResponse().getContentAsString();
+        assertThat(res.getResponse().getStatus()).as(body).isEqualTo(200);
+        assertThat(body).doesNotContain("@").doesNotContain("bola");
+        JsonNode confirm = firstStatus(jsonMapper.readTree(body), "CONFIRMED");
+        assertThat(confirm.path("actorType").asString()).isEqualTo("STAFF");
+        assertThat(confirm.path("actorName").isNull()).isTrue();
+    }
+
+    /** An audited save under the given authentication, so the real TenantRevisionListener stamps the revision. */
+    private void auditedStatusChange(UUID orderId, OrderStatus to,
+                                     org.springframework.security.core.Authentication auth) {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+        TenantContext.set(TENANT_ID);
+        try {
+            new org.springframework.transaction.support.TransactionTemplate(txManager).executeWithoutResult(s -> {
+                Order o = orderRepository.findById(orderId).orElseThrow();
+                o.setStatus(to);
+                orderRepository.saveAndFlush(o);
+            });
+        } finally {
+            TenantContext.clear();
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

@@ -15,7 +15,7 @@ class OrderTimelineServiceTest {
 
     private record Row(Integer rev, Short revtype, String status, String paymentStatus, Boolean voided,
                        String voidReason, String cancelReasonCode, Long revtstmp, String userId,
-                       String displayName, String email) implements RevisionRow {
+                       String displayName, String directoryUserId) implements RevisionRow {
         public Integer getRev() { return rev; }
         public Short getRevtype() { return revtype; }
         public String getStatus() { return status; }
@@ -26,13 +26,13 @@ class OrderTimelineServiceTest {
         public Long getRevtstmp() { return revtstmp; }
         public String getUserId() { return userId; }
         public String getDisplayName() { return displayName; }
-        public String getEmail() { return email; }
+        public String getDirectoryUserId() { return directoryUserId; }
     }
 
     private static Row row(int rev, int revtype, String status, String payment, boolean voided, long at,
                            String userId, String name) {
         return new Row(rev, (short) revtype, status, payment, voided, voided ? "bad batch" : null, null, at,
-                userId, name, null);
+                userId, name, userId);
     }
 
     @Test
@@ -88,7 +88,7 @@ class OrderTimelineServiceTest {
     @DisplayName("a cancel carries the recorded reason code; other changes carry none")
     void cancelReason() {
         Row cancelled = new Row(2, (short) 1, "CANCELLED", "NONE", false, null, "SUSPECTED_FAKE", 2_000L,
-                "u-ade", "Ade Cook", null);
+                "u-ade", "Ade Cook", "u-ade");
         List<OrderTimelineEventDto> events = OrderTimelineService.build(List.of(
                 row(1, 0, "PENDING", "NONE", false, 1_000, null, null), cancelled));
 
@@ -97,18 +97,34 @@ class OrderTimelineServiceTest {
     }
 
     @Test
-    @DisplayName("a history that starts mid-life shows the status it first appears with, not 'placed'; a person absent from the directory is STAFF with no name")
+    @DisplayName("a history that starts mid-life shows the status it first appears with, not 'placed'; a team member with no display name is STAFF and unnamed")
     void historyThatStartsLate_andUnnamedActor() {
         List<OrderTimelineEventDto> events = OrderTimelineService.build(List.of(
-                new Row(7, (short) 1, "CONFIRMED", "NONE", false, null, null, 5_000L, "u-gone", null, null),
-                new Row(8, (short) 1, "PREPARING", "NONE", false, null, null, 6_000L, "u-gone", null, "gone@example.test")));
+                new Row(7, (short) 1, "CONFIRMED", "NONE", false, null, null, 5_000L, "u-member", null, "u-member"),
+                new Row(8, (short) 1, "PREPARING", "NONE", false, null, null, 6_000L, "u-member", null, "u-member")));
 
         assertThat(events.get(0).kind()).isEqualTo("STATUS");
         assertThat(events.get(0).fromStatus()).isNull();
         assertThat(events.get(0).actorType()).isEqualTo("STAFF");
         assertThat(events.get(0).actorName()).isNull();
-        // The email is the fallback name when there is no display name.
-        assertThat(events.get(1).actorName()).isEqualTo("gone@example.test");
+        // No email fallback exists any more: there is nothing to fall back to.
+        assertThat(events.get(1).actorName()).isNull();
+    }
+
+    @Test
+    @DisplayName("review 1: anonymousUser, a blank id, and an id with no directory row are SYSTEM, never STAFF")
+    void onlyADirectoryResolvedIdIsStaff() {
+        List<OrderTimelineEventDto> events = OrderTimelineService.build(List.of(
+                new Row(1, (short) 0, "PENDING", "NONE", false, null, null, 1_000L, "anonymousUser", null, null),
+                new Row(2, (short) 1, "CONFIRMED", "NONE", false, null, null, 2_000L, "", null, null),
+                new Row(3, (short) 1, "PREPARING", "NONE", false, null, null, 3_000L, "customer-sub", "Some Customer", null),
+                new Row(4, (short) 1, "READY", "NONE", false, null, null, 4_000L, "u-ade", "Ade Cook", "u-ade")));
+
+        assertThat(events).extracting(OrderTimelineEventDto::actorType)
+                .containsExactly("SYSTEM", "SYSTEM", "SYSTEM", "STAFF");
+        // An unresolved id carries no name even if a stray display name were present.
+        assertThat(events.get(2).actorName()).isNull();
+        assertThat(events.get(3).actorName()).isEqualTo("Ade Cook");
     }
 
     @Test

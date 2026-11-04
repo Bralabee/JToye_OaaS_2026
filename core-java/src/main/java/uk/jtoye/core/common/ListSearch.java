@@ -21,10 +21,12 @@ import java.util.Locale;
  *
  * @param text           the lower-cased, escaped, %-wrapped pattern for case-insensitive
  *                       {@code lower(column) LIKE :text ESCAPE '\'} matches
- * @param phone          the same term with whitespace removed, for matching a stored phone with its
- *                       spaces removed too ({@code 07700900123} finds {@code 07700 900 123})
- * @param searchesPhone  false when the term holds no digit, so the phone column is not consulted
- *                       (a word cannot be a phone number)
+ * @param phone          the term reduced to DIGITS with a UK country code folded to a leading 0, %-wrapped,
+ *                       for matching a stored phone reduced the same way IN SQL (the repositories'
+ *                       {@code regexp_replace}): {@code +44 7700 900123}, {@code 07700-900-123} and
+ *                       {@code (07700) 900123} are one number
+ * @param searchesPhone  true only when the term LOOKS like a phone number (digits, spaces and + - ( ) .
+ *                       only, at least 3 digits); a word or an order number never consults the phone column
  */
 public record ListSearch(String text, String phone, boolean searchesPhone) {
 
@@ -50,9 +52,22 @@ public record ListSearch(String text, String phone, boolean searchesPhone) {
             trimmed = trimmed.substring(0, MAX_LENGTH).strip();
         }
         String lower = trimmed.toLowerCase(Locale.ROOT);
-        String noSpaces = lower.replaceAll("\\s+", "");
-        boolean hasDigit = noSpaces.chars().anyMatch(Character::isDigit);
-        return new ListSearch("%" + escape(lower) + "%", "%" + escape(noSpaces) + "%", hasDigit);
+        String digits = lower.replaceAll("[^0-9]", "");
+        boolean looksLikePhone = PHONE_CHARS.matcher(lower).matches() && digits.length() >= 3;
+        return new ListSearch("%" + escape(lower) + "%", "%" + foldCountryCode(digits) + "%", looksLikePhone);
+    }
+
+    /** What a phone-number term may be made of; anything else is a word, not a number. */
+    private static final java.util.regex.Pattern PHONE_CHARS = java.util.regex.Pattern.compile("[0-9+().\\-\\s]+");
+
+    /**
+     * {@code 447700900123} and {@code 4407700900123} (a +44 term, with or without the trunk 0 in brackets)
+     * become {@code 07700900123}. Folded only for a full-length term (11+ digits): a short fragment such as
+     * {@code 4477} is a slice of some number, and rewriting it would make it match something else. The SQL
+     * side applies {@code ^440?} to the whole stored number, so both sides meet at the national form.
+     */
+    static String foldCountryCode(String digits) {
+        return digits.length() >= 11 ? digits.replaceFirst("^440?", "0") : digits;
     }
 
     static String escape(String s) {

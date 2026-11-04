@@ -64,7 +64,7 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     /**
      * Issue #822: the Customers list search over every page. Matches (case-insensitively, as a
-     * substring) the name, the phone with spaces removed and - only when {@code includeEmail} -
+     * substring) the name, the phone in any spelling (digits only, +44 folded to 0) and - only when {@code includeEmail} -
      * the email. The caller passes {@code includeEmail} true only when it sees every customer's
      * email (issue #856): searching an address the response hides would confirm it.
      *
@@ -86,7 +86,7 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
                    ))
               AND (lower(c.name) LIKE :text ESCAPE '\\'
                    OR (:searchPhone = true
-                       AND replace(coalesce(c.phone, ''), ' ', '') LIKE :phone ESCAPE '\\')
+                       AND cast(function('regexp_replace', function('regexp_replace', coalesce(c.phone, ''), '[^0-9]', '', 'g'), '^440?', '0') as String) LIKE :phone ESCAPE '\\')
                    OR (:includeEmail = true AND lower(c.email) LIKE :text ESCAPE '\\'))
             """)
     Page<Customer> search(@Param("tenantId") UUID tenantId,

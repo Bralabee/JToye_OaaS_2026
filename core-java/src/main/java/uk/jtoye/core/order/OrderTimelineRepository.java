@@ -44,7 +44,7 @@ public interface OrderTimelineRepository extends JpaRepository<Order, UUID> {
 
         @Nullable String getDisplayName();
 
-        @Nullable String getEmail();
+        @Nullable String getDirectoryUserId();
     }
 
     /**
@@ -63,7 +63,7 @@ public interface OrderTimelineRepository extends JpaRepository<Order, UUID> {
                    r.revtstmp AS revtstmp,
                    r.user_id AS user_id,
                    u.display_name AS display_name,
-                   u.email AS email
+                   u.user_id AS directory_user_id
             FROM orders_aud a
             JOIN revinfo r ON r.rev = a.rev
             LEFT JOIN user_directory u
@@ -93,7 +93,7 @@ public interface OrderTimelineRepository extends JpaRepository<Order, UUID> {
                     c[7] == null ? null : ((Number) c[7]).longValue(),
                     (String) c[8],
                     (String) c[9],
-                    (String) c[10]));
+                    c[10] == null ? null : c[10].toString()));
         }
         return rows;
     }
@@ -101,7 +101,7 @@ public interface OrderTimelineRepository extends JpaRepository<Order, UUID> {
     /** The positional row. */
     record Revision(Integer rev, Short revtype, String status, String paymentStatus, Boolean voided,
                     String voidReason, String cancelReasonCode, Long revtstmp, String userId,
-                    String displayName, String email) implements RevisionRow {
+                    String displayName, String directoryUserId) implements RevisionRow {
         @Override public Integer getRev() { return rev; }
         @Override public Short getRevtype() { return revtype; }
         @Override public String getStatus() { return status; }
@@ -112,6 +112,6 @@ public interface OrderTimelineRepository extends JpaRepository<Order, UUID> {
         @Override public Long getRevtstmp() { return revtstmp; }
         @Override public String getUserId() { return userId; }
         @Override public String getDisplayName() { return displayName; }
-        @Override public String getEmail() { return email; }
+        @Override public String getDirectoryUserId() { return directoryUserId; }
     }
 }

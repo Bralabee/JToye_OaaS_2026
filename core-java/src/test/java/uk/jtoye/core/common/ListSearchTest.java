@@ -44,6 +44,27 @@ class ListSearchTest {
     }
 
     @Test
+    @DisplayName("review 3: every spelling of a UK number reduces to the same national digits")
+    void phoneSpellingsMeetAtNationalDigits() {
+        for (String spelling : new String[] {"07700900123", "+447700900123", "+44 7700 900123", "+44 (0)7700 900-123",
+                "0044 7700 900123".substring(2), "(07700) 900-123", "07700.900.123"}) {
+            ListSearch s = ListSearch.of(spelling);
+            assertThat(s.searchesPhone()).as(spelling).isTrue();
+            assertThat(s.phone()).as(spelling).isEqualTo("%07700900123%");
+        }
+    }
+
+    @Test
+    @DisplayName("review 3: a short fragment is left as typed (not rewritten into some other number), and words or order numbers never consult the phone")
+    void phoneFragmentsAndNonPhones() {
+        assertThat(ListSearch.of("4477").phone()).isEqualTo("%4477%");
+        assertThat(ListSearch.of("900123").phone()).isEqualTo("%900123%");
+        assertThat(ListSearch.of("ab").searchesPhone()).isFalse();
+        assertThat(ListSearch.of("07").searchesPhone()).isFalse();       // fewer than 3 digits
+        assertThat(ListSearch.of("ORD-1234-ab").searchesPhone()).isFalse(); // letters: an order number
+    }
+
+    @Test
     @DisplayName("a term past the bound is cut, never turned into an unbounded pattern")
     void bounded() {
         ListSearch s = ListSearch.of("x".repeat(5000));

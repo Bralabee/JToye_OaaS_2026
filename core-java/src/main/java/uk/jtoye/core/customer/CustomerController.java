@@ -68,7 +68,7 @@ public class CustomerController {
 
     @GetMapping
     @Operation(summary = "List customers", description = "Returns a paginated list of customers for the authenticated tenant. "
-            + "Optional q searches EVERY page: a case-insensitive substring of the name, the phone (spaces ignored) or - only for a caller who sees every customer's email - the email. "
+            + "Optional q searches EVERY page: a case-insensitive substring of the name, the phone (any spelling: +44, spaces, hyphens, brackets) or - only for a caller who sees every customer's email - the email. "
             + "q is bounded to 100 characters; blank is no search.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved customers"),

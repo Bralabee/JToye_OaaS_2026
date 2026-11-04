@@ -58,8 +58,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * Issue #822: the orders list search, over EVERY page, in one query.
      *
      * <p>Matches (case-insensitively, as a substring so the last four characters of an order number
-     * find it) the order number, the order id, the customer's name and the customer's phone with
-     * spaces removed. The customer's EMAIL is consulted only on shops where the caller sees full
+     * find it) the order number, the order id, the customer's name and the customer's phone (compared as
+     * digits with +44 folded to 0). The customer's EMAIL is consulted only on shops where the caller sees full
      * customer contact ({@code emailAllShops}, or {@code o.shopId IN :emailShopIds}) - issue #856:
      * a STAFF caller is never shown the email, so letting it match one would turn the search box
      * into an oracle that confirms an address the response hides.
@@ -78,7 +78,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                    OR lower(cast(o.id AS string)) LIKE :text ESCAPE '\\'
                    OR lower(o.customerName) LIKE :text ESCAPE '\\'
                    OR (:searchPhone = true
-                       AND replace(coalesce(o.customerPhone, ''), ' ', '') LIKE :phone ESCAPE '\\')
+                       AND cast(function('regexp_replace', function('regexp_replace', coalesce(o.customerPhone, ''), '[^0-9]', '', 'g'), '^440?', '0') as String) LIKE :phone ESCAPE '\\')
                    OR ((:emailAllShops = true OR o.shopId IN :emailShopIds)
                        AND lower(o.customerEmail) LIKE :text ESCAPE '\\'))
             """)
