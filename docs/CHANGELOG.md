@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Customer Rulings From the Persona Close-Out — 2026-11-04
+### Customer Rulings From the Persona Close-Out — 2026-11-04 (#1120)
 
 Quick 261104-customer-rulings. Five owner rulings of 2026-11-04 (persona close-out): #788 with SW-CLR-14, #836 with SW-CLR-05, #862, #868, and SW-JRD-07 with SW-SAM-11 (epic issue 964). No migration.
 
