@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Unaccepted-Order Alert: Follow-Ups From the Review of the Max-Age Hotfix — 2026-11-04
+
+Review of PR 1123, on `UnacceptedOrderSweep`. No migration.
+
+- **`max-age` is a Duration:** `jtoye.orders.unaccepted-alert.max-age` (default `2h`) replaces `max-age-minutes`, in the same unit as `threshold`; `90m` and `2h` both work, and a bad value fails with a normal binding error rather than a type mismatch. The old key is removed (it was one day old and read nowhere else).
+- **A window that is too narrow refuses to start:** `max-age` minus `threshold` must be at least 3 times `sweep-interval-ms`, or an order can pass through the window between two runs and never be alerted. The error names all three keys, and no value overflows the check (`Long.MAX_VALUE` seconds starts, clamped to 10 years in the query).
+- **Orders past the max age are stamped silently:** they get `unaccepted_notified_at` with no email, so they leave the candidate scan (which re-read each one's audit history every minute for ever) and cannot be emailed later; each tenant's count is logged at INFO as `unaccepted_orders_stamped_silently`. Up to 200 per tenant per run. The kitchen board shows a silently stamped order as overdue, which it is.
+- **Tests:** `UnacceptedOrderSweepConfigTest` (too-narrow and overflow arms) and `UnacceptedOrderSweepIntegrationTest` (old orders stamped and not emailed, the per-tenant INFO count, max age pinned beside the threshold); red on the 1123 tree, green here.
+
 ### Hotfix: the unaccepted-order alert never emails orders older than its max age — 2026-11-04 (#1123)
 
-- **Unaccepted-order alert (issue 821 hotfix):** `UnacceptedOrderSweep` had no upper bound, so its first run after a deploy would have emailed "your order hasn't been accepted yet" to the customer of every old PENDING order. New config `jtoye.orders.unaccepted-alert.max-age-minutes` (default 120): only orders PENDING for between `threshold` and the max age are alerted; an older order is neither emailed nor stamped. A max age at or below the threshold (or not positive) refuses to start, naming the key. Config key only, no env placeholder, like the other `unaccepted-alert` keys. Proven under NOSUPERUSER by `UnacceptedOrderSweepIntegrationTest` (a 3-day-old PENDING order is not stamped or emailed, a 15-minute one is; red on the unfixed tree) and `UnacceptedOrderSweepConfigTest`.
+- **Unaccepted-order alert (issue 821 hotfix):** `UnacceptedOrderSweep` had no upper bound, so its first run after a deploy would have emailed "your order hasn't been accepted yet" to the customer of every old PENDING order. New config `jtoye.orders.unaccepted-alert.max-age` (default 120 minutes; later made a Duration, see the follow-up entry above): only orders PENDING for between `threshold` and the max age are alerted. A max age at or below the threshold (or not positive) refuses to start, naming the key. Config key only, no env placeholder, like the other `unaccepted-alert` keys. Proven under NOSUPERUSER by `UnacceptedOrderSweepIntegrationTest` (a 3-day-old PENDING order is not stamped or emailed, a 15-minute one is; red on the unfixed tree) and `UnacceptedOrderSweepConfigTest`.
 
 ### Storefront: Persona Close-Out, Public Storefront / Checkout / Tracking — 2026-11-04 (#1117)
 

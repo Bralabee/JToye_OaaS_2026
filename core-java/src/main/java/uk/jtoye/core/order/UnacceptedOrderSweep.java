@@ -18,6 +18,7 @@ import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.SystemPrincipal;
 
+import java.math.BigInteger;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -56,9 +57,13 @@ import java.util.UUID;
  *       in SQL): the shop cannot accept it yet, so "the shop has not accepted" would be untrue;</li>
  *   <li>an order the shop placed itself ({@code placed_via = 'VENDOR'}): see {@link #ALERTABLE_PREDICATE};</li>
  *   <li>an order already alerted;</li>
- *   <li>an order PENDING for longer than {@link #MAX_AGE_PROPERTY} (default 120 minutes): an alert is only
- *       true while the shop could still be expected to react, and the first run after a deploy must never email
- *       the customer of every old PENDING order in the table. Such an order is neither emailed nor stamped.</li>
+ *   <li>an order PENDING for longer than {@link #MAX_AGE_PROPERTY} (default 2 hours): an alert is only true
+ *       while the shop could still be expected to react, and the first run after a deploy (or after a long
+ *       outage) must never email the customer of every old PENDING order in the table. Such an order is NOT
+ *       emailed, but it IS stamped, silently ({@link #SILENT_STAMP_SQL}): the stamp is the notified-once ledger,
+ *       so stamping it takes it out of the candidate scan for good instead of re-reading its audit history
+ *       every minute, and the INFO line {@code unaccepted_orders_stamped_silently} says how many each tenant
+ *       had, so "the customer was never told" can be told apart from "the sweep never ran".</li>
  * </ul>
  *
  * <p>"Left PENDING" is measured from the moment the order BECAME PENDING, never from its last touch
@@ -80,7 +85,22 @@ public class UnacceptedOrderSweep {
     private static final Logger log = LoggerFactory.getLogger(UnacceptedOrderSweep.class);
 
     public static final String THRESHOLD_PROPERTY = "jtoye.orders.unaccepted-alert.threshold";
-    public static final String MAX_AGE_PROPERTY = "jtoye.orders.unaccepted-alert.max-age-minutes";
+    public static final String MAX_AGE_PROPERTY = "jtoye.orders.unaccepted-alert.max-age";
+    public static final String SWEEP_INTERVAL_PROPERTY = "jtoye.orders.unaccepted-alert.sweep-interval-ms";
+
+    /**
+     * The alert window ({@code threshold} to {@code max-age}) must be at least this many sweep intervals wide.
+     * The sweep runs a fixed delay after the previous run ENDS, so runs land more than one interval apart; an
+     * order turning {@code threshold} old just after a run must still be inside the window at the next one, and
+     * the one after that (a slow run or a restart), or it passes through unalerted (review of PR 1123).
+     */
+    static final int MIN_WINDOW_INTERVALS = 3;
+
+    /**
+     * Longest max age handed to the database. Anything longer is "effectively unbounded" and is clamped, so
+     * {@code make_interval} can never be given a value PostgreSQL refuses.
+     */
+    private static final long MAX_AGE_CAP_SECONDS = Duration.ofDays(3650).toSeconds();
 
     /** Per tenant per run; the next run takes the rest. Keeps one tenant's backlog from holding a transaction. */
     private static final int BATCH = 200;
@@ -100,6 +120,12 @@ public class UnacceptedOrderSweep {
      *       (payment status PENDING or FAILED, or a payment reference that is neither CAPTURED nor AUTHORIZED),
      *       written in SQL. The shop cannot accept such an order yet.</li>
      * </ul>
+     *
+     * <p>The AGE bounds are deliberately NOT part of this predicate: the lower bound (older than the threshold)
+     * and the upper bound (younger than the max age) are applied to {@link #PENDING_SINCE_SQL} by
+     * {@link #CANDIDATES_SQL}, and an order past the upper bound is stamped without an email by
+     * {@link #SILENT_STAMP_SQL}. The predicate says which orders the sweep may ever act on; the bounds say what
+     * it does with them.
      */
     private static final String ALERTABLE_PREDICATE =
             "status = 'PENDING' AND voided_at IS NULL AND unaccepted_notified_at IS NULL "
@@ -115,6 +141,21 @@ public class UnacceptedOrderSweep {
     static final String PENDING_SINCE_SQL =
             "COALESCE((SELECT to_timestamp(min(r.revtstmp) / 1000.0) FROM orders_aud a "
                     + "JOIN revinfo r ON r.rev = a.rev WHERE a.id = o.id AND a.status = 'PENDING'), o.created_at)";
+
+    /**
+     * Orders PENDING for longer than the max age: stamped, never emailed (review of PR 1123). Same pick as
+     * {@link #CANDIDATES_SQL}, upper bound instead of lower, {@link #BATCH} per tenant per run (the next run
+     * takes the rest), and run BEFORE the candidate read in the same transaction so an old order never reaches
+     * the email path. The stamp repeats {@link #ALERTABLE_PREDICATE}, so a race with an accept or a void leaves
+     * that order alone. Narrow like {@link #CLAIM_SQL}: it touches only the stamp, no version bump, no audit row.
+     */
+    private static final String SILENT_STAMP_SQL =
+            "UPDATE orders SET unaccepted_notified_at = now() "
+                    + "WHERE tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + " AND id IN ("
+                    + "SELECT id FROM (SELECT o.id, " + PENDING_SINCE_SQL + " AS pending_since FROM orders o "
+                    + "WHERE o.tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + ") t "
+                    + "WHERE pending_since < now() - make_interval(secs => :maxSecs) "
+                    + "ORDER BY pending_since LIMIT " + BATCH + ")";
 
     private static final String CANDIDATES_SQL =
             "SELECT id FROM (SELECT o.id, " + PENDING_SINCE_SQL + " AS pending_since FROM orders o "
@@ -158,7 +199,8 @@ public class UnacceptedOrderSweep {
                                 @Nullable ConsentGate consentGate,
                                 @Value("${jtoye.orders.unaccepted-alert.enabled:true}") boolean enabled,
                                 @Value("${" + THRESHOLD_PROPERTY + ":10m}") Duration threshold,
-                                @Value("${" + MAX_AGE_PROPERTY + ":120}") long maxAgeMinutes) {
+                                @Value("${" + MAX_AGE_PROPERTY + ":2h}") Duration maxAge,
+                                @Value("${" + SWEEP_INTERVAL_PROPERTY + ":60000}") long sweepIntervalMs) {
         this.orderRepository = orderRepository;
         this.entityManager = entityManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -170,13 +212,21 @@ public class UnacceptedOrderSweep {
             throw new IllegalStateException(THRESHOLD_PROPERTY + " must be at least 1 minute, was " + threshold);
         }
         this.thresholdSeconds = threshold.toSeconds();
-        // Fail fast: a window [now - maxAge, now - threshold] that is empty or inverted would silently disable
-        // the alert, which is worse than refusing to start.
-        if (maxAgeMinutes <= 0 || Duration.ofMinutes(maxAgeMinutes).compareTo(threshold) <= 0) {
-            throw new IllegalStateException(MAX_AGE_PROPERTY + " (" + maxAgeMinutes + " minutes) must be greater than "
-                    + THRESHOLD_PROPERTY + " (" + threshold + ")");
+        if (sweepIntervalMs < 1) {
+            throw new IllegalStateException(SWEEP_INTERVAL_PROPERTY + " must be at least 1 ms, was " + sweepIntervalMs);
         }
-        this.maxAgeSeconds = Duration.ofMinutes(maxAgeMinutes).toSeconds();
+        // Fail fast: a window [now - maxAge, now - threshold] that is empty, inverted or narrower than a few sweep
+        // intervals would let orders slip through unalerted, which is worse than refusing to start. BigInteger,
+        // so no value an operator can type overflows the arithmetic (Long.MAX_VALUE seconds is legal input).
+        BigInteger window = BigInteger.valueOf(maxAge.toSeconds()).subtract(BigInteger.valueOf(threshold.toSeconds()));
+        BigInteger required = BigInteger.valueOf(MIN_WINDOW_INTERVALS)
+                .multiply(BigInteger.valueOf(sweepIntervalMs)).add(BigInteger.valueOf(999)).divide(BigInteger.valueOf(1000));
+        if (maxAge.isNegative() || window.compareTo(required) < 0) {
+            throw new IllegalStateException(MAX_AGE_PROPERTY + " (" + maxAge + ") minus " + THRESHOLD_PROPERTY + " ("
+                    + threshold + ") must be at least " + MIN_WINDOW_INTERVALS + " x " + SWEEP_INTERVAL_PROPERTY
+                    + " (" + sweepIntervalMs + " ms), so an order cannot pass through the window between two runs");
+        }
+        this.maxAgeSeconds = Math.min(maxAge.toSeconds(), MAX_AGE_CAP_SECONDS);
     }
 
     /** One order alerted: everything the after-commit side effects need, as values. */
@@ -212,10 +262,19 @@ public class UnacceptedOrderSweep {
     private int sweepTenant(UUID tenantId) {
         TenantContext.set(tenantId);
         try {
+            int[] silent = {0};
             List<Alerted> alerted = transactionTemplate.execute(status -> {
                 pinTenantGuc(tenantId);
-                return SystemPrincipal.asSystem(() -> claim(tenantId));
+                return SystemPrincipal.asSystem(() -> {
+                    // Old orders first: stamped, never emailed, and out of the scan below.
+                    silent[0] = stampSilently(tenantId);
+                    return claim(tenantId);
+                });
             });
+            if (silent[0] > 0) {
+                log.info("event=unaccepted_orders_stamped_silently tenant={} count={} "
+                        + "(PENDING past {}; not emailed)", tenantId, silent[0], MAX_AGE_PROPERTY);
+            }
             if (alerted == null || alerted.isEmpty()) {
                 return 0;
             }
@@ -230,6 +289,14 @@ public class UnacceptedOrderSweep {
             // ALWAYS: pooled threads; a stale tenant left behind is a cross-tenant read waiting to happen.
             TenantContext.clear();
         }
+    }
+
+    /** Stamps this tenant's over-age PENDING orders without alerting anyone; returns how many (at most {@link #BATCH}). */
+    private int stampSilently(UUID tenantId) {
+        return entityManager.createNativeQuery(SILENT_STAMP_SQL)
+                .setParameter("tenantId", tenantId)
+                .setParameter("maxSecs", (double) maxAgeSeconds)
+                .executeUpdate();
     }
 
     @SuppressWarnings("unchecked")

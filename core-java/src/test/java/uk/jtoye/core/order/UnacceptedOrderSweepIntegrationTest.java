@@ -63,8 +63,13 @@ class UnacceptedOrderSweepIntegrationTest {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
         registry.add("jtoye.orders.unaccepted-alert.enabled", () -> "true");
         registry.add("jtoye.orders.unaccepted-alert.threshold", () -> "10m");
-        // The scheduler must not race the test: sweep() is driven by hand.
-        registry.add("jtoye.orders.unaccepted-alert.sweep-interval-ms", () -> "3600000");
+        // Pinned beside the threshold (review of PR 1123): the boundary arms below name 115 and 125 minutes, so
+        // they must not depend on the application.yml default.
+        registry.add("jtoye.orders.unaccepted-alert.max-age", () -> "2h");
+        // The scheduler must not race the test: sweep() is driven by hand. 25 minutes is far longer than this
+        // class runs, and still leaves the 2h max age three intervals wider than the 10m threshold (the sweep
+        // refuses to start otherwise).
+        registry.add("jtoye.orders.unaccepted-alert.sweep-interval-ms", () -> "1500000");
     }
 
     @MockitoBean EmailNotificationService emailService;
@@ -346,10 +351,11 @@ class UnacceptedOrderSweepIntegrationTest {
     }
 
     @Test
-    @DisplayName("hotfix: an order PENDING for 3 days is neither stamped nor emailed (max age); one PENDING for 15 minutes is")
-    void anOrderOlderThanTheMaxAgeIsNeverAlerted() {
-        // 3 days = 4320 minutes, far past the 120-minute default max age: the first sweep after deploy must not
-        // email the customer of every old PENDING order in the table.
+    @DisplayName("hotfix + review of PR 1123: an order PENDING for 3 days is stamped SILENTLY (no email), so it leaves the scan; one PENDING for 15 minutes is alerted")
+    void anOrderOlderThanTheMaxAgeIsStampedSilentlyAndNeverEmailed() {
+        // 3 days = 4320 minutes, far past the 2h max age: the first sweep after deploy must not email the
+        // customer of every old PENDING order in the table, and (review of PR 1123, finding 3) must not leave
+        // them in the candidate scan for ever either.
         UUID threeDays = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 3 * 24 * 60, false);
         UUID justPastMaxAge = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 125, false);
         UUID insideMaxAge = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 115, false);
@@ -358,14 +364,48 @@ class UnacceptedOrderSweepIntegrationTest {
         int alerted = sweep.sweep();
 
         assertThat(stampOf(TENANT_A, fifteenMinutes)).as("15 minutes: inside [threshold, max age], alerted").isNotNull();
-        assertThat(stampOf(TENANT_A, insideMaxAge)).as("115 minutes: inside the 120-minute max age").isNotNull();
-        assertThat(stampOf(TENANT_A, threeDays)).as("3 days: never stamped").isNull();
-        assertThat(stampOf(TENANT_A, justPastMaxAge)).as("125 minutes: past the max age, never alerted").isNull();
-        assertThat(alerted).as("only the two orders inside the window").isEqualTo(2);
+        assertThat(stampOf(TENANT_A, insideMaxAge)).as("115 minutes: inside the 2h max age").isNotNull();
+        assertThat(stampOf(TENANT_A, threeDays)).as("3 days: stamped silently").isNotNull();
+        assertThat(stampOf(TENANT_A, justPastMaxAge)).as("125 minutes: past the max age, stamped silently").isNotNull();
+        assertThat(alerted).as("only the two orders inside the window were ALERTED (stamped silently is not alerted)")
+                .isEqualTo(2);
         verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, threeDays)), any());
         verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, justPastMaxAge)), any());
         verify(emailService, times(2)).sendOrderAwaitingAcceptance(any(), any(), any());
         assertThat(statusOf(TENANT_A, threeDays)).as("and still PENDING: no auto-cancel").isEqualTo("PENDING");
+    }
+
+    @Test
+    @DisplayName("review of PR 1123: the silently stamped orders are counted per tenant in an INFO line, and a second run stamps and counts nothing")
+    void silentStampsAreCountedPerTenantAtInfo() {
+        seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 3 * 24 * 60, false);
+        seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 500, false);
+        seedOrder(TENANT_B, shopB, "PENDING", "NONE", null, 4 * 24 * 60, false);
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(UnacceptedOrderSweep.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            sweep.sweep();
+            List<String> lines = appender.list.stream()
+                    .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .filter(m -> m.contains("unaccepted_orders_stamped_silently"))
+                    .toList();
+            assertThat(lines).as("one INFO line per tenant that had any: " + lines).hasSize(2);
+            assertThat(lines).anyMatch(l -> l.contains("tenant=" + TENANT_A) && l.contains("count=2"));
+            assertThat(lines).anyMatch(l -> l.contains("tenant=" + TENANT_B) && l.contains("count=1"));
+
+            appender.list.clear();
+            sweep.sweep();
+            assertThat(appender.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
+                    .as("already stamped: nothing to count the second time")
+                    .noneMatch(m -> m.contains("unaccepted_orders_stamped_silently"));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     /** An Envers revision of the order carrying {@code status}, made {@code minutesAgo} minutes ago. */

@@ -641,14 +641,14 @@ jtoye:
     # (orders.unaccepted_notified_at). A config KEY with no env placeholder, like bulk-cancel above, so
     # the env-contract gate owes no compose / .env.example / k8s line. A threshold below 1 minute refuses
     # to start, naming the key.
-    # max-age-minutes: the OLDEST order the sweep will alert. Only orders PENDING for between `threshold`
-    # and this are emailed/stamped; an older one is never touched, so the first run after a deploy cannot
-    # email the customer of every old PENDING order. Must be greater than `threshold` (refuses to start,
-    # naming the key).
+    # max-age (a Duration like threshold): an order PENDING between `threshold` and this is emailed and stamped;
+    # an OLDER one is stamped SILENTLY (no email, count logged per tenant at INFO), so a deploy or an outage
+    # cannot email every old PENDING order. max-age minus threshold must be at least 3 x sweep-interval-ms
+    # (refuses to start, naming the keys).
     unaccepted-alert:
       enabled: true
       threshold: 10m
-      max-age-minutes: 120
+      max-age: 2h
       sweep-interval-ms: 60000
 
 # Outbox flusher tunables (27-04 T4, finding E). PRE-EXISTING DEFECT fixed here, not introduced:
