@@ -15,6 +15,12 @@ export const PUBLIC_STATIC_ROUTES: ReadonlyArray<{
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/shop", changeFrequency: "daily", priority: 0.9 },
   { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
+  // Persona close-out (issues 803, 804): the pages a prospective vendor needs. /pricing, /about
+  // and the merchant terms did not exist (404); /contact and /legal/terms existed but were
+  // unlisted. All five are in the footer, so a crawler reaches them by link as well.
+  { path: "/pricing", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/about", changeFrequency: "monthly", priority: 0.5 },
+  { path: "/contact", changeFrequency: "monthly", priority: 0.5 },
   // The two internal strategy pages were deleted (owner ruling 2026-11-04, #836), so there is
   // nothing of theirs to list.
   // FE-6 (RESOLVED, was: "a pre-existing inconsistency, left alone"): `/track`
@@ -43,4 +49,6 @@ export const PUBLIC_STATIC_ROUTES: ReadonlyArray<{
   { path: "/legal/cookies", changeFrequency: "yearly", priority: 0.3 },
   { path: "/legal/retention", changeFrequency: "yearly", priority: 0.3 },
   { path: "/legal/accessibility", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/terms", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/merchant-terms", changeFrequency: "yearly", priority: 0.3 },
 ]

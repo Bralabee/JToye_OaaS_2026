@@ -143,6 +143,10 @@ const PUBLIC_ROUTES = [
   // title contracts as every other public page.
   "/legal/terms",
   "/contact",
+  // Persona close-out (issues 803, 804): the three new pages, under the same 375px contract.
+  "/pricing",
+  "/about",
+  "/legal/merchant-terms",
 ]
 
 /**
@@ -656,5 +660,49 @@ test.describe("published policy set — metadata, reachability and contact", () 
         `the feedback section links ${href}, which does not resolve`
       ).toBe(200)
     }
+  })
+})
+
+/**
+ * Issue 803 (UXT-031) acceptance: an anonymous visitor who follows "Start your application"
+ * from /for-operators must reach an application route that tells them how to apply, not a bare
+ * sign-in. Stack-free: the public API is stubbed and nothing here needs a backend or Keycloak.
+ *
+ * Fail direction: before this change the first link was `/dashboard/onboarding`, which the
+ * dashboard redirects to the Keycloak sign-in; the `waitForURL(/\/contact#apply$/)` below cannot
+ * match that. The same contract is pinned stack-free in
+ * `app/__tests__/public-content-pages.test.tsx` (recorded red on the unfixed tree and under a
+ * break arm that restores the old href).
+ */
+test.describe("a prospective vendor has a way in (issue 803)", () => {
+  test.beforeEach(async ({ context }) => {
+    await stubPublicApi(context)
+  })
+
+  test("'Start your application' on /for-operators reaches the apply section, not a login", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/for-operators`)
+    await page.waitForLoadState("domcontentloaded")
+    const cta = page.getByRole("link", { name: /start your application/i }).first()
+    await expect(cta).toBeVisible()
+    await cta.click()
+    await page.waitForURL(/\/contact#apply$/)
+    expect(page.url()).not.toMatch(/\/auth\/|\/dashboard|realms|openid/)
+    const heading = page.getByRole("heading", { name: /apply as a food business/i })
+    await expect(heading).toBeVisible()
+    // The route out for someone already approved is still there, and so are the terms.
+    await expect(page.getByRole("link", { name: /sign in to your dashboard/i })).toBeVisible()
+    await expect(page.getByRole("link", { name: /merchant terms/i }).first()).toBeVisible()
+  })
+
+  test("the vendor sign-in page offers an apply route to someone with no account", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/auth/signin`)
+    await page.waitForLoadState("domcontentloaded")
+    const apply = page.getByRole("link", { name: /apply to join/i })
+    await expect(apply).toBeVisible()
+    await expect(apply).toHaveAttribute("href", "/contact#apply")
   })
 })
