@@ -65,3 +65,61 @@ export const PRICING_CARD_FEE_LINE =
  */
 export const STRIPE_UK_PRICING_URL = "https://stripe.com/gb/pricing"
 export const STRIPE_UK_PRICING_LINK_TEXT = "Stripe's UK pricing page"
+
+/**
+ * The VAT basis of J'Toye's own fees, in one sentence (issue 804 and
+ * SW-CLR-06). OWNER RULING 2026-11-04: prices include VAT for VAT-registered
+ * businesses and carry no VAT for businesses that are not VAT-registered.
+ *
+ * Rendered by /pricing, /for-operators and /legal/merchant-terms from this
+ * constant, so a later ruling is one edit. NO VAT NUMBER and no statement of
+ * J'Toye Digital's own registration is invented here or beside it: the ruling
+ * fixes the basis, not a registration fact.
+ */
+export const PRICING_VAT_BASIS_LINE =
+  "Prices include VAT for VAT-registered businesses and carry no VAT for businesses that are not VAT-registered."
+
+/**
+ * One row of the plan table, shared by /for-operators and /pricing so the two
+ * cannot disagree. A FUNCTION of the pricing object for the reason
+ * formatSetupLine is: operator-pitch-pricing.test.tsx proves the page reads
+ * PRICING by mocking it, and a table built here at module load would carry the
+ * real figures past that mock. Callers pass the PRICING they imported.
+ *
+ * `docket` and `primary` are the /for-operators hero's wording and which row it
+ * reads; /pricing ignores them.
+ */
+export interface PricingPlan {
+  name: string
+  note: string
+  docket: string
+  monthly: readonly [string, string]
+  fee: readonly [string, string]
+  primary: boolean
+}
+
+/**
+ * One plan as a sentence, for prose that lists the plans (the merchant terms).
+ * Built only from a PricingPlan, so the sentence and /pricing's table row come
+ * from the same data and cannot drift (round-1 review of PR 1116, finding 3:
+ * the terms had retyped the list and the wording had already diverged).
+ *
+ *   Standard: £39 per location per month, plus 0.5% of direct sales.
+ *   Flat: £79–£149 per location per month, 0% of sales.
+ *   Batch pay-as-you-go: £0 per month, plus 6% of direct sales.
+ */
+export function planSentence(plan: PricingPlan): string {
+  const [amount, unit] = plan.monthly
+  const monthly = `${amount}${unit ? ` ${unit}` : ""} per month`
+  const [rate, base] = plan.fee
+  const fee = rate === formatRate(0) ? `${rate} ${base}` : `plus ${rate} ${base}`
+  return `${plan.name}: ${monthly}, ${fee}.`
+}
+
+export function pricingPlans(pricing: typeof PRICING = PRICING): readonly PricingPlan[] {
+  return [
+    { name: "Standard", note: "Most operators start here.", docket: "of your direct sales", monthly: [`£${pricing.coreMonthly}`, "per location"], fee: [pricing.usageLabel, "of direct sales"], primary: true },
+    { name: "Flat", note: "One flat bill.", docket: "of your sales", monthly: [`£${pricing.flatLow}–£${pricing.flatHigh}`, "per location"], fee: [formatRate(0), "of sales"], primary: false },
+    { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", docket: "of your direct sales", monthly: ["£0", ""], fee: [pricing.paygLabel, "of direct sales"], primary: false },
+  ]
+}

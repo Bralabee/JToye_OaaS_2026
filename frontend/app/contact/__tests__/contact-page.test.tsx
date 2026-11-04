@@ -20,7 +20,7 @@ import { render, within } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import ContactPage, { metadata } from "@/app/contact/page"
 import { getCompanyInfo, resolvePublicContact } from "@/lib/company"
-import { LEGAL_LINK_CLASS } from "@/components/legal/policy-page"
+import { LEGAL_LINK_CLASS, LEGAL_PROSE_LINK_CLASS } from "@/components/legal/policy-page"
 import { getCustomerSession } from "@/lib/customer-auth"
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -173,11 +173,16 @@ describe("no contact value is hardcoded", () => {
  * re-type the class string, so a style ruling cannot miss this page.
  */
 describe("/contact reuses the legal-surface link style", () => {
-  it("renders its operator-page link with LEGAL_LINK_CLASS", () => {
+  // Issue 803: the operator-page link sits in the running prose of the apply section, so it takes
+  // the underlined prose variant (colour must not be the only cue); the standalone back link
+  // keeps LEGAL_LINK_CLASS.
+  it("renders its operator-page link with LEGAL_PROSE_LINK_CLASS", () => {
     const main = renderMain()
     const link = main.querySelector('a[href="/for-operators"]')
     expect(link).not.toBeNull()
-    expect(link?.getAttribute("class")).toBe(LEGAL_LINK_CLASS)
+    expect(link?.getAttribute("class")).toBe(LEGAL_PROSE_LINK_CLASS)
+    const back = main.querySelector('a[href="/legal"]')
+    expect(back?.getAttribute("class")).toContain(LEGAL_LINK_CLASS)
   })
 
   it("does not re-type the link class string in its source", () => {
