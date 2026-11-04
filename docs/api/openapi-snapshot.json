@@ -13258,7 +13258,7 @@
                 }
               }
             },
-            "description" : "The card refund failed, so the order was NOT cancelled (errors/refund-failed); try again or contact the shop"
+            "description" : "The order IS cancelled but the card refund has not completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry the refund, or contact the shop"
           }
         },
         "summary" : "Cancel your own order (before the kitchen accepts it)",
@@ -16964,7 +16964,7 @@
                 }
               }
             },
-            "description" : "The card refund failed, so the order was NOT cancelled (errors/refund-failed); try again or contact the shop"
+            "description" : "The order IS cancelled but the card refund has not completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry the refund, or contact the shop"
           }
         },
         "summary" : "Cancel your own order (before the kitchen accepts it)",

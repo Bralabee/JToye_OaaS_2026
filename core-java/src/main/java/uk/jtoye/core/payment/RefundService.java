@@ -46,9 +46,10 @@ import java.util.stream.Collectors;
  *   <li>Update Refund + transition order via state machine.</li>
  * </ol>
  *
- * <p>On {@link StripeException} the row is updated to {@code status=failed}
- * via a {@code REQUIRES_NEW} transaction so the failure persists even when
- * the outer transaction rolls back — necessary for reconciliation.
+ * <p>The staff path inserts the row and calls Stripe in ONE transaction, so a Stripe error rolls the row
+ * back with it (the {@code failed} marking is then a no-op in a new transaction that cannot see it). The
+ * customer self-cancel path (#868) commits its row BEFORE Stripe is called: see {@link #reserveCancelRefund}
+ * and {@link #issueCancelRefund}.
  */
 @Service
 public class RefundService {
@@ -71,6 +72,8 @@ public class RefundService {
     private final StripeConnectService stripeConnectService;
     /** Null only through the legacy constructors: the refund is then tagged environment=unset. */
     private final StripeProperties stripeProperties;
+    /** This bean's own proxy, so a self-call still gets its transaction advice (null outside Spring). */
+    private RefundService self;
 
     public RefundService(RefundRepository refundRepository,
                          OrderRepository orderRepository,
@@ -185,31 +188,47 @@ public class RefundService {
         }
 
         return executeRefund(order, tenantId, requested, request.reason(), request.note(),
-                clientIdempotencyKey, true);
+                clientIdempotencyKey);
+    }
+
+    // ------------------------------------------------------------------
+    // #868 customer self-cancel: reserve (inside the cancel's transaction) -> Stripe (no transaction) -> finish.
+    // ------------------------------------------------------------------
+
+    /** Marks a Refund row as the one a customer's own cancellation made; its Stripe key shares the prefix. */
+    static final String CANCEL_KEY_PREFIX = "cancel-";
+
+    /** What Stripe is asked, built inside a short read transaction so the Stripe call itself holds none. */
+    public record PreparedCancelRefund(RefundCreateParams params, RequestOptions options, long amountPennies,
+                                       boolean alreadyAtStripe) { }
+
+    /**
+     * True when this order already has a refund attempt made for a customer's own cancellation. The cancel
+     * service asks it of an order that is already CANCELLED but still shows its card payment as CAPTURED, to
+     * tell "a refund is half done, finish it" from "staff cancelled it, nothing to do with this customer".
+     */
+    @Transactional(readOnly = true)
+    public boolean hasCancelRefund(UUID orderId) {
+        return refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).stream()
+                .anyMatch(r -> r.getIdempotencyKey() != null && r.getIdempotencyKey().startsWith(CANCEL_KEY_PREFIX));
     }
 
     /**
-     * Refund a customer-cancelled order in full (#868, owner ruling 2026-11-04). The same stored-first,
-     * Stripe-routed refund {@link #createRefund} issues, for an order the customer cancelled while it was
-     * still PENDING. The caller has already moved the order to CANCELLED in this transaction, so — unlike
-     * {@code createRefund} — no {@code REFUND_REQUESTED} transition runs (the state machine has none out of
-     * CANCELLED, and the order must stay CANCELLED, not REFUNDED); only the payment status moves.
+     * Reserve the Refund row for a customer-cancelled order's full refund (#868, owner ruling 2026-11-04). Runs
+     * INSIDE the cancel's transaction, so the row commits together with the cancel and the ledger reversal and
+     * BEFORE any Stripe call: whatever happens to Stripe or to what follows, the {@code metadata.refund_id}
+     * Stripe is given names a committed row the {@code refund.*} webhook can find (BL-04).
      *
-     * <p>The Stripe idempotency key is deterministic: {@code cancel-<orderId>-<attempt>}, where attempt
-     * counts the order's existing refund rows. A retry after a rolled-back attempt reuses the key and Stripe
-     * answers with the refund it already made instead of a second one; a FAILED row (persisted by
-     * {@link #markRefundFailed} even when the transaction rolls back) advances the attempt, so a genuine
-     * retry is not answered with the old failure.
+     * <p>The Stripe idempotency key is the row's own stored key, so one row is one Stripe request with one set
+     * of parameters. A retry of an attempt that is not finished (row CREATING, pending, succeeded) gets the SAME
+     * row back, hence the same key and identical parameters, and Stripe replays the refund it already made
+     * instead of refusing the key for changed parameters. Only an attempt Stripe definitively refused
+     * ({@code failed}/{@code canceled}) is replaced by a new row, and so by a new key.
      *
-     * <p>Requires {@code TenantContext}. The caller (CustomerOrderCancellationService) has proven ownership
-     * and eligibility; this method guards what the money needs: a payment reference and a positive
-     * remaining amount.
-     *
-     * @return the amount refunded, in pennies
-     * @throws StripeException if Stripe refuses; the caller's transaction then rolls the cancel back
+     * @return the id of the row to issue; call {@link #issueCancelRefund} AFTER the cancel has committed
      */
-    @Transactional(noRollbackFor = io.github.resilience4j.circuitbreaker.CallNotPermittedException.class)
-    public long refundCancelledOrderInFull(UUID orderId) throws StripeException {
+    @Transactional
+    public UUID reserveCancelRefund(UUID orderId) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
         Order order = orderRepository.findById(orderId)
@@ -218,25 +237,131 @@ public class RefundService {
             throw new InvalidStateTransitionException(
                     "Cannot refund order " + orderId + " — no Stripe payment_intent on record");
         }
+        Optional<Refund> unfinished = refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).stream()
+                .filter(r -> r.getIdempotencyKey() != null && r.getIdempotencyKey().startsWith(CANCEL_KEY_PREFIX))
+                .findFirst()
+                .filter(r -> r.getStatus() != RefundStatus.failed && r.getStatus() != RefundStatus.canceled);
+        if (unfinished.isPresent()) {
+            return unfinished.get().getId();
+        }
         long remaining = order.getTotalAmountPennies() - refundRepository.sumLiveAmountByOrderId(orderId);
         if (remaining <= 0) {
             throw new IllegalArgumentException(
                     "Order " + orderId + " has nothing left to refund (remaining=" + remaining + ")");
         }
-        String key = "cancel-" + orderId + "-" + refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).size();
-        executeRefund(order, tenantId, remaining, RefundReason.REQUESTED_BY_CUSTOMER,
-                "Cancelled by the customer before the kitchen accepted the order", key, false);
-        return remaining;
+        Refund refund = refundRepository.saveAndFlush(new Refund(
+                tenantId,
+                orderId,
+                order.getPaymentReference(),
+                CANCEL_KEY_PREFIX + UUID.randomUUID().toString().replace("-", ""),
+                remaining,
+                RefundReason.REQUESTED_BY_CUSTOMER,
+                "Cancelled by the customer before the kitchen accepted the order"));
+        log.info("Reserved cancel Refund row {} (status=CREATING) for order {} amount={}",
+                refund.getId(), orderId, remaining);
+        return refund.getId();
     }
 
     /**
-     * Steps 6-8 of the refund flow, shared by {@link #createRefund} and {@link #refundCancelledOrderInFull}.
+     * Make the Stripe refund for a row {@link #reserveCancelRefund} committed, then record the result. NOT
+     * transactional by design: the external call runs with no database transaction open, and each local step
+     * is its own short transaction (through the proxy, so {@code REQUIRES_NEW} really applies). Call it with
+     * {@code TenantContext} set, after the cancel's transaction has committed.
      *
-     * @param transitionOrder true for a staff refund (the order moves to REFUNDED); false when the order is
-     *                        already CANCELLED and only its payment status changes
+     * <p>Failure handling:
+     * <ul>
+     *   <li>Stripe REFUSED the request (a 4xx other than 409/429): the row is marked {@code failed} in a
+     *       committed transaction, so the next attempt is a new row with a new key.</li>
+     *   <li>The outcome is UNKNOWN (connection error, 5xx, timeout, 409/429) or the breaker never sent it: the
+     *       row stays CREATING, so the next attempt re-sends the identical request under the identical key and
+     *       Stripe returns the refund if it was made.</li>
+     *   <li>Stripe succeeded but a local write after it fails: nothing is lost; the row is committed and the
+     *       {@code refund.*} webhook updates it, and a retry sends the same request again.</li>
+     * </ul>
+     *
+     * @return the amount refunded, in pennies
+     * @throws StripeException if Stripe refuses or cannot be reached
+     */
+    public long issueCancelRefund(UUID refundId) throws StripeException {
+        PreparedCancelRefund call = self().prepareCancelRefundCall(refundId);
+        com.stripe.model.Refund stripeRefund = null;
+        if (!call.alreadyAtStripe()) {
+            try {
+                stripeRefund = stripeRefundClient.create(call.params(), call.options());
+            } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException ex) {
+                log.warn("Stripe.Refund.create failed for cancel refund {}: {}", refundId, ex.getMessage());
+                if (isDefinitiveRefusal(ex)) {
+                    self().markRefundFailed(refundId, ex.getMessage());
+                }
+                throw ex;
+            }
+        }
+        self().finishCancelRefund(refundId, stripeRefund);
+        return call.amountPennies();
+    }
+
+    /** A 4xx Stripe answered (other than "retry me" 409/429) means no refund exists under that key. */
+    private static boolean isDefinitiveRefusal(Exception ex) {
+        if (!(ex instanceof StripeException se)) {
+            return false;
+        }
+        Integer status = se.getStatusCode();
+        return status != null && status >= 400 && status < 500 && status != 409 && status != 429;
+    }
+
+    @Transactional(readOnly = true)
+    public PreparedCancelRefund prepareCancelRefundCall(UUID refundId) {
+        Refund refund = refundRepository.findById(refundId)
+                .orElseThrow(() -> new ResourceNotFoundException("Refund not found: " + refundId));
+        Order order = orderRepository.findById(refund.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + refund.getOrderId()));
+        StripeCall call = buildStripeCall(order, refund);
+        return new PreparedCancelRefund(call.params(), call.options(), refund.getAmountPennies(),
+                refund.getStripeRefundId() != null);
+    }
+
+    /**
+     * Record a cancel refund's outcome: the Stripe id and status on the row, and the order's payment status.
+     * {@code stripeRefund} is null when the row already carried a Stripe id (the webhook got there first), in
+     * which case only the order is brought up to date. A status the webhook has already advanced is never
+     * moved backwards by the create response.
+     */
+    @Transactional
+    public void finishCancelRefund(UUID refundId, com.stripe.model.Refund stripeRefund) {
+        Refund refund = refundRepository.findById(refundId)
+                .orElseThrow(() -> new ResourceNotFoundException("Refund not found: " + refundId));
+        if (stripeRefund != null) {
+            refund.setStripeRefundId(stripeRefund.getId());
+            if (refund.getStatus() == RefundStatus.CREATING) {
+                refund.setStatus(parseStripeStatus(stripeRefund.getStatus()));
+            }
+            refund.setUpdatedAt(OffsetDateTime.now());
+            refundRepository.save(refund);
+        }
+        Order order = orderRepository.findById(refund.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + refund.getOrderId()));
+        order.setPaymentStatus(PaymentStatus.REFUNDED);
+        order.setUpdatedAt(OffsetDateTime.now());
+        orderRepository.save(order);
+        log.info("Cancel refund {} recorded for order {} (Stripe={})", refundId, order.getId(),
+                refund.getStripeRefundId());
+    }
+
+    /** The call is routed through the Spring proxy when there is one; plain {@code this} in a unit test. */
+    private RefundService self() {
+        return self != null ? self : this;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSelf(@org.springframework.context.annotation.Lazy RefundService self) {
+        this.self = self;
+    }
+
+    /**
+     * Steps 6-8 of the staff refund flow ({@link #createRefund}).
      */
     private RefundDto executeRefund(Order order, UUID tenantId, long requested, RefundReason reason, String note,
-                                    String clientIdempotencyKey, boolean transitionOrder) throws StripeException {
+                                    String clientIdempotencyKey) throws StripeException {
         UUID orderId = order.getId();
 
         // Step 6 — Stored-first idempotency: persist BEFORE Stripe.
@@ -261,41 +386,8 @@ public class RefundService {
         // Step 7 — Call Stripe with the stored key (and connected-account routing for PAY-03 / GAP-GTM-01)
         com.stripe.model.Refund stripeRefund;
         try {
-            RefundCreateParams.Builder paramsBuilder = RefundCreateParams.builder()
-                    .setPaymentIntent(order.getPaymentReference())
-                    .setAmount(requested)
-                    .setReason(RefundReason.toStripeReason(reason))
-                    .putMetadata("refund_id", refund.getId().toString())
-                    .putMetadata("tenant_id", tenantId.toString())
-                    .putMetadata("order_id", orderId.toString())
-                    // PAY-03 (plan 30-12): the refund's own environment, so another environment's
-                    // runtime acknowledges its refund.* events instead of retrying them (Pitfall 5).
-                    .putMetadata("environment", stripeProperties != null
-                            ? stripeProperties.effectiveEnvironmentTag()
-                            : StripeProperties.UNSET_ENVIRONMENT);
-            RequestOptions.RequestOptionsBuilder optsBuilder = RequestOptions.builder()
-                    .setIdempotencyKey(serverIdemKey);
-
-            if (stripeConnectService != null) {
-                Optional<SettlementRoutingDecision> routingOpt =
-                        stripeConnectService.resolveSettlementRouting(order);
-                if (routingOpt.isPresent()) {
-                    SettlementRoutingDecision decision = routingOpt.get();
-                    if (decision.usesDirectChargeHeader()) {
-                        optsBuilder.setStripeAccount(decision.connectedAccountId());
-                        if (decision.applicationFeePennies() > 0) {
-                            paramsBuilder.setRefundApplicationFee(true);
-                        }
-                    } else if (decision.usesDestinationTransfer()) {
-                        paramsBuilder.setReverseTransfer(true);
-                        if (decision.applicationFeePennies() > 0) {
-                            paramsBuilder.setRefundApplicationFee(true);
-                        }
-                    }
-                }
-            }
-
-            stripeRefund = stripeRefundClient.create(paramsBuilder.build(), optsBuilder.build());
+            StripeCall call = buildStripeCall(order, refund);
+            stripeRefund = stripeRefundClient.create(call.params(), call.options());
         } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException ex) {
             log.warn("Stripe.Refund.create failed for refund {}: {}", refund.getId(), ex.getMessage());
             markRefundFailed(refund.getId(), ex.getMessage());
@@ -308,11 +400,9 @@ public class RefundService {
         refund.setUpdatedAt(OffsetDateTime.now());
         refund = refundRepository.save(refund);
 
-        if (transitionOrder) {
-            OrderStatus newStatus = stateMachineService.sendEvent(
-                    orderId, order.getStatus(), OrderEvent.REFUND_REQUESTED);
-            order.setStatus(newStatus);
-        }
+        OrderStatus newStatus = stateMachineService.sendEvent(
+                orderId, order.getStatus(), OrderEvent.REFUND_REQUESTED);
+        order.setStatus(newStatus);
         order.setPaymentStatus(PaymentStatus.REFUNDED);
         order.setUpdatedAt(OffsetDateTime.now());
         orderRepository.save(order);
@@ -323,13 +413,62 @@ public class RefundService {
         return refundMapper.toDto(refund);
     }
 
+    private record StripeCall(RefundCreateParams params, RequestOptions options) { }
+
     /**
-     * Persist a Stripe failure to the Refund row in a brand-new transaction so
-     * the row is durable even when the outer @Transactional method rolls back.
+     * The one place a Stripe refund request is assembled, from the stored row alone: amount, reason, ids and
+     * idempotency key all come from the persisted {@link Refund}, so the same row always yields the same
+     * parameters under the same key (Stripe refuses a reused key whose parameters differ), plus the
+     * connected-account routing (PAY-03 / GAP-GTM-01).
+     */
+    private StripeCall buildStripeCall(Order order, Refund refund) {
+        RefundCreateParams.Builder paramsBuilder = RefundCreateParams.builder()
+                .setPaymentIntent(order.getPaymentReference())
+                .setAmount(refund.getAmountPennies())
+                .setReason(RefundReason.toStripeReason(refund.getReason()))
+                .putMetadata("refund_id", refund.getId().toString())
+                .putMetadata("tenant_id", refund.getTenantId().toString())
+                .putMetadata("order_id", refund.getOrderId().toString())
+                // PAY-03 (plan 30-12): the refund's own environment, so another environment's
+                // runtime acknowledges its refund.* events instead of retrying them (Pitfall 5).
+                .putMetadata("environment", stripeProperties != null
+                        ? stripeProperties.effectiveEnvironmentTag()
+                        : StripeProperties.UNSET_ENVIRONMENT);
+        RequestOptions.RequestOptionsBuilder optsBuilder = RequestOptions.builder()
+                .setIdempotencyKey(refund.getIdempotencyKey());
+
+        if (stripeConnectService != null) {
+            Optional<SettlementRoutingDecision> routingOpt =
+                    stripeConnectService.resolveSettlementRouting(order);
+            if (routingOpt.isPresent()) {
+                SettlementRoutingDecision decision = routingOpt.get();
+                if (decision.usesDirectChargeHeader()) {
+                    optsBuilder.setStripeAccount(decision.connectedAccountId());
+                    if (decision.applicationFeePennies() > 0) {
+                        paramsBuilder.setRefundApplicationFee(true);
+                    }
+                } else if (decision.usesDestinationTransfer()) {
+                    paramsBuilder.setReverseTransfer(true);
+                    if (decision.applicationFeePennies() > 0) {
+                        paramsBuilder.setRefundApplicationFee(true);
+                    }
+                }
+            }
+        }
+        return new StripeCall(paramsBuilder.build(), optsBuilder.build());
+    }
+
+    /**
+     * Persist a Stripe failure to the Refund row in a brand-new transaction, so the failure is durable even
+     * when the caller's transaction rolls back. It only has an effect on a row that is ALREADY COMMITTED, which
+     * is what {@link #reserveCancelRefund} guarantees for the customer-cancel path. Callers must reach it
+     * through the Spring proxy ({@code self()}); a plain self-call never opens the new transaction.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markRefundFailed(UUID refundId, String reason) {
-        refundRepository.findById(refundId).ifPresent(r -> {
+        refundRepository.findById(refundId)
+                .filter(r -> r.getStatus() == RefundStatus.CREATING)   // never overwrite what a webhook already decided
+                .ifPresent(r -> {
             r.setStatus(RefundStatus.failed);
             r.setFailureReason(reason);
             r.setUpdatedAt(OffsetDateTime.now());

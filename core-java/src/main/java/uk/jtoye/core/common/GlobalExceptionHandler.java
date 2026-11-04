@@ -142,9 +142,9 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * #868: the card refund behind a customer's cancel failed, and the cancel was rolled back with it. 502,
-     * because the fault is the payment provider's, and the order is still PENDING so the customer may retry.
-     * The provider's error text is not echoed.
+     * #868: the order was cancelled but the card refund behind it has not completed. 502, because the fault is
+     * the payment provider's; the customer repeats the request to finish the refund. The provider's error text
+     * is not echoed.
      */
     @ExceptionHandler(uk.jtoye.core.exception.CustomerCancelRefundFailedException.class)
     public ProblemDetail handleCustomerCancelRefundFailed(uk.jtoye.core.exception.CustomerCancelRefundFailedException ex) {

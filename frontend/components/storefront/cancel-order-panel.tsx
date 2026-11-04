@@ -27,6 +27,16 @@ export interface CancelResult {
 
 const SHOW_CONTACT_STATUSES = ["CONFIRMED", "PREPARING", "READY"]
 
+/**
+ * Core refuses a PENDING order permanently unless it is pay-on-delivery (NONE) or a captured card payment:
+ * a card payment still PENDING/AUTHORIZED, or FAILED, is a payment-state refusal, and so is a deposit/balance
+ * order (whose fields this response does not carry, so core's 409 is what tells us). An absent status is left
+ * to core.
+ */
+function paymentBlocksSelfCancel(paymentStatus?: string | null): boolean {
+  return !!paymentStatus && !["NONE", "CAPTURED"].includes(paymentStatus)
+}
+
 export function CancelOrderPanel({
   orderNumber,
   shopName,
@@ -49,6 +59,9 @@ export function CancelOrderPanel({
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Core said, permanently, that this order can't be cancelled online (typed 409). Shown INSTEAD of the
+  // button, so the customer is never offered a cancel core has just refused (a deposit order would loop).
+  const [refusal, setRefusal] = useState<string | null>(null)
   const keyRef = useRef<string | null>(null)
   const headingId = useId()
 
@@ -62,6 +75,18 @@ export function CancelOrderPanel({
     )
   }
   if (status !== "PENDING") return null
+
+  if (refusal || paymentBlocksSelfCancel(paymentStatus)) {
+    return (
+      <p
+        role={refusal ? "alert" : undefined}
+        className="rounded-xl border border-cream-100 bg-white p-4 text-sm text-slate-700 shadow-sm"
+      >
+        {refusal ??
+          `This order can't be cancelled online while its payment is being settled. ${withFullStop(`Please contact ${shopName}`)}`}
+      </p>
+    )
+  }
 
   const cardPaid = paymentStatus === "CAPTURED"
 
@@ -81,7 +106,7 @@ export function CancelOrderPanel({
         return
       }
       if (res.status === 409) {
-        setError(
+        setRefusal(
           typeof data.detail === "string"
             ? data.detail
             : `This order can no longer be cancelled online. ${withFullStop(`Please contact ${shopName}`)}`
@@ -89,12 +114,17 @@ export function CancelOrderPanel({
         // A different outcome now: start a fresh key if the customer ever tries again.
         keyRef.current = null
         onRefused?.()
-      } else if (res.status === 502) {
+      } else if (res.status === 502 && data.code === "REFUND_FAILED") {
+        // Core's own typed answer: the order IS cancelled, the card refund has not completed. The same
+        // Idempotency-Key is kept, so pressing the button again finishes the refund and never repeats it.
         setError(
           typeof data.detail === "string"
             ? data.detail
-            : "We couldn't refund your card, so the order has not been cancelled. Please try again, or contact the shop."
+            : "Your order has been cancelled, but we couldn't complete the refund to your card yet. Please try again, or contact the shop."
         )
+      } else if (res.status === 502) {
+        // The Next proxy's own 502 (core unreachable) or any gateway fault: nothing is known about the order.
+        setError(withFullStop(`We couldn't reach ${shopName} just now. Please try again in a moment`))
       } else if (res.status === 404) {
         setError("We couldn't find this order to cancel it. Check your order number and email address.")
       } else {

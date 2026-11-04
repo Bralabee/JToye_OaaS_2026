@@ -6,7 +6,8 @@ import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.CustomerCancelNotAllowedException;
 import uk.jtoye.core.exception.CustomerCancelNotAllowedException.Reason;
@@ -29,11 +30,31 @@ import java.util.UUID;
  *       ({@link CustomerCancelNotAllowedException}) whose message sends the customer to the shop.</li>
  *   <li>A pay-on-delivery order is simply cancelled. A card-paid order is refunded in FULL through the
  *       existing {@link RefundService} path, and its sale is reversed in the ledger exactly as a void does.</li>
- *   <li>If the refund fails the cancel is rolled back with it: the customer is never cancelled-but-charged.</li>
+ *   <li>The order is cancelled and its refund RESERVED in one committed transaction; Stripe is called only
+ *       afterwards (see "Order of effects"). A refund that does not complete leaves a cancelled order whose
+ *       customer is told so and whose retry finishes the refund.</li>
  * </ul>
  * <b>Not decided by the ruling, and therefore refused (contact the shop):</b> an order paid in parts
  * (deposit and balance, V87) and an order whose payment has not settled either way. Their refund amount is
  * a policy question nobody has answered, and guessing it would move money.
+ *
+ * <h2>Order of effects (review of PR #1120, A1/A2)</h2>
+ * <ol>
+ *   <li><b>One transaction, committed:</b> the cancel transition (kitchen board, stock, slot, outbox event),
+ *       the Refund row as CREATING, and the ledger reversal. A kitchen that accepted a moment ago (the order's
+ *       {@code @Version}) fails HERE, before any money moves, and rolls everything back.</li>
+ *   <li><b>Stripe, with no transaction open,</b> under the row's own stored idempotency key. A card refund can
+ *       no longer succeed for an order the database still shows as PENDING and fulfillable, and the
+ *       {@code metadata.refund_id} Stripe holds always names a committed row for the {@code refund.*} webhook.</li>
+ *   <li><b>One short transaction</b> recording the outcome (Stripe id on the row, payment status REFUNDED).
+ *       If it fails, or Stripe's answer is unknown, the committed row is still CREATING: repeating the cancel
+ *       (the same request, same {@code Idempotency-Key} or none) re-sends the identical Stripe request, which
+ *       Stripe answers with the refund it already made, and finishes the local record. Only a request Stripe
+ *       definitively REFUSED is marked {@code failed}; the next attempt is then a new row with a new key.</li>
+ * </ol>
+ * The price of that order: when Stripe refuses, the order is CANCELLED and the card is not yet refunded, which
+ * the customer is told in so many words (502 {@code refund-failed}) and the shop sees as a {@code failed} refund.
+ * The alternative (refund first) would let a refunded order stay PENDING for the kitchen to cook.
  *
  * <h2>Who may call it</h2>
  * The caller is anonymous. Ownership is proven the way order tracking proves it: the order number AND the
@@ -67,23 +88,40 @@ public class CustomerOrderCancellationService {
     private final FinancialTransactionService financialTransactionService;
     private final IdempotencyService idempotencyService;
     private final EntityManager entityManager;
+    private final TransactionTemplate tx;
 
     public CustomerOrderCancellationService(OrderRepository orderRepository,
                                             OrderService orderService,
                                             RefundService refundService,
                                             FinancialTransactionService financialTransactionService,
                                             IdempotencyService idempotencyService,
-                                            EntityManager entityManager) {
+                                            EntityManager entityManager,
+                                            PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.orderService = orderService;
         this.refundService = refundService;
         this.financialTransactionService = financialTransactionService;
         this.idempotencyService = idempotencyService;
         this.entityManager = entityManager;
+        this.tx = new TransactionTemplate(transactionManager);
     }
 
     /** The idempotency identity: the key is valid for ONE order, whoever proves it. */
     record CancelIdentity(String orderNumber) { }
+
+    /**
+     * What the first transaction decided. {@code result} is the answer when nothing remains to do;
+     * {@code refundId} is set when a committed Refund row still needs its Stripe call.
+     */
+    private record Plan(String orderNumber, UUID orderId, UUID tenantId, UUID refundId, CustomerCancelResult result) {
+        static Plan done(Order order, CustomerCancelResult result) {
+            return new Plan(order.getOrderNumber(), order.getId(), order.getTenantId(), null, result);
+        }
+
+        static Plan refunding(Order order, UUID refundId) {
+            return new Plan(order.getOrderNumber(), order.getId(), order.getTenantId(), refundId, null);
+        }
+    }
 
     /**
      * @param orderNumber    the order to cancel
@@ -91,11 +129,38 @@ public class CustomerOrderCancellationService {
      *                       signed-in customer
      * @param idempotencyKey the optional {@code Idempotency-Key}
      */
-    @Transactional
     public CustomerCancelResult cancel(String orderNumber, String email, String idempotencyKey) {
         if (orderNumber == null || orderNumber.isBlank() || email == null || email.isBlank()) {
             throw new IllegalArgumentException("Order number and email are required.");
         }
+        // Transaction 1: ownership, the cancel, the reserved refund and the ledger reversal. Commits here.
+        Plan plan = tx.execute(status -> decide(orderNumber, email, idempotencyKey));
+        if (plan.refundId() == null) {
+            return plan.result();
+        }
+
+        // Stripe, then transaction 3 (recording). The cancel is already committed; see "Order of effects".
+        TenantContext.set(plan.tenantId());
+        try {
+            try {
+                refundService.issueCancelRefund(plan.refundId());
+            } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
+                log.warn("Refund for customer cancel of order {} did not complete: {}", plan.orderNumber(), e.getMessage());
+                throw new CustomerCancelRefundFailedException(plan.orderNumber(), e);
+            } catch (RuntimeException e) {
+                // Stripe may well have refunded and our own recording failed. The row is committed and a
+                // repeat finishes it, so say "not confirmed yet", not a stack trace.
+                log.error("Recording the refund for customer cancel of order {} failed: {}", plan.orderNumber(), e.toString());
+                throw new CustomerCancelRefundFailedException(plan.orderNumber(), e);
+            }
+            return tx.execute(status -> describe(loadOrder(plan.orderId())));
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /** Transaction 1. Runs inside {@link #tx}; clears the tenant before returning, as the commit needs only the GUC. */
+    private Plan decide(String orderNumber, String email, String idempotencyKey) {
         pinTrackingPair(orderNumber, email);
         Order found = orderRepository.findByOrderNumberAndCustomerEmail(orderNumber, email)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -110,21 +175,23 @@ public class CustomerOrderCancellationService {
             if (idempotencyKey == null || idempotencyKey.isBlank()) {
                 return cancelOwned(orderId);
             }
+            // A replay never cancels twice, but it DOES finish a refund an earlier attempt left unfinished.
             return idempotencyService.executeWithoutStoringResponse(
                     ENDPOINT, idempotencyKey.trim(), new CancelIdentity(found.getOrderNumber()),
                     () -> cancelOwned(orderId),
-                    () -> describe(loadOrder(orderId))).value();
+                    () -> resumeOrDescribe(loadOrder(orderId))).value();
         } finally {
             TenantContext.clear();
         }
     }
 
-    private CustomerCancelResult cancelOwned(UUID orderId) {
+    private Plan cancelOwned(UUID orderId) {
         Order order = loadOrder(orderId);
 
-        // Already done: a double tap, a retry, or the kitchen got there first. Said truthfully, changes nothing.
+        // Already done: a double tap, a retry, or the kitchen got there first. Said truthfully, changes nothing,
+        // except that a cancelled order whose card refund was left unfinished gets it finished.
         if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.REFUNDED) {
-            return describe(order);
+            return resumeOrDescribe(order);
         }
         if (order.isVoided()) {
             throw new CustomerCancelNotAllowedException(order.getOrderNumber(), order.getStatus().name(), Reason.PAYMENT_STATE);
@@ -148,23 +215,41 @@ public class CustomerOrderCancellationService {
         }
 
         // The cancel goes first and is flushed, so a kitchen that accepted a moment ago (the order's
-        // @Version moved) fails HERE, before any money moves. Then the refund: if Stripe refuses, the
-        // exception rolls the cancel and its outbox event back with it.
+        // @Version moved) fails HERE, before any money moves.
         orderService.applyTransition(order, OrderEvent.CANCEL, CancelReason.CUSTOMER_REQUEST);
         orderRepository.flush();
 
-        if (cardCaptured) {
-            try {
-                refundService.refundCancelledOrderInFull(order.getId());
-            } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
-                log.warn("Refund for customer cancel of order {} failed: {}", order.getOrderNumber(), e.getMessage());
-                throw new CustomerCancelRefundFailedException(order.getOrderNumber(), e);
-            }
-            financialTransactionService.findSaleForOrder(order.getId()).ifPresent(sale ->
-                    financialTransactionService.createReversal(sale, "Reversal of " + order.getOrderNumber()));
+        if (!cardCaptured) {
+            log.info("Order {} cancelled by its customer (refunded=false)", order.getOrderNumber());
+            return Plan.done(order, describe(loadOrder(order.getId())));
         }
-        log.info("Order {} cancelled by its customer (refunded={})", order.getOrderNumber(), cardCaptured);
-        return describe(loadOrder(order.getId()));
+        // Everything local that a card cancel needs is written, flushed and committed BEFORE Stripe is asked:
+        // the Refund row (CREATING) and the ledger reversal. After this transaction only Stripe's answer and
+        // its recording are left, and neither can resurrect a PENDING order.
+        UUID refundId = refundService.reserveCancelRefund(order.getId());
+        financialTransactionService.findSaleForOrder(order.getId()).ifPresent(sale ->
+                financialTransactionService.createReversal(sale, "Reversal of " + order.getOrderNumber()));
+        orderRepository.flush();
+        log.info("Order {} cancelled by its customer; refund {} reserved", order.getOrderNumber(), refundId);
+        return Plan.refunding(order, refundId);
+    }
+
+    /**
+     * A CANCELLED order whose card payment still reads CAPTURED and that has a refund attempt of its own
+     * customer's cancellation is a half-finished refund: hand it back for another try. Anything else is
+     * described as it stands (a staff-cancelled order with no such attempt is never refunded from here).
+     */
+    private Plan resumeOrDescribe(Order order) {
+        boolean unfinishedCardRefund = order.getStatus() == OrderStatus.CANCELLED
+                && order.getPaymentStatus() == PaymentStatus.CAPTURED
+                && order.getPaymentReference() != null && !order.getPaymentReference().isBlank()
+                && refundService.hasCancelRefund(order.getId());
+        if (unfinishedCardRefund) {
+            UUID refundId = refundService.reserveCancelRefund(order.getId());
+            log.info("Order {} was cancelled with its refund unfinished; resuming refund {}", order.getOrderNumber(), refundId);
+            return Plan.refunding(order, refundId);
+        }
+        return Plan.done(order, describe(order));
     }
 
     private Order loadOrder(UUID orderId) {

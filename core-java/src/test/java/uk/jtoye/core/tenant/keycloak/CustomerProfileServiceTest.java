@@ -146,6 +146,58 @@ class CustomerProfileServiceTest {
     }
 
     @Test
+    @DisplayName("F4: Keycloak refusing the NAME with a 400/422 is a 400 'name not accepted', never a 503 retry-later")
+    void keycloakValidationRefusalIsABadRequest() {
+        when(client.getUser(REALM, SUB, TOKEN)).thenReturn(Optional.of(rep(EMAIL)));
+        for (int status : new int[]{400, 422}) {
+            org.mockito.Mockito.doThrow(new KeycloakAdminException("Keycloak user update failed for realm=" + REALM,
+                    org.springframework.web.client.HttpClientErrorException.create(
+                            org.springframework.http.HttpStatusCode.valueOf(status), "refused", null, null, null)))
+                    .when(client).updateUser(eq(REALM), any(), eq(TOKEN));
+
+            assertThatThrownBy(() -> service.updateDisplayName(SUB, EMAIL, "A&B Smith"))
+                    .as("Keycloak %s on the update", status)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("wasn't accepted");
+        }
+    }
+
+    @Test
+    @DisplayName("F4: a mononym whose empty lastName a stricter realm refuses is the same 400, not a 503")
+    void mononymRefusedByAStricterRealmIsABadRequest() {
+        when(client.getUser(REALM, SUB, TOKEN)).thenReturn(Optional.of(rep(EMAIL)));
+        org.mockito.Mockito.doThrow(new KeycloakAdminException("Keycloak user update failed for realm=" + REALM,
+                org.springframework.web.client.HttpClientErrorException.create(
+                        org.springframework.http.HttpStatusCode.valueOf(400), "lastName required", null, null, null)))
+                .when(client).updateUser(eq(REALM), any(), eq(TOKEN));
+
+        assertThatThrownBy(() -> service.updateDisplayName(SUB, EMAIL, "Cher"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("F4: a Keycloak 5xx, a connection failure and a 401 on OUR admin credential stay the retryable 503")
+    void keycloakServerSideFailuresStayUnavailable() {
+        when(client.getUser(REALM, SUB, TOKEN)).thenReturn(Optional.of(rep(EMAIL)));
+        Throwable[] causes = {
+                org.springframework.web.client.HttpServerErrorException.create(
+                        org.springframework.http.HttpStatusCode.valueOf(500), "boom", null, null, null),
+                new org.springframework.web.client.ResourceAccessException("connection refused"),
+                org.springframework.web.client.HttpClientErrorException.create(
+                        org.springframework.http.HttpStatusCode.valueOf(401), "admin token", null, null, null),
+                org.springframework.web.client.HttpClientErrorException.create(
+                        org.springframework.http.HttpStatusCode.valueOf(403), "admin forbidden", null, null, null)};
+        for (Throwable cause : causes) {
+            org.mockito.Mockito.doThrow(new KeycloakAdminException("Keycloak user update failed for realm=" + REALM, cause))
+                    .when(client).updateUser(eq(REALM), any(), eq(TOKEN));
+
+            assertThatThrownBy(() -> service.updateDisplayName(SUB, EMAIL, "Ada Lovelace"))
+                    .as("cause %s", cause.getClass().getSimpleName())
+                    .isInstanceOf(CustomerProfileUnavailableException.class);
+        }
+    }
+
+    @Test
     @DisplayName("blank, over-long and control-character names are refused before Keycloak is asked")
     void invalidNames() {
         for (String bad : new String[]{null, "", "   ", "x".repeat(101), "Ada\u0000", "Ada\nKing"}) {

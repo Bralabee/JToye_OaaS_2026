@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.CustomerOrderCancellationService;
 import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.review.ReviewService;
@@ -428,7 +429,9 @@ public class PublicStorefrontController {
      * #868 (owner ruling 2026-11-04, persona close-out): a customer cancels their own order while it is
      * still PENDING. A guest proves ownership with the order number AND the email in the body (the tracking
      * proof); a signed-in customer sends the verified token and no email, and the token's address is the
-     * only one used. A token that does not verify is a 401 and never falls back to the body's email.
+     * first one tried. A token that does not verify is a 401 and never falls back to the body's email; a token
+     * whose address is not the order's owner falls back to the body's email when the body carries the guest
+     * pair, so a customer who tracked an order under another address can still cancel it.
      *
      * <p>There is deliberately NO MCP tool for this: it is an action of the customer on their own order,
      * and the MCP server acts for a vendor under a vendor credential. Staff already cancel and refund
@@ -455,8 +458,9 @@ public class PublicStorefrontController {
             @ApiResponse(responseCode = "409", description = "The kitchen has accepted the order or it was paid in "
                     + "parts (errors/order-not-cancellable-by-customer), or the order changed while cancelling"),
             @ApiResponse(responseCode = "422", description = "The Idempotency-Key was used for a different order"),
-            @ApiResponse(responseCode = "502", description = "The card refund failed, so the order was NOT cancelled "
-                    + "(errors/refund-failed); try again or contact the shop")
+            @ApiResponse(responseCode = "502", description = "The order IS cancelled but the card refund has not "
+                    + "completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry "
+                    + "the refund, or contact the shop")
     })
     public ResponseEntity<CustomerCancelResult> cancelOrder(
             @PathVariable String orderNumber,
@@ -465,16 +469,40 @@ public class PublicStorefrontController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Parameter(description = "A signed-in customer's jtoye-customers access token; replaces the email in the body.")
             @RequestHeader(value = "X-Customer-Token", required = false) String customerToken) {
-        String email;
+        String bodyEmail = request == null || request.email() == null || request.email().isBlank()
+                ? null : request.email().trim();
         if (customerToken != null && !customerToken.isBlank()) {
             // 401 on any failure, by design: a bad token must not quietly become a guest cancel.
-            email = customerJwtVerifier.verifiedEmail(customerToken);
-        } else {
-            email = request == null ? null : request.email();
+            String tokenEmail = customerVerifiedEmail(customerToken);
+            try {
+                return cancelled(orderNumber, tokenEmail, idempotencyKey);
+            } catch (ResourceNotFoundException notTheTokensOrder) {
+                // A signed-in customer may look an order up with the GUEST pair (number + the address it was
+                // placed under, which can differ from their account's). That pair is the same proof /track
+                // already accepted, so when the body carries one that is not the token's own, it is tried
+                // next. Nothing is widened: the guest cancel accepts exactly this pair with no token at all.
+                // The 404 rolled its transaction back, so the Idempotency-Key was not consumed.
+                if (bodyEmail == null || bodyEmail.equalsIgnoreCase(tokenEmail.trim())) {
+                    throw notTheTokensOrder;
+                }
+                return cancelled(orderNumber, bodyEmail, idempotencyKey);
+            }
         }
+        if (bodyEmail == null) {
+            throw new IllegalArgumentException("Send the email address the order was placed with, or sign in.");
+        }
+        return cancelled(orderNumber, bodyEmail, idempotencyKey);
+    }
+
+    private String customerVerifiedEmail(String customerToken) {
+        String email = customerJwtVerifier.verifiedEmail(customerToken);
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Send the email address the order was placed with, or sign in.");
         }
+        return email;
+    }
+
+    private ResponseEntity<CustomerCancelResult> cancelled(String orderNumber, String email, String idempotencyKey) {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(cancellationService.cancel(orderNumber, email.trim(), idempotencyKey));

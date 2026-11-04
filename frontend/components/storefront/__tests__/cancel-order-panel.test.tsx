@@ -98,4 +98,61 @@ describe("CancelOrderPanel", () => {
     expect(onCancelled).not.toHaveBeenCalled()
     expect(onRefused).toHaveBeenCalled()
   })
+
+  it.each(["PENDING", "AUTHORIZED", "FAILED"])(
+    "F5: a PENDING order whose payment is %s is not offered a cancel button: core refuses it permanently",
+    (paymentStatus) => {
+      render(<CancelOrderPanel {...base} status="PENDING" paymentStatus={paymentStatus} onCancelled={jest.fn()} />)
+      expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull()
+      expect(screen.getByText(/contact suya house/i)).toBeInTheDocument()
+    }
+  )
+
+  it("F5: a 409 payment-state refusal (a deposit order) swaps the button for the contact-the-shop copy and does not loop", async () => {
+    const onRefused = jest.fn()
+    fetchMock.mockReturnValue(
+      response(409, {
+        code: "ORDER_NOT_CANCELLABLE_BY_CUSTOMER",
+        reason: "PAYMENT_STATE",
+        contactShop: true,
+        detail: "Order ORD-1 can't be cancelled online: it is paid in parts. Please contact the shop.",
+      })
+    )
+    // The page refetches on onRefused and the order is STILL PENDING: the same props come back.
+    const { rerender } = render(
+      <CancelOrderPanel {...base} status="PENDING" paymentStatus="CAPTURED" onCancelled={jest.fn()} onRefused={onRefused} />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /cancel this order/i }))
+    fireEvent.click(screen.getByRole("button", { name: /yes, cancel order/i }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/paid in parts/i)
+    rerender(<CancelOrderPanel {...base} status="PENDING" paymentStatus="CAPTURED" onCancelled={jest.fn()} onRefused={onRefused} />)
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("F6: the Next proxy's own 502 (core unreachable) is a generic try-again, never the card-refund copy", async () => {
+    fetchMock.mockReturnValue(response(502, { error: "upstream_unavailable" }))
+    render(<CancelOrderPanel {...base} status="PENDING" paymentStatus="NONE" onCancelled={jest.fn()} />)
+    fireEvent.click(screen.getByRole("button", { name: /cancel this order/i }))
+    fireEvent.click(screen.getByRole("button", { name: /yes, cancel order/i }))
+
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent(/couldn't reach suya house/i)
+    expect(alert).toHaveTextContent(/try again/i)
+    expect(alert).not.toHaveTextContent(/refund/i)
+    expect(alert).not.toHaveTextContent(/card/i)
+  })
+
+  it("F6: core's typed REFUND_FAILED says the order is cancelled and the refund did not complete", async () => {
+    fetchMock.mockReturnValue(response(502, { code: "REFUND_FAILED" }))
+    render(<CancelOrderPanel {...base} status="PENDING" paymentStatus="CAPTURED" onCancelled={jest.fn()} />)
+    fireEvent.click(screen.getByRole("button", { name: /cancel this order/i }))
+    fireEvent.click(screen.getByRole("button", { name: /yes, cancel order/i }))
+
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent(/has been cancelled/i)
+    expect(alert).toHaveTextContent(/refund/i)
+    expect(alert).not.toHaveTextContent(/has not been cancelled/i)
+  })
 })

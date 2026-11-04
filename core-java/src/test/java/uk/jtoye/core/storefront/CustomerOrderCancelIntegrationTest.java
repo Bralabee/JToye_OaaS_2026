@@ -1,6 +1,10 @@
 package uk.jtoye.core.storefront;
 
+import com.stripe.exception.ApiConnectionException;
+import com.stripe.exception.IdempotencyException;
 import com.stripe.exception.InvalidRequestException;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.RefundCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -33,7 +37,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -99,7 +107,7 @@ class CustomerOrderCancelIntegrationTest {
             UUID shopB = insertShop(TENANT_B, "cancel-shop-b");
             ORD.put("cash", order(TENANT_A, shopA, "PENDING", "NONE", null, 1500L, null, null));
             Seeded card = order(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_868_card", 1500L, null, null);
-            insertSale(card);
+            insertSale(card, 1500L);
             ORD.put("card", card);
             ORD.put("cardFail", order(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_868_fail", 900L, null, null));
             ORD.put("confirmed", order(TENANT_A, shopA, "CONFIRMED", "NONE", null, 1500L, null, null));
@@ -111,6 +119,12 @@ class CustomerOrderCancelIntegrationTest {
             ORD.put("idem", order(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_868_idem", 1200L, null, null));
             ORD.put("idemOther", order(TENANT_A, shopA, "PENDING", "NONE", null, 800L, null, null));
             ORD.put("repeat", order(TENANT_A, shopA, "PENDING", "NONE", null, 700L, null, null));
+            for (String k : new String[]{"cardPost", "cardRetry", "cardRefused", "cardUnknown"}) {
+                Seeded c = order(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_868_" + k, 1100L, null, null);
+                insertSale(c, 1100L);
+                ORD.put(k, c);
+            }
+            ORD.put("cross", order(TENANT_A, shopA, "PENDING", "NONE", null, 1000L, null, null));
             jdbc.execute("ALTER ROLE \"" + postgres.getUsername() + "\" NOSUPERUSER NOBYPASSRLS");
             seeded = true;
         }
@@ -119,6 +133,8 @@ class CustomerOrderCancelIntegrationTest {
                 .as("PRECONDITION: every arm below is meaningless if the datasource role still bypasses RLS")
                 .isFalse();
         reset(stripeRefundClient, customerJwtVerifier);
+        stripeSeen.clear();
+        stripeCalls.clear();
     }
 
     // ------------------------------------------------------------------
@@ -174,20 +190,106 @@ class CustomerOrderCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("when Stripe refuses the refund the order is NOT cancelled: typed 502, order still PENDING, no kitchen event")
-    void stripeFailure_leavesTheOrderPending() throws Exception {
-        Seeded o = ORD.get("cardFail");
+    @DisplayName("A1: a Stripe REFUSAL is recorded failed in a COMMITTED row, the customer is told the order is cancelled "
+            + "but the refund did not complete (502), and the retry is a new row under a NEW Stripe key")
+    void stripeRefusal_isRecordedFailed_andTheRetryUsesAFreshKey() throws Exception {
+        Seeded o = ORD.get("cardRefused");
         when(stripeRefundClient.create(any(), any()))
                 .thenThrow(new InvalidRequestException("charge_already_refunded", "req_1", "charge_already_refunded", null, 400, null));
 
         MvcResult res = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
 
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'failed'", o.id))
+                .as("the failure record must survive the request: it is what makes the next attempt a new key").isEqualTo(1);
+        assertThat(col(o, "status")).as("the cancel is committed BEFORE Stripe is asked").isEqualTo("CANCELLED");
         assertThat(res.getResponse().getStatus()).as(body(res)).isEqualTo(502);
         JsonNode problem = json.readTree(raw(res));
         assertThat(problem.path("type").asString()).endsWith("/errors/refund-failed");
-        assertThat(col(o, "status")).as("the cancel rolled back with the failed refund").isEqualTo("PENDING");
+        assertThat(problem.path("detail").asString()).contains("has been cancelled").doesNotContain("charge_already_refunded");
+        verify(stripeRefundClient, times(1)).create(any(), any());
+
+        fakeStripe();
+        MvcResult retry = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
+
+        assertThat(retry.getResponse().getStatus()).as(body(retry)).isEqualTo(200);
+        assertThat(json.readTree(raw(retry)).path("refunded").asBoolean()).isTrue();
+        assertThat(col(o, "payment_status")).isEqualTo("REFUNDED");
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ?", o.id)).isEqualTo(2);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'succeeded'", o.id)).isEqualTo(1);
+        assertThat(stripeCalls).hasSize(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND idempotency_key = ?",
+                o.id, stripeCalls.get(0).key())).as("the key Stripe saw is the surviving row's own stored key").isEqualTo(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM financial_transactions WHERE order_id = ? AND entry_kind = 'REVERSAL'", o.id))
+                .as("one reversal, not one per attempt").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A1: an UNKNOWN Stripe outcome (connection error) leaves the row CREATING, and the retry re-sends the IDENTICAL request")
+    void unknownStripeOutcome_retryResendsTheSameRequest() throws Exception {
+        Seeded o = ORD.get("cardUnknown");
+        when(stripeRefundClient.create(any(), any())).thenThrow(new ApiConnectionException("timeout", null));
+
+        MvcResult res = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
+        assertThat(res.getResponse().getStatus()).as(body(res)).isEqualTo(502);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'CREATING'", o.id))
+                .as("an unknown outcome is not a failure: the refund may exist at Stripe").isEqualTo(1);
+
+        fakeStripe();
+        MvcResult retry = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
+
+        assertThat(retry.getResponse().getStatus()).as(body(retry)).isEqualTo(200);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ?", o.id)).as("same row, no second").isEqualTo(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'succeeded' "
+                + "AND stripe_refund_id IS NOT NULL", o.id)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A2: a failure AFTER the Stripe call never leaves a PENDING, fulfillable order with money returned and no Refund row")
+    void failureAfterStripe_neverLeavesAPendingOrderWithNoRefundRow() throws Exception {
+        Seeded o = ORD.get("cardPost");
+        fakeStripe();
+
+        MvcResult res = withRefundedWriteBlocked(() ->
+                cancel(o.number, "{\"email\":\"" + o.email + "\"}", "key-868-post-" + SEQ.incrementAndGet(), null));
+
+        assertThat(stripeCalls).as("Stripe WAS asked, so the money is on its way back").hasSize(1);
+        assertThat(col(o, "status"))
+                .as("a refunded order must not be PENDING for the kitchen to accept")
+                .isEqualTo("CANCELLED");
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ?", o.id))
+                .as("a committed Refund row exists for the refund.* webhook to find").isEqualTo(1);
+        assertThat(strQ(o.tenant, "SELECT id::text FROM refunds WHERE order_id = ?", o.id))
+                .as("metadata.refund_id sent to Stripe names that committed row")
+                .isEqualTo(stripeCalls.get(0).params().get("metadata[refund_id]"));
         assertThat(longQ(o.tenant, "SELECT count(*) FROM payment_event_outbox WHERE routing_key = 'order.state.cancelled' "
-                + "AND payload LIKE ?", "%\"orderNumber\":\"" + o.number + "\"%")).isZero();
+                + "AND payload LIKE ?", "%\"orderNumber\":\"" + o.number + "\"%")).isEqualTo(1);
+        assertThat(res.getResponse().getStatus()).as("the customer is told it did not finish: " + body(res)).isEqualTo(502);
+    }
+
+    @Test
+    @DisplayName("A1: a retry after an attempt that Stripe refunded but we failed to record replays the SAME Stripe refund (not a 502)")
+    void retryAfterRefundedButUnrecordedAttempt_replaysTheSameRefund() throws Exception {
+        Seeded o = ORD.get("cardRetry");
+        fakeStripe();
+        String key = "key-868-retry-" + SEQ.incrementAndGet();
+
+        MvcResult first = withRefundedWriteBlocked(() -> cancel(o.number, "{\"email\":\"" + o.email + "\"}", key, null));
+        assertThat(first.getResponse().getStatus()).as("the first attempt did not complete").isNotEqualTo(200);
+
+        MvcResult retry = cancel(o.number, "{\"email\":\"" + o.email + "\"}", key, null);
+
+        assertThat(retry.getResponse().getStatus())
+                .as("Stripe refuses a reused key whose parameters changed; the retry must not change them: " + body(retry))
+                .isEqualTo(200);
+        assertThat(json.readTree(raw(retry)).path("refunded").asBoolean()).isTrue();
+        assertThat(col(o, "payment_status")).isEqualTo("REFUNDED");
+        assertThat(col(o, "status")).isEqualTo("CANCELLED");
+        assertThat(stripeCalls).hasSize(2);
+        assertThat(stripeCalls.get(1).key()).isEqualTo(stripeCalls.get(0).key());
+        assertThat(stripeCalls.get(1).params()).isEqualTo(stripeCalls.get(0).params());
+        assertThat(stripeSeen).as("exactly ONE refund exists at Stripe").hasSize(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ?", o.id)).isEqualTo(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'succeeded'", o.id)).isEqualTo(1);
     }
 
     // ------------------------------------------------------------------
@@ -272,6 +374,22 @@ class CustomerOrderCancelIntegrationTest {
         assertThat(col(o, "status")).isEqualTo("CANCELLED");
     }
 
+    @Test
+    @DisplayName("F3: a signed-in customer cancelling an order placed under ANOTHER address with the guest pair is not a 404")
+    void signedInCustomer_canCancelAnOrderTrackedWithTheGuestPair() throws Exception {
+        Seeded o = ORD.get("cross");
+        when(customerJwtVerifier.verifiedEmail("acct-token")).thenReturn("signed-in-account@example.com");
+
+        MvcResult wrongGuest = cancel(o.number, "{\"email\":\"nobody@example.com\"}", null, "acct-token");
+        assertThat(wrongGuest.getResponse().getStatus()).as("neither the account's address nor the body's is the owner's").isEqualTo(404);
+        assertThat(col(o, "status")).isEqualTo("PENDING");
+
+        MvcResult guestPair = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, "acct-token");
+
+        assertThat(guestPair.getResponse().getStatus()).as(body(guestPair)).isEqualTo(200);
+        assertThat(col(o, "status")).isEqualTo("CANCELLED");
+    }
+
     // ------------------------------------------------------------------
     // Idempotency
     // ------------------------------------------------------------------
@@ -315,6 +433,61 @@ class CustomerOrderCancelIntegrationTest {
         assertThat(json.readTree(raw(second)).path("status").asString()).isEqualTo("CANCELLED");
         assertThat(longQ(o.tenant, "SELECT count(*) FROM payment_event_outbox WHERE routing_key = 'order.state.cancelled' "
                 + "AND payload LIKE ?", "%\"orderNumber\":\"" + o.number + "\"%")).as("one event, not two").isEqualTo(1);
+    }
+
+    // ---- a Stripe double that keeps Stripe's idempotency rule, and a way to fail the local write after it ----
+
+    private record StripeCallSeen(String key, Map<String, Object> params) { }
+
+    private final Map<String, Map<String, Object>> stripeSeen = new ConcurrentHashMap<>();
+    private final List<StripeCallSeen> stripeCalls = new ArrayList<>();
+
+    /**
+     * Stripe as it behaves for this purpose: a key seen before with the SAME parameters returns the refund
+     * already made; the same key with DIFFERENT parameters is refused (IdempotencyException, 400).
+     */
+    private void fakeStripe() throws Exception {
+        org.mockito.Mockito.doAnswer(inv -> {
+            RefundCreateParams params = inv.getArgument(0);
+            RequestOptions options = inv.getArgument(1);
+            String key = options.getIdempotencyKey();
+            Map<String, Object> canonical = params.toMap();
+            // Flatten the metadata map so assertions can read metadata[refund_id].
+            Map<String, Object> flat = new java.util.TreeMap<>();
+            canonical.forEach((k, v) -> {
+                if (v instanceof Map<?, ?> m) m.forEach((mk, mv) -> flat.put(k + "[" + mk + "]", mv));
+                else flat.put(k, v);
+            });
+            stripeCalls.add(new StripeCallSeen(key, flat));
+            Map<String, Object> prev = stripeSeen.putIfAbsent(key, flat);
+            if (prev != null && !prev.equals(flat)) {
+                throw new IdempotencyException("Keys for idempotent requests can only be used with the same parameters "
+                        + "they were first used with.", "req_idem", null, 400);
+            }
+            com.stripe.model.Refund refund = new com.stripe.model.Refund();
+            refund.setId("re_" + key);
+            refund.setStatus("succeeded");
+            return refund;
+        }).when(stripeRefundClient).create(any(), any());
+    }
+
+    /**
+     * Runs {@code request} with a constraint on orders that refuses payment_status = 'REFUNDED': the one local
+     * write that follows a successful Stripe refund. It is armed BEFORE the request (an ALTER TABLE issued
+     * mid-request would wait for the request's own row locks) and dropped after, whatever happens.
+     */
+    private MvcResult withRefundedWriteBlocked(ThrowingSupplier<MvcResult> request) throws Exception {
+        jdbc.execute("ALTER TABLE orders ADD CONSTRAINT it_868_no_refunded CHECK (payment_status <> 'REFUNDED') NOT VALID");
+        try {
+            return request.get();
+        } finally {
+            jdbc.execute("ALTER TABLE orders DROP CONSTRAINT it_868_no_refunded");
+        }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        T get() throws Exception;
     }
 
     // ---- request + SQL helpers ----
@@ -394,9 +567,9 @@ class CustomerOrderCancelIntegrationTest {
         return new Seeded(id, tenant, shop, number, email);
     }
 
-    private void insertSale(Seeded o) {
+    private void insertSale(Seeded o, long amount) {
         jdbc.update("INSERT INTO financial_transactions (id, tenant_id, created_at, amount_pennies, vat_rate, reference, "
-                        + "order_id, entry_kind, shop_id) VALUES (?, ?, now(), 1500, 'STANDARD', ?, ?, 'SALE', ?)",
-                UUID.randomUUID(), o.tenant, "Order " + o.number, o.id, o.shop);
+                        + "order_id, entry_kind, shop_id) VALUES (?, ?, now(), ?, 'STANDARD', ?, ?, 'SALE', ?)",
+                UUID.randomUUID(), o.tenant, amount, "Order " + o.number, o.id, o.shop);
     }
 }
