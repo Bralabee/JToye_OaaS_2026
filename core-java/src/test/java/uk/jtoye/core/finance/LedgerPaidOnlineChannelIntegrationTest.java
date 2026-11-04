@@ -87,11 +87,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @uk.jtoye.core.testsupport.AsSystemHarness
 class LedgerPaidOnlineChannelIntegrationTest {
 
+    /** Generated per run: no credential literal in the tree (the container is throwaway). */
+    private static final String DB_PW = UUID.randomUUID().toString();
+
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
-            .withPassword("test");
+            .withPassword(DB_PW);
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

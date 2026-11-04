@@ -49,13 +49,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LedgerPaidOnlineBackfillMigrationIntegrationTest {
 
     private static final String RLS_MIGRATOR = "rls_migrator";
-    private static final String RLS_MIGRATOR_PW = "rls_migrator_pw";
+    // Generated per run: no credential literal in the tree. Both roles live only inside this throwaway container.
+    private static final String RLS_MIGRATOR_PW = UUID.randomUUID().toString();
+    private static final String DB_PW = UUID.randomUUID().toString();
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_v93")
             .withUsername("test")
-            .withPassword("test");
+            .withPassword(DB_PW);
 
     /** One tenant's seeded world; every id is a ledger row. */
     record TenantSeed(UUID tenant, UUID settlementCard, UUID counterCash, UUID depositSplit, UUID ambiguous,
