@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -178,8 +177,6 @@ func assertTypedRateLimited(t *testing.T, w *httptest.ResponseRecorder, wantLimi
 // request must pass — the one bucket shared by everyone is what blocked every
 // vendor's sync.
 func TestTenantRateLimit_OneTenantsBurstIsRefusedTypedWhileAnotherTenantPasses(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	valveRPS, valveBurst := valveLimitsFromEnv()
 	limits := tenantLimitsFromEnv()
@@ -187,7 +184,7 @@ func TestTenantRateLimit_OneTenantsBurstIsRefusedTypedWhileAnotherTenantPasses(t
 		t.Fatalf("the per-tenant burst (%d) must sit below the pre-auth valve burst (%d): the valve is the flood guard, the tenant bucket is the quota", limits.Burst, valveBurst)
 	}
 
-	h := newTenantLimitHarness(t, rateLimiter(ctx, valveRPS, valveBurst), limits, newFakeClock())
+	h := newTenantLimitHarness(t, testValve(valveRPS, valveBurst), limits, newFakeClock())
 
 	// UXT-039: the persona's burst, sized above the pre-change 40-token valve
 	// so the old behaviour (the valve empties, everyone is refused) is what
@@ -232,13 +229,11 @@ func TestTenantRateLimit_OneTenantsBurstIsRefusedTypedWhileAnotherTenantPasses(t
 // again once the Retry-After it was given has elapsed, and not before. The
 // clock is faked, so this asserts the refill arithmetic, not a sleep.
 func TestTenantRateLimit_RefillsLazilyAfterRetryAfter(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	limits := tenantRateLimitConfig{RPS: 1, Burst: 2, MaxTenants: 10}
 	clk := newFakeClock()
 	// A generous valve so every refusal here is the tenant bucket's.
-	h := newTenantLimitHarness(t, rateLimiter(ctx, 1000, 1000), limits, clk)
+	h := newTenantLimitHarness(t, testValve(1000, 1000), limits, clk)
 
 	for i := 0; i < limits.Burst; i++ {
 		if w := h.sync("tenant-a"); w.Code != http.StatusAccepted {
@@ -319,11 +314,9 @@ func TestTenantRateLimit_BoundedMapAndOverflowBucket(t *testing.T) {
 // answer — anonymous traffic never touches a tenant bucket and a tenant's
 // bucket never touches anonymous traffic.
 func TestTenantRateLimit_PublicRoutesAreNotTenantLimited(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	limits := tenantRateLimitConfig{RPS: 1, Burst: 1, MaxTenants: 1}
-	h := newTenantLimitHarness(t, rateLimiter(ctx, 1000, 1000), limits, newFakeClock())
+	h := newTenantLimitHarness(t, testValve(1000, 1000), limits, newFakeClock())
 
 	if w := h.sync("tenant-a"); w.Code != http.StatusAccepted {
 		t.Fatalf("first sync: got %d, want 202", w.Code)

@@ -512,6 +512,12 @@ services:
       RATE_LIMIT_TENANT_RPS: ${RATE_LIMIT_TENANT_RPS:-10}
       RATE_LIMIT_TENANT_BURST: ${RATE_LIMIT_TENANT_BURST:-20}
       RATE_LIMIT_TENANT_MAX: ${RATE_LIMIT_TENANT_MAX:-10000}
+      # #808: the valve above is keyed PER CLIENT ADDRESS (one source's flood cannot
+      # spend another's budget); RATE_LIMIT_IP_MAX bounds how many addresses it
+      # tracks. X-Forwarded-For is believed only from these ranges - core's own
+      # variable, same rule; EMPTY = trust none (nothing in this stack appends it).
+      RATE_LIMIT_IP_MAX: ${RATE_LIMIT_IP_MAX:-10000}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       # issue #550 [SEC-02 / C4]: move the Prometheus scrape endpoint OFF the
       # published application port. Set here (not defaulted in Go) because this
       # is the runtime where the exposure is real: 8089 below is a named app-tier

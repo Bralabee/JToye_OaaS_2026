@@ -654,6 +654,7 @@ data:
   db.ssl-factory: org.postgresql.ssl.DefaultJavaSSLFactory
   db.ssl-mode: verify-full
   edge.rate-limit.burst: "400"
+  edge.rate-limit.ip.max: "10000"
   edge.rate-limit.rps: "200"
   edge.rate-limit.tenant.burst: "20"
   edge.rate-limit.tenant.max: "10000"
@@ -4551,6 +4552,16 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: edge.rate-limit.tenant.max
+              name: app-config
+        - name: RATE_LIMIT_IP_MAX
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.ip.max
+              name: app-config
+        - name: TRUSTED_PROXY_CIDRS
+          valueFrom:
+            configMapKeyRef:
+              key: security.trusted-proxies
               name: app-config
         image: ghcr.io/bralabee/jtoye-edge-go:2.1.0
         imagePullPolicy: IfNotPresent

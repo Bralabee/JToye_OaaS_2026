@@ -99,10 +99,8 @@ func TestExtractBearerToken_BearerOnly(t *testing.T) {
 // --- Rate limiter tests ---
 
 func TestRateLimiter_AllowsWithinBurst(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	handler := rateLimiter(ctx, 10, 5)
+	handler := testValve(10, 5)
 
 	for i := 0; i < 5; i++ {
 		w := httptest.NewRecorder()
@@ -118,10 +116,8 @@ func TestRateLimiter_AllowsWithinBurst(t *testing.T) {
 }
 
 func TestRateLimiter_BlocksAfterBurstExhausted(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	handler := rateLimiter(ctx, 1, 3)
+	handler := testValve(1, 3)
 
 	// Exhaust the burst
 	for i := 0; i < 3; i++ {
@@ -145,11 +141,9 @@ func TestRateLimiter_BlocksAfterBurstExhausted(t *testing.T) {
 }
 
 func TestRateLimiter_RefillsOverTime(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// High RPS so refill happens quickly
-	handler := rateLimiter(ctx, 100, 1)
+	handler := testValve(100, 1)
 
 	// Exhaust the single token
 	w := httptest.NewRecorder()
@@ -171,39 +165,12 @@ func TestRateLimiter_RefillsOverTime(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_ContextCancelStopsRefill(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	handler := rateLimiter(ctx, 100, 1)
-
-	// Exhaust the token
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/test", nil)
-	handler(c)
-
-	// Cancel context — refill goroutine should stop
-	cancel()
-	time.Sleep(50 * time.Millisecond)
-
-	// No refill should happen after cancel
-	w2 := httptest.NewRecorder()
-	c2, _ := gin.CreateTestContext(w2)
-	c2.Request = httptest.NewRequest("GET", "/test", nil)
-	handler(c2)
-
-	if w2.Code != http.StatusTooManyRequests {
-		t.Error("Expected 429 after context cancellation stops refill")
-	}
-}
-
 func TestRateLimiter_HealthEndpointExempt(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Deliberately tiny burst: any non-exempt path would trip 429 well before
 	// 50 requests, so this loop is a real test of the exemption, not a
 	// tolerance check on the token math.
-	handler := rateLimiter(ctx, 1, 2)
+	handler := testValve(1, 2)
 
 	for i := 0; i < 50; i++ {
 		w := httptest.NewRecorder()
@@ -219,10 +186,8 @@ func TestRateLimiter_HealthEndpointExempt(t *testing.T) {
 }
 
 func TestRateLimiter_ReadyEndpointExempt(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	handler := rateLimiter(ctx, 1, 2)
+	handler := testValve(1, 2)
 
 	for i := 0; i < 50; i++ {
 		w := httptest.NewRecorder()
@@ -238,10 +203,8 @@ func TestRateLimiter_ReadyEndpointExempt(t *testing.T) {
 }
 
 func TestRateLimiter_BusinessRouteStillLimited(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	handler := rateLimiter(ctx, 1, 2)
+	handler := testValve(1, 2)
 
 	// Exhaust the burst on a real business route.
 	for i := 0; i < 2; i++ {

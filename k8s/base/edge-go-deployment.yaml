@@ -109,6 +109,20 @@ spec:
             configMapKeyRef:
               name: app-config
               key: edge.rate-limit.tenant.max
+        - name: RATE_LIMIT_IP_MAX
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.ip.max
+        # #808: the pre-auth valve (RATE_LIMIT_RPS / _BURST above) is now keyed per
+        # client address, not one bucket for the whole replica. The edge believes
+        # X-Forwarded-For only from these ranges - the SAME app-config key core-java
+        # reads (37-24, INV-12 judges it in every render); "" = trust none.
+        - name: TRUSTED_PROXY_CIDRS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: security.trusted-proxies
         resources:
           requests:
             memory: "64Mi"
