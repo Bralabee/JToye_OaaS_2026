@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.format.annotation.DurationFormat;
+import org.springframework.format.datetime.standard.DurationFormatterUtils;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,6 +20,7 @@ import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.SystemPrincipal;
 
+import java.math.BigInteger;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -56,9 +59,13 @@ import java.util.UUID;
  *       in SQL): the shop cannot accept it yet, so "the shop has not accepted" would be untrue;</li>
  *   <li>an order the shop placed itself ({@code placed_via = 'VENDOR'}): see {@link #ALERTABLE_PREDICATE};</li>
  *   <li>an order already alerted;</li>
- *   <li>an order PENDING for longer than {@link #MAX_AGE_PROPERTY} (default 120 minutes): an alert is only
- *       true while the shop could still be expected to react, and the first run after a deploy must never email
- *       the customer of every old PENDING order in the table. Such an order is neither emailed nor stamped.</li>
+ *   <li>an order PENDING for longer than {@link #MAX_AGE_PROPERTY} (default 2 hours): an alert is only true
+ *       while the shop could still be expected to react, and the first run after a deploy (or after a long
+ *       outage) must never email the customer of every old PENDING order in the table, nor light up every
+ *       tenant's board and banner for them. Such an order is left exactly as it is: NOT emailed and NOT stamped,
+ *       because the stamp is what the vendor UI reads as "the customer has been told". It costs the scan
+ *       nothing: {@link #CANDIDATES_SQL} bounds {@code updated_at} first (index-friendly and cheap), so the
+ *       audit-history subquery is only evaluated for orders young enough to be in the window.</li>
  * </ul>
  *
  * <p>"Left PENDING" is measured from the moment the order BECAME PENDING, never from its last touch
@@ -80,7 +87,23 @@ public class UnacceptedOrderSweep {
     private static final Logger log = LoggerFactory.getLogger(UnacceptedOrderSweep.class);
 
     public static final String THRESHOLD_PROPERTY = "jtoye.orders.unaccepted-alert.threshold";
-    public static final String MAX_AGE_PROPERTY = "jtoye.orders.unaccepted-alert.max-age-minutes";
+    public static final String MAX_AGE_PROPERTY = "jtoye.orders.unaccepted-alert.max-age";
+    public static final String SWEEP_INTERVAL_PROPERTY = "jtoye.orders.unaccepted-alert.sweep-interval-ms";
+
+    /**
+     * The alert window ({@code threshold} to {@code max-age}) must be at least this many sweep intervals wide.
+     * The sweep runs a fixed delay after the previous run ENDS, so runs land more than one interval apart; an
+     * order turning {@code threshold} old just after a run must still be inside the window at the next one, and
+     * the one after that (a slow run or a restart), or it passes through unalerted (review of PR 1123).
+     */
+    static final int MIN_WINDOW_INTERVALS = 3;
+
+    /**
+     * The ceiling for BOTH the threshold and the max age (10 years): anything longer is "effectively unbounded"
+     * and is clamped, so {@code make_interval} can never be given a value PostgreSQL refuses, and the window
+     * check runs on the same values the query uses.
+     */
+    private static final long WINDOW_CEILING_SECONDS = Duration.ofDays(3650).toSeconds();
 
     /** Per tenant per run; the next run takes the rest. Keeps one tenant's backlog from holding a transaction. */
     private static final int BATCH = 200;
@@ -100,6 +123,10 @@ public class UnacceptedOrderSweep {
      *       (payment status PENDING or FAILED, or a payment reference that is neither CAPTURED nor AUTHORIZED),
      *       written in SQL. The shop cannot accept such an order yet.</li>
      * </ul>
+     *
+     * <p>The AGE bounds are deliberately NOT part of this predicate: the lower bound (older than the threshold)
+     * and the upper bound (younger than the max age) are applied by {@link #CANDIDATES_SQL}. The predicate says
+     * which orders the sweep may ever act on; the bounds say which of them are in the alert window.
      */
     private static final String ALERTABLE_PREDICATE =
             "status = 'PENDING' AND voided_at IS NULL AND unaccepted_notified_at IS NULL "
@@ -116,9 +143,18 @@ public class UnacceptedOrderSweep {
             "COALESCE((SELECT to_timestamp(min(r.revtstmp) / 1000.0) FROM orders_aud a "
                     + "JOIN revinfo r ON r.rev = a.rev WHERE a.id = o.id AND a.status = 'PENDING'), o.created_at)";
 
+    /**
+     * The batch: orders that became PENDING between {@code maxSecs} and {@code secs} ago. The inner WHERE
+     * carries a sargable prefilter on {@code updated_at}: the V5 trigger sets it on every UPDATE and the order
+     * became PENDING by an UPDATE or an INSERT, so {@code updated_at >= pending_since} always holds, and an order
+     * whose {@code updated_at} is already older than the max age cannot be inside the window. That lets an old,
+     * abandoned PENDING order drop out before the correlated {@link #PENDING_SINCE_SQL} (one computation per
+     * surviving row, evaluated once, in the select list) is run for it, without stamping or otherwise touching it.
+     */
     private static final String CANDIDATES_SQL =
             "SELECT id FROM (SELECT o.id, " + PENDING_SINCE_SQL + " AS pending_since FROM orders o "
-                    + "WHERE o.tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + ") t "
+                    + "WHERE o.tenant_id = :tenantId AND " + ALERTABLE_PREDICATE + " "
+                    + "AND o.updated_at >= now() - make_interval(secs => :maxSecs)) t "
                     + "WHERE pending_since < now() - make_interval(secs => :secs) "
                     + "AND pending_since >= now() - make_interval(secs => :maxSecs) "
                     + "ORDER BY pending_since LIMIT " + BATCH;
@@ -158,7 +194,8 @@ public class UnacceptedOrderSweep {
                                 @Nullable ConsentGate consentGate,
                                 @Value("${jtoye.orders.unaccepted-alert.enabled:true}") boolean enabled,
                                 @Value("${" + THRESHOLD_PROPERTY + ":10m}") Duration threshold,
-                                @Value("${" + MAX_AGE_PROPERTY + ":120}") long maxAgeMinutes) {
+                                @Value("${" + MAX_AGE_PROPERTY + ":2h}") Duration maxAge,
+                                @Value("${" + SWEEP_INTERVAL_PROPERTY + ":60000}") String sweepInterval) {
         this.orderRepository = orderRepository;
         this.entityManager = entityManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -169,14 +206,38 @@ public class UnacceptedOrderSweep {
         if (threshold.compareTo(Duration.ofMinutes(1)) < 0) {
             throw new IllegalStateException(THRESHOLD_PROPERTY + " must be at least 1 minute, was " + threshold);
         }
-        this.thresholdSeconds = threshold.toSeconds();
-        // Fail fast: a window [now - maxAge, now - threshold] that is empty or inverted would silently disable
-        // the alert, which is worse than refusing to start.
-        if (maxAgeMinutes <= 0 || Duration.ofMinutes(maxAgeMinutes).compareTo(threshold) <= 0) {
-            throw new IllegalStateException(MAX_AGE_PROPERTY + " (" + maxAgeMinutes + " minutes) must be greater than "
-                    + THRESHOLD_PROPERTY + " (" + threshold + ")");
+        // Parsed exactly as @Scheduled(fixedDelayString) parses the same key (milliseconds, ISO-8601 "PT1M", or
+        // "1m"), so the window check reads the value the scheduler uses.
+        Duration interval;
+        try {
+            interval = DurationFormatterUtils.detectAndParse(sweepInterval.strip(), DurationFormat.Unit.MILLIS);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException(SWEEP_INTERVAL_PROPERTY + " is not a duration or a number of milliseconds: "
+                    + sweepInterval, e);
         }
-        this.maxAgeSeconds = Duration.ofMinutes(maxAgeMinutes).toSeconds();
+        if (interval.compareTo(Duration.ofMillis(1)) < 0) {
+            throw new IllegalStateException(SWEEP_INTERVAL_PROPERTY + " must be at least 1 ms, was " + sweepInterval);
+        }
+        // The values the query will use: both bounds clamped to ONE ceiling first, then checked, so the check
+        // validates what runs. Unclamped, threshold 4000d / max-age 5000d would pass and run as an empty window,
+        // and a threshold beyond make_interval's range would fail every tenant's sweep every minute.
+        long clampedThreshold = Math.min(threshold.toSeconds(), WINDOW_CEILING_SECONDS);
+        long clampedMaxAge = Math.min(maxAge.toSeconds(), WINDOW_CEILING_SECONDS);
+        if (clampedThreshold >= clampedMaxAge) {
+            throw new IllegalStateException(MAX_AGE_PROPERTY + " (" + maxAge + ") must be greater than "
+                    + THRESHOLD_PROPERTY + " (" + threshold + "), both capped at " + Duration.ofSeconds(WINDOW_CEILING_SECONDS)
+                    + "; with " + SWEEP_INTERVAL_PROPERTY + " (" + sweepInterval + ") the window would be empty");
+        }
+        // BigInteger: 3 x an arbitrary interval cannot overflow.
+        BigInteger required = BigInteger.valueOf(MIN_WINDOW_INTERVALS).multiply(BigInteger.valueOf(interval.toMillis()))
+                .add(BigInteger.valueOf(999)).divide(BigInteger.valueOf(1000));
+        if (BigInteger.valueOf(clampedMaxAge - clampedThreshold).compareTo(required) < 0) {
+            throw new IllegalStateException(MAX_AGE_PROPERTY + " (" + maxAge + ") minus " + THRESHOLD_PROPERTY + " ("
+                    + threshold + ") must be at least " + MIN_WINDOW_INTERVALS + " x " + SWEEP_INTERVAL_PROPERTY
+                    + " (" + sweepInterval + "), so an order cannot pass through the window between two runs");
+        }
+        this.thresholdSeconds = clampedThreshold;
+        this.maxAgeSeconds = clampedMaxAge;
     }
 
     /** One order alerted: everything the after-commit side effects need, as values. */
