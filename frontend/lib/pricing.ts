@@ -1,4 +1,4 @@
-// Public price points for the marketing pages (/business-model-guide, /competitive).
+// Public price points for the marketing pages (/for-operators, /legal/terms).
 //
 // Source of truth is the BILLING CODE, not any doc: StripeProperties.Billing
 // (core-java/.../payment/StripeProperties.java) and the V88 migration header.

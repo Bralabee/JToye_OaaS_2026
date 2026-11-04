@@ -13,6 +13,7 @@ import { lookupGuestOrder } from "@/lib/order-lookup"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import { CancelOrderPanel } from "@/components/storefront/cancel-order-panel"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
@@ -43,6 +44,11 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
    * omits it and a pre-V45 row has none, and then READY is described neutrally (37-F review F2).
    */
   fulfilmentType?: string | null
+  /** NONE, CAPTURED, REFUNDED ...: whether a card payment was taken (decides the refund sentence, #868). */
+  paymentStatus?: string | null
+  /** Deposit-split orders (V87): what was charged up front and what is still due. Absent on ordinary orders. */
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -554,6 +560,29 @@ function TrackOrderContent() {
               )}
             </div>
           </div>
+
+          {/* #868 (owner ruling 2026-11-04): cancel while the kitchen has not accepted it; after that,
+              contact the shop. A signed-in customer sends no email (the server reads their cookie);
+              a guest sends the one they looked the order up with. Core re-checks both. */}
+          <CancelOrderPanel
+            orderNumber={order.orderNumber}
+            shopName={order.shopName}
+            status={order.status}
+            paymentStatus={order.paymentStatus}
+            totalAmountPennies={order.totalAmountPennies}
+            depositAmountPennies={order.depositAmountPennies}
+            balanceDuePennies={order.balanceDuePennies}
+            email={orderFromList ? "" : email}
+            onCancelled={(result) =>
+              showOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })
+            }
+            onRefused={() => {
+              if (!email.trim()) return
+              void lookupGuestOrder<OrderStatus>(order.orderNumber, email.trim())
+                .then((res) => showOrder(res.data))
+                .catch(() => {})
+            }}
+          />
 
           {/* Progress */}
           {!isCancelled && !isRefunded && (

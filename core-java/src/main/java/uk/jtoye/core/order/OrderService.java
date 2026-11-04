@@ -866,6 +866,20 @@ public class OrderService {
         // #856: decided once, after the gate; applied to the response below.
         CustomerContactScope contactScope = shopAccessService.customerContactScope();
 
+        Order moved = applyTransition(order, event, cancelReason);
+        return CustomerContactMinimiser.apply(orderMapper.toDto(moved), contactScope);
+    }
+
+    /**
+     * The transition itself, with NO caller authorisation: state machine, payment gate, stock and slot
+     * bookkeeping, outbox event and ledger side effects. {@link #transitionOrder} runs it after the
+     * STAFF-on-shop gate; {@code CustomerOrderCancellationService} (#868, same package, hence the
+     * package-private visibility) runs it for a customer who has proven ownership of their own PENDING
+     * order by number and email. Nothing outside this package can reach it.
+     */
+    Order applyTransition(Order order, OrderEvent event, CancelReason cancelReason) {
+        UUID orderId = order.getId();
+
         // Phase 37-10 (D-10): a voided order is out of the books and off the kitchen board, so it does not
         // move again. Above all it must not reach COMPLETED: completion writes the order's SALE, and a sale
         // written after the void would never be reversed.
@@ -964,7 +978,7 @@ public class OrderService {
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }
 
-        return CustomerContactMinimiser.apply(orderMapper.toDto(order), contactScope);
+        return order;
     }
 
     /**

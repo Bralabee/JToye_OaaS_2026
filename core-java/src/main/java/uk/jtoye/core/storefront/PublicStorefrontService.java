@@ -409,6 +409,24 @@ public class PublicStorefrontService {
     }
 
     /**
+     * Published shops with an available dish that DECLARES at least one allergen of
+     * {@code declaredMask} (#862, owner ruling 2026-11-04). "Declares" is the vendor's own
+     * {@code allergen_mask}; a shop absent from this page is not thereby free of the allergen.
+     */
+    public Page<PublicShopDto> listPublishedShopsDeclaring(int declaredMask, Pageable pageable) {
+        requireDeclaredMask(declaredMask);
+        log.debug("Listing published shops declaring mask {}, page {}", declaredMask, pageable.getPageNumber());
+        Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+        return shopRepository.findPublishedDeclaring(declaredMask, unsorted).map(this::toPublicShopDto);
+    }
+
+    private static void requireDeclaredMask(int declaredMask) {
+        if (declaredMask <= 0 || declaredMask >= (1 << uk.jtoye.core.product.AllergenCatalog.BIT_COUNT)) {
+            throw new IllegalArgumentException("'declares' must name at least one of the 14 allergens");
+        }
+    }
+
+    /**
      * The published shops among {@code slugs}, in the order of {@code slugs} (quick 261102-r6u, D-02):
      * the featured kitchens of this environment. Only published shops are ever returned (the predicate is
      * in the query, {@link ShopRepository#findByPublishedTrueAndSlugIn}); a slug that names no published
@@ -628,12 +646,33 @@ public class PublicStorefrontService {
      * keep in step.
      */
     public SearchOutcome searchPublishedShops(String query, Pageable pageable) {
+        return searchPublishedShops(query, 0, pageable);
+    }
+
+    /**
+     * The search with an optional DECLARED-allergen narrowing (#862, owner ruling 2026-11-04).
+     *
+     * <p>{@code declaredMask} 0 is the plain search. A non-zero mask keeps only kitchens that ALSO
+     * have an available dish declaring one of those allergens; it is the vendor's declaration, never
+     * a "free from" claim. With a mask the postcode tier is skipped: a proximity answer cannot honour
+     * the narrowing, and silently dropping it would be worse than reading the term as text.
+     *
+     * <p>With no mask, a term that IS an allergen name ({@link AllergenCatalog#maskForSearchTerm},
+     * "peanut", not "gluten free") also matches kitchens whose dishes declare it, so the search
+     * finds what the vendor declared even when no dish text names the allergen.
+     */
+    public SearchOutcome searchPublishedShops(String query, int declaredMask, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
+        if (declaredMask != 0) {
+            requireDeclaredMask(declaredMask);
+        }
 
         // TIER 1 — INTERPRETATION FIRST (D-A, flipped at the 33-09 owner gate). Cheap for a
         // non-postcode term: the length bound and the anchored shape test both run before any
         // lookup, so an ordinary food search issues no query here at all.
-        Optional<PostcodeGeocoder.LocatedPostcode> located = postcodeGeocoder.locateSearchTerm(query);
+        Optional<PostcodeGeocoder.LocatedPostcode> located = declaredMask != 0
+                ? Optional.empty()
+                : postcodeGeocoder.locateSearchTerm(query);
         if (located.isPresent()) {
             PostcodeGeocoder.LocatedPostcode postcode = located.get();
             // Kind and page only. The coordinate is derived from the customer's postcode and is
@@ -662,12 +701,28 @@ public class PublicStorefrontService {
             // pre-existing arms that match a shop by its own name / search_vector are unchanged
             // and still follow shops_public_read, so a tenant-bearing caller can still be offered
             // another tenant's published kitchen through those arms.
-            Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
+            Optional<Integer> termMask = declaredMask == 0
+                    ? AllergenCatalog.maskForSearchTerm(query)
+                    : Optional.empty();
+            Page<Shop> results;
+            if (declaredMask != 0) {
+                results = shopRepository.fullTextSearchPublishedDeclaring(query, declaredMask, unsorted);
+            } else if (termMask.isPresent()) {
+                results = shopRepository.fullTextSearchPublishedOrDeclaring(query, termMask.get(), unsorted);
+            } else {
+                results = shopRepository.fullTextSearchPublished(query, unsorted);
+            }
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
         }
 
+        if (declaredMask != 0) {
+            Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+            return new SearchOutcome(
+                    shopRepository.searchPublishedDeclaring(query, declaredMask, unsorted).map(this::toPublicShopDto),
+                    SearchInterpretation.text());
+        }
         return new SearchOutcome(
                 shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
                 SearchInterpretation.text());

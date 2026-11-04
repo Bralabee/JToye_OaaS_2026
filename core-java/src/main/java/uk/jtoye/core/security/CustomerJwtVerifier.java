@@ -84,6 +84,19 @@ public class CustomerJwtVerifier {
      *         unverified email where verification is required
      */
     public String verifiedEmail(String token) {
+        return verifiedIdentity(token).email();
+    }
+
+    /** What a verified customer token proves: the address and the account (the token's subject). */
+    public record CustomerIdentity(String email, String subject) { }
+
+    /**
+     * As {@link #verifiedEmail}, also returning the token's subject, which in the customer realm is the
+     * Keycloak user id. Every check is the same (they share this body), so the subject comes only from a
+     * token that would also have passed {@code verifiedEmail}. The subject is null for a token without one
+     * (so {@code verifiedEmail}'s behaviour is unchanged); a caller that needs it must refuse a null.
+     */
+    public CustomerIdentity verifiedIdentity(String token) {
         if (token == null || token.isBlank()) {
             throw unauthorized("missing token");
         }
@@ -102,7 +115,7 @@ public class CustomerJwtVerifier {
             log.debug("Customer token rejected: email_verified is not true for sub={}", jwt.getSubject());
             throw unauthorized("email not verified");
         }
-        return email;
+        return new CustomerIdentity(email, jwt.getSubject());
     }
 
     private ResponseStatusException unauthorized(String debugReason) {

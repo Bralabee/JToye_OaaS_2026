@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { cookies } from "next/headers"
 import { ACCESS_COOKIE, ID_COOKIE, REFRESH_COOKIE } from "@/lib/customer-auth-cookies"
-import { displayEmailFromIdToken } from "@/lib/customer-orders-server"
+import { displayEmailFromIdToken, displayNameFromIdToken } from "@/lib/customer-orders-server"
 import { CustomerSignInPrompt } from "@/components/storefront/customer-signin-prompt"
 import { AccountClient } from "./account-client"
 
@@ -51,5 +51,5 @@ export default async function CustomerAccountPage() {
   // An expired access token with a live refresh token still identifies the customer for THIS page:
   // nothing here calls an authenticated API, so there is nothing to renew before rendering.
   const email = displayEmailFromIdToken(jar.get(ID_COOKIE)?.value)
-  return <AccountClient email={email} />
+  return <AccountClient email={email} name={displayNameFromIdToken(jar.get(ID_COOKIE)?.value)} />
 }

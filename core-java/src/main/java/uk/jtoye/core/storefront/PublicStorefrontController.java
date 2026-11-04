@@ -21,6 +21,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.order.CustomerOrderCancellationService;
+import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.ClientIpResolver;
 import uk.jtoye.core.security.CustomerJwtVerifier;
@@ -32,6 +35,8 @@ import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.storefront.dto.CustomerOrderStatus;
+import uk.jtoye.core.storefront.dto.CustomerCancelRequest;
+import uk.jtoye.core.storefront.dto.CustomerCancelResult;
 import uk.jtoye.core.storefront.dto.OrderLookupRequest;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
@@ -62,6 +67,7 @@ public class PublicStorefrontController {
     private final PublicStorefrontService storefrontService;
     private final ReviewService reviewService;
     private final CustomerJwtVerifier customerJwtVerifier;
+    private final CustomerOrderCancellationService cancellationService;
 
     /**
      * 37-28 (D-19 / D-27): the one answer to "which client placed this order" — the trusted-proxy
@@ -71,8 +77,10 @@ public class PublicStorefrontController {
     private final ClientIpResolver clientIpResolver;
 
     public PublicStorefrontController(PublicStorefrontService storefrontService, ReviewService reviewService,
-                                      CustomerJwtVerifier customerJwtVerifier, ClientIpResolver clientIpResolver) {
+                                      CustomerJwtVerifier customerJwtVerifier, ClientIpResolver clientIpResolver,
+                                      CustomerOrderCancellationService cancellationService) {
         this.storefrontService = storefrontService;
+        this.cancellationService = cancellationService;
         this.reviewService = reviewService;
         this.customerJwtVerifier = customerJwtVerifier;
         this.clientIpResolver = clientIpResolver;
@@ -153,9 +161,20 @@ public class PublicStorefrontController {
             @RequestParam(required = false) Double lat,
             @RequestParam(required = false) Double lon,
             @RequestParam(required = false) Double radiusKm,
+            @Parameter(description = "Allergen names (UK FSA 14, comma separated, any case), e.g. Peanuts,Gluten. "
+                    + "Keeps only kitchens with an available dish whose VENDOR-DECLARED allergens include one of them. "
+                    + "This reflects what each kitchen has declared; a kitchen that is not listed is not confirmed free "
+                    + "of the allergen. Combines with 'q', not with a distance search. An unknown name is a 400.")
+            @RequestParam(required = false) String declares,
             @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable,
             HttpServletResponse response) {
         boolean located = lat != null || lon != null || radiusKm != null;
+        // #862 (owner ruling 2026-11-04): what a vendor DECLARES, never "free from".
+        int declaredMask = declares == null ? 0 : AllergenCatalog.maskForDeclaredFilter(declares);
+        if (located && declaredMask != 0) {
+            throw new IllegalArgumentException(
+                    "'declares' cannot be combined with a distance search ('lat'/'lon'/'radiusKm')");
+        }
         if (located) {
             if (q != null && !q.isBlank()) {
                 throw new IllegalArgumentException(
@@ -171,9 +190,12 @@ public class PublicStorefrontController {
             // asked us to interpret — there is no second, conflicting instruction to reconcile,
             // which is exactly what made the combination ambiguous. The guard stays.
             PublicStorefrontService.SearchOutcome outcome =
-                    storefrontService.searchPublishedShops(q.trim(), pageable);
+                    storefrontService.searchPublishedShops(q.trim(), declaredMask, pageable);
             response.setHeader(SearchInterpretation.HEADER, outcome.interpretation().headerValue());
             return outcome.page();
+        }
+        if (declaredMask != 0) {
+            return storefrontService.listPublishedShopsDeclaring(declaredMask, pageable);
         }
         return storefrontService.listPublishedShops(pageable);
     }
@@ -403,6 +425,90 @@ public class PublicStorefrontController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(storefrontService.trackOrder(orderNumber, request.email()));
+    }
+
+    /**
+     * #868 (owner ruling 2026-11-04, persona close-out): a customer cancels their own order while it is
+     * still PENDING. A guest proves ownership with the order number AND the email in the body (the tracking
+     * proof); a signed-in customer sends the verified token and no email, and the token's address is the
+     * first one tried. A token that does not verify is a 401 and never falls back to the body's email; a token
+     * whose address is not the order's owner falls back to the body's email when the body carries the guest
+     * pair, so a customer who tracked an order under another address can still cancel it.
+     *
+     * <p>There is deliberately NO MCP tool for this: it is an action of the customer on their own order,
+     * and the MCP server acts for a vendor under a vendor credential. Staff already cancel and refund
+     * through the existing order tools and endpoints.
+     */
+    @PostMapping(value = "/orders/{orderNumber}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Idempotent(endpoint = CustomerOrderCancellationService.ENDPOINT)
+    @Operation(summary = "Cancel your own order (before the kitchen accepts it)",
+            description = "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the "
+                    + "path and the email address the order was placed with in the body; a signed-in customer sends "
+                    + "X-Customer-Token and no email. A card-paid order is refunded what was actually paid, to the card: in "
+                    + "full, or for a deposit order the deposit (and the balance if it was paid), one refund per charge; a "
+                    + "pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 "
+                    + "(errors/order-not-cancellable-by-customer, contactShop true): contact the shop. A payment that has "
+                    + "not settled, or a deposit order whose deposit charge was not recorded, is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key "
+                    + "replays the outcome and never refunds twice; the same key for another order is refused 422 "
+                    + "(errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a "
+                    + "cancelled order is a 200 that changes nothing.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "The order is cancelled (now, or already was). "
+                    + "refunded says whether a card payment was returned."),
+            @ApiResponse(responseCode = "400", description = "Neither an email nor a customer token was supplied"),
+            @ApiResponse(responseCode = "401", description = "X-Customer-Token was supplied and did not verify"),
+            @ApiResponse(responseCode = "404", description = "No order with this number and email"),
+            @ApiResponse(responseCode = "409", description = "The kitchen has accepted the order or its payment is not "
+                    + "settled (errors/order-not-cancellable-by-customer), or the order changed while cancelling"),
+            @ApiResponse(responseCode = "422", description = "The Idempotency-Key was used for a different order"),
+            @ApiResponse(responseCode = "502", description = "The order IS cancelled but the card refund has not "
+                    + "completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry "
+                    + "the refund, or contact the shop")
+    })
+    public ResponseEntity<CustomerCancelResult> cancelOrder(
+            @PathVariable String orderNumber,
+            @RequestBody(required = false) CustomerCancelRequest request,
+            @Parameter(hidden = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Parameter(description = "A signed-in customer's jtoye-customers access token; replaces the email in the body.")
+            @RequestHeader(value = "X-Customer-Token", required = false) String customerToken) {
+        String bodyEmail = request == null || request.email() == null || request.email().isBlank()
+                ? null : request.email().trim();
+        if (customerToken != null && !customerToken.isBlank()) {
+            // 401 on any failure, by design: a bad token must not quietly become a guest cancel.
+            String tokenEmail = customerVerifiedEmail(customerToken);
+            try {
+                return cancelled(orderNumber, tokenEmail, idempotencyKey);
+            } catch (ResourceNotFoundException notTheTokensOrder) {
+                // A signed-in customer may look an order up with the GUEST pair (number + the address it was
+                // placed under, which can differ from their account's). That pair is the same proof /track
+                // already accepted, so when the body carries one that is not the token's own, it is tried
+                // next. Nothing is widened: the guest cancel accepts exactly this pair with no token at all.
+                // The 404 rolled its transaction back, so the Idempotency-Key was not consumed.
+                if (bodyEmail == null || bodyEmail.equalsIgnoreCase(tokenEmail.trim())) {
+                    throw notTheTokensOrder;
+                }
+                return cancelled(orderNumber, bodyEmail, idempotencyKey);
+            }
+        }
+        if (bodyEmail == null) {
+            throw new IllegalArgumentException("Send the email address the order was placed with, or sign in.");
+        }
+        return cancelled(orderNumber, bodyEmail, idempotencyKey);
+    }
+
+    private String customerVerifiedEmail(String customerToken) {
+        String email = customerJwtVerifier.verifiedEmail(customerToken);
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Send the email address the order was placed with, or sign in.");
+        }
+        return email;
+    }
+
+    private ResponseEntity<CustomerCancelResult> cancelled(String orderNumber, String email, String idempotencyKey) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(cancellationService.cancel(orderNumber, email.trim(), idempotencyKey));
     }
 
     @PostMapping("/orders/{orderNumber}/balance-payment-intent")

@@ -153,7 +153,7 @@ enforced by the `docs-freshness` CI gate)
 | [analysis/REMEDIATION-BACKLOG-2026-07-08.md](analysis/REMEDIATION-BACKLOG-2026-07-08.md) | Prioritised P0–P3 backlog from the 2026-07-08 four-agent audit |
 | [analysis/MESSAGING-BROKER-EVALUATION-2026-07-26.md](analysis/MESSAGING-BROKER-EVALUATION-2026-07-26.md) | RabbitMQ vs Redpanda vs NATS assessed against the real topology; the five messaging-layer defects; the verified RLS-vs-logical-decoding finding |
 | [analysis/BUSINESS_MODEL_DECISION_GUIDE.md](analysis/BUSINESS_MODEL_DECISION_GUIDE.md) | Authoritative business model, evidence boundaries, 90-day validation gates |
-| [analysis/flipdish-vs-jtoye-teardown.md](analysis/flipdish-vs-jtoye-teardown.md) | Flipdish vs J'Toye feature teardown (29 features, 8 categories; live at `/competitive`) |
+| [analysis/flipdish-vs-jtoye-teardown.md](analysis/flipdish-vs-jtoye-teardown.md) | Flipdish vs J'Toye feature teardown (29 features, 8 categories; the public /competitive page was deleted 2026-11-04, #836, this file is internal) |
 | [analysis/MCKINSEY_ANALYSIS.md](analysis/MCKINSEY_ANALYSIS.md) | Strategic situation/complication/horizons assessment |
 | [analysis/ENTERPRISE_STRATEGIC_ANALYSIS.md](analysis/ENTERPRISE_STRATEGIC_ANALYSIS.md) | 16-framework enterprise analysis (SWOT, Porter, PESTLE, TOGAF, Wardley, …) |
 

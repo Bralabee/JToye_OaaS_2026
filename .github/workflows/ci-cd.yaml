@@ -780,7 +780,7 @@ jobs:
       # workflow_dispatch only and can report after the fact at best.
       - name: Run public-surface layout + accessibility conformance (mobile + desktop)
         if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
-        run: npx playwright test e2e/public-layout.spec.ts e2e/public-a11y.spec.ts e2e/cookie-notice-compact.spec.ts
+        run: npx playwright test e2e/public-layout.spec.ts e2e/public-a11y.spec.ts e2e/cookie-notice-compact.spec.ts e2e/internal-strategy-404.spec.ts
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000

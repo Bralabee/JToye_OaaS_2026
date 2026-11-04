@@ -273,9 +273,10 @@ export default function MerchantTermsPage() {
         <p>
           You must be registered with your local authority as a food business,
           keep that registration current, and tell us if your food hygiene rating
-          changes. Before a shop can be published we check that the business is
-          verified, that it has a food hygiene rating, that its allergen data is
-          complete and that its trader identity is on file. These checks decide
+          changes. Before a shop can be published it goes through our automatic
+          checks of its business details, its food hygiene rating record, its
+          allergen data and its trader identity, and a shop that cannot be
+          matched automatically is reviewed by hand. These checks decide
           whether a shop can go live; they are not a certification of your food
           or your kitchen.
         </p>

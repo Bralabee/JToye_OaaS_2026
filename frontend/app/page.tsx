@@ -75,8 +75,12 @@ const steps = [
   },
 ]
 
+// Owner ruling 2026-11-04, persona close-out (#788, SW-CLR-14): "UK food-hygiene
+// verified" is gone. Nobody verifies it: a FHRS gate that finds no match goes to
+// MANUAL_REVIEW, which a single-tenant vendor's own admin can resolve, and the public
+// shop DTO carries no FHRS rating to show. Every marker below must be a statement the
+// platform performs; the landing test and a source scan hold the old string out.
 const trustMarkers = [
-  "UK food-hygiene verified",
   "Allergen info on every item",
   "No app to download",
 ]

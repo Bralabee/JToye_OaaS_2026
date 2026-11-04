@@ -236,6 +236,13 @@ public class Order {
     @Column(name = "payment_reference", length = 255)
     private String paymentReference;
 
+    /**
+     * V92 (#868): the DEPOSIT PaymentIntent of a deposit-split order, kept when the balance intent overwrites
+     * {@link #paymentReference}. Null = not recorded (never paid in two stages, or paid before V92).
+     */
+    @Column(name = "deposit_payment_reference", length = 255)
+    private String depositPaymentReference;
+
     @Column(name = "payment_method", length = 100)
     private String paymentMethod;
 
@@ -583,6 +590,14 @@ public class Order {
 
     public void setPaymentReference(String paymentReference) {
         this.paymentReference = paymentReference;
+    }
+
+    public String getDepositPaymentReference() {
+        return depositPaymentReference;
+    }
+
+    public void setDepositPaymentReference(String depositPaymentReference) {
+        this.depositPaymentReference = depositPaymentReference;
     }
 
     public String getPaymentMethod() {

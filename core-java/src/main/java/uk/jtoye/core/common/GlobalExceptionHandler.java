@@ -123,6 +123,50 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    /**
+     * #868 (owner ruling 2026-11-04): a customer asked to cancel an order they may not cancel themselves
+     * (the kitchen has accepted it, or it was paid in parts). 409; {@code contactShop} tells the storefront
+     * to show the contact-the-shop copy. The order's status is {@code orderStatus}, never {@code status}:
+     * RFC 7807's {@code status} member is the HTTP status code.
+     */
+    @ExceptionHandler(uk.jtoye.core.exception.CustomerCancelNotAllowedException.class)
+    public ProblemDetail handleCustomerCancelNotAllowed(uk.jtoye.core.exception.CustomerCancelNotAllowedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Order can't be cancelled online");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-not-cancellable-by-customer"));
+        problem.setProperty("code", "ORDER_NOT_CANCELLABLE_BY_CUSTOMER");
+        problem.setProperty("orderNumber", ex.getOrderNumber());
+        problem.setProperty("orderStatus", ex.getOrderStatus());
+        problem.setProperty("reason", ex.getReason().name());
+        problem.setProperty("contactShop", true);
+        return problem;
+    }
+
+    /**
+     * #868: the order was cancelled but the card refund behind it has not completed. 502, because the fault is
+     * the payment provider's; the customer repeats the request to finish the refund. The provider's error text
+     * is not echoed.
+     */
+    @ExceptionHandler(uk.jtoye.core.exception.CustomerCancelRefundFailedException.class)
+    public ProblemDetail handleCustomerCancelRefundFailed(uk.jtoye.core.exception.CustomerCancelRefundFailedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
+        problem.setTitle("Refund failed");
+        problem.setType(URI.create("https://jtoye.uk/errors/refund-failed"));
+        problem.setProperty("code", "REFUND_FAILED");
+        problem.setProperty("orderNumber", ex.getOrderNumber());
+        return problem;
+    }
+
+    /** SW-JRD-07: the customer-realm admin seam is off or failed; the name was not changed. 503, retryable. */
+    @ExceptionHandler(uk.jtoye.core.exception.CustomerProfileUnavailableException.class)
+    public ProblemDetail handleCustomerProfileUnavailable(uk.jtoye.core.exception.CustomerProfileUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+        problem.setTitle("Profile update unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/profile-update-unavailable"));
+        problem.setProperty("code", "PROFILE_UPDATE_UNAVAILABLE");
+        return problem;
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());

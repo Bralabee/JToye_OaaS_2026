@@ -271,5 +271,53 @@ class AllergenCatalogTest {
         assertThat(AllergenCatalog.resolveBit("niter kibbeh")).contains(6);
         assertThat(AllergenCatalog.resolveBit("ayib")).contains(6);
     }
-}
 
+    // ---- #862 (owner ruling 2026-11-04): the DECLARED-allergen filter and search term ----
+
+    @Test
+    @DisplayName("#862: maskForDeclaredFilter reads catalogue names, any case, comma separated")
+    void maskForDeclaredFilterReadsNames() {
+        assertThat(AllergenCatalog.maskForDeclaredFilter("Peanuts")).isEqualTo(1 << 4);
+        assertThat(AllergenCatalog.maskForDeclaredFilter(" gluten , MILK ")).isEqualTo((1 << 0) | (1 << 6));
+        for (AllergenCatalog.Allergen a : AllergenCatalog.allergens()) {
+            assertThat(AllergenCatalog.maskForDeclaredFilter(a.name())).isEqualTo(1 << a.bit());
+        }
+    }
+
+    @Test
+    @DisplayName("#862: maskForDeclaredFilter refuses an unknown or blank name instead of widening to everything")
+    void maskForDeclaredFilterRefusesUnknown() {
+        assertThatThrownBy(() -> AllergenCatalog.maskForDeclaredFilter("peanut butter"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AllergenCatalog.maskForDeclaredFilter("Gluten,,"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AllergenCatalog.maskForDeclaredFilter("  "))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AllergenCatalog.maskForDeclaredFilter("free from gluten"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("#862: a search term that IS an allergen name (singular, plural, spelling variant) resolves to its bit")
+    void maskForSearchTermResolvesAllergenNames() {
+        assertThat(AllergenCatalog.maskForSearchTerm("peanut")).contains(1 << 4);
+        assertThat(AllergenCatalog.maskForSearchTerm("Peanuts")).contains(1 << 4);
+        assertThat(AllergenCatalog.maskForSearchTerm(" gluten ")).contains(1 << 0);
+        assertThat(AllergenCatalog.maskForSearchTerm("egg")).contains(1 << 2);
+        assertThat(AllergenCatalog.maskForSearchTerm("soya")).contains(1 << 5);
+        assertThat(AllergenCatalog.maskForSearchTerm("mollusk")).contains(1 << 13);
+        assertThat(AllergenCatalog.maskForSearchTerm("sulfites")).contains(1 << 11);
+    }
+
+    @Test
+    @DisplayName("#862: a search term that only CONTAINS an allergen word is not read as a declaration filter")
+    void maskForSearchTermIgnoresPhrases() {
+        // "gluten free" is the opposite of "declares gluten": it must never filter to gluten dishes.
+        assertThat(AllergenCatalog.maskForSearchTerm("gluten free")).isEmpty();
+        assertThat(AllergenCatalog.maskForSearchTerm("gluten-free")).isEmpty();
+        assertThat(AllergenCatalog.maskForSearchTerm("peanut stew")).isEmpty();
+        assertThat(AllergenCatalog.maskForSearchTerm("jollof")).isEmpty();
+        assertThat(AllergenCatalog.maskForSearchTerm("")).isEmpty();
+        assertThat(AllergenCatalog.maskForSearchTerm(null)).isEmpty();
+    }
+}

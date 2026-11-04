@@ -3,7 +3,7 @@ import { PublicFooter } from "@/components/public/public-footer"
 
 /**
  * Shared public shell (Surface B): header + footer wrapper for the public
- * marketing surfaces (/, /for-operators, /business-model-guide, /track, /shop).
+ * marketing surfaces (/, /for-operators, /track, /shop).
  *
  * Deliberately a PLAIN server component — no client directive, no
  * route-segment config — so the root layout's `dynamic = "force-dynamic"` and

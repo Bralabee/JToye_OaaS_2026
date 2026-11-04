@@ -138,7 +138,7 @@
       "id": "controllers",
       "type": "backend",
       "label": "REST controllers",
-      "sublabel": "35 classes",
+      "sublabel": "36 classes",
       "sources": [
         {
           "path": "core-java/src/main/java/uk/jtoye/core/order/OrderController.java",
@@ -245,7 +245,7 @@
       "id": "postgres",
       "type": "database",
       "label": "PostgreSQL",
-      "sublabel": "RLS · schema at V90",
+      "sublabel": "RLS · schema at V92",
       "brand": "postgresql",
       "sources": [
         {
@@ -443,8 +443,8 @@
       "dot": "emerald",
       "title": "Counted, not estimated",
       "items": [
-        "35 controllers",
-        "Schema at V90; V2 installs the RLS policies"
+        "36 controllers",
+        "Schema at V92; V2 installs the RLS policies"
       ]
     }
   ]
