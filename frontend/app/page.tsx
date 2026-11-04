@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { openGraphWithDefaultImage } from "@/lib/og-image"
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -48,13 +49,14 @@ export const metadata: Metadata = {
   // from the injected public origin, and Next resolves it to an absolute URL
   // against that (no hostname is written here; app/layout.tsx says why).
   alternates: { canonical: "/" },
-  openGraph: {
+  // SW-CLR-08: a page's own openGraph replaces the root's, so the default share image is added here.
+  openGraph: openGraphWithDefaultImage({
     title: "J'Toye — Order from local kitchens, or run your own",
     description:
       "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders and manage your kitchen, with an assisted setup.",
     url: "/",
     type: "website",
-  },
+  }),
 }
 
 const steps = [

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { openGraphWithDefaultImage } from "@/lib/og-image"
 import { CompetitiveTeardown } from "@/components/marketing/competitive-teardown"
 import { PublicShell } from "@/components/public/public-shell"
 
@@ -11,13 +12,13 @@ export const metadata: Metadata = {
   // footer. Published, but not for search engines. The sitemap entry is Phase
   // 30's file (app/sitemap.ts) and is a recorded follow-up.
   robots: { index: false, follow: false },
-  openGraph: {
+  openGraph: openGraphWithDefaultImage({
     title: "How we compare — Flipdish vs J'Toye",
     description:
       "Evidence-based feature teardown of Flipdish vs J'Toye OaaS: coverage radar + filterable matrix. Compete on the compliance + marketplace-engine + agent-ready wedge.",
     url: "/competitive",
     type: "article",
-  },
+  }),
 }
 
 export default function CompetitivePage() {

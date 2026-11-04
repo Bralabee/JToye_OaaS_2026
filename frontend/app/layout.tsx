@@ -5,6 +5,7 @@ import { Providers } from "@/components/providers";
 import { MotionProvider } from "@/components/motion-provider";
 import { CookieNotice } from "@/components/public/cookie-notice";
 import { resolvePublicOrigin } from "@/lib/public-origin";
+import { DEFAULT_OG_IMAGE, openGraphWithDefaultImage } from "@/lib/og-image";
 
 // Work Sans — the parent brand typeface (jtoyedigital.co.uk). App-wide for brand
 // coherence; a clean geometric sans, near drop-in for the prior Inter.
@@ -41,6 +42,10 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: origin ? new URL(origin) : undefined,
     title: "J'Toye OaaS - Multi-Tenant Order Management",
     description: "Enterprise-grade order-as-a-service platform with tenant isolation",
+    // SW-CLR-08: a default share image for every page that has none of its own. A page that sets its
+    // own `openGraph` replaces this one, so those pages go through `openGraphWithDefaultImage` (lib/og-image.ts).
+    openGraph: openGraphWithDefaultImage({ type: "website", siteName: "J'Toye" }),
+    twitter: { card: "summary_large_image", images: [{ url: DEFAULT_OG_IMAGE.url, alt: DEFAULT_OG_IMAGE.alt }] },
   };
 }
 
