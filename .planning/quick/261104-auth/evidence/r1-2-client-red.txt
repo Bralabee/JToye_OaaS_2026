@@ -1,0 +1,124 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' lib/__tests__/customer-session-transition.test.ts
+  Using tsconfig file: tsconfig.build.json
+FAIL lib/__tests__/customer-session-transition.test.ts (10.662 s)
+  ● getCustomerSession — the one retry (#843) › re-probes once WITH the retry marker after a refused answer, and returns the second answer
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "u1"
+    Received: undefined
+
+      61 |     const session = await getCustomerSession()
+      62 |
+    > 63 |     expect(session?.profile.sub).toBe("u1")
+         |                                  ^
+      64 |     expect(calls).toHaveLength(2)
+      65 |     expect(calls[0]?.["x-session-retry"]).toBeUndefined()
+      66 |     expect(calls[1]?.["x-session-retry"]).toBe("1")
+
+      at Object.toBe (lib/__tests__/customer-session-transition.test.ts:63:34)
+
+  ● getCustomerSession — the one retry (#843) › a second refusal is final: null, the marker cleared, and no third request
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 2
+    Received number of calls: 1
+
+      74 |
+      75 |     expect(await getCustomerSession()).toBeNull()
+    > 76 |     expect(fetchMock).toHaveBeenCalledTimes(2)
+         |                       ^
+      77 |     expect(stored().marker).toBeNull()
+      78 |   })
+      79 |
+
+      at Object.toHaveBeenCalledTimes (lib/__tests__/customer-session-transition.test.ts:76:23)
+
+  ● getCustomerSession — through an identity transition › SIGN-IN: a caller after the callback does not join a probe that started before it, and the stale answer cannot erase the marker
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 1
+    Received array:  [["/api/customer-auth/session", {"cache": "no-store", "credentials": "include"}]]
+
+      115 |     // The destination page's nav probes now. It must send its OWN request.
+      116 |     const late = getCustomerSession()
+    > 117 |     expect((global.fetch as jest.Mock).mock.calls.filter((c) => String(c[0]).includes("/session"))).toHaveLength(2)
+          |                                                                                                     ^
+      118 |
+      119 |     // The early probe finally answers "anonymous". It must not rewrite what sign-in stored.
+      120 |     stale.resolve(anonymous())
+
+      at Object.toHaveLength (lib/__tests__/customer-session-transition.test.ts:117:101)
+
+  ● getCustomerSession — through an identity transition › SIGN-OUT: a probe that started signed-in cannot resurrect the marker after the customer signs out
+
+    thrown: "Exceeded timeout of 5000 ms for a test.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      at _getError (node_modules/jest-circus/build/jestAdapterInit.js:1985:12)
+          at Array.map (<anonymous>)
+
+    Cause:
+        thrown: "Exceeded timeout of 5000 ms for a test.
+        Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+          127 |   })
+          128 |
+        > 129 |   it("SIGN-OUT: a probe that started signed-in cannot resurrect the marker after the customer signs out", async () => {
+              |   ^
+          130 |     localStorage.setItem(MARKER, "true")
+          131 |     localStorage.setItem(EXPIRES, String(Math.floor(Date.now() / 1000) + 300))
+          132 |     localStorage.setItem(CUSTOMER_ID, "u1")
+
+          at it (lib/__tests__/customer-session-transition.test.ts:129:3)
+          at Object.describe (lib/__tests__/customer-session-transition.test.ts:88:1)
+
+  ● getCustomerSession — through an identity transition › overlapping callers within ONE identity still share a single request
+
+    thrown: "Exceeded timeout of 5000 ms for a test.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      at _getError (node_modules/jest-circus/build/jestAdapterInit.js:1985:12)
+          at Array.map (<anonymous>)
+
+    Cause:
+        thrown: "Exceeded timeout of 5000 ms for a test.
+        Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+          148 |   })
+          149 |
+        > 150 |   it("overlapping callers within ONE identity still share a single request", async () => {
+              |   ^
+          151 |     const pending = deferred<Response>()
+          152 |     const fetchMock = jest.fn(() => pending.promise)
+          153 |     global.fetch = fetchMock as unknown as typeof fetch
+
+          at it (lib/__tests__/customer-session-transition.test.ts:150:3)
+          at Object.describe (lib/__tests__/customer-session-transition.test.ts:88:1)
+
+  ● getCustomerSession — two tabs against the REAL realm's rules (#843) › keeps the customer signed in when two tabs probe at once (serialised by the lock)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "u1"
+    Received: undefined
+
+      239 |
+      240 |     expect(a?.profile.sub).toBe("u1")
+    > 241 |     expect(b?.profile.sub).toBe("u1")
+          |                            ^
+      242 |     expect(w.isRevoked()).toBe(false)
+      243 |     expect(w.sent).toEqual(["R0", "R1"]) // the second probe left with the cookie the first had just set
+      244 |     expect(w.jar.refresh).toBe("R2")
+
+      at Object.toBe (lib/__tests__/customer-session-transition.test.ts:241:28)
+
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 2 passed, 8 total
+Snapshots:   0 total
+Time:        12.191 s
+Ran all test suites matching lib/__tests__/customer-session-transition.test.ts.

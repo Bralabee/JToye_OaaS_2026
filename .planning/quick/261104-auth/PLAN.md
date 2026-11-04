@@ -13,28 +13,36 @@ redemption fails. So a probe that left the browser with the old cookie but reach
 after the first had settled redeemed a spent token, was refused, and cleared the cookies the first
 probe had just issued.
 
-Fix, two layers:
-1. Server: a 60 s memo of SUCCESSFUL redemptions keyed by SHA-256 of the spent token; a late
-   probe presenting that token gets the same renewed session. Successes only, capped at 1000,
-   expires, never answers a different token.
-2. Browser: `getCustomerSession()` shares one request between overlapping callers (the nav store
-   probes on mount and each second for five seconds, checkout and the order pages add their own).
-   Nothing is cached after it settles.
+Fix, REVISED after review round 1 (the first design, a 60 s server memo of the renewed tokens, was
+withdrawn: it re-issued a live refresh token to a holder of the spent one, outlived sign-out, and is
+per pod while staging scales the frontend to 10):
 
-Not done: the Playwright throttled-network acceptance in the issue. The jest fake-timer tests
-reproduce the mechanism; a throttled-browser run needs the full stack and was not done.
-Across frontend replicas the memo is per instance (the IdP stays the arbiter); the client single
-flight is what covers that gap for one browser.
+MEASURED (evidence/reuse-detection-measured.txt): on the real realm a replayed spent token is refused
+AND revokes the session; the successor then fails "Session doesn't have required client". So the
+replay must never be SENT, and no stateless server rule can rescue one that was.
 
-Tests (RED first): `app/api/customer-auth/__tests__/session-refresh-late-probe.test.ts` (5, two RED
-on the unfixed code, three pin the boundaries), `lib/__tests__/customer-session-single-flight.test.ts`
-(3, one RED). Break arms on the memo: unbounded window and a constant key each turn their named
-test RED.
+1. Server, stateless: no token is kept; the in-flight collapse is keyed by digest and holds only while
+   the redemption runs. A refusal (4xx other than 408/429) answers `authenticated:false` +
+   `refreshRefused:true` and clears nothing; with the `x-session-retry: 1` header it clears the three
+   cookies. A transient failure (5xx, 429, network, unreadable body) never clears anything.
+2. Browser: `getCustomerSession()` (a) joins an in-flight probe only within the same identity
+   generation (bumped by every setMarker/clearMarker) and a stale probe's answer writes no marker;
+   (b) serialises probes across tabs with a Web Lock (bounded wait, then probes anyway; no Web Locks,
+   as before); (c) retries once with the marker after a `refreshRefused` answer. The retry fires only
+   on `refreshRefused` (not on every anonymous answer, which every public page view produces).
 
-Threat notes (ASVS V3): the memo extends the validity of a spent refresh token by at most 60 s,
-only for a request that presents that exact token (the same proof the IdP asked for), only in this
-process. Tokens are never logged or returned in a body. A stolen spent token is no more useful than
-it was a moment earlier.
+Honest limit: a reload during a refresh loses the response that carries the new cookie, and the next
+page replays the spent one. Only server-side state would cover it, which review rejected.
+
+Not done: the Playwright throttled-network acceptance (needs the full stack).
+
+Tests (RED first): `session-refresh-stateless.test.ts` (10, 9 RED against the memo code, with a fake
+realm that revokes on replay), `customer-session-transition.test.ts` (8, 6 RED against the first
+client), `customer-session-single-flight.test.ts` (3). Break arms in `evidence/r1-2-break-arms.txt`.
+
+Threat notes (ASVS V3): nothing token-bearing is retained server-side; a request that raced a
+sign-out can only be refused, never answered with a session. Web Locks name is a constant
+(`jtoye-customer-session-probe`), carries no data.
 
 ## #847 + SW-JRD-06: reset and verification links expire in 5 minutes
 

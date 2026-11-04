@@ -1,5 +1,0 @@
-  ● /api/customer-auth/session — late probe after a settled refresh (#843) › does not replay a spent token for ever: past the grace window the IdP is asked again and refuses
-Tests:       1 failed, 4 passed, 5 total
---- arm 2: constant key
-  ● /api/customer-auth/session — late probe after a settled refresh (#843) › never hands one customer's renewed session to a different refresh token
-Tests:       1 failed, 4 passed, 5 total

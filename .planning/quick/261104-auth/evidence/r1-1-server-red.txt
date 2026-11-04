@@ -1,0 +1,195 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' app/api/customer-auth/__tests__/session-refresh-stateless.test.ts
+  Using tsconfig file: tsconfig.build.json
+jest-haste-map: Haste module naming collision: frontend
+  The following files share their name; please adjust your hasteImpl:
+    * <rootDir>/package.json
+    * <rootDir>/.next/standalone/package.json
+
+FAIL app/api/customer-auth/__tests__/session-refresh-stateless.test.ts
+  ● /api/customer-auth/session — stateless renewal (#843) › renews with a live token, with or without the retry marker, and hands back the rotated one
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "A0>1"
+    Received: "A0%3E1"
+
+      109 |     const res = await sessionGET(probe("A0", true))
+      110 |     expect((await res.json()).authenticated).toBe(true)
+    > 111 |     expect(setCookieValue(res, "jtoye-customer-refresh")).toBe("A0>1")
+          |                                                           ^
+      112 |   })
+      113 |
+      114 |   it("a refused probe WITHOUT the retry marker clears nothing and invites exactly one retry", async () => {
+
+      at Object.toBe (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:111:59)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › a refused probe WITHOUT the retry marker clears nothing and invites exactly one retry
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      118 |
+      119 |     const body = await late.json()
+    > 120 |     expect(body.authenticated).toBe(false)
+          |                                ^
+      121 |     expect(body.refreshRefused).toBe(true)
+      122 |     // It must not overwrite what probe 1 just issued, nor re-set anything.
+      123 |     expect(setCookieNames(late)).toEqual([])
+
+      at Object.toBe (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:120:32)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › holds no tokens: the answer to a replay never carries the successor's tokens
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "C0>1"
+    Received: "C0%3E1"
+
+      127 |     realmIdp(["C0"])
+      128 |     const first = await sessionGET(probe("C0"))
+    > 129 |     expect(setCookieValue(first, "jtoye-customer-refresh")).toBe("C0>1")
+          |                                                             ^
+      130 |     const replay = await sessionGET(probe("C0"))
+      131 |     const text = JSON.stringify(await replay.json()) + (replay.headers.get("set-cookie") ?? "")
+      132 |     expect(text).not.toContain("C0>1")
+
+      at Object.toBe (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:129:61)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › SIGN-OUT then a slow probe carrying the old token: the customer stays signed out and no cookie is re-set
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "D0>1"
+    Received: "D0%3E1"
+
+      137 |     const idp = realmIdp(["D0"])
+      138 |     const renewed = await sessionGET(probe("D0")) // renewal succeeded: cookie jar holds D0>1
+    > 139 |     expect(setCookieValue(renewed, "jtoye-customer-refresh")).toBe("D0>1")
+          |                                                               ^
+      140 |     idp.revoke() // the customer presses Sign out: logout revokes the session at the IdP
+      141 |     // a slow probe sent BEFORE sign-out lands afterwards, still carrying D0
+      142 |     const late = await sessionGET(probe("D0"))
+
+      at Object.toBe (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:139:63)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › a genuinely dead session is cleared by the retry, not before
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: undefined
+
+      152 |     realmIdp([]) // the realm knows no such token
+      153 |     const first = await sessionGET(probe("DEAD"))
+    > 154 |     expect((await first.json()).refreshRefused).toBe(true)
+          |                                                 ^
+      155 |     expect(setCookieNames(first)).toEqual([])
+      156 |
+      157 |     const retry = await sessionGET(probe("DEAD", true))
+
+      at Object.toBe (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:154:49)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › a Keycloak 503 clears nothing, with or without the retry marker
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "jtoye-customer-access",
+    +   "jtoye-customer-refresh",
+    +   "jtoye-customer-id",
+    + ]
+
+      171 |       expect(body.authenticated).toBe(false)
+      172 |       expect(body.refreshRefused).toBeUndefined()
+    > 173 |       expect(setCookieNames(res)).toEqual([])
+          |                                   ^
+      174 |     }
+      175 |   })
+      176 |
+
+      at toEqual (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:173:35)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › a 429 clears nothing, with or without the retry marker
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "jtoye-customer-access",
+    +   "jtoye-customer-refresh",
+    +   "jtoye-customer-id",
+    + ]
+
+      171 |       expect(body.authenticated).toBe(false)
+      172 |       expect(body.refreshRefused).toBeUndefined()
+    > 173 |       expect(setCookieNames(res)).toEqual([])
+          |                                   ^
+      174 |     }
+      175 |   })
+      176 |
+
+      at toEqual (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:173:35)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › an unreadable 200 clears nothing, with or without the retry marker
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "jtoye-customer-access",
+    +   "jtoye-customer-refresh",
+    +   "jtoye-customer-id",
+    + ]
+
+      171 |       expect(body.authenticated).toBe(false)
+      172 |       expect(body.refreshRefused).toBeUndefined()
+    > 173 |       expect(setCookieNames(res)).toEqual([])
+          |                                   ^
+      174 |     }
+      175 |   })
+      176 |
+
+      at toEqual (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:173:35)
+
+  ● /api/customer-auth/session — stateless renewal (#843) › a network failure clears nothing, with or without the retry marker
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "jtoye-customer-access",
+    +   "jtoye-customer-refresh",
+    +   "jtoye-customer-id",
+    + ]
+
+      180 |       const res = await sessionGET(probe("N0", retry))
+      181 |       expect((await res.json()).authenticated).toBe(false)
+    > 182 |       expect(setCookieNames(res)).toEqual([])
+          |                                   ^
+      183 |     }
+      184 |   })
+      185 |
+
+      at Object.toEqual (app/api/customer-auth/__tests__/session-refresh-stateless.test.ts:182:35)
+
+Test Suites: 1 failed, 1 total
+Tests:       9 failed, 1 passed, 10 total
+Snapshots:   0 total
+Time:        1.002 s
+Ran all test suites matching app/api/customer-auth/__tests__/session-refresh-stateless.test.ts.
