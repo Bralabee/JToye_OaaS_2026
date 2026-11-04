@@ -152,7 +152,39 @@ export function allergenFlagCopy(flag: OrderAllergenFlag): string {
   return `Check — ${flag.productName}: the ingredients list mentions ${flag.allergenName}, which the kitchen has not declared for this item. Ask the kitchen before you order.`
 }
 
+/**
+ * SW-PRY-07: how to do what the panel's sentences ask ("tell the kitchen before you order"). Those
+ * sentences are legally operative and untouched; this is a separate line beside them. Phone and email
+ * are the shop's own published details. Blank strings are not contact details.
+ */
+export interface KitchenContact {
+  phone?: string | null
+  email?: string | null
+}
+
+export function kitchenContactCopy(
+  vendorName: string,
+  contact: KitchenContact
+): { kind: "contact"; phone: string | null; email: string | null } | { kind: "none"; text: string } {
+  const phone = contact.phone?.trim() || null
+  const email = contact.email?.trim() || null
+  if (phone || email) return { kind: "contact", phone, email }
+  return {
+    kind: "none",
+    text: `${vendorName} has not published a phone number or email address, so you cannot ask before you order here. The allergy or dietary note on this page goes to the kitchen with your order, and the kitchen records that it has read it.`,
+  }
+}
+
+const CONTACT_LINK =
+  "rounded-sm font-semibold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-1"
+
 export interface OrderAllergenPanelProps {
+  /**
+   * The kitchen's phone and email (SW-PRY-07), printed beside the "tell the kitchen" sentences. Omit
+   * it while the shop has not loaded: an absent prop claims nothing, whereas `{phone: null, email: null}`
+   * says the shop published neither.
+   */
+  kitchenContact?: KitchenContact | null
   /** The trading name of the kitchen that made the declaration. */
   vendorName: string
   /** null = NOT RECORDED. [] = the vendor declared none of the 14. Never collapse one into the other. */
@@ -188,6 +220,7 @@ export function OrderAllergenPanel({
   allergenNames,
   allergenFlags,
   allergenAttribution = null,
+  kitchenContact = null,
   acknowledged,
   onAcknowledgedChange,
   errored = false,
@@ -289,6 +322,34 @@ export function OrderAllergenPanel({
           ))}
         </ul>
       )}
+
+      {kitchenContact &&
+        (() => {
+          const how = kitchenContactCopy(vendorName, kitchenContact)
+          return (
+            <p data-testid="allergen-kitchen-contact" className="mt-3 text-sm text-amber-800">
+              {how.kind === "none" ? (
+                how.text
+              ) : (
+                <>
+                  To ask the kitchen before you order:{" "}
+                  {how.phone && (
+                    <a href={`tel:${how.phone.replace(/[^\d+]/g, "")}`} className={CONTACT_LINK}>
+                      {how.phone}
+                    </a>
+                  )}
+                  {how.phone && how.email && " or "}
+                  {how.email && (
+                    <a href={`mailto:${how.email}`} className={CONTACT_LINK}>
+                      {how.email}
+                    </a>
+                  )}
+                  .
+                </>
+              )}
+            </p>
+          )
+        })()}
 
       {/* 44px minimum touch target (min-h-11) around a 24px box, per the UI-SPEC. */}
       <div data-testid="allergen-ack-row" className="mt-3 flex min-h-11 items-center gap-3">

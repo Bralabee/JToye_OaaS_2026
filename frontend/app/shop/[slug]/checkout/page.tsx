@@ -2002,6 +2002,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           allergenNames={declaredAllergenNames}
           allergenFlags={allergenFlags}
           allergenAttribution={allergenAttribution}
+          // SW-PRY-07: how to do what the panel's sentences ask. Only once the shop has loaded: a
+          // failed fetch is not "the shop published no contact". The seller's own details (trader
+          // identity) back the shop's, as they do on the collection block.
+          kitchenContact={
+            shop ? { phone: shop.phone ?? shop.seller?.phone ?? null, email: shop.email ?? shop.seller?.email ?? null } : null
+          }
           acknowledged={acknowledged}
           onAcknowledgedChange={(next) => {
             setAcknowledged(next)
