@@ -48,8 +48,8 @@ import java.util.stream.Collectors;
  *
  * <p>The staff path inserts the row and calls Stripe in ONE transaction, so a Stripe error rolls the row
  * back with it (the {@code failed} marking is then a no-op in a new transaction that cannot see it). The
- * customer self-cancel path (#868) commits its row BEFORE Stripe is called: see {@link #reserveCancelRefund}
- * and {@link #issueCancelRefund}.
+ * customer self-cancel path (#868) commits its row BEFORE Stripe is called: see {@link #reserveCancelRefunds}
+ * and {@link #issueCancelRefunds}.
  */
 @Service
 public class RefundService {
@@ -210,60 +210,165 @@ public class RefundService {
     @Transactional(readOnly = true)
     public boolean hasCancelRefund(UUID orderId) {
         return refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).stream()
-                .anyMatch(r -> r.getIdempotencyKey() != null && r.getIdempotencyKey().startsWith(CANCEL_KEY_PREFIX));
+                .anyMatch(RefundService::isCancelRow);
+    }
+
+    /** One captured PaymentIntent of an order, and the amount that was actually paid through it. */
+    public record CancelLeg(String paymentIntentId, long amountPennies) { }
+
+    /**
+     * What a customer's cancellation must refund, as one leg per captured PaymentIntent (owner ruling
+     * 2026-11-04: refund what was actually paid). An EMPTY list means it cannot be determined and the cancel
+     * must be refused:
+     * <ul>
+     *   <li>an ordinary card order: one leg, the order's intent, the order total;</li>
+     *   <li>a deposit order whose balance is still due: one leg, the deposit intent, the deposit;</li>
+     *   <li>a deposit order paid in full by a deposit that IS the total: one leg, the order total;</li>
+     *   <li>a deposit order whose balance was also paid: two legs, the deposit intent ({@code
+     *       deposit_payment_reference}, V90) and the balance intent ({@code payment_reference}), and no
+     *       leg at all when the deposit intent was never recorded (paid before V90): nothing is guessed.</li>
+     * </ul>
+     */
+    public static List<CancelLeg> cancelRefundLegs(Order order) {
+        String ref = order.getPaymentReference();
+        Long total = order.getTotalAmountPennies();
+        if (ref == null || ref.isBlank() || total == null || total <= 0) {
+            return List.of();
+        }
+        Long deposit = order.getDepositAmountPennies();
+        Long balanceDue = order.getBalanceDuePennies();
+        boolean balanceOutstanding = balanceDue != null && balanceDue > 0;
+        if (deposit == null && !balanceOutstanding) {
+            return List.of(new CancelLeg(ref, total));
+        }
+        if (deposit == null || deposit <= 0) {
+            return List.of();
+        }
+        if (balanceOutstanding) {
+            return List.of(new CancelLeg(ref, deposit));
+        }
+        if (deposit >= total) {
+            return List.of(new CancelLeg(ref, total));
+        }
+        String depositRef = order.getDepositPaymentReference();
+        if (depositRef == null || depositRef.isBlank() || depositRef.equals(ref)) {
+            return List.of();
+        }
+        return List.of(new CancelLeg(depositRef, deposit), new CancelLeg(ref, total - deposit));
+    }
+
+    private static boolean isCancelRow(Refund r) {
+        return r.getIdempotencyKey() != null && r.getIdempotencyKey().startsWith(CANCEL_KEY_PREFIX);
+    }
+
+    private static boolean isLiveStatus(Refund r) {
+        return r.getStatus() != RefundStatus.failed && r.getStatus() != RefundStatus.canceled;
     }
 
     /**
-     * Reserve the Refund row for a customer-cancelled order's full refund (#868, owner ruling 2026-11-04). Runs
-     * INSIDE the cancel's transaction, so the row commits together with the cancel and the ledger reversal and
-     * BEFORE any Stripe call: whatever happens to Stripe or to what follows, the {@code metadata.refund_id}
-     * Stripe is given names a committed row the {@code refund.*} webhook can find (BL-04).
+     * Reserve the Refund rows for a customer-cancelled order's refund (#868, owner ruling 2026-11-04): one row
+     * per captured PaymentIntent ({@link #cancelRefundLegs}). Runs INSIDE the cancel's transaction, so the
+     * rows commit together with the cancel and the ledger reversal and BEFORE any Stripe call: whatever
+     * happens to Stripe or to what follows, the {@code metadata.refund_id} Stripe is given names a committed
+     * row the {@code refund.*} webhook can find (BL-04).
      *
      * <p>The Stripe idempotency key is the row's own stored key, so one row is one Stripe request with one set
-     * of parameters. A retry of an attempt that is not finished (row CREATING, pending, succeeded) gets the SAME
-     * row back, hence the same key and identical parameters, and Stripe replays the refund it already made
+     * of parameters. A retry of a leg whose attempt is not finished (row CREATING, pending, succeeded) gets the
+     * SAME row back, hence the same key and identical parameters, and Stripe replays the refund it already made
      * instead of refusing the key for changed parameters. Only an attempt Stripe definitively refused
-     * ({@code failed}/{@code canceled}) is replaced by a new row, and so by a new key.
+     * ({@code failed}/{@code canceled}) is replaced by a new row, and so by a new key. A deposit and a balance
+     * are separate charges and so separate rows with separate keys.
      *
-     * @return the id of the row to issue; call {@link #issueCancelRefund} AFTER the cancel has committed
+     * @return the ids of the rows to issue; call {@link #issueCancelRefunds} AFTER the cancel has committed
      */
     @Transactional
-    public UUID reserveCancelRefund(UUID orderId) {
+    public List<UUID> reserveCancelRefunds(UUID orderId) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
-        if (order.getPaymentReference() == null || order.getPaymentReference().isBlank()) {
+        List<CancelLeg> legs = cancelRefundLegs(order);
+        if (legs.isEmpty()) {
             throw new InvalidStateTransitionException(
-                    "Cannot refund order " + orderId + " — no Stripe payment_intent on record");
+                    "Cannot refund order " + orderId + " — the payments made for it cannot be determined");
         }
-        Optional<Refund> unfinished = refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).stream()
-                .filter(r -> r.getIdempotencyKey() != null && r.getIdempotencyKey().startsWith(CANCEL_KEY_PREFIX))
-                .findFirst()
-                .filter(r -> r.getStatus() != RefundStatus.failed && r.getStatus() != RefundStatus.canceled);
-        if (unfinished.isPresent()) {
-            return unfinished.get().getId();
+        List<Refund> history = refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).stream()
+                .filter(RefundService::isCancelRow).toList();
+        List<UUID> ids = new java.util.ArrayList<>();
+        for (CancelLeg leg : legs) {
+            Optional<Refund> unfinished = history.stream()
+                    .filter(r -> leg.paymentIntentId().equals(r.getPaymentIntentId()))
+                    .findFirst()
+                    .filter(RefundService::isLiveStatus);
+            if (unfinished.isPresent()) {
+                ids.add(unfinished.get().getId());
+                continue;
+            }
+            long remaining = order.getTotalAmountPennies() - refundRepository.sumLiveAmountByOrderId(orderId);
+            if (remaining < leg.amountPennies()) {
+                throw new IllegalArgumentException(
+                        "Order " + orderId + " has only " + remaining + " left to refund, less than the "
+                                + leg.amountPennies() + " paid through " + leg.paymentIntentId());
+            }
+            Refund refund = refundRepository.saveAndFlush(new Refund(
+                    tenantId,
+                    orderId,
+                    leg.paymentIntentId(),
+                    CANCEL_KEY_PREFIX + UUID.randomUUID().toString().replace("-", ""),
+                    leg.amountPennies(),
+                    RefundReason.REQUESTED_BY_CUSTOMER,
+                    "Cancelled by the customer before the kitchen accepted the order"));
+            log.info("Reserved cancel Refund row {} (status=CREATING) for order {} amount={}",
+                    refund.getId(), orderId, leg.amountPennies());
+            ids.add(refund.getId());
         }
-        long remaining = order.getTotalAmountPennies() - refundRepository.sumLiveAmountByOrderId(orderId);
-        if (remaining <= 0) {
-            throw new IllegalArgumentException(
-                    "Order " + orderId + " has nothing left to refund (remaining=" + remaining + ")");
-        }
-        Refund refund = refundRepository.saveAndFlush(new Refund(
-                tenantId,
-                orderId,
-                order.getPaymentReference(),
-                CANCEL_KEY_PREFIX + UUID.randomUUID().toString().replace("-", ""),
-                remaining,
-                RefundReason.REQUESTED_BY_CUSTOMER,
-                "Cancelled by the customer before the kitchen accepted the order"));
-        log.info("Reserved cancel Refund row {} (status=CREATING) for order {} amount={}",
-                refund.getId(), orderId, remaining);
-        return refund.getId();
+        return ids;
+    }
+
+    /** What the customer's cancellation has refunded so far: the legs Stripe has accepted. */
+    @Transactional(readOnly = true)
+    public long cancelRefundedPennies(UUID orderId) {
+        return refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).stream()
+                .filter(RefundService::isCancelRow)
+                .filter(RefundService::isLiveStatus)
+                .filter(r -> r.getStripeRefundId() != null)
+                .mapToLong(Refund::getAmountPennies)
+                .sum();
     }
 
     /**
-     * Make the Stripe refund for a row {@link #reserveCancelRefund} committed, then record the result. NOT
+     * Issue every reserved leg. A failure of one leg does not stop the others (each is its own Stripe request
+     * under its own key); the first failure is rethrown once all have been tried, so a deposit refund is never
+     * held back by a balance refund that failed, and a repeat re-sends only what is unfinished.
+     */
+    public long issueCancelRefunds(List<UUID> refundIds) throws StripeException {
+        long total = 0;
+        StripeException stripeFailure = null;
+        RuntimeException runtimeFailure = null;
+        for (UUID id : refundIds) {
+            try {
+                total += issueCancelRefund(id);
+            } catch (StripeException e) {
+                if (stripeFailure == null && runtimeFailure == null) {
+                    stripeFailure = e;
+                }
+            } catch (RuntimeException e) {
+                if (stripeFailure == null && runtimeFailure == null) {
+                    runtimeFailure = e;
+                }
+            }
+        }
+        if (stripeFailure != null) {
+            throw stripeFailure;
+        }
+        if (runtimeFailure != null) {
+            throw runtimeFailure;
+        }
+        return total;
+    }
+
+    /**
+     * Make the Stripe refund for a row {@link #reserveCancelRefunds} committed, then record the result. NOT
      * transactional by design: the external call runs with no database transaction open, and each local step
      * is its own short transaction (through the proxy, so {@code REQUIRES_NEW} really applies). Call it with
      * {@code TenantContext} set, after the cancel's transaction has committed.
@@ -321,7 +426,7 @@ public class RefundService {
     }
 
     /**
-     * Record a cancel refund's outcome: the Stripe id and status on the row, and the order's payment status.
+     * Record a cancel refund's outcome: the Stripe id and status on the row, and, once every leg has its refund, the order's payment status.
      * {@code stripeRefund} is null when the row already carried a Stripe id (the webhook got there first), in
      * which case only the order is brought up to date. A status the webhook has already advanced is never
      * moved backwards by the create response.
@@ -340,11 +445,29 @@ public class RefundService {
         }
         Order order = orderRepository.findById(refund.getOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + refund.getOrderId()));
-        order.setPaymentStatus(PaymentStatus.REFUNDED);
-        order.setUpdatedAt(OffsetDateTime.now());
-        orderRepository.save(order);
+        // The order reads REFUNDED only when EVERY captured PaymentIntent has its refund; a deposit refunded
+        // while the balance leg is still unfinished leaves it CAPTURED, which is what lets a repeat finish it.
+        if (allLegsRefunded(order)) {
+            order.setPaymentStatus(PaymentStatus.REFUNDED);
+            order.setUpdatedAt(OffsetDateTime.now());
+            orderRepository.save(order);
+        }
         log.info("Cancel refund {} recorded for order {} (Stripe={})", refundId, order.getId(),
                 refund.getStripeRefundId());
+    }
+
+    private boolean allLegsRefunded(Order order) {
+        List<CancelLeg> legs = cancelRefundLegs(order);
+        if (legs.isEmpty()) {
+            return false;
+        }
+        List<Refund> rows = refundRepository.findByOrderIdOrderByRequestedAtDesc(order.getId()).stream()
+                .filter(RefundService::isCancelRow)
+                .filter(RefundService::isLiveStatus)
+                .filter(r -> r.getStripeRefundId() != null)
+                .toList();
+        return legs.stream().allMatch(leg -> rows.stream()
+                .anyMatch(r -> leg.paymentIntentId().equals(r.getPaymentIntentId())));
     }
 
     /** The call is routed through the Spring proxy when there is one; plain {@code this} in a unit test. */
@@ -423,7 +546,8 @@ public class RefundService {
      */
     private StripeCall buildStripeCall(Order order, Refund refund) {
         RefundCreateParams.Builder paramsBuilder = RefundCreateParams.builder()
-                .setPaymentIntent(order.getPaymentReference())
+                // The row's own intent: for a deposit-split order the deposit and the balance are separate charges.
+                .setPaymentIntent(refund.getPaymentIntentId())
                 .setAmount(refund.getAmountPennies())
                 .setReason(RefundReason.toStripeReason(refund.getReason()))
                 .putMetadata("refund_id", refund.getId().toString())
@@ -461,7 +585,7 @@ public class RefundService {
     /**
      * Persist a Stripe failure to the Refund row in a brand-new transaction, so the failure is durable even
      * when the caller's transaction rolls back. It only has an effect on a row that is ALREADY COMMITTED, which
-     * is what {@link #reserveCancelRefund} guarantees for the customer-cancel path. Callers must reach it
+     * is what {@link #reserveCancelRefunds} guarantees for the customer-cancel path. Callers must reach it
      * through the Spring proxy ({@code self()}); a plain self-call never opens the new transaction.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)

@@ -13149,7 +13149,7 @@
     },
     "/api/v1/public/orders/{orderNumber}/cancel" : {
       "post" : {
-        "description" : "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the path and the email address the order was placed with in the body; a signed-in customer sends X-Customer-Token and no email. A card-paid order is refunded in full to the card; a pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 (errors/order-not-cancellable-by-customer, contactShop true): contact the shop. An order paid in parts is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key replays the outcome and never refunds twice; the same key for another order is refused 422 (errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a cancelled order is a 200 that changes nothing.",
+        "description" : "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the path and the email address the order was placed with in the body; a signed-in customer sends X-Customer-Token and no email. A card-paid order is refunded what was actually paid, to the card: in full, or for a deposit order the deposit (and the balance if it was paid), one refund per charge; a pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 (errors/order-not-cancellable-by-customer, contactShop true): contact the shop. A payment that has not settled, or a deposit order whose deposit charge was not recorded, is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key replays the outcome and never refunds twice; the same key for another order is refused 422 (errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a cancelled order is a 200 that changes nothing.",
         "operationId" : "cancelOrder",
         "parameters" : [
           {
@@ -13238,7 +13238,7 @@
                 }
               }
             },
-            "description" : "The kitchen has accepted the order or it was paid in parts (errors/order-not-cancellable-by-customer), or the order changed while cancelling"
+            "description" : "The kitchen has accepted the order or its payment is not settled (errors/order-not-cancellable-by-customer), or the order changed while cancelling"
           },
           "422" : {
             "content" : {
@@ -16855,7 +16855,7 @@
     },
     "/public/orders/{orderNumber}/cancel" : {
       "post" : {
-        "description" : "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the path and the email address the order was placed with in the body; a signed-in customer sends X-Customer-Token and no email. A card-paid order is refunded in full to the card; a pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 (errors/order-not-cancellable-by-customer, contactShop true): contact the shop. An order paid in parts is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key replays the outcome and never refunds twice; the same key for another order is refused 422 (errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a cancelled order is a 200 that changes nothing.",
+        "description" : "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the path and the email address the order was placed with in the body; a signed-in customer sends X-Customer-Token and no email. A card-paid order is refunded what was actually paid, to the card: in full, or for a deposit order the deposit (and the balance if it was paid), one refund per charge; a pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 (errors/order-not-cancellable-by-customer, contactShop true): contact the shop. A payment that has not settled, or a deposit order whose deposit charge was not recorded, is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key replays the outcome and never refunds twice; the same key for another order is refused 422 (errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a cancelled order is a 200 that changes nothing.",
         "operationId" : "cancelOrder_1",
         "parameters" : [
           {
@@ -16944,7 +16944,7 @@
                 }
               }
             },
-            "description" : "The kitchen has accepted the order or it was paid in parts (errors/order-not-cancellable-by-customer), or the order changed while cancelling"
+            "description" : "The kitchen has accepted the order or its payment is not settled (errors/order-not-cancellable-by-customer), or the order changed while cancelling"
           },
           "422" : {
             "content" : {

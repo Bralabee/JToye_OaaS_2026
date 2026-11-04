@@ -155,4 +155,42 @@ describe("CancelOrderPanel", () => {
     expect(alert).toHaveTextContent(/refund/i)
     expect(alert).not.toHaveTextContent(/has not been cancelled/i)
   })
+
+  it("#868 ruling: a deposit order with the balance still due offers Cancel and states the DEPOSIT as the amount refunded", () => {
+    render(
+      <CancelOrderPanel
+        {...base}
+        status="PENDING"
+        paymentStatus="CAPTURED"
+        totalAmountPennies={3000}
+        depositAmountPennies={900}
+        balanceDuePennies={2100}
+        onCancelled={jest.fn()}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /cancel this order/i }))
+    expect(screen.getByText(/£9\.00 deposit you paid will be refunded/i)).toBeInTheDocument()
+    expect(screen.queryByText(/£30\.00/)).toBeNull()
+  })
+
+  it("#868 ruling: a deposit order whose balance is also paid, and an ordinary card order, state the whole amount paid", () => {
+    const { unmount } = render(
+      <CancelOrderPanel
+        {...base}
+        status="PENDING"
+        paymentStatus="CAPTURED"
+        totalAmountPennies={3000}
+        depositAmountPennies={900}
+        balanceDuePennies={0}
+        onCancelled={jest.fn()}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /cancel this order/i }))
+    expect(screen.getByText(/£30\.00 you paid will be refunded in full/i)).toBeInTheDocument()
+    unmount()
+
+    render(<CancelOrderPanel {...base} status="PENDING" paymentStatus="CAPTURED" totalAmountPennies={1500} onCancelled={jest.fn()} />)
+    fireEvent.click(screen.getByRole("button", { name: /cancel this order/i }))
+    expect(screen.getByText(/£15\.00 you paid will be refunded in full/i)).toBeInTheDocument()
+  })
 })

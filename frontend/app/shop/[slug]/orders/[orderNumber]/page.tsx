@@ -49,6 +49,8 @@ interface OrderStatus extends PublicOrderAllergenRecord {
    * totalAmountPennies = subtotalPennies + deliveryFeePennies (Order.calculateTotal); VAT is inside.
    */
   paymentStatus?: string | null
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
   fulfilmentType?: FulfilmentType | null
   subtotalPennies?: number | null
   deliveryFeePennies?: number | null
@@ -609,6 +611,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             shopName={order.shopName}
             status={order.status}
             paymentStatus={order.paymentStatus}
+            totalAmountPennies={order.totalAmountPennies}
+            depositAmountPennies={order.depositAmountPennies}
+            balanceDuePennies={order.balanceDuePennies}
             email={email}
             onCancelled={(result) => {
               lastStatusRef.current = result.status

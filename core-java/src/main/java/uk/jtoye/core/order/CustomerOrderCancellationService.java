@@ -18,6 +18,7 @@ import uk.jtoye.core.payment.RefundService;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storefront.dto.CustomerCancelResult;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -34,9 +35,13 @@ import java.util.UUID;
  *       afterwards (see "Order of effects"). A refund that does not complete leaves a cancelled order whose
  *       customer is told so and whose retry finishes the refund.</li>
  * </ul>
- * <b>Not decided by the ruling, and therefore refused (contact the shop):</b> an order paid in parts
- * (deposit and balance, V87) and an order whose payment has not settled either way. Their refund amount is
- * a policy question nobody has answered, and guessing it would move money.
+ * An order paid in parts (deposit and balance, V87) is refunded what was ACTUALLY PAID (owner ruling
+ * 2026-11-04): the captured deposit, or the deposit and the balance when both were paid, as one refund per
+ * captured PaymentIntent ({@link RefundService#cancelRefundLegs}), each with its own stable Stripe key.
+ *
+ * <b>Refused (contact the shop):</b> an order whose payment has not settled either way (PENDING, AUTHORIZED,
+ * FAILED), and a deposit order paid in both stages before V90 recorded the deposit intent: the deposit leg
+ * cannot be refunded without its intent, and refunding only the balance would be a guess about money.
  *
  * <h2>Order of effects (review of PR #1120, A1/A2)</h2>
  * <ol>
@@ -111,15 +116,15 @@ public class CustomerOrderCancellationService {
 
     /**
      * What the first transaction decided. {@code result} is the answer when nothing remains to do;
-     * {@code refundId} is set when a committed Refund row still needs its Stripe call.
+     * {@code refundIds} lists the committed Refund rows (one per captured PaymentIntent) that still need their Stripe call.
      */
-    private record Plan(String orderNumber, UUID orderId, UUID tenantId, UUID refundId, CustomerCancelResult result) {
+    private record Plan(String orderNumber, UUID orderId, UUID tenantId, List<UUID> refundIds, CustomerCancelResult result) {
         static Plan done(Order order, CustomerCancelResult result) {
-            return new Plan(order.getOrderNumber(), order.getId(), order.getTenantId(), null, result);
+            return new Plan(order.getOrderNumber(), order.getId(), order.getTenantId(), List.of(), result);
         }
 
-        static Plan refunding(Order order, UUID refundId) {
-            return new Plan(order.getOrderNumber(), order.getId(), order.getTenantId(), refundId, null);
+        static Plan refunding(Order order, List<UUID> refundIds) {
+            return new Plan(order.getOrderNumber(), order.getId(), order.getTenantId(), refundIds, null);
         }
     }
 
@@ -135,7 +140,7 @@ public class CustomerOrderCancellationService {
         }
         // Transaction 1: ownership, the cancel, the reserved refund and the ledger reversal. Commits here.
         Plan plan = tx.execute(status -> decide(orderNumber, email, idempotencyKey));
-        if (plan.refundId() == null) {
+        if (plan.refundIds().isEmpty()) {
             return plan.result();
         }
 
@@ -143,7 +148,7 @@ public class CustomerOrderCancellationService {
         TenantContext.set(plan.tenantId());
         try {
             try {
-                refundService.issueCancelRefund(plan.refundId());
+                refundService.issueCancelRefunds(plan.refundIds());
             } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
                 log.warn("Refund for customer cancel of order {} did not complete: {}", plan.orderNumber(), e.getMessage());
                 throw new CustomerCancelRefundFailedException(plan.orderNumber(), e);
@@ -204,13 +209,16 @@ public class CustomerOrderCancellationService {
         }
 
         // PENDING. Work out whether money moved, and refuse what the ruling did not cover.
-        boolean paidInParts = order.getDepositAmountPennies() != null
-                || (order.getBalanceDuePennies() != null && order.getBalanceDuePennies() > 0);
         PaymentStatus payment = order.getPaymentStatus() == null ? PaymentStatus.NONE : order.getPaymentStatus();
         boolean hasReference = order.getPaymentReference() != null && !order.getPaymentReference().isBlank();
-        boolean cashOrder = payment == PaymentStatus.NONE && !hasReference;
-        boolean cardCaptured = payment == PaymentStatus.CAPTURED && hasReference;
-        if (paidInParts || !(cashOrder || cardCaptured)) {
+        boolean paidInParts = order.getDepositAmountPennies() != null
+                || (order.getBalanceDuePennies() != null && order.getBalanceDuePennies() > 0);
+        boolean cashOrder = payment == PaymentStatus.NONE && !hasReference && !paidInParts;
+        // Card: what was actually paid, leg by leg. No determinable leg (e.g. both stages paid before V90) is
+        // a refusal, never a guess.
+        boolean cardCaptured = payment == PaymentStatus.CAPTURED && hasReference
+                && !RefundService.cancelRefundLegs(order).isEmpty();
+        if (!(cashOrder || cardCaptured)) {
             throw new CustomerCancelNotAllowedException(order.getOrderNumber(), order.getStatus().name(), Reason.PAYMENT_STATE);
         }
 
@@ -226,12 +234,12 @@ public class CustomerOrderCancellationService {
         // Everything local that a card cancel needs is written, flushed and committed BEFORE Stripe is asked:
         // the Refund row (CREATING) and the ledger reversal. After this transaction only Stripe's answer and
         // its recording are left, and neither can resurrect a PENDING order.
-        UUID refundId = refundService.reserveCancelRefund(order.getId());
+        List<UUID> refundIds = refundService.reserveCancelRefunds(order.getId());
         financialTransactionService.findSaleForOrder(order.getId()).ifPresent(sale ->
                 financialTransactionService.createReversal(sale, "Reversal of " + order.getOrderNumber()));
         orderRepository.flush();
-        log.info("Order {} cancelled by its customer; refund {} reserved", order.getOrderNumber(), refundId);
-        return Plan.refunding(order, refundId);
+        log.info("Order {} cancelled by its customer; refunds {} reserved", order.getOrderNumber(), refundIds);
+        return Plan.refunding(order, refundIds);
     }
 
     /**
@@ -245,9 +253,9 @@ public class CustomerOrderCancellationService {
                 && order.getPaymentReference() != null && !order.getPaymentReference().isBlank()
                 && refundService.hasCancelRefund(order.getId());
         if (unfinishedCardRefund) {
-            UUID refundId = refundService.reserveCancelRefund(order.getId());
-            log.info("Order {} was cancelled with its refund unfinished; resuming refund {}", order.getOrderNumber(), refundId);
-            return Plan.refunding(order, refundId);
+            List<UUID> refundIds = refundService.reserveCancelRefunds(order.getId());
+            log.info("Order {} was cancelled with its refund unfinished; resuming refunds {}", order.getOrderNumber(), refundIds);
+            return Plan.refunding(order, refundIds);
         }
         return Plan.done(order, describe(order));
     }
@@ -258,14 +266,17 @@ public class CustomerOrderCancellationService {
                         "Order not found. Check your order number and email address."));
     }
 
-    private static CustomerCancelResult describe(Order order) {
+    private CustomerCancelResult describe(Order order) {
         boolean refunded = order.getPaymentStatus() == PaymentStatus.REFUNDED;
+        // What was actually refunded: a deposit order's customer got the deposit (and the balance if paid),
+        // not necessarily the order total. An order refunded some other way keeps reporting its total.
+        long refundedByCancel = refunded ? refundService.cancelRefundedPennies(order.getId()) : 0L;
         return new CustomerCancelResult(
                 order.getOrderNumber(),
                 order.getStatus().name(),
                 order.getPaymentStatus() == null ? PaymentStatus.NONE.name() : order.getPaymentStatus().name(),
                 refunded,
-                refunded ? order.getTotalAmountPennies() : null);
+                refunded ? (refundedByCancel > 0 ? refundedByCancel : order.getTotalAmountPennies()) : null);
     }
 
     /** The guest-tracking GUCs (V17): the proof of ownership the RLS policy reads. Transaction-local. */

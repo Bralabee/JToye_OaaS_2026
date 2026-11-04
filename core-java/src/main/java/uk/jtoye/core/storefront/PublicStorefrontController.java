@@ -442,10 +442,11 @@ public class PublicStorefrontController {
     @Operation(summary = "Cancel your own order (before the kitchen accepts it)",
             description = "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the "
                     + "path and the email address the order was placed with in the body; a signed-in customer sends "
-                    + "X-Customer-Token and no email. A card-paid order is refunded in full to the card; a pay-on-delivery "
-                    + "order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 "
-                    + "(errors/order-not-cancellable-by-customer, contactShop true): contact the shop. An order paid in "
-                    + "parts is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key "
+                    + "X-Customer-Token and no email. A card-paid order is refunded what was actually paid, to the card: in "
+                    + "full, or for a deposit order the deposit (and the balance if it was paid), one refund per charge; a "
+                    + "pay-on-delivery order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 "
+                    + "(errors/order-not-cancellable-by-customer, contactShop true): contact the shop. A payment that has "
+                    + "not settled, or a deposit order whose deposit charge was not recorded, is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key "
                     + "replays the outcome and never refunds twice; the same key for another order is refused 422 "
                     + "(errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a "
                     + "cancelled order is a 200 that changes nothing.")
@@ -455,8 +456,8 @@ public class PublicStorefrontController {
             @ApiResponse(responseCode = "400", description = "Neither an email nor a customer token was supplied"),
             @ApiResponse(responseCode = "401", description = "X-Customer-Token was supplied and did not verify"),
             @ApiResponse(responseCode = "404", description = "No order with this number and email"),
-            @ApiResponse(responseCode = "409", description = "The kitchen has accepted the order or it was paid in "
-                    + "parts (errors/order-not-cancellable-by-customer), or the order changed while cancelling"),
+            @ApiResponse(responseCode = "409", description = "The kitchen has accepted the order or its payment is not "
+                    + "settled (errors/order-not-cancellable-by-customer), or the order changed while cancelling"),
             @ApiResponse(responseCode = "422", description = "The Idempotency-Key was used for a different order"),
             @ApiResponse(responseCode = "502", description = "The order IS cancelled but the card refund has not "
                     + "completed (errors/refund-failed); repeat the same request (same Idempotency-Key) to retry "

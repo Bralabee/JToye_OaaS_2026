@@ -124,6 +124,15 @@ class CustomerOrderCancelIntegrationTest {
                 insertSale(c, 1100L);
                 ORD.put(k, c);
             }
+            for (String k : new String[]{"bothPaid", "bothPartial"}) {
+                Seeded b = order(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_868_bal_" + k, 3000L, 900L, 0L);
+                jdbc.update("UPDATE orders SET deposit_payment_reference = ? WHERE id = ?", "pi_868_dep_" + k, b.id);
+                insertSale(b, 3000L);
+                ORD.put(k, b);
+            }
+            ORD.put("bothLegacy", order(TENANT_A, shopA, "PENDING", "CAPTURED", "pi_868_bal_legacy", 3000L, 900L, 0L));
+            ORD.put("authorized", order(TENANT_A, shopA, "PENDING", "AUTHORIZED", "pi_868_auth", 1000L, null, null));
+            ORD.put("payPending", order(TENANT_A, shopA, "PENDING", "PENDING", "pi_868_pend", 1000L, null, null));
             ORD.put("cross", order(TENANT_A, shopA, "PENDING", "NONE", null, 1000L, null, null));
             jdbc.execute("ALTER ROLE \"" + postgres.getUsername() + "\" NOSUPERUSER NOBYPASSRLS");
             seeded = true;
@@ -312,15 +321,107 @@ class CustomerOrderCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("a deposit (paid in parts) order is not cancelled online: typed 409, nothing refunded")
-    void depositOrder_isRefused() throws Exception {
+    @DisplayName("deposit order, balance still due: the customer is refunded the DEPOSIT actually paid, on the deposit's own PaymentIntent")
+    void depositOrder_refundsTheDepositPaid() throws Exception {
         Seeded o = ORD.get("deposit");
+        fakeStripe();
+
+        MvcResult res = cancel(o.number, "{\"email\":\"" + o.email + "\"}", "key-868-dep-" + SEQ.incrementAndGet(), null);
+
+        assertThat(res.getResponse().getStatus()).as(body(res)).isEqualTo(200);
+        JsonNode out = json.readTree(raw(res));
+        assertThat(out.path("status").asString()).isEqualTo("CANCELLED");
+        assertThat(out.path("refunded").asBoolean()).isTrue();
+        assertThat(out.path("refundAmountPennies").asLong()).as("what was paid, not the order total").isEqualTo(900L);
+        assertThat(stripeCalls).hasSize(1);
+        assertThat(stripeCalls.get(0).params().get("payment_intent")).isEqualTo("pi_868_dep");
+        assertThat(stripeCalls.get(0).params().get("amount")).isEqualTo(900L);
+        assertThat(col(o, "payment_status")).isEqualTo("REFUNDED");
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND amount_pennies = 900 "
+                + "AND payment_intent_id = 'pi_868_dep' AND status = 'succeeded'", o.id)).isEqualTo(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM financial_transactions WHERE order_id = ?", o.id))
+                .as("a deposit books no sale until completion, so there is nothing to reverse").isZero();
+    }
+
+    @Test
+    @DisplayName("deposit AND balance paid: two refunds, one per PaymentIntent, each for what it charged and each with its own key")
+    void depositAndBalancePaid_refundsBothChargesSeparately() throws Exception {
+        Seeded o = ORD.get("bothPaid");
+        fakeStripe();
+        String key = "key-868-both-" + SEQ.incrementAndGet();
+
+        MvcResult res = cancel(o.number, "{\"email\":\"" + o.email + "\"}", key, null);
+
+        assertThat(res.getResponse().getStatus()).as(body(res)).isEqualTo(200);
+        assertThat(json.readTree(raw(res)).path("refundAmountPennies").asLong()).isEqualTo(3000L);
+        assertThat(stripeCalls).hasSize(2);
+        assertThat(stripeCalls).extracting(c -> c.params().get("payment_intent"))
+                .containsExactlyInAnyOrder("pi_868_dep_bothPaid", "pi_868_bal_bothPaid");
+        assertThat(stripeCalls.stream().filter(c -> "pi_868_dep_bothPaid".equals(c.params().get("payment_intent")))
+                .findFirst().orElseThrow().params().get("amount")).isEqualTo(900L);
+        assertThat(stripeCalls.stream().filter(c -> "pi_868_bal_bothPaid".equals(c.params().get("payment_intent")))
+                .findFirst().orElseThrow().params().get("amount")).isEqualTo(2100L);
+        assertThat(stripeCalls.get(0).key()).as("a deposit and a balance are separate charges: separate keys")
+                .isNotEqualTo(stripeCalls.get(1).key());
+        assertThat(col(o, "payment_status")).isEqualTo("REFUNDED");
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'succeeded'", o.id)).isEqualTo(2);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM financial_transactions WHERE order_id = ? "
+                + "AND entry_kind = 'REVERSAL' AND amount_pennies = -3000", o.id)).isEqualTo(1);
+
+        MvcResult replay = cancel(o.number, "{\"email\":\"" + o.email + "\"}", key, null);
+        assertThat(replay.getResponse().getStatus()).isEqualTo(200);
+        assertThat(stripeCalls).as("a replay refunds nothing again").hasSize(2);
+    }
+
+    @Test
+    @DisplayName("deposit refunded but the balance leg refused: order CANCELLED and still CAPTURED, 502; the repeat sends ONLY the balance leg")
+    void balanceLegFails_depositLegIsNotRepeated() throws Exception {
+        Seeded o = ORD.get("bothPartial");
+        fakeStripe("pi_868_bal_bothPartial");
+
+        MvcResult first = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
+
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'succeeded' "
+                + "AND payment_intent_id = 'pi_868_dep_bothPartial'", o.id)).isEqualTo(1);
+        assertThat(longQ(o.tenant, "SELECT count(*) FROM refunds WHERE order_id = ? AND status = 'failed' "
+                + "AND payment_intent_id = 'pi_868_bal_bothPartial'", o.id)).isEqualTo(1);
+        assertThat(col(o, "status")).isEqualTo("CANCELLED");
+        assertThat(col(o, "payment_status")).as("not REFUNDED while a leg is unfinished").isEqualTo("CAPTURED");
+        assertThat(first.getResponse().getStatus()).as(body(first)).isEqualTo(502);
+
+        stripeCalls.clear();
+        fakeStripe();
+        MvcResult retry = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
+
+        assertThat(retry.getResponse().getStatus()).as(body(retry)).isEqualTo(200);
+        assertThat(stripeCalls).as("the deposit is already refunded; only the balance is sent").hasSize(1);
+        assertThat(stripeCalls.get(0).params().get("payment_intent")).isEqualTo("pi_868_bal_bothPartial");
+        assertThat(col(o, "payment_status")).isEqualTo("REFUNDED");
+        assertThat(json.readTree(raw(retry)).path("refundAmountPennies").asLong()).isEqualTo(3000L);
+    }
+
+    @Test
+    @DisplayName("a deposit order paid in both stages BEFORE the deposit intent was recorded is refused (409), never half-refunded")
+    void bothStagesButDepositIntentUnknown_isRefused() throws Exception {
+        Seeded o = ORD.get("bothLegacy");
 
         MvcResult res = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
 
         assertThat(res.getResponse().getStatus()).as(body(res)).isEqualTo(409);
-        assertThat(json.readTree(raw(res)).path("type").asString()).endsWith("/errors/order-not-cancellable-by-customer");
+        assertThat(json.readTree(raw(res)).path("reason").asString()).isEqualTo("PAYMENT_STATE");
         assertThat(col(o, "status")).isEqualTo("PENDING");
+        verify(stripeRefundClient, never()).create(any(), any());
+    }
+
+    @Test
+    @DisplayName("a payment that has not settled (AUTHORIZED, PENDING) is still refused with the contact-the-shop 409")
+    void unsettledPayment_isRefused() throws Exception {
+        for (String k : new String[]{"authorized", "payPending"}) {
+            Seeded o = ORD.get(k);
+            MvcResult res = cancel(o.number, "{\"email\":\"" + o.email + "\"}", null, null);
+            assertThat(res.getResponse().getStatus()).as(k + ": " + body(res)).isEqualTo(409);
+            assertThat(col(o, "status")).isEqualTo("PENDING");
+        }
         verify(stripeRefundClient, never()).create(any(), any());
     }
 
@@ -447,6 +548,11 @@ class CustomerOrderCancelIntegrationTest {
      * already made; the same key with DIFFERENT parameters is refused (IdempotencyException, 400).
      */
     private void fakeStripe() throws Exception {
+        fakeStripe(null);
+    }
+
+    /** As {@link #fakeStripe()}, but Stripe REFUSES (400) any refund on {@code refusedIntent}. */
+    private void fakeStripe(String refusedIntent) throws Exception {
         org.mockito.Mockito.doAnswer(inv -> {
             RefundCreateParams params = inv.getArgument(0);
             RequestOptions options = inv.getArgument(1);
@@ -459,6 +565,9 @@ class CustomerOrderCancelIntegrationTest {
                 else flat.put(k, v);
             });
             stripeCalls.add(new StripeCallSeen(key, flat));
+            if (refusedIntent != null && refusedIntent.equals(flat.get("payment_intent"))) {
+                throw new InvalidRequestException("charge_already_refunded", "req_x", "charge_already_refunded", null, 400, null);
+            }
             Map<String, Object> prev = stripeSeen.putIfAbsent(key, flat);
             if (prev != null && !prev.equals(flat)) {
                 throw new IdempotencyException("Keys for idempotent requests can only be used with the same parameters "

@@ -28,3 +28,5 @@ Each is an OWNER RULING made 2026-11-04. Where a future reader needs the why, th
 - No migration in this lane (V90 is #1115, V91 the vendor-rulings lane; any later need takes V92+).
 - No new third-party script; CSP unchanged. Keycloak account console is a plain link.
 - MCP: none for #868 (customer's own action; the MCP server acts for a vendor). None for #5 (a customer's own profile).
+
+- #868 deposit/balance (owner ruling 2026-11-04, coordinator step 2): refund what was actually paid, one Refund row and one Stripe key per captured PaymentIntent (`RefundService.cancelRefundLegs`); V90 `orders.deposit_payment_reference` keeps the deposit intent the balance webhook used to overwrite; pre-V90 orders paid in both stages stay refused.

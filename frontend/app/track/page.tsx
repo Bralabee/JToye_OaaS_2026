@@ -46,6 +46,9 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
   fulfilmentType?: string | null
   /** NONE, CAPTURED, REFUNDED ...: whether a card payment was taken (decides the refund sentence, #868). */
   paymentStatus?: string | null
+  /** Deposit-split orders (V87): what was charged up front and what is still due. Absent on ordinary orders. */
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -564,6 +567,9 @@ function TrackOrderContent() {
             shopName={order.shopName}
             status={order.status}
             paymentStatus={order.paymentStatus}
+            totalAmountPennies={order.totalAmountPennies}
+            depositAmountPennies={order.depositAmountPennies}
+            balanceDuePennies={order.balanceDuePennies}
             email={orderFromList ? "" : email}
             onCancelled={(result) =>
               showOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })

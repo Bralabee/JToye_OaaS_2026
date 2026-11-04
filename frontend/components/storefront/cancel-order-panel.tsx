@@ -27,6 +27,26 @@ export interface CancelResult {
 
 const SHOW_CONTACT_STATUSES = ["CONFIRMED", "PREPARING", "READY"]
 
+function formatPrice(pennies: number): string {
+  return `£${(pennies / 100).toFixed(2)}`
+}
+
+/**
+ * What core refunds on a cancel (owner ruling 2026-11-04): what was ACTUALLY paid. An ordinary card order:
+ * the total. A deposit order with the balance still due: the deposit. A deposit order whose balance is also
+ * paid: the total. Null when the response does not carry the figures (the sentence then stays generic).
+ */
+export function refundAmountPennies(o: {
+  totalAmountPennies?: number | null
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
+}): { pennies: number; depositOnly: boolean } | null {
+  const { totalAmountPennies: total, depositAmountPennies: deposit, balanceDuePennies: balance } = o
+  if (deposit != null && deposit > 0 && balance != null && balance > 0) return { pennies: deposit, depositOnly: true }
+  if (total != null && total > 0) return { pennies: total, depositOnly: false }
+  return null
+}
+
 /**
  * Core refuses a PENDING order permanently unless it is pay-on-delivery (NONE) or a captured card payment:
  * a card payment still PENDING/AUTHORIZED, or FAILED, is a payment-state refusal, and so is a deposit/balance
@@ -43,6 +63,9 @@ export function CancelOrderPanel({
   status,
   paymentStatus,
   email,
+  totalAmountPennies,
+  depositAmountPennies,
+  balanceDuePennies,
   onCancelled,
   onRefused,
 }: {
@@ -52,6 +75,10 @@ export function CancelOrderPanel({
   paymentStatus?: string | null
   /** The guest proof. Omitted/blank for a signed-in customer, whose token the server reads from its cookie. */
   email?: string
+  /** The order's money, so a deposit order can say what will actually be refunded. All optional. */
+  totalAmountPennies?: number | null
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
   onCancelled: (result: CancelResult) => void
   /** Core refused (typed 409): the order is no longer PENDING. The page should refresh it. */
   onRefused?: () => void
@@ -89,6 +116,7 @@ export function CancelOrderPanel({
   }
 
   const cardPaid = paymentStatus === "CAPTURED"
+  const refund = cardPaid ? refundAmountPennies({ totalAmountPennies, depositAmountPennies, balanceDuePennies }) : null
 
   async function submit() {
     setSubmitting(true)
@@ -159,7 +187,12 @@ export function CancelOrderPanel({
         <div className="mt-3 space-y-3">
           <p className="text-sm text-slate-800">
             Cancel order {orderNumber}?
-            {cardPaid && " The amount you paid will be refunded in full to the card you paid with."}
+            {cardPaid &&
+              (refund
+                ? refund.depositOnly
+                  ? ` The ${formatPrice(refund.pennies)} deposit you paid will be refunded to the card you paid with. You will not be asked for the balance.`
+                  : ` The ${formatPrice(refund.pennies)} you paid will be refunded in full to the card you paid with.`
+                : " The amount you paid will be refunded in full to the card you paid with.")}
           </p>
           <div className="flex flex-wrap gap-2">
             <button
