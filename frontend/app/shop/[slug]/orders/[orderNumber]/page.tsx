@@ -14,6 +14,7 @@ import { lookupGuestOrder } from "@/lib/order-lookup"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
 import { SellerBlock } from "@/components/storefront/seller-block"
+import { ReviewOrder } from "@/components/storefront/review-order"
 import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { consumeJustPlaced } from "@/lib/just-placed"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
@@ -115,11 +116,16 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     ? localStorage.getItem(`jtoye-checkout-email-${slug}`) || ""
     : ""
   const [email, setEmail] = useState<string>(checkoutEmail)
+  // #846: whether a customer is signed in decides whether "Rate your order" is offered (the review is
+  // posted with their token, which a guest does not have). Never the email: the page keeps using the
+  // email only for the tracking read, and the review form is not handed it.
+  const [signedIn, setSignedIn] = useState(false)
   useEffect(() => {
     let cancelled = false
     getCustomerSession().then((session) => {
       if (cancelled) return
       if (session?.profile?.email) setEmail(session.profile.email)
+      if (session?.profile) setSignedIn(true)
     })
     return () => {
       cancelled = true
@@ -641,6 +647,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           <Package className="h-4 w-4" />
           Track this order
         </Link>
+        {/* #846: a signed-in customer can review a COMPLETED order here as well as on My Orders. */}
+        {signedIn && order?.status === "COMPLETED" && (
+          <ReviewOrder shopSlug={slug} orderNumber={orderNumber} shopName={order.shopName} />
+        )}
         <Link
           href={`/shop/${slug}`}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3 text-sm font-bold text-white hover:bg-oxblood-700 transition-all"

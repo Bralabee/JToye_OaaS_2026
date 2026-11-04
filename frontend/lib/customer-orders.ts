@@ -28,6 +28,13 @@ export interface OrderSummary extends PublicOrderAllergenRecord {
   orderNumber: string
   status: string
   shopName: string
+  /**
+   * #845: the slug of the shop the order came from, so a past order can link to it ("Order again", "Rate
+   * your order"). On `/public/orders/mine` only. Optional AND nullable, and both absences mean the same
+   * thing: there is no shop page to go to (an older backend, or a shop that is no longer published), so
+   * neither action is offered.
+   */
+  shopSlug?: string | null
   totalAmountPennies: number
   itemCount: number
   /**

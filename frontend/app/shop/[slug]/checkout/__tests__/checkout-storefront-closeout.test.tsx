@@ -14,6 +14,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import CheckoutPage from "@/app/shop/[slug]/checkout/page"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
+import { getCustomerSession } from "@/lib/customer-auth"
 
 if (!globalThis.crypto || typeof globalThis.crypto.randomUUID !== "function") {
   Object.defineProperty(globalThis, "crypto", {
@@ -392,5 +393,92 @@ describe("#876 UXT-104: the address, phone and notes survive Back then Forward",
     placeOrder()
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(sessionStorage.getItem(`jtoye-checkout-draft-${SLUG}`)).toBeNull())
+  })
+})
+
+// ---- #845: the signed-in customer's last delivery address is offered, to them only -----------------
+
+describe("#845: the last delivery address is prefilled for the signed-in customer, and only for them", () => {
+  const A_ADDRESS = { address1: "12 Coldharbour Lane", address2: "Flat 3", city: "London", postcode: "SW9 8LF", phone: "07700 900001" }
+  const session = (sub: string) => ({
+    profile: { sub, email: `${sub}@example.com`, name: sub === "user-A" ? "Ade Johnson" : "Bola Smith", emailVerified: true },
+    expiresAt: Math.floor(Date.now() / 1000) + 300,
+  })
+  function signIn(sub: string) {
+    localStorage.setItem("jtoye-customer-id", sub)
+    localStorage.setItem("jtoye-customer-logged-in", "true")
+    localStorage.setItem("jtoye-customer-expires-at", String(Math.floor(Date.now() / 1000) + 300))
+    ;(getCustomerSession as jest.Mock).mockResolvedValue(session(sub))
+  }
+  const storedLast = () => JSON.parse(localStorage.getItem("jtoye-last-delivery") ?? "null")
+
+  afterEach(() => {
+    ;(getCustomerSession as jest.Mock).mockResolvedValue(null)
+  })
+
+  it("customer A's address and phone are prefilled at A's next checkout", async () => {
+    signIn("user-A")
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", ...A_ADDRESS }))
+    seedCart()
+    renderCheckout()
+    await screen.findByTestId("order-allergen-panel")
+    await waitFor(() => expect(screen.getByLabelText(/address line 1/i)).toHaveValue("12 Coldharbour Lane"))
+    expect(screen.getByLabelText(/address line 2/i)).toHaveValue("Flat 3")
+    expect(screen.getByLabelText(/town \/ city/i)).toHaveValue("London")
+    expect(screen.getByLabelText(/^postcode/i)).toHaveValue("SW9 8LF")
+    expect(screen.getByLabelText(/phone number/i)).toHaveValue("07700 900001")
+    // and the name and email still come from the session, as before
+    expect(screen.getByLabelText(/full name/i)).toHaveValue("Ade Johnson")
+  })
+
+  it("through the transition: B signing in on the same browser is NOT offered A's address, and the stored stamp is still A's", async () => {
+    signIn("user-A")
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", ...A_ADDRESS }))
+    signIn("user-B")
+    seedCart()
+    renderCheckout()
+    await screen.findByTestId("order-allergen-panel")
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toHaveValue("Bola Smith"))
+    expect(screen.getByLabelText(/address line 1/i)).toHaveValue("")
+    expect(screen.getByLabelText(/phone number/i)).toHaveValue("")
+    // A mount is not a write: A's stamp and address are exactly as they were.
+    expect(storedLast()).toMatchObject({ owner: "user-A", address1: "12 Coldharbour Lane" })
+  })
+
+  it("a guest is offered nothing, and a lapsed session (nobody identified) is offered nothing", async () => {
+    localStorage.setItem("jtoye-last-delivery", JSON.stringify({ owner: "user-A", ...A_ADDRESS }))
+    seedCart()
+    renderCheckout()
+    await screen.findByTestId("order-allergen-panel")
+    expect(screen.getByLabelText(/address line 1/i)).toHaveValue("")
+    expect(storedLast()).toMatchObject({ owner: "user-A" })
+  })
+
+  it("placing a DELIVERY order as the signed-in customer stores their address with THEIR stamp; a guest's order stores nothing", async () => {
+    mockedPost.mockResolvedValue({ data: COD_CONFIRMATION })
+    signIn("user-B")
+    seedCart()
+    renderCheckout()
+    await screen.findByTestId("order-allergen-panel")
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toHaveValue("Bola Smith"))
+    fillAddress()
+    fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: "07700 900002" } })
+    acknowledgeAllergens()
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(storedLast()).toMatchObject({ owner: "user-B", address1: "12 Coldharbour Lane", phone: "07700 900002" }))
+  })
+
+  it("a guest's delivery order stores no address at all", async () => {
+    mockedPost.mockResolvedValue({ data: COD_CONFIRMATION })
+    seedCart()
+    renderCheckout()
+    await screen.findByTestId("order-allergen-panel")
+    fillDetails()
+    fillAddress()
+    acknowledgeAllergens()
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    expect(localStorage.getItem("jtoye-last-delivery")).toBeNull()
   })
 })
