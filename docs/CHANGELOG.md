@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Public Content: A Way In, Pricing, About and Draft Merchant Terms — 2026-11-04
+### Public Content: A Way In, Pricing, About and Draft Merchant Terms — 2026-11-04 (#1116)
 
 Quick 261104-public-content (persona close-out lane `public-content`). Issue 803 (UXT-031), issue 804 (UXT-032), issue 878 UXT-119 (the positioning and confidentiality half), SW-CLR-03 and SW-CLR-06 (epic issue 964). Three owner rulings of 2026-11-04 are cited where the copy lives.
 
