@@ -297,7 +297,8 @@ values
    'Wheat flour, beef, onion, potato', 0,
    'USE_BY', 3,
    1200, 'ZERO', 'Mains', true, 999, now())
-on conflict (tenant_id, sku) do update set
+on conflict (tenant_id, sku) where archived_at is null do update set
+  shop_id           = excluded.shop_id,
   vat_rate          = 'ZERO',
   price_pennies     = 1200,
   available         = true,

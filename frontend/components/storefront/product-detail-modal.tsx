@@ -240,14 +240,14 @@ export function ProductDetailModal({
             role="region"
             aria-label={`${product.title} details`}
             tabIndex={0}
-            className="flex-1 overflow-y-auto p-5 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-600"
+            className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 sm:space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-600"
           >
             {/* Title + price row */}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 {/* Renders the same <h2>; being the Radix Title is what wires
                     the dialog's aria-labelledby to the dish name. */}
-                <DialogPrimitive.Title className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <DialogPrimitive.Title className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
                   {product.featured && (
                     <Star className="h-4 w-4 text-amber-500 fill-amber-500 flex-shrink-0" />
                   )}
@@ -257,7 +257,7 @@ export function ProductDetailModal({
                   )}
                 </DialogPrimitive.Title>
               </div>
-              <span className="text-xl font-bold text-slate-900 whitespace-nowrap">
+              <span className="text-lg sm:text-xl font-bold text-slate-900 whitespace-nowrap">
                 {formatPrice(product.pricePennies)}
               </span>
             </div>
@@ -374,7 +374,7 @@ export function ProductDetailModal({
           </div>
 
           {/* Sticky add-to-cart footer */}
-          <div className="border-t border-cream-100 p-4 bg-white flex-shrink-0">
+          <div className="border-t border-cream-100 p-3 sm:p-4 bg-white flex-shrink-0">
             {outOfStock ? (
               <button
                 disabled
@@ -385,7 +385,7 @@ export function ProductDetailModal({
             ) : quantity === 0 ? (
               <button
                 onClick={onAdd}
-                className="w-full flex items-center justify-center gap-2 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink font-semibold py-3 px-4 transition-all active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink font-semibold py-3 px-3 sm:px-4 transition-all active:scale-[0.98]"
               >
                 <ShoppingBag className="h-5 w-5" />
                 Add to basket &middot; {formatPrice(product.pricePennies)}

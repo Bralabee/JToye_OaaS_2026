@@ -108,3 +108,42 @@ export async function checkShopSlug(
     return { kind: "pass" }
   }
 }
+
+/**
+ * Where the proxy rewrites an unknown kitchen to, so Next serves the page's own not-found screen
+ * with status 404 instead of proxying the request to itself.
+ *
+ * WHY NOT `req.nextUrl`. Measured 2026-11-04 on the delivered stack (frontend image, Next 16.4.3,
+ * `HOSTNAME=0.0.0.0` as the Dockerfile and compose set it): `GET /shop/<unknown>` hung for 30 s and
+ * answered 500, "Failed to proxy http://localhost:3000/shop/... socket hang up". Next builds the
+ * request URL a proxy sees from `localhost:PORT`, but decides whether a rewrite is INTERNAL by
+ * comparing its origin with `{protocol}://{HOSTNAME}:{PORT}` (resolve-routes.js `initUrl`). The two
+ * differ whenever the server is bound to 0.0.0.0, so the rewrite was treated as an EXTERNAL one and
+ * proxied over HTTP to the same server, which ran this proxy again and rewrote again, until the
+ * socket was dropped. `next dev` on its default host matches, which is why #1111 measured 404 there.
+ * Every deployed frontend is bound that way (frontend/Dockerfile sets HOSTNAME), so the unknown-kitchen
+ * 404 never worked outside `next dev`.
+ *
+ * So the target carries the origin Next compares against: HOSTNAME and PORT when the server was bound with
+ * them (standalone, the compose and k8s images), else the request's own host (`next dev`, `next start` on the
+ * default host); and the protocol Next derives from X-Forwarded-Proto. Behind a TLS-terminating ingress Next
+ * compares https://HOSTNAME:PORT while the URL a proxy sees stays http, so an http target there hung exactly
+ * like the unfixed one (measured with X-Forwarded-Proto: https).
+ */
+export function notFoundRewriteTarget(
+  requestUrl: URL,
+  requestHeaders: HeaderSource = new Headers(),
+  env: Record<string, string | undefined> = process.env
+): URL {
+  const protocol = requestHeaders.get("x-forwarded-proto")?.includes("https") ? "https" : "http"
+  const host = env.HOSTNAME?.trim()
+  let authority = requestUrl.host
+  if (host) {
+    const bare = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host
+    authority = `${bare}:${Number.parseInt(env.PORT ?? "", 10) || 3000}`
+  }
+  const target = new URL(`${protocol}://${authority}`)
+  target.pathname = requestUrl.pathname
+  target.search = requestUrl.search
+  return target
+}

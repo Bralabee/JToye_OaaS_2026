@@ -5,7 +5,12 @@
  * SW-CLR-17: the proxy's kitchen check (lib/shop-slug-gate.ts). Only core's own 404 is a verdict;
  * every other answer, and every failure, passes the request to the page unchanged (fail open).
  */
-import { checkShopSlug, isDocumentRequest, shopSlugOf } from "@/lib/shop-slug-gate"
+import {
+  checkShopSlug,
+  isDocumentRequest,
+  notFoundRewriteTarget,
+  shopSlugOf,
+} from "@/lib/shop-slug-gate"
 
 function res(status: number, headers: Record<string, string> = {}): Response {
   return new Response(status === 204 || status === 301 ? null : "{}", { status, headers })
@@ -101,5 +106,52 @@ describe("isDocumentRequest (PR #1111 review R1)", () => {
     expect(isDocumentRequest(new Headers({ rsc: "1" }), none)).toBe(false)
     expect(isDocumentRequest(new Headers({ "next-router-prefetch": "1" }), none)).toBe(false)
     expect(isDocumentRequest(new Headers(), new URLSearchParams("_rsc=abc"))).toBe(false)
+  })
+})
+
+describe("notFoundRewriteTarget (runtime defect after the persona close-out merge)", () => {
+  // Next treats a rewrite as INTERNAL only when its origin is {protocol}://{HOSTNAME}:{PORT}, with the
+  // protocol read from X-Forwarded-Proto; the URL a proxy sees is built from http://localhost:PORT. A
+  // rewrite to the request URL on a server bound to 0.0.0.0 was proxied to itself and hung for 30 s
+  // (HTTP 500 instead of 404).
+  const seen = new URL("http://localhost:3000/shop/no-such-kitchen?utm=a")
+  const none = new Headers()
+  const tls = new Headers({ "x-forwarded-proto": "https" })
+
+  it("carries the origin Next compares against when the server is bound with HOSTNAME", () => {
+    const target = notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0", PORT: "3000" })
+    expect(target.origin).toBe("http://0.0.0.0:3000")
+    expect(target.pathname + target.search).toBe("/shop/no-such-kitchen?utm=a")
+  })
+
+  it("follows PORT, and defaults to 3000 when PORT is absent or not a number", () => {
+    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0", PORT: "8081" }).origin).toBe(
+      "http://0.0.0.0:8081"
+    )
+    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0" }).origin).toBe("http://0.0.0.0:3000")
+    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "0.0.0.0", PORT: "x" }).origin).toBe(
+      "http://0.0.0.0:3000"
+    )
+  })
+
+  it("keeps the request's own host when HOSTNAME is unset (next dev, next start on the default host)", () => {
+    expect(notFoundRewriteTarget(seen, none, {}).href).toBe(seen.href)
+    expect(notFoundRewriteTarget(seen, none, { HOSTNAME: "  " }).href).toBe(seen.href)
+  })
+
+  it("uses https when X-Forwarded-Proto says so (a TLS-terminating ingress), with or without HOSTNAME", () => {
+    expect(notFoundRewriteTarget(seen, tls, { HOSTNAME: "0.0.0.0", PORT: "3000" }).origin).toBe(
+      "https://0.0.0.0:3000"
+    )
+    expect(notFoundRewriteTarget(seen, tls, {}).origin).toBe("https://localhost:3000")
+    expect(
+      notFoundRewriteTarget(seen, new Headers({ "x-forwarded-proto": "http" }), { HOSTNAME: "0.0.0.0" }).origin
+    ).toBe("http://0.0.0.0:3000")
+  })
+
+  it("brackets an IPv6 host and never carries the public host of the request", () => {
+    const pub = new URL("https://olajay.co.uk/shop/x")
+    expect(notFoundRewriteTarget(pub, none, { HOSTNAME: "::", PORT: "3000" }).origin).toBe("http://[::]:3000")
+    expect(notFoundRewriteTarget(pub, none, { HOSTNAME: "0.0.0.0" }).host).not.toContain("olajay")
   })
 })

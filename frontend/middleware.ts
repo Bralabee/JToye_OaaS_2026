@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { buildCsp } from "@/lib/security-headers"
-import { checkShopSlug, isDocumentRequest, shopSlugOf } from "@/lib/shop-slug-gate"
+import { checkShopSlug, isDocumentRequest, notFoundRewriteTarget, shopSlugOf } from "@/lib/shop-slug-gate"
 
 // Per-request Content-Security-Policy with a nonce (issue #89 P1-7 / SEC-02).
 //
@@ -54,7 +54,10 @@ export default auth(async (req) => {
 
   const response =
     verdict.kind === "notfound"
-      ? NextResponse.rewrite(req.nextUrl, { status: 404, request: { headers: requestHeaders } })
+      ? NextResponse.rewrite(notFoundRewriteTarget(req.nextUrl, req.headers), {
+          status: 404,
+          request: { headers: requestHeaders },
+        })
       : NextResponse.next({ request: { headers: requestHeaders } })
   response.headers.set(
     reportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
