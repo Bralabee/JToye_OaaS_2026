@@ -27,6 +27,7 @@ import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
 import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
+import { PaymentMethodChip } from "@/components/storefront/payment-method-note"
 
 /**
  * The "Opening hours" rows (37-21; deferred-items "From 37-22"). A vendor's saved hours live in
@@ -807,6 +808,8 @@ export function ShopDetailClient({
             ) : (
               <span className="text-emerald-700 font-medium">Free delivery</span>
             )}
+            {/* #829: how you pay, above the menu and not first met at the bottom of checkout. */}
+            <PaymentMethodChip shop={shop} className="font-medium text-slate-700" />
           </div>
 
           {shop.description && (

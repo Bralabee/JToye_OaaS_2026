@@ -16,6 +16,7 @@ import {
 import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import { formatMiles } from "@/lib/distance"
 import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
+import { PaymentMethodChip } from "@/components/storefront/payment-method-note"
 import {
   PROXIMITY_EXCLUSION_NOTE,
   SEARCH_INTERPRETATION_HEADER,
@@ -221,6 +222,8 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           {shop.deliveryInfo && (
             <span className="text-slate-600 truncate">{shop.deliveryInfo}</span>
           )}
+          {/* #829: how you pay, before you open the shop (nothing when the server did not say). */}
+          <PaymentMethodChip shop={shop} className="text-slate-600" />
         </div>
       </div>
     </article>

@@ -9,6 +9,7 @@ import { BasketLineAllergens, useCatalogueIndex } from "@/components/storefront/
 import { minimumShortfallPennies } from "@/lib/minimum-order"
 import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
 import { SINGLE_OPTION_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
+import { PaymentMethodNote } from "@/components/storefront/payment-method-note"
 import publicApiClient from "@/lib/public-api-client"
 import type { PublicShop } from "@/types/storefront"
 
@@ -257,6 +258,8 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
 
       {/* Actions */}
       <div className="mt-6 space-y-3">
+        {/* #829: how you pay, before the customer proceeds (nothing when the server did not say). */}
+        <PaymentMethodNote shop={shop} />
         {/* The blocking rule, stated where the customer can still act on it
             (COR-3). Word-for-word the floating bar's label, from the same
             lib/minimum-order arithmetic, so the bar, this screen and checkout

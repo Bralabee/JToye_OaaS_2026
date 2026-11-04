@@ -33,6 +33,7 @@ import {
 } from "@/components/storefront/order-allergen-panel"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
 import { SellerBlock } from "@/components/storefront/seller-block"
+import { PaymentMethodNote, paymentMethodFor } from "@/components/storefront/payment-method-note"
 import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
@@ -1403,6 +1404,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const vatPreviewPennies = vatFromGross(previewTotalPennies, basketVatRate)
   // 37-49 (UI-SPEC G1): the one type this shop takes, or null when it takes both (lib/fulfilment-offered).
   const onlyType = onlyOfferedType(shop)
+  // #829: the method the Place order icon and the top-of-page note both read.
+  const placeOrderMethod = paymentMethodFor(shop, fulfilmentType)
   // SW-MRC-07: ONE focus style for every field the customer types into. The old amber-200 ring
   // measured about 1.2:1 to 1.7:1 against the white field and the cream page, below the 3:1 that
   // WCAG 1.4.11 / 2.4.11 ask of a focus indicator. brand-700 (#6E1D21) is the ring design/identity.md
@@ -1423,6 +1426,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       </Link>
       <h1 className="text-xl font-bold text-slate-900">Checkout</h1>
       <p className="text-sm text-slate-600 mt-1">{itemCount} item{itemCount !== 1 ? "s" : ""} &middot; {formatPrice(totalPennies)}</p>
+
+      {/* #829 (UXT-060): how you pay, before anything is filled in. The "How you'll pay" block near
+          the bottom stays as the pre-contract statement beside Place order; this is the heads-up
+          that used to arrive only after the basket was built. Nothing when the server did not say. */}
+      <PaymentMethodNote shop={shop} fulfilment={fulfilmentType} className="mt-4" />
 
       {/* K3: top of step 1, before anything the customer fills in. The id is Place order's
           aria-describedby while the shop is not taking orders. */}
@@ -1903,7 +1911,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </>
           ) : (
             <>
-              <CreditCard className="h-4 w-4" />
+              {/* #829: the icon is the method the shop actually takes. A card on a cash order told
+                  customers a card step was coming; with no answer from the server, neither is claimed. */}
+              {placeOrderMethod?.kind === "card" ? (
+                <CreditCard className="h-4 w-4" aria-hidden="true" />
+              ) : placeOrderMethod?.kind === "cash" ? (
+                <Banknote className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+              )}
               Place order &middot; {formatPrice(previewTotalPennies)}
             </>
           )}
