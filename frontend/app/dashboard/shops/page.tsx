@@ -90,6 +90,16 @@ function penniesToPounds(pennies: number | null | undefined): string {
   return pennies == null ? "" : (pennies / 100).toFixed(2)
 }
 
+const PREP_MINUTES_MESSAGE = "Enter a whole number of minutes between 1 and 480, or leave it empty."
+
+/** #825: empty (not set) or a whole number of minutes in the server's 1..480 range. */
+function isPrepMinutesOrEmpty(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "") return true
+  if (!/^\d{1,3}$/.test(value.trim())) return false
+  const n = Number.parseInt(value.trim(), 10)
+  return n >= 1 && n <= 480
+}
+
 const shopSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
   address: z.string().max(255, "Address too long").optional().or(z.literal("")),
@@ -104,6 +114,13 @@ const shopSchema = z.object({
   // 37-49 (UI-SPEC G1): pounds as typed. Empty fee = no fee; empty threshold = no free-delivery threshold.
   deliveryFeePounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
   freeDeliveryThresholdPounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
+  // #825 (owner ruling 2026-11-04): the default preparation time in whole minutes, 1..480. Empty = not set,
+  // so no ready-by estimate is shown to customers.
+  prepTimeMinutes: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine(isPrepMinutesOrEmpty, PREP_MINUTES_MESSAGE),
 })
 
 type ShopFormData = z.infer<typeof shopSchema>
@@ -299,7 +316,7 @@ export default function ShopsPage() {
 
   const openCreateDialog = () => {
     setEditingShop(null)
-    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "" })
+    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "", prepTimeMinutes: "" })
     setPublished(false)
     setOffersDelivery(true)
     setOffersCollection(true)
@@ -333,6 +350,7 @@ export default function ShopsPage() {
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
     setValue("deliveryFeePounds", penniesToPounds(shop.deliveryFeePennies))
     setValue("freeDeliveryThresholdPounds", penniesToPounds(shop.freeDeliveryThresholdPennies))
+    setValue("prepTimeMinutes", shop.prepTimeMinutes ? String(shop.prepTimeMinutes) : "")
     // An absent flag reads as offered: that is what the shop did before the flags existed.
     setOffersDelivery(shop.offersDelivery !== false)
     setOffersCollection(shop.offersCollection !== false)
@@ -448,6 +466,9 @@ export default function ShopsPage() {
         // clears it on an explicit null, so an emptied field must reach the server as null.
         deliveryFeePennies: poundsToPennies(data.deliveryFeePounds) ?? 0,
         freeDeliveryThresholdPennies: poundsToPennies(data.freeDeliveryThresholdPounds),
+        // #825: the key is ALWAYS sent (like the threshold): the server keeps the stored value when it is
+        // absent and clears it on an explicit null, so an emptied field must reach it as null.
+        prepTimeMinutes: data.prepTimeMinutes ? Number.parseInt(data.prepTimeMinutes, 10) : null,
         offersDelivery,
         offersCollection,
         published,
@@ -1008,6 +1029,29 @@ export default function ShopsPage() {
                     </p>
                   )}
                 </div>
+              </div>
+              {/* #825 (owner ruling 2026-11-04): the default preparation time behind the "estimated ready by" time. */}
+              <div className="space-y-1.5">
+                <Label htmlFor="prepTimeMinutes">Usual preparation time (minutes)</Label>
+                <Input
+                  id="prepTimeMinutes"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="e.g. 25"
+                  className="h-11 sm:max-w-[12rem]"
+                  aria-invalid={errors.prepTimeMinutes ? true : undefined}
+                  aria-describedby={
+                    errors.prepTimeMinutes ? "prepTimeMinutes-hint prepTimeMinutes-error" : "prepTimeMinutes-hint"
+                  }
+                  {...register("prepTimeMinutes")}
+                />
+                <p id="prepTimeMinutes-hint" className="text-sm text-slate-600">
+                  Customers see an estimated ready-by time worked out from this. Leave empty to show no estimate.
+                </p>
+                {errors.prepTimeMinutes && (
+                  <p id="prepTimeMinutes-error" className="text-sm text-red-600">{errors.prepTimeMinutes.message}</p>
+                )}
               </div>
               <fieldset className="space-y-1" aria-describedby={neitherOffered ? "fulfilment-offered-error" : undefined}>
                 <legend className="text-sm font-semibold text-slate-900">How customers get their order</legend>

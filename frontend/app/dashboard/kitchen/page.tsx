@@ -27,6 +27,7 @@ import {
   KdsOtherShopNotice,
 } from "@/components/dashboard/kitchen/kds-board-scope"
 import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
+import { KdsReadyByBadge } from "@/components/dashboard/kitchen/kds-time-badges"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import {
   AllergyNoteBlock,
@@ -1179,6 +1180,8 @@ export default function KitchenPage() {
                           scheduledWindowLabel={order.scheduledWindowLabel}
                           scheduledForDate={order.scheduledForDate}
                         />
+                        {/* #825: the ESTIMATED ready-by time (nothing when the shop set no prep time). */}
+                        <KdsReadyByBadge estimatedReadyAt={order.estimatedReadyAt} />
                         {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link order, by the server's
                             rule. Warns before the tap; Start Preparing stays enabled so the
                             server's refusal (toast) is always reachable. */}

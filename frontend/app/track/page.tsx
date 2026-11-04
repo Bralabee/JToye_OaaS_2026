@@ -1,5 +1,6 @@
 "use client"
 
+import { EstimatedReadyBy } from "@/components/storefront/estimated-ready-by"
 import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
@@ -43,6 +44,8 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
    * omits it and a pre-V45 row has none, and then READY is described neutrally (37-F review F2).
    */
   fulfilmentType?: string | null
+  /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
+  estimatedReadyAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -522,6 +525,8 @@ function TrackOrderContent() {
                   {formatPrice(order.totalAmountPennies)}
                 </p>
                 <p className="mt-1 font-mono text-xs text-slate-600">{order.orderNumber}</p>
+                {/* #825: an ESTIMATE, labelled as one; nothing when the shop set no prep time. */}
+                <EstimatedReadyBy estimatedReadyAt={order.estimatedReadyAt} status={order.status} className="mt-2 justify-start" />
               </div>
               {isCancelled ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
