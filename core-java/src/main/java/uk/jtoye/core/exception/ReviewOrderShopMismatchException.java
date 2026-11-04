@@ -5,7 +5,7 @@ package uk.jtoye.core.exception;
  * RWO-005 / UXT-005 P0). Rendered as a 400 {@code https://jtoye.uk/errors/review-order-shop-mismatch}
  * with code {@code REVIEW_ORDER_SHOP_MISMATCH}.
  *
- * <p>Until this existed {@code ReviewService.createReview} checked that the order belonged to the
+ * <p>Until this existed the review service once checked that the order belonged to the
  * reviewer, was COMPLETED and had not been reviewed — but never that it belonged to the SHOP in the
  * URL. Within one tenant every shop's orders are visible to the service (RLS is the tenant wall, not
  * the shop wall), so a customer who had bought once from shop A could leave a "verified" review on

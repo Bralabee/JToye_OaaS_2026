@@ -30,6 +30,18 @@ const PRICE_POUNDS = /^\d{1,8}(\.\d{1,2})?$/
 /** The pennies value the form submits for a validated `pricePounds` string. */
 export const toPricePennies = (pricePounds: string): number => Math.round(Number(pricePounds) * 100)
 
+/**
+ * #858: the pennies for a price typed into the product row's inline editor, or `null` when it is not a
+ * valid price (blank, text, negative, sub-penny, or above the server's £10,000,000 bound). The same rules as
+ * the form's `pricePounds` field, so a price the row accepts is a price the server accepts.
+ */
+export const parseQuickPricePennies = (input: string): number | null => {
+  const trimmed = input.trim()
+  if (!PRICE_POUNDS.test(trimmed)) return null
+  const pennies = toPricePennies(trimmed)
+  return pennies >= 0 && pennies <= MAX_PRICE_PENNIES ? pennies : null
+}
+
 export const productSchema = z.object({
   // .trim() BEFORE .min(1): "     " used to pass every one of these (A11Y-8),
   // and a blank ingredientsText feeds the V63 advisory allergen reconciliation

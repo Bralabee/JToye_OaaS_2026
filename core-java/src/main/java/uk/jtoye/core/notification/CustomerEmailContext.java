@@ -1,10 +1,12 @@
 package uk.jtoye.core.notification;
 
+import uk.jtoye.core.order.CancelReason;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -47,6 +49,11 @@ import java.util.List;
  * @param fulfilmentType        collection or delivery; null resolves to the delivery copy
  * @param summary               the items, total and destination (SW-JRD-15); null when not read, and
  *                              then the email carries no order summary rather than an empty one
+ * @param estimatedReadyAt      #825: the order's ESTIMATED ready-by time (placed or accepted + the shop's prep
+ *                              time); null when the shop has no prep time, and then the email says nothing
+ * @param cancelReason          #820: why a shop cancelled, as a category; null when none was recorded. Only the
+ *                              cancellation email reads it, and only as {@link CancelReason#customerText()}
+ * @param shopPhone             #820: the shop's public phone; null when it has none
  */
 public record CustomerEmailContext(
         String shopName,
@@ -57,14 +64,26 @@ public record CustomerEmailContext(
         List<String> recordedAllergens,
         List<OrderAllergenFlagDto> flags,
         FulfilmentType fulfilmentType,
-        OrderEmailSummary summary) {
+        OrderEmailSummary summary,
+        OffsetDateTime estimatedReadyAt,
+        CancelReason cancelReason,
+        String shopPhone) {
+
+    /** A context with a summary but no ready-by estimate, cancel reason or shop phone (the shape before #825/#820). */
+    public CustomerEmailContext(String shopName, String shopEmail, SellerIdentityDto seller, OrderChannel placedVia,
+                                List<String> acknowledgedAllergens, List<String> recordedAllergens,
+                                List<OrderAllergenFlagDto> flags, FulfilmentType fulfilmentType,
+                                OrderEmailSummary summary) {
+        this(shopName, shopEmail, seller, placedVia, acknowledgedAllergens, recordedAllergens, flags,
+                fulfilmentType, summary, null, null, null);
+    }
 
     /** A context with no order summary (the shape before SW-JRD-15). */
     public CustomerEmailContext(String shopName, String shopEmail, SellerIdentityDto seller, OrderChannel placedVia,
                                 List<String> acknowledgedAllergens, List<String> recordedAllergens,
                                 List<OrderAllergenFlagDto> flags, FulfilmentType fulfilmentType) {
         this(shopName, shopEmail, seller, placedVia, acknowledgedAllergens, recordedAllergens, flags,
-                fulfilmentType, null);
+                fulfilmentType, null, null, null, null);
     }
 
     public CustomerEmailContext {

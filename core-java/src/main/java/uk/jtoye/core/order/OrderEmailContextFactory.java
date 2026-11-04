@@ -72,6 +72,9 @@ public class OrderEmailContextFactory {
                 view.declaredNames(),
                 view.flags(),
                 order.getFulfilmentType(),
-                OrderStateChangeListener.summaryOf(order, shop));
+                OrderStateChangeListener.summaryOf(order, shop),
+                order.getEstimatedReadyAt(),
+                order.getCancelReasonCode(),
+                shop == null ? null : shop.getPhone());
     }
 }

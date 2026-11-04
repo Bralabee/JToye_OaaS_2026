@@ -18,6 +18,7 @@ import { ReviewOrder } from "@/components/storefront/review-order"
 import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { consumeJustPlaced } from "@/lib/just-placed"
 import { EstimatedReadyBy } from "@/components/storefront/estimated-ready-by"
+import { CancelledNotice } from "@/components/storefront/cancelled-notice"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import { asVatRate, vatRateLabel } from "@/lib/vat"
 import { CancelOrderPanel } from "@/components/storefront/cancel-order-panel"
@@ -60,6 +61,13 @@ interface OrderStatus extends PublicOrderAllergenRecord {
   vatAmountPennies?: number | null
   /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
   estimatedReadyAt?: string | null
+  /**
+   * #820: for a CANCELLED order, why, in the shop's category words (plain English from the server, never
+   * a code). ABSENT = no reason recorded, or the order is not cancelled.
+   */
+  cancellationReason?: string | null
+  /** #820: for a CANCELLED order, the shop's public phone. ABSENT = the shop has none, or not cancelled. */
+  shopPhone?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -557,13 +565,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         </div>
       )}
 
-      {/* Cancelled state */}
+      {/* Cancelled state. #820: why (the server's category words) and the shop's phone. */}
       {order && isCancelled && (
-        <div className="rounded-xl bg-red-50 border border-red-100 p-5 mb-6 text-center">
-          <p className="text-sm text-red-700">
-            This order was cancelled. If this was unexpected, please contact the shop.
-          </p>
-        </div>
+        <CancelledNotice reason={order.cancellationReason} phone={order.shopPhone} shopName={order.shopName} />
       )}
 
       {/* Refunded state (INT-8). Stated plainly, with the same shape as the
@@ -653,6 +657,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               lastStatusRef.current = result.status
               setOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })
               setStatusUpdate(statusUpdateAnnouncement(result.status, order.fulfilmentType) ?? "Your order has been cancelled.")
+              // The cancel response carries only status and payment status; re-read so the cancelled notice
+              // shows what the server recorded (the reason and the shop's phone), not its no-reason fallback.
+              void fetchStatus()
             }}
             onRefused={() => void fetchStatus()}
           />
