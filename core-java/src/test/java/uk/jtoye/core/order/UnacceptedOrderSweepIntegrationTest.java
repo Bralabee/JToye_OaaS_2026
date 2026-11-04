@@ -46,6 +46,7 @@ import static org.mockito.Mockito.verify;
  * stamp nothing and report success. Each arm has a control that would have been red under that failure.
  */
 @SpringBootTest
+@org.springframework.context.annotation.Import(uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig.class)
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
@@ -63,8 +64,11 @@ class UnacceptedOrderSweepIntegrationTest {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
         registry.add("jtoye.orders.unaccepted-alert.enabled", () -> "true");
         registry.add("jtoye.orders.unaccepted-alert.threshold", () -> "10m");
-        // The scheduler must not race the test: sweep() is driven by hand.
-        registry.add("jtoye.orders.unaccepted-alert.sweep-interval-ms", () -> "3600000");
+        // Pinned beside the threshold (review of PR 1123): the boundary arms below name 115 and 125 minutes, so
+        // they must not depend on the application.yml default. The scheduler is made inert by
+        // NoScheduledTriggersTestConfig (not by shortening or lengthening the interval), so a cached context can
+        // never fire a background sweep() between a test's seeding and its assertions.
+        registry.add("jtoye.orders.unaccepted-alert.max-age", () -> "2h");
     }
 
     @MockitoBean EmailNotificationService emailService;
@@ -343,6 +347,35 @@ class UnacceptedOrderSweepIntegrationTest {
 
         assertThat(stampOf(TENANT_A, justPaid)).as("PENDING for 3 minutes").isNull();
         assertThat(stampOf(TENANT_A, paidEarlier)).as("PENDING for 20 minutes").isNotNull();
+    }
+
+    @Test
+    @DisplayName("hotfix: an order PENDING for 3 days is neither stamped nor emailed (max age), and the vendor UI therefore shows nothing for it; one PENDING for 15 minutes is alerted")
+    void anOrderOlderThanTheMaxAgeIsLeftUnstampedAndNeverEmailed() {
+        // 3 days = 4320 minutes, far past the 2h max age: the first sweep after deploy must not email the
+        // customer of every old PENDING order in the table. And it must not STAMP it either: the stamp is what
+        // the kitchen board and the dashboard banner read as "the customer has been told" (review of PR 1125).
+        UUID threeDays = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 3 * 24 * 60, false);
+        UUID justPastMaxAge = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 125, false);
+        UUID insideMaxAge = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 115, false);
+        UUID fifteenMinutes = seedOrder(TENANT_A, shopA, "PENDING", "NONE", null, 15, false);
+
+        int alerted = sweep.sweep();
+
+        assertThat(stampOf(TENANT_A, fifteenMinutes)).as("15 minutes: inside [threshold, max age], alerted").isNotNull();
+        assertThat(stampOf(TENANT_A, insideMaxAge)).as("115 minutes: inside the 2h max age").isNotNull();
+        assertThat(stampOf(TENANT_A, threeDays)).as("3 days: left unstamped, so no vendor alert").isNull();
+        assertThat(stampOf(TENANT_A, justPastMaxAge)).as("125 minutes: past the max age, left unstamped").isNull();
+        assertThat(alerted).as("only the two orders inside the window").isEqualTo(2);
+        verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, threeDays)), any());
+        verify(emailService, never()).sendOrderAwaitingAcceptance(any(), eq(emailOf(TENANT_A, justPastMaxAge)), any());
+        verify(emailService, times(2)).sendOrderAwaitingAcceptance(any(), any(), any());
+        assertThat(statusOf(TENANT_A, threeDays)).as("and still PENDING: no auto-cancel").isEqualTo("PENDING");
+
+        // A second run changes nothing for the old orders: still unstamped, still not emailed.
+        assertThat(sweep.sweep()).isZero();
+        assertThat(stampOf(TENANT_A, threeDays)).isNull();
+        verify(emailService, times(2)).sendOrderAwaitingAcceptance(any(), any(), any());
     }
 
     /** An Envers revision of the order carrying {@code status}, made {@code minutesAgo} minutes ago. */
