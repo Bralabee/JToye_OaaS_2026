@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Wave-2 Owner Rulings — 2026-11-04 (#1124)
+
+Issues 827, 858, 825, 820, 846 (persona close-out), each test-first. No migration.
+
+- **Paid online / Not paid online (issue 827):** the finance summary carries `paidOnlineRevenuePennies` and `notPaidOnlineRevenuePennies` (they add up to revenue), each listed ledger row carries `paidOnline`, and the CSV has a last `payment` column. Paid online is an order whose payment status is CAPTURED or REFUNDED; cash orders and manual entries are Not paid online. The dashboard shows both figures and a Payment column.
+- **Price by PATCH (issue 858):** `PATCH /api/v1/products/{id}` accepts an absolute `pricePennies` (0 to 1,000,000,000), under the same gate as its other fields and audited; orders already placed keep the price they were placed at. The products list has an inline price edit that sends only that field.
+- **Ready-by in emails (issue 825):** the order-received and accepted emails quote the estimated ready-by time in UK time, labelled an estimate; nothing when the shop has no preparation time.
+- **Cancel reason and phone (issue 820):** a shop cancel tells the customer the reason category in plain English (never the code or free text) and the shop's public phone, in the cancellation email and on `/track` and the order page. Only cancelled orders disclose either.
+- **Old review endpoint removed (issue 846), BREAKING:** `POST /public/shops/{slug}/reviews?email=` is gone; `POST /public/shops/{slug}/orders/{orderNumber}/review` with the customer token is the only way to write a review. No frontend or MCP caller used the old route.
+
 ### Storefront: Persona Close-Out, Public Storefront / Checkout / Tracking — 2026-11-04 (#1117)
 
 Quick 261104-storefront. Issues 829, 845, 846, 813, 850, 876, 877, 854 and swarm items SW-CLR-08, SW-CLR-12, SW-TND-03, SW-PRY-07 (epic issue 964), each re-checked on main first and fixed test-first.
