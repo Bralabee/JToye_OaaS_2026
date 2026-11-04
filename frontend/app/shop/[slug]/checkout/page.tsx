@@ -546,7 +546,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       setNotes(draft.notes)
       /* eslint-enable react-hooks/set-state-in-effect */
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the read above is the reason for this flag
+    // The read above is the reason for this flag: persistence is held back until it has happened.
     setDraftReady(true)
   }, [slug])
   // #845: once a customer is confirmed signed in, THEIR OWN last delivery address and phone are offered
