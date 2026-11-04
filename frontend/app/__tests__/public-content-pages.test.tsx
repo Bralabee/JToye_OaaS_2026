@@ -13,7 +13,7 @@
  */
 import fs from "node:fs"
 import path from "node:path"
-import { render, screen, within } from "@testing-library/react"
+import { render, within } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import type { Metadata } from "next"
 import PricingPage, { metadata as pricingMetadata } from "@/app/pricing/page"
@@ -387,6 +387,3 @@ describe("source hygiene: the rulings are cited where the copy lives", () => {
     expect(src).toMatch(/2026-11-04/)
   })
 })
-
-// Keeps `screen` import honest for the sign-in render (it queries the global document).
-void screen
