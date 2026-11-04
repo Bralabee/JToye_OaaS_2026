@@ -352,6 +352,10 @@ public class ShopService {
         if (request.isDeliveryRadiusKmSent() && request.getDeliveryRadiusKm() == null) {
             shop.setDeliveryRadiusKm(null);
         }
+        // #825: same shape as the threshold: the mapper ignores nulls, so only an EXPLICIT null clears the prep time.
+        if (request.isPrepTimeMinutesSent() && request.getPrepTimeMinutes() == null) {
+            shop.setPrepTimeMinutes(null);
+        }
         // A single false merged with the OTHER flag already false offers nothing: refused before anything is saved.
         requireSomeFulfilmentOffered(shop);
         // 37-20 (D-15/D-25): a sent schedule replaces the stored one and makes the hours STRUCTURED (this ends

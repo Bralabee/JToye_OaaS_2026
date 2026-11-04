@@ -1,0 +1,5 @@
+uk.jtoye.core.order.UnacceptedOrderSweepIntegrationTest  tests=4 failures=4 errors=0
+FAIL #821: the stamp reaches the vendor DTOs the kitchen board and dashboard read | java.lang.AssertionError: Expecting actual not to be null
+FAIL #821: no email address means a vendor alert and no email | org.opentest4j.AssertionFailedError: expected: 1 but was: 0
+FAIL #821: each order is notified once - the second sweep alerts nothing and emails nobody | org.opentest4j.AssertionFailedError: expected: 1 but was: 0
+FAIL #821: an overdue PENDING order is stamped in tenants A and B under NOSUPERUSER; young, confirmed, voided and u | org.opentest4j.AssertionFailedError: [one overdue order per tenant] expected: 2 but was: 0

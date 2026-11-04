@@ -206,6 +206,27 @@ public class EmailNotificationService {
         send(event, recipientEmail, "order-received", subject(event, "Received"), lead, ctx, true, false);
     }
 
+    /**
+     * #821 (owner ruling 2026-11-04, persona close-out): the order has waited too long for the shop to
+     * accept it. Sent ONCE per order by {@code UnacceptedOrderSweep}, which also raises the vendor's alert.
+     * The order is NOT cancelled and nothing is promised: the copy says only that the shop has not yet
+     * accepted it, that the shop has been alerted, and that another email follows when it does.
+     * A progress update, so it carries the ORDERS opt-out (the sweep checks the consent gate first).
+     */
+    @Async
+    public void sendOrderAwaitingAcceptance(OrderStateChangeEvent event, String recipientEmail,
+                                            CustomerEmailContext context) {
+        CustomerEmailContext ctx = orUnknown(context);
+        String lead = """
+                Your order %s has been sent to %s, but the shop has not yet accepted it.
+
+                We have alerted the shop. Your order has not been cancelled, and you do not need to do anything: \
+                you'll get another email as soon as the shop accepts it. If you would rather not wait, please \
+                contact %s directly.""".formatted(event.orderNumber(), shopLabel(ctx), shopLabel(ctx));
+        send(event, recipientEmail, "order-awaiting-acceptance", subject(event, "Not yet accepted by the shop"),
+                lead, ctx, false, true);
+    }
+
     @Async
     public void sendOrderConfirmed(OrderStateChangeEvent event, String recipientEmail,
                                    CustomerEmailContext context) {

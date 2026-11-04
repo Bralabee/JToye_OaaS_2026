@@ -17,6 +17,7 @@ import { SellerBlock } from "@/components/storefront/seller-block"
 import { ReviewOrder } from "@/components/storefront/review-order"
 import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { consumeJustPlaced } from "@/lib/just-placed"
+import { EstimatedReadyBy } from "@/components/storefront/estimated-ready-by"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import { asVatRate, vatRateLabel } from "@/lib/vat"
 import { CancelOrderPanel } from "@/components/storefront/cancel-order-panel"
@@ -57,6 +58,8 @@ interface OrderStatus extends PublicOrderAllergenRecord {
   deliveryFeePennies?: number | null
   vatRate?: string | null
   vatAmountPennies?: number | null
+  /** #825: ESTIMATED ready-by (placed/accepted + the shop's prep time). ABSENT = the shop set no prep time. */
+  estimatedReadyAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -397,6 +400,8 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             </p>
             <p className="mt-1 text-sm text-slate-600">{order.shopName}</p>
             {payOnLine && <p className="mt-1 text-sm font-medium text-slate-900">{payOnLine}</p>}
+            {/* #825: an ESTIMATE, labelled as one; nothing when the shop set no prep time. */}
+            <EstimatedReadyBy estimatedReadyAt={order.estimatedReadyAt} status={order.status} className="mt-2" />
           </>
         )}
       </div>

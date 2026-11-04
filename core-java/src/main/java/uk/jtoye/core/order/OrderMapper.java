@@ -74,6 +74,9 @@ public interface OrderMapper {
     @Mapping(target = "scheduledWindowLabel", source = "scheduledWindowLabel")
     @Mapping(target = "depositAmountPennies", source = "depositAmountPennies")
     @Mapping(target = "balanceDuePennies", source = "balanceDuePennies")
+    // V91 (#825, #821): the ready-by estimate and the unaccepted-order alert stamp, scalar columns.
+    @Mapping(target = "estimatedReadyAt", source = "estimatedReadyAt")
+    @Mapping(target = "unacceptedNotifiedAt", source = "unacceptedNotifiedAt")
     OrderDto toDto(Order order);
 
     @Mapping(target = "items", source = "items")
@@ -120,6 +123,8 @@ public interface OrderMapper {
     @Mapping(target = "scheduledWindowLabel", source = "scheduledWindowLabel")
     @Mapping(target = "depositAmountPennies", source = "depositAmountPennies")
     @Mapping(target = "balanceDuePennies", source = "balanceDuePennies")
+    @Mapping(target = "estimatedReadyAt", source = "estimatedReadyAt")
+    @Mapping(target = "unacceptedNotifiedAt", source = "unacceptedNotifiedAt")
     OrderDetailDto toDetailDto(Order order);
 
     /**

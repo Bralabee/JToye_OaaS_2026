@@ -1,0 +1,8 @@
+uk.jtoye.core.order.UnacceptedOrderSweepIntegrationTest  tests=7 failures=3
+FAIL review 1: more unpaid PENDING orders than the batch cannot starve a real overdue order behind them | java.lang.AssertionError: [the real overdue cash order behind 250 unpaid ones is alerted] Expecting actual not to be null
+ok   #821: the stamp reaches the vendor DTOs the kitchen board and dashboard read
+ok   #821: no email address means a vendor alert and no email
+ok   #821: each order is notified once - the second sweep alerts nothing and emails nobody
+FAIL review 3: the claim does not bump the version, so an accept loaded before the sweep still commits | org.springframework.orm.ObjectOptimisticLockingFailureException: Row was already updated or deleted by another transaction for entity [uk.jtoye.core.order.Order with id '4530560f-e7a0-473a-825a-bb42b0
+FAIL review 2: a shop-created (VENDOR) order is neither stamped nor emailed - the shop made it, and the a | org.opentest4j.AssertionFailedError: [VENDOR] expected: null but was: 2026-11-04T09:30:20.099663Z (java.time.OffsetDateTime)
+ok   #821: an overdue PENDING order is stamped in tenants A and B under NOSUPERUSER; young, confirmed, vo

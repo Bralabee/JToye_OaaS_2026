@@ -1,0 +1,9 @@
+uk.jtoye.core.finance.SellerVatRegistrationIntegrationTest  tests=8 failures=0 errors=0
+ok   storefrontOrderOfARegisteredSellerIsUnchanged()
+ok   ledgerOfAnUnregisteredSellerCarriesZeroVat()
+ok   anOrderPlacedWhileRegisteredKeepsItsVatAfterTheSellerDeregisters()
+ok   aTenantWithNoTraderIdentityAtAllDeclaresNoVatNumberSoIsZeroRated()
+ok   vendorOrderOfARegisteredSellerIsUnchanged()
+ok   ledgerOfARegisteredSellerIsUnchanged()
+ok   vendorOrderOfAnUnregisteredSellerRecordsZeroVat()
+ok   storefrontOrderOfAnUnregisteredSellerRecordsZeroVat()

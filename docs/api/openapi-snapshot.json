@@ -1345,6 +1345,16 @@
           "phone" : {
             "type" : "string"
           },
+          "prepTimeMinutes" : {
+            "description" : "Default preparation time in minutes (#825, 1..480). The order confirmation, tracking page and kitchen ticket show an ESTIMATED ready-by time built from it. null means not set (no estimate is shown). Absent keeps the stored value; an explicit null clears it.",
+            "format" : "int32",
+            "maximum" : 480,
+            "minimum" : 1,
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
           "published" : {
             "type" : "boolean"
           },
@@ -2076,6 +2086,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop gave no preparation time.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentType" : {
             "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
             "enum" : [
@@ -2769,6 +2784,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed. An estimate, not a promise. Absent when the shop gave no preparation time.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentSlotId" : {
             "description" : "Reserved scheduled fulfilment slot UUID, when placed for a scheduled slot.",
             "format" : "uuid",
@@ -3371,6 +3391,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop set no preparation time (or the order is a scheduled-slot order).",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentSlotId" : {
             "description" : "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).",
             "format" : "uuid",
@@ -3464,6 +3489,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "unacceptedNotifiedAt" : {
+            "description" : "When the shop was alerted (and the customer emailed) that this order had waited too long to be accepted (#821). Present = the order is overdue for acceptance; absent = not alerted.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "unitCount" : {
             "format" : "int32",
             "type" : "integer"
@@ -3544,6 +3574,11 @@
             "description" : "Upfront deposit charged in pennies under SPLIT_DEPOSIT_VENDOR_MOR (V87).",
             "format" : "int64",
             "type" : "integer"
+          },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop set no preparation time (or the order is a scheduled-slot order).",
+            "format" : "date-time",
+            "type" : "string"
           },
           "fulfilmentSlotId" : {
             "description" : "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).",
@@ -3633,6 +3668,11 @@
           "totalAmountPennies" : {
             "format" : "int64",
             "type" : "integer"
+          },
+          "unacceptedNotifiedAt" : {
+            "description" : "When the shop was alerted (and the customer emailed) that this order had waited too long to be accepted (#821). Present = the order is overdue for acceptance; absent = not alerted.",
+            "format" : "date-time",
+            "type" : "string"
           },
           "unitCount" : {
             "format" : "int32",
@@ -4859,6 +4899,11 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "estimatedReadyAt" : {
+            "description" : "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the order was placed or accepted. An estimate, not a promise. Absent when the shop gave no preparation time.",
+            "format" : "date-time",
+            "type" : "string"
+          },
           "fulfilmentType" : {
             "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
             "enum" : [
@@ -5639,6 +5684,11 @@
           },
           "phone" : {
             "type" : "string"
+          },
+          "prepTimeMinutes" : {
+            "description" : "Default preparation time in minutes (#825). Absent: not set, so no ready-by estimate is shown for this shop's orders.",
+            "format" : "int32",
+            "type" : "integer"
           },
           "published" : {
             "type" : "boolean"

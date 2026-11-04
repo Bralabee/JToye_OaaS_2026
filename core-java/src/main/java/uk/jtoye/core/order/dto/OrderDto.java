@@ -177,6 +177,23 @@ public class OrderDto {
     @Schema(description = "Remaining balance due in pennies on fulfilment under SPLIT_DEPOSIT_VENDOR_MOR (V87).")
     private Long balanceDuePennies;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "ESTIMATED ready-by time (#825): the shop's default preparation time added to when the "
+            + "order was placed or accepted. An estimate, not a promise. Absent when the shop set no preparation "
+            + "time (or the order is a scheduled-slot order).")
+    private OffsetDateTime estimatedReadyAt;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "When the shop was alerted (and the customer emailed) that this order had waited too long "
+            + "to be accepted (#821). Present = the order is overdue for acceptance; absent = not alerted.")
+    private OffsetDateTime unacceptedNotifiedAt;
+
+    public OffsetDateTime getEstimatedReadyAt() { return estimatedReadyAt; }
+    public void setEstimatedReadyAt(OffsetDateTime estimatedReadyAt) { this.estimatedReadyAt = estimatedReadyAt; }
+
+    public OffsetDateTime getUnacceptedNotifiedAt() { return unacceptedNotifiedAt; }
+    public void setUnacceptedNotifiedAt(OffsetDateTime unacceptedNotifiedAt) { this.unacceptedNotifiedAt = unacceptedNotifiedAt; }
+
     public UUID getFulfilmentSlotId() { return fulfilmentSlotId; }
     public void setFulfilmentSlotId(UUID fulfilmentSlotId) { this.fulfilmentSlotId = fulfilmentSlotId; }
 

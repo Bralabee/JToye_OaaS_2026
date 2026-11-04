@@ -129,6 +129,13 @@ public class OrderService {
     /** Places the order's delivery postcode for the shop's delivery-radius rule (#460). */
     private final uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder;
 
+    /**
+     * Whether the seller has declared a VAT number (#962, owner ruling 2026-11-04). {@code null} only in
+     * the narrow unit-test constructors, where it means "treat the seller as registered" (the pre-ruling
+     * behaviour); the Spring-wired constructor always supplies it.
+     */
+    private final uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService;
+
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
                        ShopRepository shopRepository,
@@ -147,7 +154,7 @@ public class OrderService {
         this(orderRepository, productRepository, shopRepository, customerRepository,
                 stateMachineService, orderMapper, eventPublisher, financialTransactionService,
                 stockService, refundService, shopAccessService, orderNumberGenerator,
-                orderLimits, bulkCancelLimit, transactionManager, null, null);
+                orderLimits, bulkCancelLimit, transactionManager, null, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -167,7 +174,8 @@ public class OrderService {
                        BulkCancelLimit bulkCancelLimit,
                        PlatformTransactionManager transactionManager,
                        uk.jtoye.core.shop.ShopFulfilmentSlotService slotService,
-                       uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder) {
+                       uk.jtoye.core.geo.PostcodeGeocoder postcodeGeocoder,
+                       uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -186,6 +194,7 @@ public class OrderService {
         this.perOrderTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.slotService = slotService;
         this.postcodeGeocoder = postcodeGeocoder;
+        this.traderIdentityService = traderIdentityService;
     }
 
     /**
@@ -383,8 +392,12 @@ public class OrderService {
                         .toList(),
                 order.getItems().stream().mapToLong(OrderItem::getTotalPricePennies).sum());
 
-        // Resolve the order's single predominant VAT rate before totalling.
-        order.setVatRate(VatCalculator.predominantRate(lineRates));
+        // Resolve the order's single predominant VAT rate before totalling. #962 (owner ruling 2026-11-04,
+        // persona close-out): a seller with no declared VAT number charges none, so the order, the ledger
+        // row it produces and the access export all record ZERO. Applied at placement only.
+        boolean sellerVatRegistered = traderIdentityService == null
+                || traderIdentityService.isVatRegistered(tenantId);
+        order.setVatRate(VatCalculator.forSeller(VatCalculator.predominantRate(lineRates), sellerVatRegistered));
 
         // COR-1: the delivery fee, server-authoritative and computed from the SHOP's own
         // configuration — never from anything the caller sent. COLLECTION is £0; DELIVERY is the
@@ -400,6 +413,8 @@ public class OrderService {
 
         // Calculate total
         order.calculateTotal();
+        // #825 (owner ruling 2026-11-04): the ESTIMATED ready-by time, placed-at plus the shop's prep time.
+        order.setEstimatedReadyAt(ReadyByEstimate.of(shop, OffsetDateTime.now(), order));
 
         // Save order. QA-council cluster P1 (API-3 rider): saveAndFlush, not save — createdAt is
         // a @CreationTimestamp generated at FLUSH time, so a bare save() would leave it null in
@@ -920,6 +935,17 @@ public class OrderService {
         // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
         order.setUpdatedAt(OffsetDateTime.now());
+        // #825 (owner ruling 2026-11-04): the estimate is "accepted-at + prep time", so accepting restamps it
+        // from the moment the shop took the order (the placement estimate assumed it would be accepted at once).
+        // Only when the shop still has a prep time: clearing the setting later must not blank an estimate the
+        // customer was already shown. A scheduled-slot order never has one (ReadyByEstimate).
+        if (newStatus == OrderStatus.CONFIRMED && order.getShopId() != null) {
+            Shop acceptingShop = shopRepository.findByIdAndTenantId(order.getShopId(), order.getTenantId()).orElse(null);
+            OffsetDateTime restamped = ReadyByEstimate.of(acceptingShop, OffsetDateTime.now(), order);
+            if (restamped != null) {
+                order.setEstimatedReadyAt(restamped);
+            }
+        }
         // Phase 37-29 (D-18): why the vendor cancelled, kept on the row in the same save. Only on a
         // cancel that the state machine has just accepted, so a refused transition records no reason.
         if (newStatus == OrderStatus.CANCELLED && cancelReason != null) {
@@ -1206,7 +1232,7 @@ public class OrderService {
         );
     }
 
-    private static boolean isAwaitingUpfrontOrDepositPayment(Order order) {
+    static boolean isAwaitingUpfrontOrDepositPayment(Order order) {
         PaymentStatus ps = order.getPaymentStatus();
         if (ps == PaymentStatus.PENDING || ps == PaymentStatus.FAILED) {
             return true;

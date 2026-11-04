@@ -8,6 +8,7 @@ import {
 } from "@/lib/allergen-copy"
 import { describeAllergyNoteReader } from "@/lib/allergy-note-api"
 import { formatUkClockTime } from "@/lib/uk-datetime"
+import { readyByLabel } from "@/lib/ready-by"
 
 /**
  * A printable kitchen ticket (#105).
@@ -94,6 +95,13 @@ export function KitchenTicket({
           <dt>Ordered</dt>
           <dd>{stamp(order.createdAt)}</dd>
         </div>
+        {/* #825: only when the shop set a prep time; always an ESTIMATE. */}
+        {readyByLabel(order.estimatedReadyAt) && (
+          <div>
+            <dt>Est. ready</dt>
+            <dd>{readyByLabel(order.estimatedReadyAt)}</dd>
+          </div>
+        )}
         <div>
           <dt>Status</dt>
           <dd>{order.status}</dd>

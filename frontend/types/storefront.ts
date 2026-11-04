@@ -254,6 +254,8 @@ export interface GuestOrderConfirmation {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  /** #825: ESTIMATED ready-by (placed + the shop's prep time). ABSENT = the shop set no prep time. */
+  estimatedReadyAt?: string | null
   /**
    * The connected Stripe account that owns this order's PaymentIntent (plan 30-17): set for a
    * direct-charge or split-deposit shop, null for destination and platform charges; absent from an

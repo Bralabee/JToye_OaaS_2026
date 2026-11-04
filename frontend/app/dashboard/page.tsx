@@ -6,6 +6,7 @@ import { staggerContainer, staggerItem } from "@/lib/motion"
 import { useCountUp } from "@/hooks/use-count-up"
 import { CHART_COLORS } from "@/lib/chart-colors"
 import Link from "next/link"
+import { UnacceptedOrdersBanner } from "@/components/dashboard/unaccepted-orders-banner"
 import apiClient from "@/lib/api-client"
 import { fetchAllMyShops, fetchMyAccess } from "@/lib/shops-api"
 import { joinedToastTitle } from "@/lib/joined-toast"
@@ -409,6 +410,9 @@ export default function DashboardPage() {
             </div>
           )
         })()}
+
+      {/* #821 (owner ruling 2026-11-04): orders that have waited too long for the shop to accept them. */}
+      <UnacceptedOrdersBanner orders={allOrders} />
 
       {/* 37-21 (UI-SPEC K4): shops whose hours were never set or could not be read, from hoursSource. */}
       {/* #961: the card's button opens the shop editor, which the API refuses a STAFF member. */}
