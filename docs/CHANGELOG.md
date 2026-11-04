@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Vendor Rulings: Zero VAT for Unregistered Sellers, Ready-By Estimate, Unaccepted-Order Alert — 2026-11-04
+### Vendor Rulings: Zero VAT for Unregistered Sellers, Ready-By Estimate, Unaccepted-Order Alert — 2026-11-04 (#1119)
 
 Quick 261104-vendor-rulings. Owner rulings 2026-11-04 (persona close-out) for issues 962, 825 and 821. Issue 452 gap 1 is design only (see the quick SUMMARY).
 
