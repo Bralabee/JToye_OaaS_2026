@@ -1,4 +1,4 @@
-import { PRICING, STRIPE_UK_PRICING_LINK_TEXT, STRIPE_UK_PRICING_URL, formatRate } from "@/lib/pricing"
+import { PRICING, STRIPE_UK_PRICING_LINK_TEXT, STRIPE_UK_PRICING_URL, formatRate, planSentence, pricingPlans } from "@/lib/pricing"
 
 describe("formatRate", () => {
   it.each([
@@ -38,5 +38,16 @@ describe("STRIPE_UK_PRICING_URL (the card-fee line's link)", () => {
   it("names the page it links, and quotes no rate", () => {
     expect(STRIPE_UK_PRICING_LINK_TEXT).toMatch(/stripe.*uk.*pricing/i)
     expect(STRIPE_UK_PRICING_LINK_TEXT).not.toMatch(/\d/)
+  })
+})
+
+// Round-1 review of PR 1116 (finding 3): the sentence form of each plan, from the shared rows.
+describe("planSentence (the merchant terms plan list)", () => {
+  it("renders each plan from pricingPlans()", () => {
+    expect(pricingPlans(PRICING).map(planSentence)).toEqual([
+      "Standard: \u00a339 per location per month, plus 0.5% of direct sales.",
+      "Flat: \u00a379\u2013\u00a3149 per location per month, 0% of sales.",
+      "Batch pay-as-you-go: \u00a30 per month, plus 6% of direct sales.",
+    ])
   })
 })

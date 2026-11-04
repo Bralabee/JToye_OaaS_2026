@@ -1665,13 +1665,60 @@ Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
 
 **UI hint**: no
 
-## Backlog (999.x): unplanned capabilities
+## Backlog
 
-Recorded by owner ruling 2026-11-04 (persona-test close-out). Each was a persona finding closed as "not planned" for v2.3; none has a phase. Promote one with `/gsd-review-backlog` when the owner schedules it.
+Recorded by owner ruling 2026-11-04 (persona-test close-out). Five are persona findings and one (999.1) is the AI-6 WhatsApp channel from the AI-readiness track; all six were closed as "not planned" for v2.3 and none has a plan. Promote one with `/gsd-review-backlog` when the owner schedules it.
 
-- **999.1 WhatsApp conversational ordering channel** (issue 208): Meta-direct versus a BSP must be chosen first; the edge parser and the Meta GET verification handshake are incomplete.
-- **999.2 Menu item modifiers** (issue 870): option groups and add-ons; touches the allergen model (a modifier can add an allergen) and the V63 order-line snapshot.
-- **999.3 Email campaigns, loyalty and vouchers** (issue 873): marketing consent (D-04) applies.
-- **999.4 Custom storefront domains** (issue 874): TLS issuance, the CSP and the canonical URL per domain.
-- **999.5 Server-side basket** (issue 869): restore on sign-in and share across devices; the client-persisted identity lifecycle contract applies.
-- **999.6 MCP OAuth discovery for hosted connectors** (issue 863): ADR-0006 D-05 suppressed discovery on Core; the auth model for hosted ChatGPT/Claude connectors is an owner decision.
+### Phase 999.1: WhatsApp conversational ordering channel (BACKLOG)
+
+**Goal:** Meta-direct versus a BSP must be chosen first. The signed POST `/api/v1/webhooks/whatsapp` already parses messages, resolves products through Core and creates orders; the gaps are (1) tenant and shop routing: every order goes to the single `WHATSAPP_DEFAULT_TENANT_ID` / `WHATSAPP_DEFAULT_SHOP_ID`, with no business number mapped to a tenant; (2) replies and conversation state; (3) the Meta GET verification handshake (`hub.challenge` / `hub.verify_token`), which is absent from `edge-go`, not incomplete. Source: issue 208 (AI-6, AI-readiness track, EPIC issue 209).
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.2: Menu item modifiers (BACKLOG)
+
+**Goal:** Option groups and add-ons. A modifier can add an allergen, so the V63 order-line snapshot AND the V69 server check (the acknowledged `allergen_ack_mask` must equal `bit_or(order_items.allergen_mask)`, else 409 `allergen-acknowledgement-stale`) must change together with the checkout acknowledgement UI (PGC-784/785); updating only the snapshot would leave every modifier order rejected or under-acknowledged. Source: issue 870.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.3: Email campaigns, loyalty and vouchers (BACKLOG)
+
+**Goal:** No marketing-consent capture or preferences page exists: it was deferred in Phase 31.1's CONTEXT (its D-04 deferral, issue 871's fuller form) because the platform sends no marketing. A consent mechanism must be built first. Source: issue 873.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.4: Custom storefront domains (BACKLOG)
+
+**Goal:** TLS issuance, the CSP and the canonical URL per domain. Source: issue 874.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.5: Server-side basket (BACKLOG)
+
+**Goal:** Restore on sign-in and share across devices; the client-persisted identity lifecycle contract applies. Source: issue 869.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.6: MCP OAuth discovery for hosted connectors (BACKLOG)
+
+**Goal:** The issue reports two blockers and accepts either fix: (a) OAuth discovery (protected-resource metadata + `WWW-Authenticate`), which ADR-0006 D-05 suppressed on Core and whose auth model for hosted ChatGPT/Claude connectors is an owner decision; or (b) long-lived scoped tokens, addressing the 300 s bearer-token lifetime (compare the V82 `integration_credential` register), which does not depend on D-05. Source: issue 863.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
