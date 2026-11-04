@@ -88,7 +88,15 @@ export function CustomerSignInCard() {
           </button>
 
           <p className="text-center text-xs text-slate-600">
-            Secure sign-in via Keycloak. We never see your password.
+            Secure sign-in via Keycloak. We never see your password. How we use your
+            details is explained in our{" "}
+            <Link
+              href="/legal/privacy"
+              className="font-medium text-oxblood underline underline-offset-2 hover:text-oxblood-700"
+            >
+              privacy notice
+            </Link>
+            .
           </p>
         </div>
 

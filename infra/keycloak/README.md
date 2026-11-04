@@ -348,14 +348,76 @@ info and error) from one stylesheet.
 ```
 infra/keycloak/themes/jtoye/login/
   theme.properties
+  template.ftl        } the three FTL overrides (#848), see "FTL overrides" below
+  login.ftl           }
+  register.ftl        }
+  messages/messages_en.properties
   resources/css/jtoye.css
   resources/fonts/work-sans-latin.woff2
 ```
 
-**No FTL template overrides, deliberately.** Forking a template would pin us to that Keycloak
-version's markup and silently rot at the next upgrade. Every rule reaches the parent theme's
-existing class and id hooks instead, so an upgrade changes the markup underneath us and the
-branding follows.
+**Three FTL template overrides, and only three** (#848, UXT-079, SW-MRC-12, SW-SAM-10, 2026-11-04).
+Until then there were none, deliberately: forking a template pins us to that Keycloak version's
+markup and silently rots at the next upgrade, so every rule reached the parent theme's existing
+class and id hooks instead. That stays the rule for everything that CAN be done there (branding,
+copy through `messages_en.properties`, the wordmark through `displayNameHtml`). Three things
+cannot: a `<main>` landmark, a `<title>` that names the page, positive `tabindex` removal, and the
+password rules plus a privacy link on the register page. See the next section.
+
+### FTL overrides
+
+| File | Differs from Keycloak 26.8.1 `theme/base/login/<file>` by |
+|---|---|
+| `template.ftl` | `<title>` is the page heading plus the realm name (`Register - J'Toye`) instead of `Sign in to J'Toye` on every page; `#kc-header` is a `<header>`; the card is wrapped in `<main id="kc-main">`; the locale button loses `tabindex="1"` |
+| `login.ftl` | all eight positive `tabindex` attributes removed |
+| `register.ftl` | the password field is `aria-required` and `aria-describedby` the password rules (`passwordPolicyHint`, shown BEFORE a failed submit); the confirm field is `aria-required` and described by its error; the privacy line (`registerPrivacyNotice`) with a link to `<app origin>/legal/privacy`, the origin taken from the storefront client's own `baseUrl` (the line is omitted when there is none) |
+
+Every edited block is marked `JTOYE` and each file opens with `JTOYE-BASE-KEYCLOAK: <version>`.
+Everything else in them is the stock file byte for byte.
+
+**Keeping the forks from rotting** (the reason they were refused before). `scripts/check-keycloak-theme-ftl.sh`
+(CI, with `--selftest`) fails when a marker differs from the Keycloak image pinned in
+`docker-compose.full-stack.yml`, `infra/docker-compose*.yml` and the k8s component, so a Keycloak
+bump cannot ship a stale fork. It also fails when a property the overrides exist for is dropped
+(`<main>`, banner `<header>`, page-naming `<title>`, no positive tabindex, the rules, the privacy
+link), when the rules sentence and the realms' `passwordPolicy` length disagree, when either realm
+template sets a user-initiated action-token lifespan below 30 minutes, and when the k8s component
+does not mount every override.
+
+**Re-deriving after a Keycloak upgrade:**
+
+```bash
+# the new base files, straight from the image you are moving to (no stack needed)
+id=$(docker create quay.io/keycloak/keycloak:<new>)
+docker cp "$id:/opt/keycloak/lib/lib/main/org.keycloak.keycloak-themes-<new>.jar" /tmp/kc-themes.jar && docker rm "$id"
+unzip -p /tmp/kc-themes.jar theme/base/login/template.ftl > /tmp/base-template.ftl
+diff <(tail -n +9 infra/keycloak/themes/jtoye/login/template.ftl) /tmp/base-template.ftl   # only the JTOYE blocks should differ
+```
+
+Re-apply the marked blocks onto the new base, bump the marker, copy to
+`k8s/components/keycloak/theme/` (`scripts/check-k8s-copy-parity.sh`), then prove it with
+`frontend/e2e/keycloak-login-a11y.verify.mjs` against a throwaway container of the new image.
+
+**Not overridden, so still the stock markup:** `login-username.ftl`, `login-password.ftl`,
+`login-otp.ftl` and the rest of the stock templates carry positive `tabindex` too, and
+`user-profile-commons.ftl` renders the register page's profile fields without `required` and
+without `aria-describedby` on their errors. None is reachable in this realm's flows today
+(`login.ftl` serves the username-and-password form; identifier-first and OTP are off), and forking
+`user-profile-commons.ftl` would be the largest fork of the lot. If a flow that uses one is
+enabled, override it the same way and add it to `FTL` in the gate.
+
+**Realm action-token lifespans (#847).** `actionTokenGeneratedByUserLifespan` was Keycloak's
+default of 300 s in the customer realm (the vendor template carried an explicit 300), so a
+"Forgot password?" or verification link in an email read six minutes later said "Action expired".
+Both templates now set 3600 (one hour; the reset link), and the customer template adds the
+per-action override `actionTokenGeneratedByUserLifespan.verify-email` = 86400 (24 hours) under
+`attributes`. Measured on a throwaway 26.8.1: the reset email's link lived 5 minutes before and
+60 after, the verification link 5 before and 1440 after, and each email states the new lifetime.
+`accessCodeLifespanUserAction` (the five minutes a person has to finish the form AFTER clicking the
+link) is deliberately untouched: not what #847 reported, and a security setting nobody ruled on.
+A realm that already exists keeps its old values until updated in place:
+`docs/runbooks/keycloak-action-token-lifespan.md`. `staging-realm-import.sh`'s assertion suite
+refuses a staging realm below the floor, rendered and read back live.
 
 **`styles` must repeat the parent's stylesheet.** In `theme.properties`, `styles` *replaces* the
 inherited value rather than appending to it, so it reads `css/login.css css/jtoye.css`. Dropping
