@@ -1,4 +1,4 @@
--- V90 [#868, owner ruling 2026-11-04 — a customer who cancels an order paid in parts is refunded what was
+-- V92 [#868, owner ruling 2026-11-04 — a customer who cancels an order paid in parts is refunded what was
 -- actually paid, one refund per captured PaymentIntent].
 --
 -- A deposit-split order (V87) is paid by TWO PaymentIntents: the deposit at checkout and the balance later.

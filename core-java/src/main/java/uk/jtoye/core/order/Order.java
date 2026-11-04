@@ -237,8 +237,8 @@ public class Order {
     private String paymentReference;
 
     /**
-     * V90 (#868): the DEPOSIT PaymentIntent of a deposit-split order, kept when the balance intent overwrites
-     * {@link #paymentReference}. Null = not recorded (never paid in two stages, or paid before V90).
+     * V92 (#868): the DEPOSIT PaymentIntent of a deposit-split order, kept when the balance intent overwrites
+     * {@link #paymentReference}. Null = not recorded (never paid in two stages, or paid before V92).
      */
     @Column(name = "deposit_payment_reference", length = 255)
     private String depositPaymentReference;

@@ -225,8 +225,8 @@ public class RefundService {
      *   <li>a deposit order whose balance is still due: one leg, the deposit intent, the deposit;</li>
      *   <li>a deposit order paid in full by a deposit that IS the total: one leg, the order total;</li>
      *   <li>a deposit order whose balance was also paid: two legs, the deposit intent ({@code
-     *       deposit_payment_reference}, V90) and the balance intent ({@code payment_reference}), and no
-     *       leg at all when the deposit intent was never recorded (paid before V90): nothing is guessed.</li>
+     *       deposit_payment_reference}, V92) and the balance intent ({@code payment_reference}), and no
+     *       leg at all when the deposit intent was never recorded (paid before V92): nothing is guessed.</li>
      * </ul>
      */
     public static List<CancelLeg> cancelRefundLegs(Order order) {

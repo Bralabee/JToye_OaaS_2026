@@ -877,7 +877,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("#868 V90: the balance stage keeps the DEPOSIT intent before overwriting the order's payment reference, once")
+    @DisplayName("#868 V92: the balance stage keeps the DEPOSIT intent before overwriting the order's payment reference, once")
     void handlePaymentSucceeded_balanceStage_keepsTheDepositIntent() throws Exception {
         testOrder.setStatus(OrderStatus.PENDING);
         testOrder.setTotalAmountPennies(10_000L);

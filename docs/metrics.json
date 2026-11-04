@@ -2,7 +2,7 @@
   "java_test_methods": 3273,
   "java_test_files": 449,
   "java_controllers": 35,
-  "schema_version": 90,
+  "schema_version": 92,
   "go_test_funcs": 112,
   "go_test_files": 14,
   "jest_blocks": 3694,

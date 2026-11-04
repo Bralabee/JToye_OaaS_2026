@@ -40,7 +40,7 @@ import java.util.UUID;
  * captured PaymentIntent ({@link RefundService#cancelRefundLegs}), each with its own stable Stripe key.
  *
  * <b>Refused (contact the shop):</b> an order whose payment has not settled either way (PENDING, AUTHORIZED,
- * FAILED), and a deposit order paid in both stages before V90 recorded the deposit intent: the deposit leg
+ * FAILED), and a deposit order paid in both stages before V92 recorded the deposit intent: the deposit leg
  * cannot be refunded without its intent, and refunding only the balance would be a guess about money.
  *
  * <h2>Order of effects (review of PR #1120, A1/A2)</h2>
@@ -214,7 +214,7 @@ public class CustomerOrderCancellationService {
         boolean paidInParts = order.getDepositAmountPennies() != null
                 || (order.getBalanceDuePennies() != null && order.getBalanceDuePennies() > 0);
         boolean cashOrder = payment == PaymentStatus.NONE && !hasReference && !paidInParts;
-        // Card: what was actually paid, leg by leg. No determinable leg (e.g. both stages paid before V90) is
+        // Card: what was actually paid, leg by leg. No determinable leg (e.g. both stages paid before V92) is
         // a refusal, never a guess.
         boolean cardCaptured = payment == PaymentStatus.CAPTURED && hasReference
                 && !RefundService.cancelRefundLegs(order).isEmpty();

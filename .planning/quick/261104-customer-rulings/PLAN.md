@@ -25,8 +25,8 @@ Each is an OWNER RULING made 2026-11-04. Where a future reader needs the why, th
 - #868 ownership is the tracking pair read under `orders_guest_tracking`; the order's tenant is pinned only AFTER the pair matches; wrong pair = same 404 as tracking (no oracle); a bad token is a 401 and never falls back to the body email. The unauthenticated half of the transition is package-private.
 - #868 money: cancel is flushed before the refund (a kitchen that just accepted fails on `@Version` before money moves); the cancel, a CREATING Refund row and the ledger reversal commit BEFORE Stripe is called (review round 1, A2); the Stripe key is the Refund row's own stored key, so a retry of an unfinished attempt re-sends the identical request (A1).
 - #5: core takes the account from the verified token `sub` and re-checks the stored email equals the token's; the name is trimmed, length-capped and control-character-free; the log never carries the name or address.
-- No migration in this lane (V90 is #1115, V91 the vendor-rulings lane; any later need takes V92+).
+- No migration in this lane (V92 is #1115, V91 the vendor-rulings lane; any later need takes V92+).
 - No new third-party script; CSP unchanged. Keycloak account console is a plain link.
 - MCP: none for #868 (customer's own action; the MCP server acts for a vendor). None for #5 (a customer's own profile).
 
-- #868 deposit/balance (owner ruling 2026-11-04, coordinator step 2): refund what was actually paid, one Refund row and one Stripe key per captured PaymentIntent (`RefundService.cancelRefundLegs`); V90 `orders.deposit_payment_reference` keeps the deposit intent the balance webhook used to overwrite; pre-V90 orders paid in both stages stay refused.
+- #868 deposit/balance (owner ruling 2026-11-04, coordinator step 2): refund what was actually paid, one Refund row and one Stripe key per captured PaymentIntent (`RefundService.cancelRefundLegs`); V92 `orders.deposit_payment_reference` keeps the deposit intent the balance webhook used to overwrite; pre-V92 orders paid in both stages stay refused.

@@ -764,7 +764,7 @@ public class PaymentService {
                         : (intent.getAmount() != null ? intent.getAmount() : 0L);
                 order.setBalanceDuePennies(0L);
                 order.setPaymentStatus(PaymentStatus.CAPTURED);
-                // V90 (#868): the balance intent is about to replace the order's payment reference, and the
+                // V92 (#868): the balance intent is about to replace the order's payment reference, and the
                 // deposit intent's id is the only way to refund the deposit leg. Keep it, once; a redelivery
                 // (reference already the balance intent) must not overwrite it with the balance intent.
                 if (order.getDepositPaymentReference() == null
