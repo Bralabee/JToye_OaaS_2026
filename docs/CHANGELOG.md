@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Unaccepted-Order Alert: Follow-Ups From the Review of the Max-Age Hotfix — 2026-11-04
+### Unaccepted-Order Alert: Follow-Ups From the Review of the Max-Age Hotfix — 2026-11-04 (#1125)
 
 Review of PR 1123, on `UnacceptedOrderSweep`. No migration.
 
