@@ -16,6 +16,10 @@ Quick 261104-vendor-rulings. Owner rulings 2026-11-04 (persona close-out) for is
 - **Unaccepted-order alert (issue 821):** an order left PENDING past `jtoye.orders.unaccepted-alert.threshold` (default 10 minutes) raises a "Waiting too long" badge on the kitchen New lane and a dashboard banner, and the customer gets one email saying the shop has not yet accepted. No auto-cancel. A per-tenant scheduled sweep stamps `orders.unaccepted_notified_at` (V91, `_aud` mirror, no backfill) to notify once per order; voided orders and orders awaiting payment are skipped.
 - **Proof:** the VAT and sweep ITs were red on the unfixed tree or, for the sweep, red 4 of 4 with the tenant pin removed under NOSUPERUSER; see the quick SUMMARY.
 
+### Roadmap: 999.x Backlog for Six Unplanned Items — 2026-11-04 (#1113)
+
+Owner ruling 2026-11-04 (persona-test close-out): issues 870 (menu modifiers), 873 (campaigns and loyalty), 874 (custom domains), 869 (server-side basket) and 863 (MCP OAuth discovery) are persona findings, and issue 208 (WhatsApp channel, AI-6 from the AI-readiness track) is not; all six are closed as not planned for v2.3 and recorded as backlog phases 999.1 to 999.6. Each is a `### Phase 999.N: ... (BACKLOG)` entry under `## Backlog` in `.planning/ROADMAP.md` with a `.planning/phases/999.N-<slug>/.gitkeep` directory, the shape GSD's add-backlog workflow writes, so `/gsd-review-backlog` lists them and `phase.next-decimal 999` returns 999.7. Review round 1 also corrected the entries: 999.1 now names tenant routing, replies and the absent Meta GET handshake as the gaps (the signed POST intake works), 999.2 names the V69 acknowledgement check, 999.3 names the missing marketing-consent capture, and 999.6 keeps the long-lived-token alternative from issue 863. Docs only.
+
 ### Public Content: A Way In, Pricing, About and Draft Merchant Terms — 2026-11-04 (#1116)
 
 Quick 261104-public-content (persona close-out lane `public-content`). Issue 803 (UXT-031), issue 804 (UXT-032), issue 878 UXT-119 (the positioning and confidentiality half), SW-CLR-03 and SW-CLR-06 (epic issue 964). Three owner rulings of 2026-11-04 are cited where the copy lives.
