@@ -111,8 +111,6 @@ frontend/app/dashboard/onboarding/page.tsx	detail
 # ---------------------------------------------------------------------------------------
 frontend/app/page.tsx	marketing
 frontend/components/marketing/operator-pitch.tsx	marketing
-frontend/components/marketing/business-model-guide.tsx	marketing
-frontend/components/marketing/competitive-teardown.tsx	marketing
 # ORCH-06 (orchestrator decision, 2026-08-29): the outer band of all four /legal/* policy
 # routes. The reading measure is held independently at max-w-[68ch] on the columns inside
 # it, so widening the band does not widen prose — a tier is a ceiling, not a target.

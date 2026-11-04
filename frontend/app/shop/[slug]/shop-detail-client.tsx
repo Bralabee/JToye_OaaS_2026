@@ -1022,7 +1022,7 @@ export function ShopDetailClient({
             <h2 className="text-lg font-semibold text-oxblood">
               No dishes at this kitchen declare {declaredName}
             </h2>
-            <p className="mt-1 max-w-md text-sm text-slate-600">{DECLARED_FILTER_HELP}</p>
+            <p className="mt-1 sm:w-96 text-sm text-slate-600">{DECLARED_FILTER_HELP}</p>
           </div>
         )}
         {allCategoryCount === 0 && (
