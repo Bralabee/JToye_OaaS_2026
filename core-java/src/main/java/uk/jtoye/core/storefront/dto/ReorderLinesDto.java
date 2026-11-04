@@ -17,7 +17,21 @@ import java.util.UUID;
 public record ReorderLinesDto(
         @Schema(description = "The order these lines belong to.") String orderNumber,
         @Schema(description = "The shop the order was placed at, so the basket for that shop can be filled.") String shopSlug,
-        @Schema(description = "One entry per order line.") List<Line> lines) {
+        @Schema(description = "One entry per order line.") List<Line> lines,
+        @Schema(description = "Where and on which phone this order was delivered, so the next checkout can be "
+                + "pre-filled on a browser that has never seen the customer. Null for a collection order, an order "
+                + "with no address, and an order whose personal data has been erased. It is the caller's OWN order "
+                + "returned to the caller (the token's verified email), no-store, and nothing is stored anew: it is "
+                + "the column the order already holds.", nullable = true) Delivery delivery) {
+
+    @Schema(description = "The delivery details the order was placed with.")
+    public record Delivery(
+            @Schema(description = "Address line 1.") String addressLine1,
+            @Schema(description = "Address line 2.", nullable = true) String addressLine2,
+            @Schema(description = "Town or city.") String addressCity,
+            @Schema(description = "Postcode.") String addressPostcode,
+            @Schema(description = "The phone number given at checkout.", nullable = true) String phone) {
+    }
 
     @Schema(description = "One order line as it was recorded when the order was placed.")
     public record Line(

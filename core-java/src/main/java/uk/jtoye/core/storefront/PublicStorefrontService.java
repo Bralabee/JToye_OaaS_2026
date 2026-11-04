@@ -823,7 +823,17 @@ public class PublicStorefrontService {
                     .map(item -> new ReorderLinesDto.Line(
                             item.getProductId(), item.getProductName(), item.getQuantity(), item.getUnitPricePennies()))
                     .toList();
-            return new ReorderLinesDto(order.getOrderNumber(), shop.getSlug(), lines);
+            // The delivery details of a DELIVERY order that has an address: the customer's own order,
+            // returned to them, so a fresh browser can pre-fill the next checkout (#845). Nothing is
+            // stored anew. A collection order, or one whose address was erased (Article 17 anonymises
+            // these columns), yields null, never a half-filled or invented address.
+            ReorderLinesDto.Delivery delivery = null;
+            if (order.getFulfilmentType() == uk.jtoye.core.order.FulfilmentType.DELIVERY
+                    && !isBlank(order.getAddressLine1()) && !isBlank(order.getAddressPostcode())) {
+                delivery = new ReorderLinesDto.Delivery(order.getAddressLine1(), order.getAddressLine2(),
+                        order.getAddressCity(), order.getAddressPostcode(), order.getCustomerPhone());
+            }
+            return new ReorderLinesDto(order.getOrderNumber(), shop.getSlug(), lines, delivery);
         } finally {
             TenantContext.clear();
         }

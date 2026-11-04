@@ -255,6 +255,36 @@ class CustomerOrderReviewAndReorderIntegrationTest {
     }
 
     @Test
+    @DisplayName("#845: a delivery order's own address and phone come back with its lines (a fresh browser can pre-fill); a collection order, and an erased one, return none")
+    void deliveryDetailsComeBackOnlyForADeliveryOrderThatHasAnAddress() throws Exception {
+        UUID delivered = seedOrder(shopA, OWNER_EMAIL, "COMPLETED", "ORD-4604-" + shortId());
+        seedLine(delivered, seedProduct(shopA, "Jollof Rice", 1000), "Jollof Rice", 1, 1000);
+        setDelivery(delivered, "DELIVERY", "12 Coldharbour Lane", "Flat 3", "London", "SW9 8LF", "07700 900001");
+
+        JsonNode body = jsonMapper.readTree(reorder(slugA, orderNumber(delivered), OWNER_TOKEN).getResponse().getContentAsString());
+        JsonNode delivery = body.path("delivery");
+        assertThat(delivery.path("addressLine1").asString()).isEqualTo("12 Coldharbour Lane");
+        assertThat(delivery.path("addressLine2").asString()).isEqualTo("Flat 3");
+        assertThat(delivery.path("addressCity").asString()).isEqualTo("London");
+        assertThat(delivery.path("addressPostcode").asString()).isEqualTo("SW9 8LF");
+        assertThat(delivery.path("phone").asString()).isEqualTo("07700 900001");
+
+        UUID collected = seedOrder(shopA, OWNER_EMAIL, "COMPLETED", "ORD-4604-" + shortId());
+        setDelivery(collected, "COLLECTION", "12 Coldharbour Lane", null, "London", "SW9 8LF", "07700 900001");
+        MvcResult collectedRes = reorder(slugA, orderNumber(collected), OWNER_TOKEN);
+        assertThat(jsonMapper.readTree(collectedRes.getResponse().getContentAsString()).path("delivery").isNull())
+                .as("a collection order returns no delivery details even if an address column holds something: " + text(collectedRes))
+                .isTrue();
+
+        UUID erased = seedOrder(shopA, OWNER_EMAIL, "COMPLETED", "ORD-4604-" + shortId());
+        setDelivery(erased, "DELIVERY", null, null, null, null, null);
+        MvcResult erasedRes = reorder(slugA, orderNumber(erased), OWNER_TOKEN);
+        assertThat(jsonMapper.readTree(erasedRes.getResponse().getContentAsString()).path("delivery").isNull())
+                .as("an order whose address was erased returns none, never a half-filled one: " + text(erasedRes))
+                .isTrue();
+    }
+
+    @Test
     @DisplayName("#845: the signed-in order history now says which shop each order is from (shopSlug), so a past order can link to it")
     void historyCarriesTheShopSlug() throws Exception {
         UUID order = seedOrder(shopA, OWNER_EMAIL, "COMPLETED", "ORD-4604-" + shortId());
@@ -354,6 +384,13 @@ class CustomerOrderReviewAndReorderIntegrationTest {
                 "INSERT INTO order_items (tenant_id, order_id, product_id, quantity, unit_price_pennies, "
                         + "total_price_pennies, product_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 TENANT_ID, order, product, quantity, unitPennies, unitPennies * quantity, name));
+    }
+
+    private void setDelivery(UUID order, String fulfilment, String line1, String line2, String city, String postcode, String phone) {
+        inTenant(() -> jdbcTemplate.update(
+                "UPDATE orders SET fulfilment_type = ?, address_line1 = ?, address_line2 = ?, address_city = ?, "
+                        + "address_postcode = ?, customer_phone = ? WHERE id = ?",
+                fulfilment, line1, line2, city, postcode, phone, order));
     }
 
     private String orderNumber(UUID order) {

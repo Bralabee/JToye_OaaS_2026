@@ -2130,6 +2130,38 @@
         },
         "type" : "object"
       },
+      "Delivery" : {
+        "description" : "The delivery details the order was placed with.",
+        "properties" : {
+          "addressCity" : {
+            "description" : "Town or city.",
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "description" : "Address line 1.",
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "description" : "Address line 2.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "description" : "Postcode.",
+            "type" : "string"
+          },
+          "phone" : {
+            "description" : "The phone number given at checkout.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type" : "object"
+      },
       "DirectoryEntryDto" : {
         "properties" : {
           "displayName" : {
@@ -5166,6 +5198,11 @@
       "ReorderLinesDto" : {
         "description" : "The lines of one of the caller's own past orders, to refill a basket. Carries no personal data.",
         "properties" : {
+          "delivery" : {
+            "$ref" : "#/components/schemas/Delivery",
+            "description" : "Where and on which phone this order was delivered, so the next checkout can be pre-filled on a browser that has never seen the customer. Null for a collection order, an order with no address, and an order whose personal data has been erased. It is the caller's OWN order returned to the caller (the token's verified email), no-store, and nothing is stored anew: it is the column the order already holds.",
+            "type" : "null"
+          },
           "lines" : {
             "description" : "One entry per order line.",
             "items" : {
