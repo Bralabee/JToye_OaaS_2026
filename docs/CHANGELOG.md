@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Persona Wave 2: Accessibility and API Contract Leftovers — 2026-11-04 (#1127)
+
+Issues 877, 848, 878 and 879 (persona close-out leftovers), each fixed test-first. No migration.
+
+- **Accessibility statement (issue 878):** the "required fields marked visually only" exception is removed: the checkout address fields carry `aria-required`, and a test now holds every starred checkout field to `required` or `aria-required`.
+- **Keycloak register fields (issue 848):** a fourth theme override, `user-profile-commons.ftl`, gives email, first and last name `aria-required` and an `aria-describedby` to their error; `keycloak-login-a11y.verify.mjs` checks both (red on the stock theme, green here) and now runs in the nightly; `check-keycloak-theme-ftl.sh` covers the new file.
+- **OpenAPI contract (issue 879):** responses declare `application/json` (or `text/csv`, `application/pdf`, `text/plain` where that is true) instead of `*/*`; every rate-limited operation documents a 429 with `Retry-After`; paged lists document `page`, `size`, `sort` instead of a `pageable` object; the batch response also answers `processed_count` (the edge reads either); the `orders:write` scope text is corrected. Snapshot regenerated.
+- **Storefront polish (issue 877):** sign-out from the header icon asks first; menu photos are decorative; a postcode that was never found says so (`X-Search-Interpretation: postcode-unrecognised`); the list card's banner photo is pinned. React error 418 was not reproduced; hydration of `/track` and My Orders is pinned.
+
 ### Unaccepted-Order Alert: Follow-Ups From the Review of the Max-Age Hotfix — 2026-11-04 (#1125)
 
 Review of PR 1123, on `UnacceptedOrderSweep`. No migration. Over-age orders stay exactly as #1123 shipped them: not emailed and not stamped (the stamp is what the kitchen board and dashboard banner read as "the customer has been told", so stamping them would have been both false and a first-deploy alert flood).
