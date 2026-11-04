@@ -586,6 +586,21 @@ export interface OrderAllergenFlag {
 // (V45, Phase 19-01). COLLECTION orders carry no delivery address.
 export type FulfilmentType = "DELIVERY" | "COLLECTION"
 
+/** One line of an order's activity timeline (GET /orders/{id}/timeline, issue #857). */
+export interface OrderTimelineEvent {
+  kind: "PLACED" | "STATUS" | "PAYMENT" | "VOIDED"
+  fromStatus: OrderStatus | null
+  status: OrderStatus | null
+  paymentStatus: PaymentStatus | null
+  /** A recorded reason: a cancel reason code, or a void reason as written. */
+  detail: string | null
+  /** ISO instant the change was committed. */
+  at: string
+  /** STAFF = a signed-in person; SYSTEM = no one was (the customer at checkout, a webhook, a job). */
+  actorType: "STAFF" | "SYSTEM"
+  actorName: string | null
+}
+
 export interface OrderDetail {
   id: string
   tenantId: string

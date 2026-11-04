@@ -39,6 +39,7 @@ import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import type { OrderDetail } from "@/types/api"
 
 jest.mock("@/lib/api-client")
+jest.mock("@/components/dashboard/orders/order-timeline", () => ({ OrderTimeline: () => null }))
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
 
 jest.mock("@/hooks/use-toast", () => ({
