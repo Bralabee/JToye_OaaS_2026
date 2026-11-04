@@ -14,9 +14,9 @@ import java.util.UUID;
 @Schema(description = "Request to create a new product (Natasha's Law compliant)")
 public class CreateProductRequest {
 
-    @NotBlank(message = "SKU is required")
-    @Size(min = 1, max = 100, message = "SKU must be between 1 and 100 characters")
-    @Schema(description = "Stock Keeping Unit (unique per tenant)", example = "YAM-5KG", required = true)
+    @Size(max = 100, message = "SKU must be at most 100 characters")
+    @Schema(description = "Stock Keeping Unit (unique per tenant). Optional: omitted or blank, one is generated "
+            + "(JTP-XXXXXXXX). On an update, blank keeps the stored SKU.", example = "YAM-5KG")
     private String sku;
 
     @NotBlank(message = "Title is required")

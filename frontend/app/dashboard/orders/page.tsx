@@ -693,7 +693,9 @@ function OrdersPageInner() {
     // declaration a test can falsify rather than an absence indistinguishable
     // from a forgotten cap. Do not "tidy" this by adding a max-width — the
     // narrowing would be the defect this phase exists to remove.
-    <div data-width-tier="index" className={`space-y-6${selectedPending.length > 0 ? " pb-28" : ""}`}>
+    // flex-col (with the unchanged space-y-6 rhythm) is what lets the status-flow explainer
+    // sit AFTER the orders below lg (UXT-101) without moving it in the DOM.
+    <div data-width-tier="index" className={`flex flex-col space-y-6${selectedPending.length > 0 ? " pb-28" : ""}`}>
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
@@ -725,8 +727,11 @@ function OrdersPageInner() {
       */}
       <h2 className="sr-only">Overview</h2>
 
-      {/* Status Flow Visualization */}
+      {/* Status Flow Visualization. #875 / UXT-101: a legend, not the work. Below lg it follows the orders
+          (order-last), so a phone's first screen is orders; at lg and up it is where it always was. */}
       <m.div
+        data-testid="order-status-flow"
+        className="order-last lg:order-none"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
@@ -888,7 +893,8 @@ function OrdersPageInner() {
                     <TableHead>Customer</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Total</TableHead>
-                    <TableHead>Created</TableHead>
+                    {/* UXT-101: the first column to give way on a tablet, so Total and Actions keep the room. */}
+                    <TableHead className="hidden xl:table-cell">Created</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -984,7 +990,7 @@ function OrdersPageInner() {
                         <TableCell className="font-semibold">
                           £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
                         </TableCell>
-                        <TableCell className="text-slate-600">
+                        <TableCell data-column="created" className="hidden text-slate-600 xl:table-cell">
                           {formatDistanceToNow(new Date(order.createdAt), {
                             addSuffix: true,
                           })}
