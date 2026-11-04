@@ -524,7 +524,23 @@ export async function handleCallback(
  * in a `useEffect`. For "should I render the nav as logged in" synchronous
  * checks, use `isLoggedIn()`.
  */
-export async function getCustomerSession(): Promise<CustomerSession | null> {
+export function getCustomerSession(): Promise<CustomerSession | null> {
+  // Single flight (#843). Past the access-token lifetime every probe is a redemption of the one
+  // refresh cookie on the server, and the realm rotates it (single use). The nav store alone
+  // probes on mount and then each second for five seconds, and checkout adds its own, so on a slow
+  // connection the first request has not returned when the next leaves, and they all carry the
+  // same cookie. Callers that overlap share one request; nothing is cached once it settles.
+  if (sessionInFlight) return sessionInFlight
+  const attempt = fetchCustomerSession().finally(() => {
+    sessionInFlight = null
+  })
+  sessionInFlight = attempt
+  return attempt
+}
+
+let sessionInFlight: Promise<CustomerSession | null> | null = null
+
+async function fetchCustomerSession(): Promise<CustomerSession | null> {
   try {
     const res = await fetch("/api/customer-auth/session", {
       credentials: "include",

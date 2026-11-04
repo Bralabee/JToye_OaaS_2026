@@ -13,6 +13,8 @@
  * another HttpOnly cookie.
  */
 
+import { createHash } from "crypto"
+
 interface RefreshedTokens {
   accessToken: string
   refreshToken: string
@@ -110,17 +112,89 @@ async function redeem(refreshToken: string): Promise<RefreshedTokens | null> {
   }
 }
 
+/**
+ * Grace memo of SUCCESSFUL redemptions, keyed by the digest of the refresh token that was spent
+ * (issue #843, a regression of #465 on a slow network).
+ *
+ * The in-flight guard above only collapses probes that overlap IN TIME. Under latency the
+ * storefront's probes all leave the browser carrying the same cookie but reach the server at
+ * different moments: the first redeems and settles, and a probe arriving after that would
+ * redeem the already-rotated token, be refused (`invalid_grant`), and make the route clear all
+ * three cookies over the ones the first probe had just issued. A late arrival is not a replay
+ * attack, it is the same browser one round trip behind, so for a bounded window the answer to
+ * "this token was just spent" is the renewed session it was spent for.
+ *
+ * Bounds, deliberate:
+ *   - SUCCESS ONLY. A refusal or a network failure is never remembered, so a transient IdP
+ *     fault cannot pin a customer signed out and a genuinely dead token is still reported dead.
+ *   - GRACE_MS. A replay of a spent token after the window goes to the IdP and is refused, as
+ *     before. The window only has to cover one slow round trip, not a session.
+ *   - Keyed by SHA-256 of the spent token, so the map holds no usable credential as a key, and
+ *     one customer's renewed tokens can only be returned to a request that presented the exact
+ *     token that produced them (the same proof the IdP would have asked for).
+ *   - Capped (MAX_ENTRIES, oldest first) so a flood of distinct tokens cannot grow it.
+ *
+ * Scope is one server instance, exactly like the in-flight guard. Across frontend replicas the
+ * IdP stays the arbiter; the client-side single flight in getCustomerSession() is what keeps one
+ * browser from sending overlapping probes in the first place.
+ */
+const GRACE_MS = 60_000
+const MAX_ENTRIES = 1000
+
+interface Remembered {
+  tokens: RefreshedTokens
+  until: number
+}
+
+const recentlySpent = new Map<string, Remembered>()
+
+function digest(token: string): string {
+  return createHash("sha256").update(token).digest("hex")
+}
+
+function sweep(now: number): void {
+  for (const [key, entry] of recentlySpent) {
+    if (entry.until <= now) recentlySpent.delete(key)
+  }
+  // Map iterates in insertion order, so the first keys are the oldest.
+  while (recentlySpent.size >= MAX_ENTRIES) {
+    const oldest = recentlySpent.keys().next().value
+    if (oldest === undefined) break
+    recentlySpent.delete(oldest)
+  }
+}
+
 export async function refreshCustomerTokens(
   refreshToken: string
 ): Promise<RefreshedTokens | null> {
+  const key = digest(refreshToken)
+
+  const remembered = recentlySpent.get(key)
+  if (remembered && remembered.until > Date.now()) return remembered.tokens
+
   const existing = inFlight.get(refreshToken)
   if (existing) return existing
 
-  const attempt = redeem(refreshToken).finally(() => {
-    inFlight.delete(refreshToken)
-  })
+  const attempt = redeem(refreshToken)
+    .then((tokens) => {
+      if (tokens) {
+        const now = Date.now()
+        sweep(now)
+        recentlySpent.set(key, { tokens, until: now + GRACE_MS })
+      }
+      return tokens
+    })
+    .finally(() => {
+      inFlight.delete(refreshToken)
+    })
   inFlight.set(refreshToken, attempt)
   return attempt
+}
+
+/** TEST ISOLATION ONLY: drop the grace memo (module state outlives an individual `it`). */
+export function __resetRefreshMemoForTests(): void {
+  recentlySpent.clear()
+  inFlight.clear()
 }
 
 export type { RefreshedTokens }

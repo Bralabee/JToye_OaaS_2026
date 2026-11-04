@@ -19,6 +19,7 @@
 
 import { GET as sessionGET } from "../session/route"
 import { NextRequest } from "next/server"
+import { __resetRefreshMemoForTests } from "@/lib/customer-token-refresh"
 
 function fakeJwt(claims: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")
@@ -61,6 +62,8 @@ const ORIGINAL_ENV = { ...process.env }
 beforeEach(() => {
   process.env.CUSTOMER_KEYCLOAK_ISSUER_INTERNAL = "http://keycloak:8080/realms/jtoye-customers"
   jest.restoreAllMocks()
+  // The grace memo (#843) is module state that outlives an `it`; several tests here reuse a token name.
+  __resetRefreshMemoForTests()
 })
 
 afterEach(() => {
