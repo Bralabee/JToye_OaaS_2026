@@ -1,6 +1,7 @@
 package uk.jtoye.core.finance.dto;
 
 import uk.jtoye.core.finance.EntryKind;
+import uk.jtoye.core.finance.PaidOnline;
 import uk.jtoye.core.finance.VatRate;
 
 import java.time.OffsetDateTime;
@@ -12,6 +13,7 @@ import java.util.UUID;
  *
  * @param orderNumber null for a row with no order (MANUAL)
  * @param shopName    null for a row with no shop (MANUAL, or a legacy order-less row)
+ * @param paidOnlinePennies the channel recorded on the row when it was written (V93, #827); null = not recorded
  */
 public record FinanceExportRow(
         UUID id,
@@ -21,6 +23,11 @@ public record FinanceExportRow(
         EntryKind entryKind,
         long amountPennies,
         VatRate vatRate,
-        String shopName
+        String shopName,
+        Long paidOnlinePennies
 ) {
+    /** #827: the label the row prints, from the figure recorded on it (never from the order's current status). */
+    public String paymentLabel() {
+        return PaidOnline.label(paidOnlinePennies, amountPennies);
+    }
 }

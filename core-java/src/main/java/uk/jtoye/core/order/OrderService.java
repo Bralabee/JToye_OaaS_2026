@@ -27,6 +27,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransaction;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatCalculator;
+import uk.jtoye.core.finance.PaidOnline;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.order.dto.BulkCancelRequest;
@@ -1008,7 +1009,11 @@ public class OrderService {
                             "Order " + order.getOrderNumber(),
                             order.getId(),
                             order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
-                    ));
+                    ),
+                    // V93: only what was CAPTURED online by now. A cash order is 0; a deposit-split order is its
+                    // deposit (the balance is collected outside the platform); an order that settled by card
+                    // already has its SALE, so this call is the idempotent no-op and the stored channel stands.
+                    PaidOnline.settledOnlinePennies(order));
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }
 

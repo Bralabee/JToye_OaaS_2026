@@ -197,7 +197,10 @@ class PaymentServiceTest {
 
             // Verify financial transaction created
             ArgumentCaptor<CreateTransactionRequest> txCaptor = ArgumentCaptor.forClass(CreateTransactionRequest.class);
-            verify(financialTransactionService).createTransaction(txCaptor.capture());
+            ArgumentCaptor<Long> channel = ArgumentCaptor.forClass(Long.class);
+            verify(financialTransactionService).createTransaction(txCaptor.capture(), channel.capture());
+            // V93 (#827): a full card payment is recorded as wholly online, on the row, when it is written.
+            assertEquals(1500L, channel.getValue());
             CreateTransactionRequest tx = txCaptor.getValue();
             assertEquals(1500L, tx.amountPennies());
             assertEquals(VatRate.STANDARD, tx.vatRate()); // follows order.getVatRate() (BUG 2)
@@ -251,6 +254,7 @@ class PaymentServiceTest {
 
             // No financial transaction on failure
             verify(financialTransactionService, never()).createTransaction(any());
+            verify(financialTransactionService, never()).createTransaction(any(), any());
             // No order state change published on failure (order stays DRAFT).
             // Phase 23: OrderService/PaymentService now use the 6-arg (shopId-carrying) overload.
             verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
@@ -679,6 +683,7 @@ class PaymentServiceTest {
                     eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
                     eq("pi_dep_succ"), eq(3000L), eq("gbp"));
             verify(financialTransactionService, never()).createTransaction(any());
+            verify(financialTransactionService, never()).createTransaction(any(), any());
         }
     }
 
@@ -871,8 +876,11 @@ class PaymentServiceTest {
                     eq("pi_bal_succ"), eq(7000L), eq("gbp"));
 
             ArgumentCaptor<CreateTransactionRequest> txCaptor = ArgumentCaptor.forClass(CreateTransactionRequest.class);
-            verify(financialTransactionService).createTransaction(txCaptor.capture());
+            ArgumentCaptor<Long> channel = ArgumentCaptor.forClass(Long.class);
+            verify(financialTransactionService).createTransaction(txCaptor.capture(), channel.capture());
             assertEquals(10_000L, txCaptor.getValue().amountPennies());
+            // V93 (#827): deposit intent + balance intent both went through the card, so the whole SALE is online.
+            assertEquals(10_000L, channel.getValue());
         }
     }
 
@@ -937,7 +945,7 @@ class PaymentServiceTest {
         verify(paymentEventPublisher).publishSucceeded(
                 eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
                 eq("pi_958_conf"), eq(1500L), eq("gbp"));
-        verify(financialTransactionService).createTransaction(any());
+        verify(financialTransactionService).createTransaction(any(), any());
     }
 
     @Test

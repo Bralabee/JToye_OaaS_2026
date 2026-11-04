@@ -31,6 +31,19 @@ public record FinancialTransactionDto(
         UUID reversesTransactionId,
         @Schema(description = "The shop the row belongs to (Phase 37-11): the order's shop for a SALE, the "
                 + "sale's shop for a REVERSAL; null for a MANUAL row, which only the tenant-wide view lists.")
-        UUID shopId
+        UUID shopId,
+        @Schema(description = "#827 (V93): of amountPennies, how many pennies were taken online (card, through the "
+                + "platform), recorded when the row was written. Same sign as amountPennies. 0 = Not paid online "
+                + "(cash, a MANUAL row); equal to amountPennies = Paid online; between = Part paid online (a "
+                + "deposit by card, the balance in cash). null = not recorded (a legacy row the order could not "
+                + "prove).", nullable = true)
+        Long paidOnlinePennies
 ) {
+    /** The pre-#827 shape, with no recorded channel. */
+    public FinancialTransactionDto(UUID id, UUID tenantId, Long amountPennies, VatRate vatRate,
+                                   Long vatAmountPennies, String description, OffsetDateTime createdAt,
+                                   EntryKind entryKind, UUID orderId, UUID reversesTransactionId, UUID shopId) {
+        this(id, tenantId, amountPennies, vatRate, vatAmountPennies, description, createdAt, entryKind, orderId,
+                reversesTransactionId, shopId, null);
+    }
 }

@@ -93,6 +93,48 @@ const FINANCE_PRESETS: ReadonlyArray<{ id: FinancePreset; label: string }> = [
   { id: "month", label: "This month" },
 ]
 
+/**
+ * #827 (V93): the channel RECORDED on a ledger row when it was written, as a label. The server stores how many
+ * of the row's pennies came in online; the comparison is against the row's own amount (same sign, so a
+ * reversal reads the same as its sale). null = a legacy row whose channel was never recorded; an older server
+ * sends no field at all, and then nothing is shown.
+ */
+function PaymentChannelBadge({
+  paidOnlinePennies,
+  amountPennies,
+}: {
+  paidOnlinePennies?: number | null
+  amountPennies: number
+}) {
+  if (paidOnlinePennies === undefined) return null
+  if (paidOnlinePennies === null) {
+    return (
+      <Badge variant="outline" className="text-slate-600">
+        Not recorded
+      </Badge>
+    )
+  }
+  if (paidOnlinePennies === 0) {
+    return (
+      <Badge variant="outline" className="text-slate-700">
+        Not paid online
+      </Badge>
+    )
+  }
+  if (paidOnlinePennies === amountPennies) {
+    return (
+      <Badge variant="outline" className="border-green-200 bg-green-50 text-green-800">
+        Paid online
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">
+      Part paid online
+    </Badge>
+  )
+}
+
 function httpStatus(err: unknown): number | undefined {
   if (err && typeof err === "object" && "response" in err) {
     return (err as { response?: { status?: number } }).response?.status
@@ -522,6 +564,69 @@ export default function FinancePage() {
         </m.div>
       )}
 
+      {/* #827 (owner ruling 2026-11-04): what was taken, split by how it was paid. The server derives it
+          from the order behind each ledger row; the two figures add up to Revenue. An older server sends
+          neither field, and then no split is shown rather than a made-up £0.00. */}
+      {summary &&
+        summary.paidOnlineRevenuePennies != null &&
+        summary.notPaidOnlineRevenuePennies != null && (
+          <div
+            data-testid="finance-payment-split"
+            className={`grid grid-cols-1 gap-4 ${
+              (summary.paymentNotRecordedRevenuePennies ?? 0) > 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
+            <Card data-testid="finance-paid-online">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Paid online</CardTitle>
+                <CardDescription>Card payments taken through J&apos;Toye</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-paid-online-amount"
+                  className="text-2xl font-bold tabular-nums text-green-700 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.paidOnlineRevenuePennies)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card data-testid="finance-not-paid-online">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Not paid online</CardTitle>
+                <CardDescription>Cash, cash balances and manual entries</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-not-paid-online-amount"
+                  className="text-2xl font-bold tabular-nums text-slate-800 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.notPaidOnlineRevenuePennies)}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* V93: rows from before the payment channel was recorded that the order could not prove. In
+                neither figure above; shown only when there is some, so a ledger written since V93 shows
+                two cards. */}
+            {(summary.paymentNotRecordedRevenuePennies ?? 0) > 0 && (
+              <Card data-testid="finance-payment-not-recorded">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Not recorded</CardTitle>
+                  <CardDescription>Earlier sales, before the payment method was kept</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div
+                    data-testid="finance-payment-not-recorded-amount"
+                    className="text-2xl font-bold tabular-nums text-slate-600 [overflow-wrap:anywhere]"
+                  >
+                    {formatPennies(summary.paymentNotRecordedRevenuePennies ?? 0)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
       {/* GAP-GTM-07: Merchant Value & ROI Telemetry (Direct GTV, 28% Aggregator Commission Saved, Repeat Buyers, V81 Cash Abuse Protection) */}
       {summary && (
         <m.div
@@ -629,6 +734,7 @@ export default function FinancePage() {
                     <TableHead>Amount</TableHead>
                     <TableHead>VAT Rate</TableHead>
                     <TableHead>VAT Amount</TableHead>
+                    <TableHead>Payment</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -668,6 +774,12 @@ export default function FinancePage() {
                         </TableCell>
                         <TableCell>
                           {formatPennies(tx.vatAmountPennies)}
+                        </TableCell>
+                        <TableCell>
+                          <PaymentChannelBadge
+                            paidOnlinePennies={tx.paidOnlinePennies}
+                            amountPennies={tx.amountPennies}
+                          />
                         </TableCell>
                         <TableCell className="text-slate-600">
                           {formatDistanceToNow(new Date(tx.createdAt), {

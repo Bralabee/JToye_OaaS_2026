@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
+import uk.jtoye.core.finance.PaidOnline;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -789,7 +790,10 @@ public class PaymentService {
                                     "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
                                     order.getId(),
                                     order.getShopId()
-                            ));
+                            ),
+                            // V93: the order is CAPTURED with its balance cleared, so the whole total came in
+                            // by card (deposit intent + balance intent).
+                            PaidOnline.settledOnlinePennies(order));
                 }
 
                 log.info("Remaining balance payment succeeded for order {} — PI: {}, balance: {} pennies",
@@ -856,7 +860,9 @@ public class PaymentService {
                                 "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
                                 order.getId(),
                                 order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
-                        ));
+                        ),
+                        // V93: recorded on the row now; a later replay or a different channel never rewrites it.
+                        PaidOnline.settledOnlinePennies(order));
             }
 
             log.info("Payment succeeded for order {} — PI: {}, method: {}",

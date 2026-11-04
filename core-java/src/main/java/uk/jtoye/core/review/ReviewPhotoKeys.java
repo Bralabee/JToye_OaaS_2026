@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
  * carry a query or fragment, nor hide an encoded character. The UUIDs are compared in their
  * canonical lower-case {@link UUID#toString()} form.
  *
- * <p><b>Shared by creation and erasure.</b> {@code ReviewService.createReview} refuses any
- * {@code photoUrls} entry whose key does not satisfy this rule, and {@code GdprService} only ever
+ * <p><b>Used by erasure.</b> Review creation took a photo list only through the removed
+ * email-in-URL endpoint (#846), so {@code GdprService} is the one caller now: it only ever
  * deletes a review's photo whose key does. The erasure check does not depend on the creation check:
  * rows written before this rule existed are covered because erasure applies it again. It is an
  * ALLOW-list on purpose — a deny-list of vendor paths fails open for any path nobody listed.

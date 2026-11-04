@@ -11,7 +11,8 @@ import java.util.List;
  *
  * <p><strong>Format.</strong> RFC 4180: a header row, CRLF line endings, and a field quoted (with inner quotes
  * doubled) only when it holds a comma, a quote, CR or LF. Columns:
- * {@code date, reference, order_number, entry_kind, amount, vat_rate, vat_amount, shop}.
+ * {@code date, reference, order_number, entry_kind, amount, vat_rate, vat_amount, shop, payment,
+ * paid_online_amount}.
  * <ul>
  *   <li>{@code date}: the row's time in UK local time (Europe/London, BST included), {@code dd/MM/yyyy HH:mm},
  *       the order a UK spreadsheet reads.</li>
@@ -20,6 +21,13 @@ import java.util.List;
  *       {@link VatCalculator#vatFromGross} (the summary's arithmetic).</li>
  *   <li>{@code entry_kind}: SALE, REVERSAL or MANUAL, so a voided order shows as its sale and its reversal.</li>
  *   <li>{@code order_number} and {@code shop}: empty for a row with none (a MANUAL entry).</li>
+ *   <li>{@code payment} (#827, after the original columns so their positions are unchanged): the channel
+ *       RECORDED on the row when it was written (V93): {@code Paid online}, {@code Not paid online},
+ *       {@code Part paid online} (a deposit by card, the balance not) or {@code Not recorded} (a legacy row)
+ *       ({@link PaidOnline}). It never changes after the row is written, so a CSV handed over for a closed period
+ *       keeps matching the page.</li>
+ *   <li>{@code paid_online_amount}: the pounds of the row's amount taken online, signed like {@code amount};
+ *       empty when the channel is not recorded.</li>
  * </ul>
  *
  * <p><strong>Spreadsheet formula injection (T-37-31).</strong> A text cell that begins with {@code =},
@@ -34,7 +42,7 @@ import java.util.List;
 public final class FinanceCsvExporter {
 
     /** The header row, in column order. */
-    public static final String HEADER = "date,reference,order_number,entry_kind,amount,vat_rate,vat_amount,shop";
+    public static final String HEADER = "date,reference,order_number,entry_kind,amount,vat_rate,vat_amount,shop,payment,paid_online_amount";
 
     private static final String CRLF = "\r\n";
     private static final DateTimeFormatter UK_DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
@@ -53,7 +61,9 @@ public final class FinanceCsvExporter {
                     .append(pounds(row.amountPennies())).append(',')
                     .append(row.vatRate().name()).append(',')
                     .append(pounds(VatCalculator.vatFromGross(row.amountPennies(), row.vatRate()))).append(',')
-                    .append(text(row.shopName()))
+                    .append(text(row.shopName())).append(',')
+                    .append(row.paymentLabel()).append(',')
+                    .append(row.paidOnlinePennies() == null ? "" : pounds(row.paidOnlinePennies()))
                     .append(CRLF);
         }
         return csv.toString();

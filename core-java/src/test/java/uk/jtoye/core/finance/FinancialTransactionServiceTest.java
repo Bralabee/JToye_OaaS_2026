@@ -48,6 +48,9 @@ class FinancialTransactionServiceTest {
     @Mock
     private FinancialTransactionMapper financialTransactionMapper;
 
+    @Mock
+    private uk.jtoye.core.order.OrderRepository orderRepository;
+
     @InjectMocks
     private FinancialTransactionService financialTransactionService;
 
@@ -615,6 +618,93 @@ class FinancialTransactionServiceTest {
         assertNotNull(result, "the existing reversal is returned");
         assertEquals(transactionId, result.id());
         verify(financialTransactionRepository, never()).save(any(FinancialTransaction.class));
+    }
+
+    // ---- V93 (#827, PR #1124 review): the payment channel is recorded ON the row, when it is written ----
+
+    @Test
+    @DisplayName("V93: the writer's stated channel is stored on the SALE: a deposit-split order records its 2000p deposit, not the 10000p total")
+    void createTransaction_storesTheStatedChannelOnTheSale() {
+        stubSaveAssignsId();
+        UUID orderId = UUID.randomUUID();
+        financialTransactionService.createTransaction(
+                new CreateTransactionRequest(10_000L, VatRate.STANDARD, "Order ORD-SPLIT", orderId), 2_000L);
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository).save(saved.capture());
+        assertEquals(EntryKind.SALE, saved.getValue().getEntryKind());
+        assertEquals(10_000L, saved.getValue().getAmountPennies(), "the gross amount and VAT stay one figure per order");
+        assertEquals(2_000L, saved.getValue().getPaidOnlinePennies());
+    }
+
+    @Test
+    @DisplayName("V93: a stated channel outside 0..amount is clamped to the range the CHECK allows; null stays null (not recorded)")
+    void createTransaction_clampsAndKeepsNull() {
+        stubSaveAssignsId();
+        financialTransactionService.createTransaction(
+                new CreateTransactionRequest(1_000L, VatRate.STANDARD, "Order A", UUID.randomUUID()), 5_000L);
+        financialTransactionService.createTransaction(
+                new CreateTransactionRequest(1_000L, VatRate.STANDARD, "Order B", UUID.randomUUID()), -5L);
+        financialTransactionService.createTransaction(
+                new CreateTransactionRequest(1_000L, VatRate.STANDARD, "Order C", UUID.randomUUID()), null);
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository, times(3)).save(saved.capture());
+        assertEquals(1_000L, saved.getAllValues().get(0).getPaidOnlinePennies());
+        assertEquals(0L, saved.getAllValues().get(1).getPaidOnlinePennies());
+        assertNull(saved.getAllValues().get(2).getPaidOnlinePennies());
+    }
+
+    @Test
+    @DisplayName("V93: a MANUAL row is never online, whatever the caller states")
+    void createTransaction_manualIsNeverOnline() {
+        stubSaveAssignsId();
+        financialTransactionService.createTransaction(validRequest, 10_000L);
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository).save(saved.capture());
+        assertEquals(EntryKind.MANUAL, saved.getValue().getEntryKind());
+        assertEquals(0L, saved.getValue().getPaidOnlinePennies());
+    }
+
+    @Test
+    @DisplayName("V93: a second call for an order whose SALE exists writes nothing, so the stored channel is never rewritten (a link paid after a counter completion)")
+    void createTransaction_existingSaleKeepsItsChannel() {
+        UUID orderId = UUID.randomUUID();
+        FinancialTransaction existing = ledgerRow(transactionId, orderId, 1200L, VatRate.STANDARD, "Order ORD-13",
+                EntryKind.SALE, null);
+        existing.setPaidOnlinePennies(0L);
+        when(financialTransactionRepository.findByOrderIdAndEntryKind(orderId, EntryKind.SALE))
+                .thenReturn(Optional.of(existing));
+
+        financialTransactionService.createTransaction(
+                new CreateTransactionRequest(1200L, VatRate.STANDARD, "Payment pi_x for Order ORD-13", orderId), 1200L);
+
+        verify(financialTransactionRepository, never()).save(any(FinancialTransaction.class));
+        assertEquals(0L, existing.getPaidOnlinePennies(), "the cash completion stays cash");
+    }
+
+    @Test
+    @DisplayName("V93: a REVERSAL stores the NEGATIVE of its sale's channel, so online revenue nets like revenue; a sale with no recorded channel gives a reversal with none")
+    void createReversal_copiesTheSalesChannelNegated() {
+        UUID orderId = UUID.randomUUID();
+        FinancialTransaction split = ledgerRow(UUID.randomUUID(), orderId, 10_000L, VatRate.STANDARD, "Order ORD-S",
+                EntryKind.SALE, null);
+        split.setPaidOnlinePennies(2_000L);
+        FinancialTransaction legacy = ledgerRow(UUID.randomUUID(), UUID.randomUUID(), 900L, VatRate.STANDARD,
+                "Order ORD-L", EntryKind.SALE, null);
+        legacy.setPaidOnlinePennies(null);
+        lenient().when(financialTransactionRepository.findByOrderIdAndEntryKind(any(), eq(EntryKind.REVERSAL)))
+                .thenReturn(Optional.empty());
+        stubSaveAssignsId();
+
+        financialTransactionService.createReversal(split, "Reversal of ORD-S");
+        financialTransactionService.createReversal(legacy, "Reversal of ORD-L");
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository, times(2)).save(saved.capture());
+        assertEquals(-2_000L, saved.getAllValues().get(0).getPaidOnlinePennies());
+        assertNull(saved.getAllValues().get(1).getPaidOnlinePennies());
     }
 
     /** save() assigns the id and timestamp, as JPA does. Lenient: the RED skeleton never saves. */
