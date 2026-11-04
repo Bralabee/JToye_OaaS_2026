@@ -184,6 +184,61 @@ public class RefundService {
                     "amountPennies " + requested + " exceeds remaining refundable " + remaining);
         }
 
+        return executeRefund(order, tenantId, requested, request.reason(), request.note(),
+                clientIdempotencyKey, true);
+    }
+
+    /**
+     * Refund a customer-cancelled order in full (#868, owner ruling 2026-11-04). The same stored-first,
+     * Stripe-routed refund {@link #createRefund} issues, for an order the customer cancelled while it was
+     * still PENDING. The caller has already moved the order to CANCELLED in this transaction, so — unlike
+     * {@code createRefund} — no {@code REFUND_REQUESTED} transition runs (the state machine has none out of
+     * CANCELLED, and the order must stay CANCELLED, not REFUNDED); only the payment status moves.
+     *
+     * <p>The Stripe idempotency key is deterministic: {@code cancel-<orderId>-<attempt>}, where attempt
+     * counts the order's existing refund rows. A retry after a rolled-back attempt reuses the key and Stripe
+     * answers with the refund it already made instead of a second one; a FAILED row (persisted by
+     * {@link #markRefundFailed} even when the transaction rolls back) advances the attempt, so a genuine
+     * retry is not answered with the old failure.
+     *
+     * <p>Requires {@code TenantContext}. The caller (CustomerOrderCancellationService) has proven ownership
+     * and eligibility; this method guards what the money needs: a payment reference and a positive
+     * remaining amount.
+     *
+     * @return the amount refunded, in pennies
+     * @throws StripeException if Stripe refuses; the caller's transaction then rolls the cancel back
+     */
+    @Transactional(noRollbackFor = io.github.resilience4j.circuitbreaker.CallNotPermittedException.class)
+    public long refundCancelledOrderInFull(UUID orderId) throws StripeException {
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        if (order.getPaymentReference() == null || order.getPaymentReference().isBlank()) {
+            throw new InvalidStateTransitionException(
+                    "Cannot refund order " + orderId + " — no Stripe payment_intent on record");
+        }
+        long remaining = order.getTotalAmountPennies() - refundRepository.sumLiveAmountByOrderId(orderId);
+        if (remaining <= 0) {
+            throw new IllegalArgumentException(
+                    "Order " + orderId + " has nothing left to refund (remaining=" + remaining + ")");
+        }
+        String key = "cancel-" + orderId + "-" + refundRepository.findByOrderIdOrderByRequestedAtDesc(orderId).size();
+        executeRefund(order, tenantId, remaining, RefundReason.REQUESTED_BY_CUSTOMER,
+                "Cancelled by the customer before the kitchen accepted the order", key, false);
+        return remaining;
+    }
+
+    /**
+     * Steps 6-8 of the refund flow, shared by {@link #createRefund} and {@link #refundCancelledOrderInFull}.
+     *
+     * @param transitionOrder true for a staff refund (the order moves to REFUNDED); false when the order is
+     *                        already CANCELLED and only its payment status changes
+     */
+    private RefundDto executeRefund(Order order, UUID tenantId, long requested, RefundReason reason, String note,
+                                    String clientIdempotencyKey, boolean transitionOrder) throws StripeException {
+        UUID orderId = order.getId();
+
         // Step 6 — Stored-first idempotency: persist BEFORE Stripe.
         // Server-generated key (32 hex chars) when client did not supply one.
         String serverIdemKey = clientIdempotencyKey != null && !clientIdempotencyKey.isBlank()
@@ -196,8 +251,8 @@ public class RefundService {
                 order.getPaymentReference(),
                 serverIdemKey,
                 requested,
-                request.reason(),
-                request.note()
+                reason,
+                note
         );
         refund = refundRepository.saveAndFlush(refund);
         log.info("Created Refund row {} (status=CREATING) for order {} amount={}",
@@ -209,7 +264,7 @@ public class RefundService {
             RefundCreateParams.Builder paramsBuilder = RefundCreateParams.builder()
                     .setPaymentIntent(order.getPaymentReference())
                     .setAmount(requested)
-                    .setReason(RefundReason.toStripeReason(request.reason()))
+                    .setReason(RefundReason.toStripeReason(reason))
                     .putMetadata("refund_id", refund.getId().toString())
                     .putMetadata("tenant_id", tenantId.toString())
                     .putMetadata("order_id", orderId.toString())
@@ -253,9 +308,11 @@ public class RefundService {
         refund.setUpdatedAt(OffsetDateTime.now());
         refund = refundRepository.save(refund);
 
-        OrderStatus newStatus = stateMachineService.sendEvent(
-                orderId, order.getStatus(), OrderEvent.REFUND_REQUESTED);
-        order.setStatus(newStatus);
+        if (transitionOrder) {
+            OrderStatus newStatus = stateMachineService.sendEvent(
+                    orderId, order.getStatus(), OrderEvent.REFUND_REQUESTED);
+            order.setStatus(newStatus);
+        }
         order.setPaymentStatus(PaymentStatus.REFUNDED);
         order.setUpdatedAt(OffsetDateTime.now());
         orderRepository.save(order);

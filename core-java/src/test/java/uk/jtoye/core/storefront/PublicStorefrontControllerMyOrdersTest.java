@@ -63,6 +63,10 @@ class PublicStorefrontControllerMyOrdersTest {
     @MockitoBean
     private ReviewService reviewService;
 
+    // #868: the customer-cancel handler's collaborator; not exercised here, but the controller needs the bean.
+    @MockitoBean
+    private uk.jtoye.core.order.CustomerOrderCancellationService cancellationService;
+
     @MockitoBean
     private CustomerJwtVerifier customerJwtVerifier;
 

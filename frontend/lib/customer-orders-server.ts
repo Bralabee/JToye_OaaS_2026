@@ -91,18 +91,27 @@ export async function loadCustomerOrders(
  * and never selects whose orders are fetched (the core API does that from the
  * cryptographically verified access token).
  */
-export function displayEmailFromIdToken(idToken: string | undefined): string | null {
+function idTokenClaims(idToken: string | undefined): { email?: string; name?: string; preferred_username?: string } | null {
   if (!idToken) return null
   try {
     const parts = idToken.split(".")
     if (parts.length !== 3) return null
     const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
     const pad = b64.length % 4 === 0 ? b64 : b64 + "=".repeat(4 - (b64.length % 4))
-    const claims = JSON.parse(Buffer.from(pad, "base64").toString("utf8")) as {
-      email?: string
-    }
-    return claims.email ?? null
+    return JSON.parse(Buffer.from(pad, "base64").toString("utf8"))
   } catch {
     return null
   }
+}
+
+export function displayEmailFromIdToken(idToken: string | undefined): string | null {
+  return idTokenClaims(idToken)?.email ?? null
+}
+
+/**
+ * The display name for the account page (SW-JRD-07), from the ID token's `name` claim. Display only,
+ * like the email above: nothing selects an account by it. Empty when the token carries no name.
+ */
+export function displayNameFromIdToken(idToken: string | undefined): string {
+  return idTokenClaims(idToken)?.name ?? ""
 }

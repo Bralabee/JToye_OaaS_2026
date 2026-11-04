@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.Idempotent;
+import uk.jtoye.core.order.CustomerOrderCancellationService;
 import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.ClientIpResolver;
@@ -31,6 +32,8 @@ import uk.jtoye.core.storefront.dto.ShopConfigDto;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.storefront.dto.CustomerOrderStatus;
+import uk.jtoye.core.storefront.dto.CustomerCancelRequest;
+import uk.jtoye.core.storefront.dto.CustomerCancelResult;
 import uk.jtoye.core.storefront.dto.OrderLookupRequest;
 import uk.jtoye.core.storefront.dto.PublicOrderStatus;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
@@ -61,6 +64,7 @@ public class PublicStorefrontController {
     private final PublicStorefrontService storefrontService;
     private final ReviewService reviewService;
     private final CustomerJwtVerifier customerJwtVerifier;
+    private final CustomerOrderCancellationService cancellationService;
 
     /**
      * 37-28 (D-19 / D-27): the one answer to "which client placed this order" — the trusted-proxy
@@ -70,8 +74,10 @@ public class PublicStorefrontController {
     private final ClientIpResolver clientIpResolver;
 
     public PublicStorefrontController(PublicStorefrontService storefrontService, ReviewService reviewService,
-                                      CustomerJwtVerifier customerJwtVerifier, ClientIpResolver clientIpResolver) {
+                                      CustomerJwtVerifier customerJwtVerifier, ClientIpResolver clientIpResolver,
+                                      CustomerOrderCancellationService cancellationService) {
         this.storefrontService = storefrontService;
+        this.cancellationService = cancellationService;
         this.reviewService = reviewService;
         this.customerJwtVerifier = customerJwtVerifier;
         this.clientIpResolver = clientIpResolver;
@@ -416,6 +422,62 @@ public class PublicStorefrontController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(storefrontService.trackOrder(orderNumber, request.email()));
+    }
+
+    /**
+     * #868 (owner ruling 2026-11-04, persona close-out): a customer cancels their own order while it is
+     * still PENDING. A guest proves ownership with the order number AND the email in the body (the tracking
+     * proof); a signed-in customer sends the verified token and no email, and the token's address is the
+     * only one used. A token that does not verify is a 401 and never falls back to the body's email.
+     *
+     * <p>There is deliberately NO MCP tool for this: it is an action of the customer on their own order,
+     * and the MCP server acts for a vendor under a vendor credential. Staff already cancel and refund
+     * through the existing order tools and endpoints.
+     */
+    @PostMapping(value = "/orders/{orderNumber}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Idempotent(endpoint = CustomerOrderCancellationService.ENDPOINT)
+    @Operation(summary = "Cancel your own order (before the kitchen accepts it)",
+            description = "Cancels a PENDING order for the customer who placed it. A guest sends the order number in the "
+                    + "path and the email address the order was placed with in the body; a signed-in customer sends "
+                    + "X-Customer-Token and no email. A card-paid order is refunded in full to the card; a pay-on-delivery "
+                    + "order is simply cancelled. Once the kitchen has accepted the order the answer is a 409 "
+                    + "(errors/order-not-cancellable-by-customer, contactShop true): contact the shop. An order paid in "
+                    + "parts is also a 409. Supply an Idempotency-Key header to make a retried POST safe: the same key "
+                    + "replays the outcome and never refunds twice; the same key for another order is refused 422 "
+                    + "(errors/idempotency-payload-mismatch). Without a key a repeat is still harmless: cancelling a "
+                    + "cancelled order is a 200 that changes nothing.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "The order is cancelled (now, or already was). "
+                    + "refunded says whether a card payment was returned."),
+            @ApiResponse(responseCode = "400", description = "Neither an email nor a customer token was supplied"),
+            @ApiResponse(responseCode = "401", description = "X-Customer-Token was supplied and did not verify"),
+            @ApiResponse(responseCode = "404", description = "No order with this number and email"),
+            @ApiResponse(responseCode = "409", description = "The kitchen has accepted the order or it was paid in "
+                    + "parts (errors/order-not-cancellable-by-customer), or the order changed while cancelling"),
+            @ApiResponse(responseCode = "422", description = "The Idempotency-Key was used for a different order"),
+            @ApiResponse(responseCode = "502", description = "The card refund failed, so the order was NOT cancelled "
+                    + "(errors/refund-failed); try again or contact the shop")
+    })
+    public ResponseEntity<CustomerCancelResult> cancelOrder(
+            @PathVariable String orderNumber,
+            @RequestBody(required = false) CustomerCancelRequest request,
+            @Parameter(hidden = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Parameter(description = "A signed-in customer's jtoye-customers access token; replaces the email in the body.")
+            @RequestHeader(value = "X-Customer-Token", required = false) String customerToken) {
+        String email;
+        if (customerToken != null && !customerToken.isBlank()) {
+            // 401 on any failure, by design: a bad token must not quietly become a guest cancel.
+            email = customerJwtVerifier.verifiedEmail(customerToken);
+        } else {
+            email = request == null ? null : request.email();
+        }
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Send the email address the order was placed with, or sign in.");
+        }
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(cancellationService.cancel(orderNumber, email.trim(), idempotencyKey));
     }
 
     @PostMapping("/orders/{orderNumber}/balance-payment-intent")

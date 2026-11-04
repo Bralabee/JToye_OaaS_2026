@@ -1,4 +1,5 @@
 import { ALLERGENS } from "@/types/api"
+import { withFullStop } from "@/lib/sentence-end"
 
 /**
  * #862 (owner ruling 2026-11-04, persona close-out): the storefront allergen filter reflects what
@@ -20,8 +21,8 @@ export const DECLARED_FILTER_HELP =
 
 export function declaredFilterActiveNote(allergenName: string, scope: "kitchens" | "dishes"): string {
   return scope === "kitchens"
-    ? `Showing kitchens with a dish that declares ${allergenName}.`
-    : `Showing dishes that declare ${allergenName}.`
+    ? withFullStop(`Showing kitchens with a dish that declares ${allergenName}`)
+    : withFullStop(`Showing dishes that declare ${allergenName}`)
 }
 
 /** The allergen a free-text query names (catalogue name, plural or not), or a generic label. */

@@ -18,6 +18,7 @@ import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registrati
 import { consumeJustPlaced } from "@/lib/just-placed"
 import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import { asVatRate, vatRateLabel } from "@/lib/vat"
+import { CancelOrderPanel } from "@/components/storefront/cancel-order-panel"
 import type { FulfilmentType } from "@/types/api"
 import type { PublicOrderAllergenRecord, PublicShop } from "@/types/storefront"
 
@@ -598,6 +599,26 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           customer bought from. `shop` is null only while loading or when its read failed, and a
           failed read is not "the seller has not provided their details", so nothing renders then. */}
       {order && shop && <SellerBlock seller={shop.seller} className="mb-6" />}
+
+      {/* #868 (owner ruling 2026-11-04): cancel while the kitchen has not accepted it; after that,
+          contact the shop. Core re-checks, so a stale button gets a typed refusal, not a cancel. */}
+      {order && (
+        <div className="mb-6">
+          <CancelOrderPanel
+            orderNumber={order.orderNumber}
+            shopName={order.shopName}
+            status={order.status}
+            paymentStatus={order.paymentStatus}
+            email={email}
+            onCancelled={(result) => {
+              lastStatusRef.current = result.status
+              setOrder({ ...order, status: result.status, paymentStatus: result.paymentStatus ?? order.paymentStatus })
+              setStatusUpdate(statusUpdateAnnouncement(result.status, order.fulfilmentType) ?? "Your order has been cancelled.")
+            }}
+            onRefused={() => void fetchStatus()}
+          />
+        </div>
+      )}
 
       {/* Auto-refresh indicator */}
       {order && !isCancelled && !isRefunded && currentStep < 4 && (
