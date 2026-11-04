@@ -119,6 +119,17 @@ public class CreateShopRequest {
     @JsonIgnore
     private boolean freeDeliveryThresholdPenniesSent;
 
+    @Schema(description = "Default preparation time in minutes (#825, 1..480). The order confirmation, tracking "
+            + "page and kitchen ticket show an ESTIMATED ready-by time built from it. null means not set (no "
+            + "estimate is shown). Absent keeps the stored value; an explicit null clears it.", nullable = true)
+    @Min(value = 1, message = "prepTimeMinutes must be at least 1")
+    @Max(value = 480, message = "prepTimeMinutes must be at most 480")
+    private Integer prepTimeMinutes;
+
+    /** True when the request carried the key at all, null included: an explicit null clears the prep time. */
+    @JsonIgnore
+    private boolean prepTimeMinutesSent;
+
     @Schema(description = "The shop takes DELIVERY orders. Absent keeps the stored value (a new shop takes both). "
             + "At least one of offersDelivery and offersCollection must be true.", nullable = true)
     private Boolean offersDelivery;
@@ -196,6 +207,13 @@ public class CreateShopRequest {
     }
     @JsonIgnore
     public boolean isFreeDeliveryThresholdPenniesSent() { return freeDeliveryThresholdPenniesSent; }
+    public Integer getPrepTimeMinutes() { return prepTimeMinutes; }
+    public void setPrepTimeMinutes(Integer prepTimeMinutes) {
+        this.prepTimeMinutes = prepTimeMinutes;
+        this.prepTimeMinutesSent = true;
+    }
+    @JsonIgnore
+    public boolean isPrepTimeMinutesSent() { return prepTimeMinutesSent; }
     public Boolean getOffersDelivery() { return offersDelivery; }
     public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
     public Boolean getOffersCollection() { return offersCollection; }

@@ -258,6 +258,21 @@ public class Order {
     private String scheduledWindowLabel;
 
     /**
+     * V91 (#825, owner ruling 2026-11-04): the ESTIMATED ready-by instant, a snapshot of (placed-at or
+     * accepted-at) plus the shop's preparation time at that moment. An estimate, labelled as one wherever it
+     * is shown. NULL = none (the shop set no prep time, a scheduled-slot order, or the order predates V91).
+     */
+    @Column(name = "estimated_ready_at")
+    private OffsetDateTime estimatedReadyAt;
+
+    /**
+     * V91 (#821, owner ruling 2026-11-04): when the unaccepted-order sweep alerted the vendor and emailed
+     * the customer. Written once, in the claim statement; NULL = not alerted.
+     */
+    @Column(name = "unaccepted_notified_at")
+    private OffsetDateTime unacceptedNotifiedAt;
+
+    /**
      * ADR-0007 / V87: Upfront deposit charged at checkout in pennies when settled under
      * {@code SPLIT_DEPOSIT_VENDOR_MOR} (null for standard full-payment orders).
      */
@@ -695,6 +710,22 @@ public class Order {
 
     public void setScheduledWindowLabel(String scheduledWindowLabel) {
         this.scheduledWindowLabel = scheduledWindowLabel;
+    }
+
+    public OffsetDateTime getEstimatedReadyAt() {
+        return estimatedReadyAt;
+    }
+
+    public void setEstimatedReadyAt(OffsetDateTime estimatedReadyAt) {
+        this.estimatedReadyAt = estimatedReadyAt;
+    }
+
+    public OffsetDateTime getUnacceptedNotifiedAt() {
+        return unacceptedNotifiedAt;
+    }
+
+    public void setUnacceptedNotifiedAt(OffsetDateTime unacceptedNotifiedAt) {
+        this.unacceptedNotifiedAt = unacceptedNotifiedAt;
     }
 
     @Column(name = "phone_verified")

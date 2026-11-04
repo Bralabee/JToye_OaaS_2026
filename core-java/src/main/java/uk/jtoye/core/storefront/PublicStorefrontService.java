@@ -39,6 +39,7 @@ import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.order.ReadyByEstimate;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
@@ -848,6 +849,7 @@ public class PublicStorefrontService {
         // D-15: that a note was sent and when the shop read it, from columns. Never the text.
         setAllergyNoteStatus(status, order);
         status.setScheduledForDate(order.getScheduledForDate());
+        status.setEstimatedReadyAt(order.getEstimatedReadyAt());
         status.setScheduledWindowLabel(order.getScheduledWindowLabel());
         status.setDepositAmountPennies(order.getDepositAmountPennies());
         status.setBalanceDuePennies(order.getBalanceDuePennies());
@@ -920,6 +922,7 @@ public class PublicStorefrontService {
         // D-15 (#812): the customer sees that the shop read their allergy note. Never the text (T-31.1-46).
         setAllergyNoteStatus(status, order);
         status.setScheduledForDate(order.getScheduledForDate());
+        status.setEstimatedReadyAt(order.getEstimatedReadyAt());
         status.setScheduledWindowLabel(order.getScheduledWindowLabel());
         status.setDepositAmountPennies(order.getDepositAmountPennies());
         status.setBalanceDuePennies(order.getBalanceDuePennies());
@@ -1299,6 +1302,7 @@ public class PublicStorefrontService {
                 replayedSnapshot.flags(),
                 replayedStripeAccountId
         );
+        confirmation.setEstimatedReadyAt(existingOrder.getEstimatedReadyAt());
         confirmation.setFulfilmentSlotId(existingOrder.getFulfilmentSlotId());
         confirmation.setScheduledForDate(existingOrder.getScheduledForDate());
         confirmation.setScheduledWindowLabel(existingOrder.getScheduledWindowLabel());
@@ -1600,7 +1604,11 @@ public class PublicStorefrontService {
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
         // this predominant liability via calculateTotal().
-        order.setVatRate(VatCalculator.predominantRate(lineRates));
+        // #962 (owner ruling 2026-11-04, persona close-out): a seller with no declared VAT number charges
+        // none, so the order (and through it the ledger and the access export) records ZERO. TenantContext
+        // is pinned by the caller; past orders are never rewritten.
+        order.setVatRate(VatCalculator.forSeller(VatCalculator.predominantRate(lineRates),
+                traderIdentityService.isVatRegistered(tenantId)));
 
         // The fee computed above, with the subtotal and the minimum, before the basket diff (37-33).
         order.setDeliveryFeePennies(deliveryFee);
@@ -1616,6 +1624,10 @@ public class PublicStorefrontService {
             }
             slotService.reserveSlotForOrder(shop, request.getFulfilmentSlotId(), order);
         }
+
+        // #825 (owner ruling 2026-11-04): the ESTIMATED ready-by time, placed-at plus the shop's prep time.
+        // After the slot block, because a scheduled-slot order carries its own window and gets no estimate.
+        order.setEstimatedReadyAt(ReadyByEstimate.of(shop, OffsetDateTime.now(), order));
 
         // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
         // If not configured, fall back to COD — order goes straight to PENDING.
@@ -1769,6 +1781,7 @@ public class PublicStorefrontService {
                 recordedSnapshot.flags(),
                 stripeAccountId
         );
+        confirmation.setEstimatedReadyAt(order.getEstimatedReadyAt());
         confirmation.setFulfilmentSlotId(order.getFulfilmentSlotId());
         confirmation.setScheduledForDate(order.getScheduledForDate());
         confirmation.setScheduledWindowLabel(order.getScheduledWindowLabel());

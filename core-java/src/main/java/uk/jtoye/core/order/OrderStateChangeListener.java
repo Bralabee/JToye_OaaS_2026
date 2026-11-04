@@ -19,11 +19,9 @@ import uk.jtoye.core.notification.OrderEmailSummary;
 import uk.jtoye.core.notification.consent.ConsentGate;
 import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.onboarding.TraderIdentityService;
-import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
-import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 import uk.jtoye.core.websocket.StompDestinations;
 
 import java.util.List;
@@ -72,6 +70,7 @@ public class OrderStateChangeListener {
     private final ShopRepository shopRepository;
     private final TraderIdentityService traderIdentityService;
     private final ConsentGate consentGate;
+    private final OrderEmailContextFactory contextFactory;
 
     public OrderStateChangeListener(OrderRepository orderRepository,
                                      EmailNotificationService emailService,
@@ -103,6 +102,9 @@ public class OrderStateChangeListener {
         this.jdbcTemplate = jdbcTemplate;
         this.shopRepository = shopRepository;
         this.traderIdentityService = traderIdentityService;
+        // Built here, not injected: the constructor signatures are fixed by the existing tests, and the factory
+        // is two collaborators this class already holds.
+        this.contextFactory = new OrderEmailContextFactory(shopRepository, traderIdentityService);
         this.consentGate = consentGate;
     }
 
@@ -235,48 +237,11 @@ public class OrderStateChangeListener {
     }
 
     /**
-     * The seller and allergen record for one order, read under the event's tenant.
-     *
-     * <p>The shop is read with an explicit tenant predicate as well as RLS. The seller comes from
-     * {@link TraderIdentityService#findPublicSeller} — the SAME read the public shop page uses
-     * (31.1-24), so the email and the storefront name the seller identically, company number only
-     * for a company. The allergen record is the V63 order-line snapshot (never a live product
-     * join) and the V69 acknowledgement mask.
-     *
-     * <p>A failed seller read must not cost the customer the email: the email then says the seller
-     * has not provided details (the 31.1-24 missing state), which is true of what the platform can
-     * show, rather than not arriving at all.
+     * The seller and allergen record for one order, read under the event's tenant. The logic lives in
+     * {@link OrderEmailContextFactory}, shared with the unaccepted-order sweep (#821).
      */
     private CustomerEmailContext emailContext(OrderStateChangeEvent event, Order order) {
-        // Order lines first, while the listener's own session is the active one.
-        OrderAllergenSnapshot.OrderAllergenView view = OrderAllergenSnapshot.viewOf(order.getItems());
-        List<String> acknowledged = order.getAllergenAckMask() == null
-                ? null
-                : AllergenCatalog.namesFor(order.getAllergenAckMask());
-
-        Shop shop = order.getShopId() == null
-                ? null
-                : shopRepository.findByIdAndTenantId(order.getShopId(), event.tenantId()).orElse(null);
-        SellerIdentityDto seller = null;
-        if (shop != null) {
-            try {
-                seller = traderIdentityService.findPublicSeller(event.tenantId(), shop);
-            } catch (RuntimeException e) {
-                log.warn("Seller identity read failed for order {}: {}", event.orderNumber(),
-                        e.getClass().getSimpleName());
-            }
-        }
-
-        return new CustomerEmailContext(
-                shop == null ? null : shop.getName(),
-                shop == null ? null : shop.getEmail(),
-                seller,
-                order.getPlacedVia(),
-                acknowledged,
-                view.declaredNames(),
-                view.flags(),
-                order.getFulfilmentType(),
-                summaryOf(order, shop));
+        return contextFactory.build(event.tenantId(), event.orderNumber(), order);
     }
 
     /**

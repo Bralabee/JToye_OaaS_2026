@@ -74,6 +74,11 @@ public class ShopDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Long freeDeliveryThresholdPennies;
 
+    @Schema(description = "Default preparation time in minutes (#825). Absent: not set, so no ready-by estimate "
+            + "is shown for this shop's orders.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer prepTimeMinutes;
+
     @Schema(description = "The shop takes DELIVERY orders.")
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Boolean offersDelivery;
@@ -143,6 +148,8 @@ public class ShopDto {
     public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
     public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
     public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
+    public Integer getPrepTimeMinutes() { return prepTimeMinutes; }
+    public void setPrepTimeMinutes(Integer prepTimeMinutes) { this.prepTimeMinutes = prepTimeMinutes; }
     public Boolean getOffersDelivery() { return offersDelivery; }
     public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
     public Boolean getOffersCollection() { return offersCollection; }

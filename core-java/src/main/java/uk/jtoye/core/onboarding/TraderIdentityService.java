@@ -122,6 +122,28 @@ public class TraderIdentityService {
     }
 
     /**
+     * Whether the tenant has DECLARED a VAT registration, i.e. its trader identity carries a VAT number
+     * (owner ruling 2026-11-04, persona close-out, #962). A tenant with no trader identity on file has
+     * declared none. Order writers use it to decide whether a sale carries VAT at all.
+     *
+     * <p>Like {@link #findForTenant}, this runs under FORCE RLS, so the caller must have the tenant
+     * pinned in {@link TenantContext}; a missing or different pin is refused loudly, because a silent
+     * "no row" would read as "unregistered" and quietly zero-rate a registered seller's sale.
+     */
+    @Transactional(readOnly = true)
+    public boolean isVatRegistered(UUID tenantId) {
+        UUID pinned = TenantContext.get().orElse(null);
+        if (!tenantId.equals(pinned)) {
+            throw new IllegalStateException(
+                    "isVatRegistered requires the tenant to be pinned in TenantContext first (row-level "
+                            + "security would otherwise hide the row and read as an unregistered seller)");
+        }
+        return repository.findByTenantId(tenantId)
+                .map(identity -> TraderIdentityFields.stripToNull(identity.getVatNumber()) != null)
+                .orElse(false);
+    }
+
+    /**
      * The identity of an EXPLICIT tenant, for callers outside a request (the customer-facing
      * seller block, 31.1-24, and order emails, 31.1-25). Under FORCE RLS a lookup only sees the
      * tenant whose GUC is pinned, so the caller must have pinned {@code tenantId} in
