@@ -109,6 +109,17 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
             + "AND archived_at IS NULL", nativeQuery = true)
     long countLiveProducts(@Param("tenantId") UUID tenantId, @Param("shopId") UUID shopId);
 
+    /**
+     * Detach the shop's ARCHIVED products (#832) before the shop is deleted. V90 made products.shop_id
+     * ON DELETE RESTRICT, so a row still pointing at the shop would refuse the delete; an archived product
+     * is hidden and kept only for order history, so it simply stops naming a shop. Runs inside the delete's
+     * own request, with the tenant pinned (not a migration backfill: the FORCE-RLS zero-row trap does not apply).
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value = "UPDATE products SET shop_id = NULL WHERE tenant_id = :tenantId AND shop_id = :shopId "
+            + "AND archived_at IS NOT NULL", nativeQuery = true)
+    int detachArchivedProducts(@Param("tenantId") UUID tenantId, @Param("shopId") UUID shopId);
+
     // Public kitchen search: a published shop matches on its OWN vector (V25: name, tags,
     // description, address) OR through an available product of that shop whose vector (V25:
     // title, category, description, ingredients, dietary tags) matches the same query. Before

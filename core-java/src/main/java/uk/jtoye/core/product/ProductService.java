@@ -687,6 +687,13 @@ public class ProductService {
      * equivalent of the asset ref-count.
      */
     private void deleteFlatImageIfUnshared(Product product, String url) {
+        List<String> unshared = new ArrayList<>();
+        collectFlatImageIfUnshared(product, url, unshared);
+        unshared.forEach(storageService::delete);
+    }
+
+    /** The decision half of {@link #deleteFlatImageIfUnshared}: add the URL to {@code out} only if no other product shows it. */
+    private void collectFlatImageIfUnshared(Product product, String url, List<String> out) {
         if (url == null || url.isBlank()) {
             return;
         }
@@ -696,7 +703,7 @@ public class ProductService {
             log.info("Kept image object for product {}: {} other product(s) still show it", product.getId(), others);
             return;
         }
-        storageService.delete(url);
+        out.add(url);
     }
 
     /**
@@ -902,17 +909,23 @@ public class ProductService {
         }
 
         // The photo case: drop every product_media link (primary and gallery) and release its asset.
+        // Object storage does not roll back, so NO object is deleted here: the keys and URLs are collected
+        // and removed only once this transaction has committed (a late 23503 below rolls the rows back and
+        // must leave every blob in place).
+        List<String> objectKeys = new ArrayList<>();
+        List<String> flatUrls = new ArrayList<>();
         for (ProductMedia link : productMediaRepository.findByProductIdOrderByPrimaryDescSortOrderAsc(productId)) {
             UUID assetId = link.getAssetId();
             productMediaRepository.delete(link);
             productMediaRepository.flush();          // make the drop visible to the ref-count query
-            mediaAssetService.releaseAsset(assetId);
+            mediaAssetService.detachAsset(assetId).ifPresent(objectKeys::add);
         }
 
-        // Clean up the flat images, except objects another product still shows (37-13: a copy to
-        // another shop shares its source's image URLs).
-        deleteFlatImageIfUnshared(product, product.getImageUrl());
-        product.getAdditionalImageUrls().forEach(url -> deleteFlatImageIfUnshared(product, url));
+        // The flat images, except objects another product still shows (37-13: a copy to another shop
+        // shares its source's image URLs).
+        collectFlatImageIfUnshared(product, product.getImageUrl(), flatUrls);
+        product.getAdditionalImageUrls().forEach(url -> collectFlatImageIfUnshared(product, url, flatUrls));
+        storageService.deleteObjectsAfterCommit(product.getTenantId(), objectKeys, flatUrls);
 
         if (productRepository.countOrderLinesForProduct(product.getTenantId(), productId) > 0) {
             archive(product);

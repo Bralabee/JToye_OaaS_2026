@@ -200,9 +200,10 @@ function CsvImportTab() {
             allergens, allergen_mask. For allergens write names or the number, for example &quot;Gluten; Milk&quot;.
           </p>
           <p className="mt-1 text-xs text-slate-600" data-testid="import-allergen-help">
-            Allergen names (any capitals, separated by commas or semicolons): {withFullStop(ALLERGENS.map((a) => a.name).join(", "))}
-            A name that is not on this list stops that row from being imported, with the reason shown, so a
-            misspelt allergen is never saved as &quot;none&quot;.
+            Allergen names (any capitals): {withFullStop(ALLERGENS.map((a) => a.name).join(", "))}{" "}
+            Separate several with semicolons (;) or bars (|), never commas: a comma starts a new column in a CSV
+            file, so a row with an unquoted comma is refused. A name that is not on this list stops that row from
+            being imported, with the reason shown, so a misspelt allergen is never saved as &quot;none&quot;.
           </p>
         </CardContent>
       </Card>

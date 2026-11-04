@@ -16,6 +16,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -151,6 +152,16 @@ class ProductDeleteArchiveIntegrationTest {
         return orderId;
     }
 
+    private void voidOrder(UUID orderId) {
+        jdbc.update("UPDATE orders SET voided_at = now(), voided_by = 'admin', void_reason = 'test' WHERE id = ?", orderId);
+    }
+
+    /** Commit the test transaction so the service's afterCommit hooks (physical blob deletes) fire. */
+    private void commit() {
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+    }
+
     private void settle() {
         em.flush();
         em.clear();
@@ -171,6 +182,8 @@ class ProductDeleteArchiveIntegrationTest {
 
         productService.deleteProduct(p);
         settle();
+        Mockito.verify(storageService, Mockito.never()).deleteByKey(asset.getObjectKey());   // not before commit
+        commit();
 
         assertThat(rows("SELECT COUNT(*) FROM products WHERE id = ?", p)).as("the product row is gone").isZero();
         assertThat(rows("SELECT COUNT(*) FROM product_media WHERE product_id = ?", p))
@@ -190,6 +203,7 @@ class ProductDeleteArchiveIntegrationTest {
 
         productService.deleteProduct(p1);
         settle();
+        commit();
 
         assertThat(rows("SELECT COUNT(*) FROM products WHERE id = ?", p1)).isZero();
         assertThat(mediaAssetRepository.findById(shared.getId()))
@@ -269,5 +283,62 @@ class ProductDeleteArchiveIntegrationTest {
 
         assertThat(rows("SELECT COUNT(*) FROM products WHERE id = ? AND archived_at IS NULL", p))
                 .as("neither deleted nor archived").isEqualTo(1);
+    }
+
+    // ---- review round 1, finding 1: voided and abandoned-draft orders must not block the delete ----
+
+    @Test
+    void aProductOnlyOnAVoidedInFlightOrderIsArchivedNotBlockedForEver() {
+        UUID p = seedProduct("VOID-1", "Voided dish");
+        UUID order = seedOrderWith(p, "CONFIRMED", "Voided dish");
+        voidOrder(order);   // V78: a voided order keeps its status and can never transition again
+
+        productService.deleteProduct(p);
+        settle();
+
+        assertThat(rows("SELECT COUNT(*) FROM products WHERE id = ? AND archived_at IS NOT NULL", p))
+                .as("archived: the order line still names it").isEqualTo(1);
+    }
+
+    @Test
+    void aProductOnlyOnAStaleDraftOrderIsArchivedNotBlocked() {
+        UUID p = seedProduct("DRAFT-1", "Draft dish");
+        seedOrderWith(p, "DRAFT", "Draft dish");   // the DRAFT sweep cleans these up; they are not the kitchen's work
+
+        productService.deleteProduct(p);
+        settle();
+
+        assertThat(rows("SELECT COUNT(*) FROM products WHERE id = ? AND archived_at IS NOT NULL", p)).isEqualTo(1);
+    }
+
+    @Test
+    void aLiveInFlightOrderStillBlocksWhenAVoidedOneSitsBesideIt() {
+        UUID p = seedProduct("MIX-1", "Mixed dish");
+        voidOrder(seedOrderWith(p, "CONFIRMED", "Mixed dish"));
+        seedOrderWith(p, "PREPARING", "Mixed dish");
+
+        assertThatThrownBy(() -> productService.deleteProduct(p)).isInstanceOf(ResourceInUseException.class);
+    }
+
+    // ---- finding 2: blobs are deleted only after the database work commits ----
+
+    @Test
+    void aLateForeignKeyFailureLeavesEveryBlobInPlace() {
+        UUID p = seedProduct("LATE-1", "Late dish");
+        MediaAsset asset = newAsset();
+        link(p, asset.getId(), true, 0);
+        jdbc.update("UPDATE products SET image_url = ? WHERE id = ?",
+                "http://store/jtoye-images/" + tenant + "/flat-late.jpg", p);
+        // A reference the pre-checks cannot know about (any future FK): it makes the final DELETE raise
+        // 23503 at flush, after the photo links and asset rows were already removed in this transaction.
+        jdbc.execute("CREATE TABLE zz_late_ref (product_id UUID REFERENCES products(id))");
+        jdbc.update("INSERT INTO zz_late_ref (product_id) VALUES (?)", p);
+
+        assertThatThrownBy(() -> productService.deleteProduct(p)).isInstanceOf(ResourceInUseException.class);
+        TestTransaction.flagForRollback();
+        TestTransaction.end();
+
+        Mockito.verify(storageService, Mockito.never()).deleteByKey(Mockito.anyString());
+        Mockito.verify(storageService, Mockito.never()).delete(Mockito.anyString());
     }
 }

@@ -190,12 +190,14 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     long countOrderLinesForProduct(@Param("tenantId") UUID tenantId, @Param("productId") UUID productId);
 
     /**
-     * How many order lines name this product on an order that is still in flight (DRAFT to READY). Such a
-     * product is neither deleted nor archived: the kitchen is still working from it. Terminal orders
-     * (COMPLETED, CANCELLED, REFUNDED) do not count.
+     * How many order lines name this product on an order the kitchen is still working on: PENDING to READY
+     * and NOT voided. Such a product is neither deleted nor archived. Not counted: terminal orders
+     * (COMPLETED, CANCELLED, REFUNDED); VOIDED orders (V78 keeps the status the order had and a voided order
+     * can never transition again, so counting it would block the delete for ever); and DRAFT orders
+     * (abandoned baskets the DRAFT sweep removes, not kitchen work). Their lines still archive the product.
      */
     @Query(value = "SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id "
             + "WHERE oi.tenant_id = :tenantId AND oi.product_id = :productId "
-            + "AND o.status IN ('DRAFT','PENDING','CONFIRMED','PREPARING','READY')", nativeQuery = true)
+            + "AND o.voided_at IS NULL AND o.status IN ('PENDING','CONFIRMED','PREPARING','READY')", nativeQuery = true)
     long countOpenOrderLinesForProduct(@Param("tenantId") UUID tenantId, @Param("productId") UUID productId);
 }

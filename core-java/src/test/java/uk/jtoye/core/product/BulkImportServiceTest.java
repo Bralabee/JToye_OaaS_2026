@@ -551,9 +551,9 @@ class BulkImportServiceTest {
     }
 
     @Test
-    @DisplayName("importFromCsv - names are case-insensitive and comma separated when quoted")
-    void testImportFromCsv_AllergenNamesCaseInsensitiveComma() {
-        Product p = importOne("title,price_pounds,allergens\nTahini,4.00,\"sesame, FISH ,eGgs\"\n");
+    @DisplayName("importFromCsv - names are case-insensitive and may be separated by a bar")
+    void testImportFromCsv_AllergenNamesCaseInsensitiveBar() {
+        Product p = importOne("title,price_pounds,allergens\nTahini,4.00,sesame | FISH |eGgs\n");
         assertEquals(1024 | 8 | 4, p.getAllergenMask());
     }
 
@@ -615,5 +615,61 @@ class BulkImportServiceTest {
         assertEquals(2, result.getErrorCount());
         assertTrue(result.getErrors().stream().allMatch(e -> "allergen_mask".equals(e.getField())), result.getErrors().toString());
         verify(productRepository, never()).save(any(Product.class));
+    }
+
+    // ---- review round 1, finding 4: a comma can never shift the columns or drop an allergen ----
+
+    @Test
+    @DisplayName("importFromCsv - an unquoted 'Gluten, Milk' makes the row an error instead of shifting its columns")
+    void testImportFromCsv_UnquotedCommaInAllergensIsRowError() {
+        String csv = "title,price_pounds,allergens\n" +
+                "Shifted,1.00,Gluten, Milk\n" +
+                "Fine,1.00,Gluten; Milk\n";
+
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        assertEquals(1, result.getSuccessCount(), "only the semicolon row is created");
+        assertEquals(1, result.getErrorCount());
+        BulkImportResult.RowError error = result.getErrors().get(0);
+        assertEquals(2, error.getRow());
+        assertTrue(error.getMessage().contains("4 fields") && error.getMessage().contains("3"), error.getMessage());
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository, times(1)).save(captor.capture());
+        assertEquals(1 | 64, captor.getValue().getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - with a later column present, the unquoted comma is still a row error, not a silent shift")
+    void testImportFromCsv_UnquotedCommaWithLaterColumnIsRowError() {
+        String csv = "title,price_pounds,allergen_mask,shop_id\n" +
+                "Shifted,1.00,Gluten, Milk,\n";
+
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getErrorCount());
+        assertEquals("row", result.getErrors().get(0).getField());
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("importFromCsv - a comma inside a quoted allergen cell is not a separator; the message says to use ';'")
+    void testImportFromCsv_QuotedCommaIsNotASeparator() {
+        BulkImportResult result = bulkImportService.importFromCsv(
+                csvFile("title,price_pounds,allergens\nQuoted,1.00,\"Gluten, Milk\"\n"), shopId);
+
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getErrorCount());
+        assertEquals("allergens", result.getErrors().get(0).getField());
+        assertTrue(result.getErrors().get(0).getMessage().contains(";"), result.getErrors().get(0).getMessage());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - the downloaded template imports without a single row error")
+    void testImportFromCsv_TemplateImportsCleanly() {
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(bulkImportService.generateCsvTemplate()), shopId);
+
+        assertEquals(0, result.getErrorCount(), () -> result.getErrors().toString());
+        assertEquals(2, result.getSuccessCount());
     }
 }

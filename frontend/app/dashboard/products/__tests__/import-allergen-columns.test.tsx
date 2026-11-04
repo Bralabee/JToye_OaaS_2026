@@ -40,6 +40,15 @@ describe("the import page documents allergen names (#799)", () => {
     expect(columns).toHaveTextContent(/names or the number/i)
   })
 
+  it("says to separate allergens with a semicolon or a bar, and never a comma (a comma shifts the columns)", () => {
+    render(<ImportProductsPage />)
+    const text = screen.getByTestId("import-allergen-help").textContent ?? ""
+    expect(text).toMatch(/semicolons? \(;\)/i)
+    expect(text).toMatch(/bars? \(\|\)/i)
+    expect(text).toMatch(/never (a )?commas?/i)
+    expect(text).not.toMatch(/commas or semicolons/i)
+  })
+
   it("names every one of the 14 allergens, exactly as the catalogue spells them", () => {
     render(<ImportProductsPage />)
     const text = screen.getByTestId("import-allergen-help").textContent ?? ""

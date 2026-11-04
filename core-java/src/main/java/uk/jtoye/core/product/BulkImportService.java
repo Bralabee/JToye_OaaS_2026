@@ -132,6 +132,17 @@ public class BulkImportService {
             int rowNum = i + 2; // 1-indexed, skip header
             String[] row = dataRows.get(i);
 
+            // Round-1 review (finding 4): more cells than the header means a value contained an unquoted
+            // comma, which pushed every later cell one column to the right. Reading the shifted row
+            // would put values in the wrong columns (an allergen could be dropped from the declaration
+            // without any error), so the row is refused as DATA and the rest of the batch still imports.
+            if (row.length > header.length) {
+                result.getErrors().add(new RowError(rowNum, "row", "This row has " + row.length
+                        + " fields but the header has " + header.length + ". A value that contains a comma must be "
+                        + "in double quotes; separate several allergens with ; (a semicolon), not a comma."));
+                continue;
+            }
+
             // WR-07 (plan 23-10): a malformed shop_id CELL is bad DATA, not an
             // authorization denial. Parse it defensively — a non-UUID value becomes a
             // per-row validation error and the row is SKIPPED while the rest of the batch
@@ -396,7 +407,7 @@ public class BulkImportService {
     /**
      * Read one allergen cell: blank is 0; a whole number is the legacy bitmask (0 to 16383, the 14
      * catalogue bits); anything else is a list of {@link AllergenCatalog} names, case-insensitive,
-     * separated by commas or semicolons. Exact names only: this is a declaration the vendor makes, so
+     * separated by semicolons or bars (never commas: a comma is the CSV column separator, so an unquoted one shifts the row and a quoted one is not a list). Exact names only: this is a declaration the vendor makes, so
      * no synonym or free-text guess is applied (that heuristic is advisory elsewhere, never a
      * declaration). Package-private for tests.
      *
@@ -423,7 +434,7 @@ public class BulkImportService {
         }
         int mask = 0;
         List<String> unknown = new ArrayList<>();
-        for (String token : cell.split("[,;]")) {
+        for (String token : cell.split("[;|]")) {
             String name = token.strip();
             if (name.isEmpty()) {
                 continue;
@@ -443,7 +454,7 @@ public class BulkImportService {
         }
         if (!unknown.isEmpty()) {
             throw new IllegalArgumentException("Unknown allergen: " + String.join(", ", unknown)
-                    + ". Use the 14 UK allergens (" + validAllergenNames() + "), separated by commas or semicolons.");
+                    + ". Use the 14 UK allergens (" + validAllergenNames() + "), separated by semicolons (;) or bars (|), not commas.");
         }
         return mask;
     }

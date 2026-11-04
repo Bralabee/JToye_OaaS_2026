@@ -21,6 +21,18 @@ public class ShopHasProductsException extends RuntimeException {
         this.productCount = productCount;
     }
 
+    /**
+     * The database refused the delete (V90: products.shop_id is ON DELETE RESTRICT) because a product
+     * appeared after the count. The transaction is already doomed, so no count can be read: it is unknown.
+     */
+    public ShopHasProductsException() {
+        super("This shop still has products. Move them to another shop or delete them first, then delete the shop.");
+        this.productCount = UNKNOWN_COUNT;
+    }
+
+    /** {@link #getProductCount()} when the count is not known. */
+    public static final long UNKNOWN_COUNT = -1;
+
     public long getProductCount() {
         return productCount;
     }

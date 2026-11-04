@@ -36,3 +36,20 @@ ALTER TABLE products_aud ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 
 DROP INDEX IF EXISTS idx_products_tenant_sku;
 CREATE UNIQUE INDEX idx_products_tenant_sku ON products (tenant_id, sku) WHERE archived_at IS NULL;
+
+-- ============================================================================================
+-- products.shop_id: ON DELETE SET NULL -> ON DELETE RESTRICT (#833, round-1 review finding 3)
+-- ============================================================================================
+-- V20 made the FK ON DELETE SET NULL, so deleting a shop silently orphaned its products (listed,
+-- unreachable by id, moved to "All Shops" by the next edit). ShopService.deleteShop now counts the live
+-- products and refuses with a typed 409, but count-then-delete is not atomic: a product created or moved
+-- into the shop in between would still be orphaned. RESTRICT makes the database enforce the rule (the
+-- DELETE fails 23503 on products_shop_id_fkey and the service maps that to the same 409), and it is a
+-- plain referential check, so it holds for every writer.
+-- ARCHIVED products (archived_at above) are hidden and kept only for order history; the service detaches
+-- them (shop_id = NULL) in the same transaction before the delete, so they never block it.
+-- No data change: every existing shop_id already references a shop (the old FK held), so re-adding the
+-- constraint cannot fail, and there is NO UPDATE here (no tenant loop, no FORCE-RLS bare-UPDATE trap).
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_shop_id_fkey;
+ALTER TABLE products
+    ADD CONSTRAINT products_shop_id_fkey FOREIGN KEY (shop_id) REFERENCES shops (id) ON DELETE RESTRICT;

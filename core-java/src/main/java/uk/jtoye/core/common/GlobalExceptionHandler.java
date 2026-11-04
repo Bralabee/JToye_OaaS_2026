@@ -791,7 +791,9 @@ public class GlobalExceptionHandler {
         problem.setTitle("Shop Has Products");
         problem.setType(URI.create("https://jtoye.uk/errors/shop-has-products"));
         problem.setProperty("code", "SHOP_HAS_PRODUCTS");
-        problem.setProperty("productCount", ex.getProductCount());
+        if (ex.getProductCount() != ShopHasProductsException.UNKNOWN_COUNT) {
+            problem.setProperty("productCount", ex.getProductCount());
+        }
         return problem;
     }
 
