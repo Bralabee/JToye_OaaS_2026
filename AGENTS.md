@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38), Next.js 16, Go 1.27, PostgreSQL 18
 - **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 7372 logical invocations passing (3245 Java `@Test` methods across 449 files + 3732 Jest `it/test` blocks across 310 files + 117 top-level Go `Test*` funcs across 15 files + 201 Playwright `test()` blocks across 51 specs + 77 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
+- **Testing**: All new code requires tests — project standard is 7382 logical invocations passing (3248 Java `@Test` methods across 449 files + 3735 Jest `it/test` blocks across 311 files + 121 top-level Go `Test*` funcs across 15 files + 201 Playwright `test()` blocks across 51 specs + 77 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -302,7 +302,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Depends on: PostgreSQL JDBC driver, Flyway for schema migration
 - Used by: Service layer exclusively
 - Purpose: Multi-tenant data storage with RLS enforcement and audit trails
-- Location: Schema defined in `core-java/src/main/resources/db/migration/` (94 Flyway migrations, V1 through V94)
+- Location: Schema defined in `core-java/src/main/resources/db/migration/` (90 migration files; Flyway migrations, V1 through V94, with no V90 to V93 file on this branch: V90 and V91 belong to other open PRs and any later V90 to V93 applies out of order, `spring.flyway.out-of-order=true`)
 - Contains: Tables (shops, products, orders, customers, financial_transactions, reviews, etc.), RLS policies per table, audit tables via Envers
 - Depends on: JDBC driver, Java code for policy setup
 - Used by: Core Java service layer via JPA, trigger functions for audit events

@@ -111,16 +111,23 @@ public final class FulfilmentPolicy {
      * and silently refusing every delivery for that reason would be a worse failure than not enforcing). When it
      * applies, a postcode the dataset cannot place is refused too, as {@code delivery-postcode-unrecognised}:
      * the shop asked for a distance limit, and "unknown, so allowed" would be a hole a typo walks through.
+     * The exception is a dataset that is not there at all: when {@code datasetLoaded} says the postcode table is
+     * empty (the importer has not finished, or failed), every postcode misses, so the check is SKIPPED rather
+     * than refusing every delivery for a dependency failure. It is consulted only after a miss.
      *
      * @param locatePostcode resolves the order's postcode to a coordinate (the production
-     *                       {@code PostcodeGeocoder::locate}); a function so this class stays dependency-free
+     *                       {@code PostcodeGeocoder::locateCustomerPostcode}); a function so this class stays
+     *                       dependency-free
+     * @param datasetLoaded  whether the postcode dataset is loaded at all (the production
+     *                       {@code PostcodeGeocoder::isDatasetLoaded}); false = fail open
      * @throws DeliveryRadiusException (422) out of range, or postcode not recognised
      */
     public static void requireWithinDeliveryRadius(
             Shop shop,
             FulfilmentType fulfilmentType,
             String addressPostcode,
-            java.util.function.Function<String, java.util.Optional<PostcodeGeocoder.Coordinate>> locatePostcode) {
+            java.util.function.Function<String, java.util.Optional<PostcodeGeocoder.Coordinate>> locatePostcode,
+            java.util.function.BooleanSupplier datasetLoaded) {
         if (fulfilmentType != FulfilmentType.DELIVERY) {
             return;
         }
@@ -130,6 +137,9 @@ public final class FulfilmentPolicy {
         }
         PostcodeGeocoder.Coordinate customer = locatePostcode.apply(addressPostcode).orElse(null);
         if (customer == null) {
+            if (!datasetLoaded.getAsBoolean()) {
+                return;
+            }
             throw DeliveryRadiusException.postcodeNotRecognised(radiusKm);
         }
         double distanceKm = GeoBounds.distanceKm(shop.getLatitude(), shop.getLongitude(),

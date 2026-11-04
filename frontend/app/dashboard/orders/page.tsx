@@ -10,6 +10,7 @@ import apiClient from "@/lib/api-client"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { fetchAllProducts } from "@/lib/products-api"
 import { describeLoadError } from "@/lib/human-error"
+import { CONTACT_COPY, isPlausibleEmail, isPlausibleName, isPlausiblePhone } from "@/lib/contact-plausibility"
 import { useToast } from "@/hooks/use-toast"
 import { useOrderEvents } from "@/hooks/use-order-events"
 import { useShopContext } from "@/hooks/use-shop-context"
@@ -89,9 +90,20 @@ import { Trash2 } from "lucide-react"
 const orderSchema = z
   .object({
     shopId: z.string().min(1, "Shop is required"),
-    customerName: z.string().min(1, "Customer name is required").max(100),
-    customerEmail: z.string().email("Invalid email").max(255),
-    customerPhone: z.string().max(20).optional(),
+    // Name, email and phone use the checkout's plausibility helpers (lib/contact-plausibility.ts), which mirror
+    // core's @PlausibleContact case for case: a value the server refuses is refused HERE, as a field error,
+    // instead of a generic 400 toast. A blank phone is allowed (it is optional); a blank name keeps its message.
+    customerName: z
+      .string()
+      .min(1, "Customer name is required")
+      .max(100)
+      .refine(isPlausibleName, "Enter the customer's name (at least two letters)"),
+    customerEmail: z.string().max(255).refine(isPlausibleEmail, "Enter a valid email address, like name@example.com"),
+    customerPhone: z
+      .string()
+      .max(20)
+      .optional()
+      .refine((v) => !v || v.trim() === "" || isPlausiblePhone(v), CONTACT_COPY.phone),
     // No .default() here: zod's default makes the INPUT optional while the OUTPUT stays
     // required, and react-hook-form's Resolver types then refuse to line up. The default is
     // supplied by useForm({ defaultValues }) instead, which is where the form's initial state

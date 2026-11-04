@@ -654,6 +654,8 @@ data:
   db.ssl-factory: org.postgresql.ssl.DefaultJavaSSLFactory
   db.ssl-mode: verify-full
   edge.rate-limit.burst: "400"
+  edge.rate-limit.global.burst: "2000"
+  edge.rate-limit.global.rps: "1000"
   edge.rate-limit.ip.max: "10000"
   edge.rate-limit.rps: "200"
   edge.rate-limit.tenant.burst: "20"
@@ -4557,6 +4559,16 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: edge.rate-limit.ip.max
+              name: app-config
+        - name: RATE_LIMIT_GLOBAL_RPS
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.global.rps
+              name: app-config
+        - name: RATE_LIMIT_GLOBAL_BURST
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.global.burst
               name: app-config
         - name: TRUSTED_PROXY_CIDRS
           valueFrom:

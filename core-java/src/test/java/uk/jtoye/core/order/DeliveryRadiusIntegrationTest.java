@@ -1,10 +1,15 @@
 package uk.jtoye.core.order;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -189,6 +194,71 @@ class DeliveryRadiusIntegrationTest {
         assertProblem(performVendor(vendorBody(f, email, "DELIVERY", "ZZ99 9ZZ")), 422, UNRECOGNISED,
                 "DELIVERY_POSTCODE_UNRECOGNISED");
         assertThat(countOrders(email)).isZero();
+    }
+
+    // ------------------------------------------------------------------ round-1 review A3 / A4
+
+    private ListAppender<ILoggingEvent> captureGeocoderLog() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Logger logger = (Logger) LoggerFactory.getLogger(uk.jtoye.core.geo.PostcodeGeocoder.class);
+        logger.setLevel(Level.DEBUG);
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private void stopCapturing(ListAppender<ILoggingEvent> appender) {
+        ((Logger) LoggerFactory.getLogger(uk.jtoye.core.geo.PostcodeGeocoder.class)).detachAppender(appender);
+    }
+
+    @Test
+    @DisplayName("A3: while postcode_centroid is empty (importer not finished) a radius shop does NOT refuse deliveries, on both writers, and the outage WARNs once")
+    void emptyPostcodeDatasetFailsOpenWithOneRateLimitedWarn() throws Exception {
+        Fixture f = seedShop("empty-dataset", true);
+        setRadius(f, 10);
+        ListAppender<ILoggingEvent> log = captureGeocoderLog();
+        try {
+            jdbcTemplate.update("DELETE FROM postcode_centroid");
+
+            String email = "empty-" + UUID.randomUUID() + "@example.com";
+            assertThat(perform(post(storefrontUrl(f)), storefrontBody(email, "DELIVERY", EDINBURGH, f))
+                    .getResponse().getStatus()).as("storefront delivery with no dataset").isEqualTo(201);
+            assertThat(performVendor(vendorBody(f, email, "DELIVERY", EDINBURGH)).getResponse().getStatus())
+                    .as("vendor delivery with no dataset").isEqualTo(201);
+            assertThat(countOrders(email)).isEqualTo(2);
+
+            assertThat(log.list.stream().filter(e -> e.getLevel() == Level.WARN
+                            && e.getFormattedMessage().contains("postcode_centroid")).count())
+                    .as("two orders in the outage log ONE rate-limited WARN").isEqualTo(1);
+        } finally {
+            stopCapturing(log);
+            centroid("SE155EB", 51.4750, -0.0650);
+            centroid("CR01RN", 51.3762, -0.0982);
+            centroid("EH11YZ", 55.9505, -3.1883);
+        }
+    }
+
+    @Test
+    @DisplayName("A3/A4: with the dataset loaded, an unknown postcode is still refused 422 'contact the shop', and a customer's typo logs no WARN")
+    void unknownPostcodeStillRefusedWhenLoadedAndCustomerTypoDoesNotWarn() throws Exception {
+        Fixture f = seedShop("typo", true);
+        setRadius(f, 10);
+        ListAppender<ILoggingEvent> log = captureGeocoderLog();
+        try {
+            String email = "typo-" + UUID.randomUUID() + "@example.com";
+            JsonNode problem = assertProblem(perform(post(storefrontUrl(f)),
+                    storefrontBody(email, "DELIVERY", "ZZ99 9ZZ", f)), 422, UNRECOGNISED,
+                    "DELIVERY_POSTCODE_UNRECOGNISED");
+            assertThat(problem.path("detail").asString()).contains("contact the shop");
+            assertProblem(performVendor(vendorBody(f, email, "DELIVERY", "ZZ99 9ZZ")), 422, UNRECOGNISED,
+                    "DELIVERY_POSTCODE_UNRECOGNISED");
+
+            assertThat(log.list).as("the typo was seen by the geocoder").isNotEmpty();
+            assertThat(log.list.stream().filter(e -> e.getLevel().isGreaterOrEqual(Level.WARN)).toList())
+                    .as("a customer's mistyped postcode must not raise a WARN").isEmpty();
+        } finally {
+            stopCapturing(log);
+        }
     }
 
     // ------------------------------------------------------------------ the shop API

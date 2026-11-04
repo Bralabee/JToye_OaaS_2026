@@ -20,9 +20,10 @@ import java.util.List;
  * view of the customer is minimised on purpose (#856). Only the webhook, whose recipient is a GROUP_ADMIN's own
  * endpoint, gets them.
  *
- * <p>Runs inside the fan-out's per-tenant transaction with the tenant GUC pinned, so the read is RLS-scoped; the
- * tenant is also compared explicitly. When the order cannot be read (deleted since the event was raised, or not
- * this tenant's) the event is still delivered, as the thin original.
+ * <p>Runs in its own short per-tenant transaction (opened by {@link WebhookFanoutListener}) with the tenant GUC
+ * pinned, so the read is RLS-scoped; the tenant is also compared explicitly. When the order cannot be read
+ * (deleted since the event was raised, or not this tenant's) the event is still delivered, as the thin original,
+ * and so it is when the read itself fails: the listener catches that, logs once and delivers the thin event.
  */
 @Component
 public class OrderWebhookDataFactory {

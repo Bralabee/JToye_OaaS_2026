@@ -1361,7 +1361,8 @@ public class PublicStorefrontService {
                 request.getAddressCity(), request.getAddressPostcode());
         // #460 / UXT-030: refuse a delivery beyond the shop's radius (typed 422), before pricing and stock.
         FulfilmentPolicy.requireWithinDeliveryRadius(shop, fulfilmentType, request.getAddressPostcode(),
-                postcode -> postcodeGeocoder.locate(postcode));
+                postcode -> postcodeGeocoder.locateCustomerPostcode(postcode),
+                () -> postcodeGeocoder.isDatasetLoaded());
         if (fulfilmentType == FulfilmentType.DELIVERY) {
             order.setAddressLine1(request.getAddressLine1());
             order.setAddressLine2(request.getAddressLine2());

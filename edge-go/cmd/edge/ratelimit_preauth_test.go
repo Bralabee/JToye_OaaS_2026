@@ -161,3 +161,71 @@ func TestClientIPResolver_RefusesTrustEveryone(t *testing.T) {
 		t.Errorf("a valid list with blanks was refused: %v", err)
 	}
 }
+
+// IPv6 hosts own a /64, so the valve keys them on it: rotating the low 64 bits
+// must not mint buckets (round-1 review A1).
+func TestPreAuthValve_IPv6ClientsShareTheirSlash64Bucket(t *testing.T) {
+	h := newTenantLimitHarness(t, testValve(1, 3), tenantLimitsFromEnv(), newFakeClock())
+
+	refused := 0
+	for i := 0; i < 12; i++ {
+		refused += h.floodAnonymously(1, fmt.Sprintf("[2001:db8:1:2::%x]:40000", i+1), "")
+	}
+	if refused == 0 {
+		t.Errorf("12 addresses inside one /64 never shared a bucket: nothing refused against burst 3")
+	}
+	if other := h.floodAnonymously(1, "[2001:db8:1:3::1]:40000", ""); other != 0 {
+		t.Errorf("an address in a DIFFERENT /64 was refused by the first /64's flood")
+	}
+	// IPv4 stays keyed on the full address.
+	if v4 := h.floodAnonymously(1, "198.51.100.1:1", ""); v4 != 0 {
+		t.Errorf("an IPv4 client was refused by an IPv6 /64 flood")
+	}
+}
+
+// The per-replica ceiling survives the move to per-address buckets (A2): a
+// flood spread over many sources is bounded as a whole.
+func TestPreAuthValve_GlobalCeilingBoundsAFloodSpreadOverManySources(t *testing.T) {
+	resolver, _ := newClientIPResolver("")
+	valve := rateLimiter(tenantRateLimitConfig{RPS: 1, Burst: 3, MaxTenants: 1000, GlobalRPS: 1, GlobalBurst: 5}, resolver, newFakeClock())
+	h := newTenantLimitHarness(t, valve, tenantLimitsFromEnv(), newFakeClock())
+
+	refused := 0
+	for i := 0; i < 20; i++ {
+		refused += h.floodAnonymously(1, fmt.Sprintf("198.51.100.%d:1", i+1), "")
+	}
+	if refused != 15 {
+		t.Errorf("20 sources x 1 request against a global burst of 5: refused %d, want 15", refused)
+	}
+}
+
+// A per-address refusal must not spend the global bucket: one flooding source
+// cannot drain the ceiling for everybody else.
+func TestPreAuthValve_PerAddressRefusalDoesNotSpendGlobalTokens(t *testing.T) {
+	resolver, _ := newClientIPResolver("")
+	valve := rateLimiter(tenantRateLimitConfig{RPS: 1, Burst: 3, MaxTenants: 1000, GlobalRPS: 1, GlobalBurst: 5}, resolver, newFakeClock())
+	h := newTenantLimitHarness(t, valve, tenantLimitsFromEnv(), newFakeClock())
+
+	h.floodAnonymously(100, "203.0.113.9:1", "")
+	if refused := h.floodAnonymously(2, "198.51.100.1:1", ""); refused != 0 {
+		t.Errorf("a quiet source was refused after another source's refused flood: the global bucket was drained by refusals")
+	}
+}
+
+// Eviction is amortised (A1): newcomers arriving at a full map within the same
+// interval pay for at most one sweep, not one each.
+func TestTenantLimiter_FullMapSweepIsAmortised(t *testing.T) {
+	cfg := tenantRateLimitConfig{RPS: 1, Burst: 2, MaxTenants: 100}
+	clk := newFakeClock()
+	l := newTenantLimiter(cfg, clk)
+	for i := 0; i < cfg.MaxTenants; i++ {
+		l.take(fmt.Sprintf("k%d", i)) // every bucket is below full, so none is idle
+	}
+	before := l.sweeps
+	for i := 0; i < 1000; i++ {
+		l.take(fmt.Sprintf("new%d", i))
+	}
+	if got := l.sweeps - before; got > 1 {
+		t.Errorf("1000 newcomers at a full map ran %d sweeps, want at most 1", got)
+	}
+}

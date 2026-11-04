@@ -114,6 +114,19 @@ spec:
             configMapKeyRef:
               name: app-config
               key: edge.rate-limit.ip.max
+        # Per-replica ceiling over ALL pre-auth traffic (round-1 review A2):
+        # the per-address buckets above no longer bound a flood spread over many
+        # sources, this pair does.
+        - name: RATE_LIMIT_GLOBAL_RPS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.global.rps
+        - name: RATE_LIMIT_GLOBAL_BURST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.global.burst
         # #808: the pre-auth valve (RATE_LIMIT_RPS / _BURST above) is now keyed per
         # client address, not one bucket for the whole replica. The edge believes
         # X-Forwarded-For only from these ranges - the SAME app-config key core-java
