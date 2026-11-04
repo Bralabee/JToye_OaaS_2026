@@ -13,7 +13,6 @@ public routes only). **Keep both in sync when adding pages.**
 |---|---|
 | `/` | Public landing page (persona routing: order food → `/shop` / run your business → `/for-operators`); wrapped in the shared public shell. Signed-in vendors reach `/dashboard` via the header, not an auto-forward |
 | `/for-operators` | Prospective-vendor pitch in five sections: one-kitchen hero with the standard-plan margin, both rhythms (daily takeaway and weekend batch/catering), compliance built in, V88 pricing table, four-step pilot with a dated not-yet-live list. Four product images from a fictional shop; no fit check, no PDF pack |
-| `/business-model-guide` | Authoritative business-model decision guide (companion: `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`). **`noindex,nofollow` and not linked from the footer** since PR 1080 (SW-CLR-05); `/competitive` likewise. **EXCLUDED from `sitemap.xml`** since the SW-CLR-05 follow-up (after Phase 30 plan 30-19): a sitemap must not offer a page that tells crawlers not to index it |
 | `/shop` | Storefront discovery / shop directory |
 | `/track` | Order tracking by order number. **`noindex` + EXCLUDED from `sitemap.xml`** (FE-6) — a transactional lookup surface, not discovery content; its `robots.txt` disallow and the sitemap omission now agree. |
 | `/unsubscribe` | Token-based one-click email opt-out (GDPR/PECR, COMMS-03). **`noindex,nofollow` + EXCLUDED from `sitemap.xml`** — a transactional surface, not discovery content; never renders the `email`/`token` query params into meta or body. |

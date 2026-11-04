@@ -8,8 +8,8 @@ import { useCustomerSession } from "@/hooks/use-customer-session"
 
 /**
  * Shared public footer (Surface B). De-orphans /track (backlog #5) and gives
- * /for-operators a second inbound link. It also de-orphaned /business-model-guide
- * until SW-CLR-05 (swarm epic #964) unlinked the two strategy pages.
+ * /for-operators a second inbound link. The two internal strategy pages it once
+ * linked are deleted (owner ruling 2026-11-04, #836), so they are no operator surface.
  *
  * Oxblood brand anchor (sketch 004 winner D, matched to jtoyedigital.co.uk).
  *
@@ -53,7 +53,7 @@ import { useCustomerSession } from "@/hooks/use-customer-session"
  * Surfaces where the operator column stays visible to everyone, signed in or not.
  * Prefix-matched, so /for-operators/anything is covered too.
  */
-const OPERATOR_SURFACES = ["/for-operators", "/business-model-guide", "/competitive", "/auth"]
+const OPERATOR_SURFACES = ["/for-operators", "/auth"]
 
 /**
  * Attribution year for the bundled OS Code-Point Open postcode dataset.

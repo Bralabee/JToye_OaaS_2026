@@ -143,8 +143,6 @@ const PUBLIC_ROUTES = [
   // title contracts as every other public page.
   "/legal/terms",
   "/contact",
-  "/business-model-guide",
-  "/competitive",
 ]
 
 /**

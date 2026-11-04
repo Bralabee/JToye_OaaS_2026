@@ -161,9 +161,9 @@ describe("PublicFooter CONTROL — the operator door is still open", () => {
     )
   })
 
-  it("...and on the operator surfaces below it (/business-model-guide, /competitive)", async () => {
+  it("...and on the operator surfaces below it (/for-operators/pricing, /auth/signin)", async () => {
     mockedSession.mockResolvedValue(SIGNED_IN)
-    for (const surface of ["/business-model-guide", "/competitive"]) {
+    for (const surface of ["/for-operators/pricing", "/auth/signin"]) {
       mockedPathname.mockReturnValue(surface)
       const { unmount } = render(<PublicFooter />)
       await screen.findByRole("link", { name: /^my orders$/i })
@@ -176,8 +176,8 @@ describe("PublicFooter CONTROL — the operator door is still open", () => {
 /**
  * Server-side crawlability. The footer is the second inbound link to
  * /for-operators, so the gate must not cost the link graph. (It used to be the
- * only one to /business-model-guide, backlog #5; SW-CLR-05 removed that link
- * deliberately, and the strategy pages are noindexed.) The session resolves asynchronously and is
+ * only one to /business-model-guide, backlog #5; that page is deleted, owner ruling
+ * 2026-11-04, #836.) The session resolves asynchronously and is
  * null on the first render — which is exactly the render a crawler receives —
  * so the operator links are present in the initial output. Asserted rather than
  * assumed, because "SEO is fine" is the kind of claim that is never checked.
@@ -190,8 +190,8 @@ describe("PublicFooter link graph is intact on first paint (SEO)", () => {
 
     expect(container.querySelector('a[href="/for-operators"]')).toBeInTheDocument()
     expect(container.querySelector('a[href="/track"]')).toBeInTheDocument()
-    // SW-CLR-05: absent from the first render too, which is the one a crawler reads.
-    expect(container.querySelector('a[href="/business-model-guide"]')).toBeNull()
-    expect(container.querySelector('a[href="/competitive"]')).toBeNull()
+    // #836: absent from the first render too, which is the one a crawler reads.
+    expect(container.querySelector('a[href$="business-model-guide"]')).toBeNull()
+    expect(container.querySelector('a[href$="competitive"]')).toBeNull()
   })
 })

@@ -15,8 +15,8 @@ export const PUBLIC_STATIC_ROUTES: ReadonlyArray<{
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/shop", changeFrequency: "daily", priority: 0.9 },
   { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
-  // `/business-model-guide` is NOT here (SW-CLR-05): it is `noindex` and out of the footer since
-  // PR 1080, and a sitemap must not offer crawlers a page that tells them not to index it.
+  // The two internal strategy pages were deleted (owner ruling 2026-11-04, #836), so there is
+  // nothing of theirs to list.
   // FE-6 (RESOLVED, was: "a pre-existing inconsistency, left alone"): `/track`
   // used to be listed here AND in `app/robots.ts`'s DISALLOW list — telling
   // crawlers to index a page they were also told not to fetch. It is now

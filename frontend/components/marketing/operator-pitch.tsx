@@ -15,7 +15,7 @@ import { StripeUkPricingSentence } from "@/components/marketing/stripe-uk-pricin
 
 /**
  * Every price figure comes from the shared module (lib/pricing.ts), the same
- * one /business-model-guide and /competitive read, so a ruling is a change in
+ * one /legal/terms reads, so a ruling is a change in
  * that file and no page can drift from another. What stays here is display
  * only: the tier labels and notes, and which row is the primary one (the hero
  * docket reads it, so the docket and the table cannot disagree).

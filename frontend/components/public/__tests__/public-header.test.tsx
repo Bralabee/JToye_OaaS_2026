@@ -62,12 +62,8 @@ describe("PublicHeader wordmark home target", () => {
     expectHomeFrom("/track/ORD-123")
   })
 
-  it("/business-model-guide -> wordmark links to /", () => {
-    expectHomeFrom("/business-model-guide")
-  })
-
-  it("/competitive -> wordmark links to /", () => {
-    expectHomeFrom("/competitive")
+  it("/for-operators -> wordmark links to /", () => {
+    expectHomeFrom("/for-operators")
   })
 })
 

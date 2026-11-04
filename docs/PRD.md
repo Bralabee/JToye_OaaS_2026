@@ -58,7 +58,7 @@ It gives an operator end-to-end control of **both rhythms of a modern West Afric
   - Zero third-party Stripe scripts or cookies loaded on cash-only checkouts (`PGC-793`).
 
 ### 3.3 Public / marketing + legal
-Landing `/`, `/for-operators`, `/business-model-guide`, `/competitive` (interactive Flipdish vs. J'Toye teardown), `/auth/signin`, `/track`, `/unsubscribe`, `/dsar/verify`, `/dsar/export`, `/invite/accept`, and five `/legal` routes (`index`, `privacy`, `cookies`, `retention`, `accessibility`).
+Landing `/`, `/for-operators`, `/auth/signin`, `/track`, `/unsubscribe`, `/dsar/verify`, `/dsar/export`, `/invite/accept`, and five `/legal` routes (`index`, `privacy`, `cookies`, `retention`, `accessibility`).
 
 ### 3.4 Onboarding (`Phases 18, 21, 31.1, 37`)
 The `VendorOnboarding` state machine is the **sole writer of `Shop.published`**. Four mandatory compliance gates run today:

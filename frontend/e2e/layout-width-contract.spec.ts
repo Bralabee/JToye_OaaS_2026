@@ -19,8 +19,9 @@
  * `@stack-free` describes are wired into it; its dashboard describes are not,
  * because they need a Keycloak login and a live stack.
  *
- *   Marketing tier   `/`, `/for-operators`, `/business-model-guide`,
+ *   Marketing tier   `/`, `/for-operators`,
  *                    `/legal/privacy`                     PER-PR, BLOCKING
+ *                    (`/business-model-guide` was deleted, owner ruling 2026-11-04, #836)
  *   Shell tier       `/dashboard`                         no executing lane
  *   Index tier       `/dashboard/orders`, `/products`     no executing lane
  *   Detail tier      `/dashboard/onboarding`              no executing lane
@@ -400,7 +401,6 @@ const MARKETING_ROUTES: {
     note: "the 4th band is the server-data-conditional kitchen row (#544)",
   },
   { path: "/for-operators", mainMin: 5, mainMax: 5 },
-  { path: "/business-model-guide", mainMin: 4, mainMax: 4 },
   // ORCH-06's route. It carries exactly ONE content band, which is what makes it
   // the sharpest scope control in this file: revert `components/legal/policy-
   // page.tsx` and the `main`-scoped count drops to 0 and this reds, while a
