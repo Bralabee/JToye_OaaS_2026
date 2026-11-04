@@ -527,4 +527,93 @@ class BulkImportServiceTest {
         assertTrue(template.contains("sku"));
         assertTrue(template.contains("Jollof Rice"));
     }
+
+    // ---- Allergen NAMES in the CSV (#799 remainder, C-10) ----
+    //
+    // The import took allergens only as the numeric bitmask (allergen_mask), which no vendor can
+    // write from memory. It now also takes the 14 UK FSA names (AllergenCatalog), case-insensitive,
+    // comma or semicolon separated, in an `allergens` column or in the allergen_mask cell itself.
+    // Gluten=bit0 (1), Eggs=bit2 (4), Fish=bit3 (8), Milk=bit6 (64), Sesame=bit10 (1024).
+
+    private Product importOne(String csv) {
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), shopId);
+        assertEquals(0, result.getErrorCount(), () -> "unexpected row errors: " + result.getErrors());
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("importFromCsv - an `allergens` column of names, semicolon separated, sets the mask")
+    void testImportFromCsv_AllergenNamesColumn() {
+        Product p = importOne("title,price_pounds,allergens\nPuff Puff,2.50,Gluten; Milk\n");
+        assertEquals(1 | 64, p.getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - names are case-insensitive and comma separated when quoted")
+    void testImportFromCsv_AllergenNamesCaseInsensitiveComma() {
+        Product p = importOne("title,price_pounds,allergens\nTahini,4.00,\"sesame, FISH ,eGgs\"\n");
+        assertEquals(1024 | 8 | 4, p.getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - the allergen_mask cell still takes the number, and now also names")
+    void testImportFromCsv_AllergenMaskCellNumberAndNames() {
+        assertEquals(65, importOne("title,price_pounds,allergen_mask\nA,1.00,65\n").getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - names in the allergen_mask cell are read as names")
+    void testImportFromCsv_AllergenMaskCellWithNames() {
+        assertEquals(1 | 64, importOne("title,price_pounds,allergen_mask\nA,1.00,Gluten;Milk\n").getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - a number and names in separate columns are combined, never one over the other")
+    void testImportFromCsv_NumberAndNamesCombine() {
+        Product p = importOne("title,price_pounds,allergen_mask,allergens\nA,1.00,1,Milk\n");
+        assertEquals(1 | 64, p.getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - a blank allergen cell is 0, as before")
+    void testImportFromCsv_BlankAllergensIsZero() {
+        assertEquals(0, importOne("title,price_pounds,allergens\nA,1.00,\n").getAllergenMask());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - an unknown allergen name is a typed per-row error naming it; the row is not created")
+    void testImportFromCsv_UnknownAllergenNameIsRowError() {
+        String csv = "title,price_pounds,allergens\n" +
+                "Good,1.00,Gluten\n" +
+                "Bad,1.00,\"Gluten; Pecans\"\n" +
+                "AlsoGood,1.00,Milk\n";
+
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        assertEquals(3, result.getTotalRows());
+        assertEquals(2, result.getSuccessCount(), "one bad row never blocks the others");
+        assertEquals(1, result.getErrorCount());
+        BulkImportResult.RowError error = result.getErrors().get(0);
+        assertEquals(3, error.getRow());
+        assertEquals("allergens", error.getField());
+        assertTrue(error.getMessage().contains("Pecans"), error.getMessage());
+        assertTrue(error.getMessage().contains("Molluscs"), "the message lists the 14 valid names: " + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - a garbled or out-of-range allergen_mask is an error, not a silent 'no allergens'")
+    void testImportFromCsv_GarbledOrOutOfRangeMaskIsRowError() {
+        String csv = "title,price_pounds,allergen_mask\n" +
+                "Garbled,1.00,abc\n" +
+                "TooBig,1.00,99999\n";
+
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(2, result.getErrorCount());
+        assertTrue(result.getErrors().stream().allMatch(e -> "allergen_mask".equals(e.getField())), result.getErrors().toString());
+        verify(productRepository, never()).save(any(Product.class));
+    }
 }
