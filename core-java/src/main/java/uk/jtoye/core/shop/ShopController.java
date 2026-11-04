@@ -218,10 +218,11 @@ public class ShopController {
      * DELETE /shops/{id}
      */
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete shop", description = "Deletes a shop for the authenticated tenant")
+    @Operation(summary = "Delete shop", description = "Deletes a shop for the authenticated tenant. Refused (409, type shop-has-products, with productCount) while the shop still has products: move or delete them first.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Shop deleted successfully"),
-            @ApiResponse(responseCode = "404", description = "Shop not found")
+            @ApiResponse(responseCode = "404", description = "Shop not found"),
+            @ApiResponse(responseCode = "409", description = "The shop still has products (type shop-has-products, productCount)")
     })
     public ResponseEntity<Void> delete(
             @Parameter(description = "Shop ID") @PathVariable UUID id) {

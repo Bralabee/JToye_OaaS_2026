@@ -687,6 +687,13 @@ public class ProductService {
      * equivalent of the asset ref-count.
      */
     private void deleteFlatImageIfUnshared(Product product, String url) {
+        List<String> unshared = new ArrayList<>();
+        collectFlatImageIfUnshared(product, url, unshared);
+        unshared.forEach(storageService::delete);
+    }
+
+    /** The decision half of {@link #deleteFlatImageIfUnshared}: add the URL to {@code out} only if no other product shows it. */
+    private void collectFlatImageIfUnshared(Product product, String url, List<String> out) {
         if (url == null || url.isBlank()) {
             return;
         }
@@ -696,7 +703,7 @@ public class ProductService {
             log.info("Kept image object for product {}: {} other product(s) still show it", product.getId(), others);
             return;
         }
-        storageService.delete(url);
+        out.add(url);
     }
 
     /**
@@ -868,9 +875,21 @@ public class ProductService {
     }
 
     /**
-     * Delete product by ID (tenant-scoped).
-     * RLS ensures we can only delete products belonging to our tenant.
-     * Evicts ONLY this product's cache entry under the current tenant.
+     * Delete a product (tenant-scoped; RLS ensures only this tenant's rows), or ARCHIVE it when past
+     * orders still name it. Evicts ONLY this product's cache entry under the current tenant.
+     *
+     * <p>#832 (UXT-063). A hard delete used to hit two foreign keys and report both as "still referenced
+     * by an existing order": {@code product_media.product_id} (a photo; no cascade) and
+     * {@code fk_order_items_product} (any order, even a cancelled one). Now:
+     * <ol>
+     *   <li>a product on an order that is still in flight (DRAFT to READY) is refused with the typed 409,
+     *       naming the real reason - the kitchen is working from it;</li>
+     *   <li>the product's {@code product_media} links are dropped and each asset ref-count-released
+     *       ({@link MediaAssetService#releaseAsset}: the object is deleted only at zero references, V53);</li>
+     *   <li>a product that any order line still names is ARCHIVED (V90 {@code archived_at}, unavailable,
+     *       photos cleared): it leaves every list, the storefront and the SKU index, and the order history
+     *       keeps the name snapshotted on its lines (V30). Otherwise the row is deleted.</li>
+     * </ol>
      */
     public void deleteProduct(UUID productId) {
         log.debug("Deleting product {}", productId);
@@ -880,10 +899,38 @@ public class ProductService {
         // VSA-02 (D-02): parent-lookup — catalogue delete requires SHOP_MANAGER.
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
-        // Clean up all images from storage, except objects another product still shows (37-13: a
-        // copy to another shop shares its source's image URLs).
-        deleteFlatImageIfUnshared(product, product.getImageUrl());
-        product.getAdditionalImageUrls().forEach(url -> deleteFlatImageIfUnshared(product, url));
+        // Checked BEFORE any image is touched: object storage does not roll back, so a refusal must not
+        // have deleted the photos of a product that stays.
+        if (productRepository.countOpenOrderLinesForProduct(product.getTenantId(), productId) > 0) {
+            throw new ResourceInUseException(
+                    "Product cannot be deleted while it is on an order that is still open. "
+                            + "Complete or cancel that order first.",
+                    "fk_order_items_product");
+        }
+
+        // The photo case: drop every product_media link (primary and gallery) and release its asset.
+        // Object storage does not roll back, so NO object is deleted here: the keys and URLs are collected
+        // and removed only once this transaction has committed (a late 23503 below rolls the rows back and
+        // must leave every blob in place).
+        List<String> objectKeys = new ArrayList<>();
+        List<String> flatUrls = new ArrayList<>();
+        for (ProductMedia link : productMediaRepository.findByProductIdOrderByPrimaryDescSortOrderAsc(productId)) {
+            UUID assetId = link.getAssetId();
+            productMediaRepository.delete(link);
+            productMediaRepository.flush();          // make the drop visible to the ref-count query
+            mediaAssetService.detachAsset(assetId).ifPresent(objectKeys::add);
+        }
+
+        // The flat images, except objects another product still shows (37-13: a copy to another shop
+        // shares its source's image URLs).
+        collectFlatImageIfUnshared(product, product.getImageUrl(), flatUrls);
+        product.getAdditionalImageUrls().forEach(url -> collectFlatImageIfUnshared(product, url, flatUrls));
+        storageService.deleteObjectsAfterCommit(product.getTenantId(), objectKeys, flatUrls);
+
+        if (productRepository.countOrderLinesForProduct(product.getTenantId(), productId) > 0) {
+            archive(product);
+            return;
+        }
 
         try {
             productRepository.delete(product);
@@ -896,8 +943,10 @@ public class ProductService {
             productRepository.flush();
         } catch (DataIntegrityViolationException ex) {
             if ("23503".equals(SqlStateExtractor.sqlState(ex).orElse(null))) {
+                // Only a row created between the checks above and this DELETE (or a table added later)
+                // can land here; the constraint name says which relationship it was.
                 throw new ResourceInUseException(
-                        "Product cannot be deleted: it is still referenced by an existing order",
+                        "Product cannot be deleted: something else still references it",
                         SqlStateExtractor.constraintName(ex).orElse(null));
             }
             throw ex;
@@ -905,6 +954,23 @@ public class ProductService {
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Deleted product {} with SKU '{}'", product.getId(), product.getSku());
+    }
+
+    /**
+     * #832: retire a product that order history still names. The row stays (order_items keeps its
+     * foreign key and its snapshotted name) but is unavailable, unfeatured, has no photos and is
+     * invisible to every entity query (Product's {@code @SQLRestriction}) and to the SKU unique index.
+     */
+    private void archive(Product product) {
+        product.setImageUrl(null);
+        product.getAdditionalImageUrls().clear();
+        product.setAvailable(false);
+        product.setFeatured(false);
+        product.setArchivedAt(java.time.OffsetDateTime.now());
+        productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", product.getId());
+
+        log.info("Archived product {} with SKU '{}': past orders still name it", product.getId(), product.getSku());
     }
 
     /**

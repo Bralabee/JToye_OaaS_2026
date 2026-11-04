@@ -20,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ALLERGENS } from "@/types/api"
+import { withFullStop } from "@/lib/sentence-end"
 import type { BulkImportResult, Shop } from "@/types/api"
 import {
   Upload, FileSpreadsheet, Camera, ArrowLeft, Download,
@@ -193,8 +195,15 @@ function CsvImportTab() {
             <Download className="h-4 w-4" />
             Download CSV Template
           </Button>
-          <p className="mt-3 text-xs text-slate-600">
-            Columns: title, sku, price_pounds, ingredients, category, description, dietary_tags, prep_time_minutes, allergen_mask
+          <p className="mt-3 text-xs text-slate-600" data-testid="import-columns">
+            Columns: title, sku, price_pounds, ingredients, category, description, dietary_tags, prep_time_minutes,
+            allergens, allergen_mask. For allergens write names or the number, for example &quot;Gluten; Milk&quot;.
+          </p>
+          <p className="mt-1 text-xs text-slate-600" data-testid="import-allergen-help">
+            Allergen names (any capitals): {withFullStop(ALLERGENS.map((a) => a.name).join(", "))}{" "}
+            Separate several with semicolons (;) or bars (|), never commas: a comma starts a new column in a CSV
+            file, so a row with an unquoted comma is refused. A name that is not on this list stops that row from
+            being imported, with the reason shown, so a misspelt allergen is never saved as &quot;none&quot;.
           </p>
         </CardContent>
       </Card>

@@ -3,7 +3,7 @@
  * "Request failed with status code 409". The server answers that delete with a typed problem detail
  * (409, type https://jtoye.uk/errors/in-use, ProductService.deleteProduct), because an order still
  * references the product. The vendor is now told why, in plain words, and what to do instead (take it
- * off the menu with the Available tick). No archive feature is added.
+ * off the menu with the Available tick). #832 then made a product on PAST orders archivable, so this refusal now means an order still in flight.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ProductsPage from "../page"
@@ -63,7 +63,7 @@ beforeEach(() => {
 })
 
 describe("deleting an ordered dish (SW-ADE-09)", () => {
-  it("explains the 409 in-use refusal and says to untick Available instead", async () => {
+  it("explains the 409 in-use refusal: the dish is on an order still open (#832: past orders now archive it)", async () => {
     mockedApiClient.delete.mockRejectedValueOnce(
       httpError(409, {
         type: "https://jtoye.uk/errors/in-use",
@@ -74,8 +74,9 @@ describe("deleting an ordered dish (SW-ADE-09)", () => {
     )
     const t = await deleteJollof()
     expect(t.title).toBe("Jollof Rice can't be deleted")
-    expect(t.description).toMatch(/on past orders/i)
-    expect(t.description).toMatch(/untick Available/i)
+    expect(t.description).toMatch(/order that is still open/i)
+    expect(t.description).toMatch(/complete or cancel/i)
+    expect(t.description).not.toMatch(/past orders/i)
     expect(t.description).not.toMatch(/status code/i)
   })
 

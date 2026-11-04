@@ -64,7 +64,7 @@ public class BulkImportService {
         return """
                 title,sku,price_pounds,ingredients,category,description,dietary_tags,prep_time_minutes,allergen_mask,shop_id
                 Jollof Rice,JOLLOF-001,8.99,"Rice, tomatoes, peppers, onions, vegetable oil, seasoning",Mains,Our signature smoky jollof rice slow-cooked to perfection,"Halal, Gluten-Free",20,0,
-                Puff Puff,PUFF-001,2.50,"Flour, sugar, yeast, water, nutmeg",Snacks,Fluffy Nigerian doughnut balls lightly dusted with sugar,Vegetarian,10,1,
+                Puff Puff,PUFF-001,2.50,"Flour, sugar, yeast, water, nutmeg",Snacks,Fluffy Nigerian doughnut balls lightly dusted with sugar,Vegetarian,10,Gluten,
                 """;
     }
 
@@ -131,6 +131,17 @@ public class BulkImportService {
         for (int i = 0; i < dataRows.size(); i++) {
             int rowNum = i + 2; // 1-indexed, skip header
             String[] row = dataRows.get(i);
+
+            // Round-1 review (finding 4): more cells than the header means a value contained an unquoted
+            // comma, which pushed every later cell one column to the right. Reading the shifted row
+            // would put values in the wrong columns (an allergen could be dropped from the declaration
+            // without any error), so the row is refused as DATA and the rest of the batch still imports.
+            if (row.length > header.length) {
+                result.getErrors().add(new RowError(rowNum, "row", "This row has " + row.length
+                        + " fields but the header has " + header.length + ". A value that contains a comma must be "
+                        + "in double quotes; separate several allergens with ; (a semicolon), not a comma."));
+                continue;
+            }
 
             // WR-07 (plan 23-10): a malformed shop_id CELL is bad DATA, not an
             // authorization denial. Parse it defensively — a non-UUID value becomes a
@@ -375,18 +386,82 @@ public class BulkImportService {
             }
         }
 
-        String allergenStr = getField(row, cols, "allergen_mask");
-        if (allergenStr != null && !allergenStr.isBlank()) {
+        // #799 (C-10): allergens as the 14 UK FSA NAMES or the legacy number. Both columns are read and
+        // combined (OR), and either cell may hold names or a number. An unreadable cell is a typed
+        // per-row error and the row is NOT created: it used to become 0, which declares "contains none
+        // of the 14" for a dish nobody has assessed.
+        int allergenMask = 0;
+        for (String column : List.of("allergen_mask", "allergens")) {
             try {
-                product.setAllergenMask(Integer.parseInt(allergenStr));
-            } catch (NumberFormatException e) {
-                product.setAllergenMask(0);
+                allergenMask |= parseAllergenCell(getField(row, cols, column));
+            } catch (IllegalArgumentException bad) {
+                result.getErrors().add(new RowError(rowNum, column, bad.getMessage()));
+                return null;
             }
-        } else {
-            product.setAllergenMask(0);
         }
+        product.setAllergenMask(allergenMask);
 
         return product;
+    }
+
+    /**
+     * Read one allergen cell: blank is 0; a whole number is the legacy bitmask (0 to 16383, the 14
+     * catalogue bits); anything else is a list of {@link AllergenCatalog} names, case-insensitive,
+     * separated by semicolons or bars (never commas: a comma is the CSV column separator, so an unquoted one shifts the row and a quoted one is not a list). Exact names only: this is a declaration the vendor makes, so
+     * no synonym or free-text guess is applied (that heuristic is advisory elsewhere, never a
+     * declaration). Package-private for tests.
+     *
+     * @throws IllegalArgumentException with a vendor-readable message naming what could not be read
+     */
+    static int parseAllergenCell(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        String cell = raw.strip();
+        if (cell.chars().allMatch(Character::isDigit)) {
+            int max = (1 << AllergenCatalog.BIT_COUNT) - 1;
+            try {
+                int mask = Integer.parseInt(cell);
+                if (mask <= max) {
+                    return mask;
+                }
+            } catch (NumberFormatException tooLong) {
+                // falls through to the range message
+            }
+            throw new IllegalArgumentException("Invalid allergen number: " + cell
+                    + ". It must be between 0 and " + max + ", or list allergen names instead ("
+                    + validAllergenNames() + ").");
+        }
+        int mask = 0;
+        List<String> unknown = new ArrayList<>();
+        for (String token : cell.split("[;|]")) {
+            String name = token.strip();
+            if (name.isEmpty()) {
+                continue;
+            }
+            int bit = -1;
+            for (AllergenCatalog.Allergen allergen : AllergenCatalog.allergens()) {
+                if (allergen.name().equalsIgnoreCase(name)) {
+                    bit = allergen.bit();
+                    break;
+                }
+            }
+            if (bit < 0) {
+                unknown.add(name);
+            } else {
+                mask |= 1 << bit;
+            }
+        }
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("Unknown allergen: " + String.join(", ", unknown)
+                    + ". Use the 14 UK allergens (" + validAllergenNames() + "), separated by semicolons (;) or bars (|), not commas.");
+        }
+        return mask;
+    }
+
+    private static String validAllergenNames() {
+        return AllergenCatalog.allergens().stream().map(AllergenCatalog.Allergen::name)
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     /**

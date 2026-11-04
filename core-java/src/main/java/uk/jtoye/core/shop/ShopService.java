@@ -17,6 +17,8 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
 import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
+import uk.jtoye.core.exception.ShopHasProductsException;
+import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopSlugTakenException;
@@ -587,6 +589,15 @@ public class ShopService {
         return shopMapper.toDto(shop);
     }
 
+    private static boolean causeChainMentions(Throwable ex, String text) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains(text)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void deleteShop(UUID shopId) {
         // VSA-02 (D-02): shop delete is a group-wide action — GROUP_ADMIN only.
         shopAccessService.requireGroupAdmin();
@@ -600,11 +611,37 @@ public class ShopService {
         Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
 
-        // Clean up images from storage
-        storageService.delete(shop.getLogoUrl());
-        storageService.delete(shop.getBannerUrl());
+        // #833 (UXT-064): products.shop_id is ON DELETE SET NULL (V20), so deleting a shop that still has
+        // products orphaned them (listed, unreachable by id, moved to "All Shops" by the next edit).
+        // Refuse instead. This count gives the friendly answer (and the number); it is NOT what makes the
+        // refusal safe: a product created or moved in after it would still be orphaned by SET NULL. V90
+        // makes products.shop_id ON DELETE RESTRICT, so the DELETE below fails for such a product and that
+        // 23503 is mapped to the same typed 409 (round-1 review, finding 3).
+        long liveProducts = shopRepository.countLiveProducts(tenantId, shopId);
+        if (liveProducts > 0) {
+            throw new ShopHasProductsException(liveProducts);
+        }
+        // Archived products (#832) are kept for order history but are not "in" the shop any more: detach
+        // them, since RESTRICT would otherwise refuse the delete on their account.
+        shopRepository.detachArchivedProducts(tenantId, shopId);
 
-        shopRepository.delete(shop);
+        try {
+            shopRepository.delete(shop);
+            shopRepository.flush();   // inside the try: a RESTRICT violation must surface here, not at commit
+        } catch (DataIntegrityViolationException ex) {
+            // A batched DELETE reports neither a constraint name nor (measured) the 23503 on the exception
+            // Hibernate surfaces ("constraint [null]"), so the constraint is recognised by the name the
+            // database puts in its message. That name is unique to this foreign key.
+            if ("products_shop_id_fkey".equals(SqlStateExtractor.constraintName(ex).orElse(null))
+                    || causeChainMentions(ex, "products_shop_id_fkey")) {
+                throw new ShopHasProductsException();
+            }
+            throw ex;
+        }
+        // Images go only once the delete has committed: object storage does not roll back.
+        storageService.deleteObjectsAfterCommit(tenantId, List.of(),
+                java.util.stream.Stream.of(shop.getLogoUrl(), shop.getBannerUrl())
+                        .filter(u -> u != null && !u.isBlank()).toList());
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
         if (billingLocationSync != null) {
             billingLocationSync.syncAfterCommit(tenantId, "shop-delete-" + shopId);

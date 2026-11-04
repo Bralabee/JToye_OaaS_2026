@@ -3,6 +3,7 @@ package uk.jtoye.core.product;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.envers.Audited;
 import org.hibernate.type.SqlTypes;
 import uk.jtoye.core.finance.VatRate;
@@ -15,6 +16,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "products")
 @Audited
+// #832: an ARCHIVED product (deleted by its vendor but still named by order lines) is invisible to every
+// entity query. Native queries on products add the same predicate by hand (see ProductRepository).
+@SQLRestriction("archived_at IS NULL")
 public class Product {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -119,6 +123,14 @@ public class Product {
     @Column(name = "durability_type", length = 20)
     private String durabilityType;
 
+    /**
+     * #832 (V90): set when the vendor deletes a product that past orders still name. The row stays so
+     * order_items keeps its foreign key, but it is unavailable, off every list and the storefront, and its
+     * SKU is free again. NULL = a live catalogue product.
+     */
+    @Column(name = "archived_at")
+    private OffsetDateTime archivedAt;
+
     // Optimistic-lock column (CQ-01 stock race fix — V34 migration).
     // Primitive long (not Long) — migration DEFAULT 0 + NOT NULL guarantees no NULLs.
     @Version
@@ -165,6 +177,8 @@ public class Product {
     public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
     public List<String> getAdditionalImageUrls() { return additionalImageUrls; }
     public void setAdditionalImageUrls(List<String> additionalImageUrls) { this.additionalImageUrls = additionalImageUrls; }
+    public OffsetDateTime getArchivedAt() { return archivedAt; }
+    public void setArchivedAt(OffsetDateTime archivedAt) { this.archivedAt = archivedAt; }
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }
     public List<AllergenSpan> getAllergenSpans() { return allergenSpans; }
