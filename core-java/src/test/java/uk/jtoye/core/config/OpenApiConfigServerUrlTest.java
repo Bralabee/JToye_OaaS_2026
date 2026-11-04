@@ -31,7 +31,7 @@ class OpenApiConfigServerUrlTest {
 
     private OpenAPI buildWith(String configuredLocalServerUrl) {
         OpenApiConfig config = new OpenApiConfig();
-        ReflectionTestUtils.setField(config, "issuerUri", "http://localhost:18080/realms/jtoye-test");
+        ReflectionTestUtils.setField(config, "publicIssuerUri", "http://localhost:18080/realms/jtoye-test");
         ReflectionTestUtils.setField(config, "localServerUrl", configuredLocalServerUrl);
         return config.jtoyeOpenAPI();
     }
@@ -65,6 +65,23 @@ class OpenApiConfigServerUrlTest {
         assertFalse(anyHardcoded,
                 "http://localhost:8080 is a refused port for this service - the API binds server.port "
                 + "(9090). Any server entry must be config-derived: " + api.getServers());
+    }
+
+    /**
+     * #879 / UXT-123: tokenUrl was built from the INTERNAL JWKS host (http://keycloak:8080/...), which Swagger
+     * "Authorize" and generated SDKs cannot reach. It must come from the public (expected) issuer.
+     */
+    @Test
+    void tokenUrlIsTheClientReachablePublicIssuerNotTheInternalJwksHost() {
+        OpenApiConfig config = new OpenApiConfig();
+        ReflectionTestUtils.setField(config, "publicIssuerUri", "https://auth.jtoye.example/realms/jtoye");
+        ReflectionTestUtils.setField(config, "localServerUrl", "http://localhost:9090");
+
+        String tokenUrl = config.jtoyeOpenAPI().getComponents().getSecuritySchemes()
+                .get("catalog-scopes").getFlows().getClientCredentials().getTokenUrl();
+
+        assertEquals("https://auth.jtoye.example/realms/jtoye/protocol/openid-connect/token", tokenUrl);
+        assertFalse(tokenUrl.contains("keycloak:8080"), "the internal host must not be advertised: " + tokenUrl);
     }
 
     /**

@@ -35,6 +35,12 @@ import java.util.UUID;
 public class WebhookDelivery {
 
     /**
+     * The event type of a "send test event" ping (#879). Not one of the subscribable families: it is queued for one
+     * endpoint on request, and the worker treats its failure as terminal and never auto-pauses on it.
+     */
+    public static final String TEST_EVENT_TYPE = "webhook.test";
+
+    /**
      * Delivery lifecycle. {@link #PENDING} is inserted by the fanout listener;
      * the worker flips it to {@link #DELIVERED} on 2xx, {@link #RETRYING} on a
      * transient failure (with {@link #nextAttemptAt} pushed out by backoff), or

@@ -117,6 +117,9 @@ class CustomerIdempotencyIntegrationTest {
                     .as("replay returns the ORIGINAL customer id, not a 409")
                     .isEqualTo(first.getBody().id());
             assertThat(second.getStatusCode().value()).isEqualTo(201);
+            // #879 / UXT-123: a replay is identifiable by header; a fresh create is not marked.
+            assertThat(first.getHeaders().containsHeader("Idempotent-Replayed")).isFalse();
+            assertThat(second.getHeaders().getFirst("Idempotent-Replayed")).isEqualTo("true");
 
             Integer count = jdbcTemplate.queryForObject(
                     "SELECT count(*) FROM customers WHERE tenant_id = ? AND email = ?",

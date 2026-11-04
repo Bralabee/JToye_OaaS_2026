@@ -119,6 +119,7 @@ public class CustomerController {
         }
         CustomerDto dto;
         int status;
+        boolean replayed = false;
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             dto = customerService.createCustomer(req);
             status = 201;
@@ -128,6 +129,7 @@ public class CustomerController {
                     () -> customerService.createCustomer(req));
             dto = outcome.value();
             status = outcome.status();
+            replayed = outcome.replayed();
         }
         // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves.
         // Rebuild from the returned (fresh or replayed) dto so the 201 Location resolves identically on replay.
@@ -135,7 +137,11 @@ public class CustomerController {
                 .path("/{id}")
                 .buildAndExpand(dto.id())
                 .toUri();
-        return ResponseEntity.status(status).location(location).body(dto);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status).location(location);
+        if (replayed) {
+            response.header(IdempotencyOutcome.REPLAYED_HEADER, "true"); // #879 / UXT-123
+        }
+        return response.body(dto);
     }
 
     @PreAuthorize("hasAuthority('SCOPE_customers:write')")  // Phase 25 [CR-01]: gate all customer mutations on customers:write (AI-02 least-privilege)

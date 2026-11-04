@@ -4,11 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.WebhookSubscriptionStateException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.webhook.dto.CreateWebhookSubscriptionRequest;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
+import uk.jtoye.core.webhook.dto.WebhookTestEventView;
 
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
@@ -56,15 +59,21 @@ public class WebhookSubscriptionService {
     private final WebhookUrlValidator urlValidator;
     private final ShopAccessService shopAccessService;
     private final WebhookDeliveryRepository deliveryRepository;
+    private final JsonMapper jsonMapper;
+    private final WebhookProperties properties;
 
     public WebhookSubscriptionService(WebhookSubscriptionRepository repository,
                                       WebhookUrlValidator urlValidator,
                                       ShopAccessService shopAccessService,
-                                      WebhookDeliveryRepository deliveryRepository) {
+                                      WebhookDeliveryRepository deliveryRepository,
+                                      JsonMapper jsonMapper,
+                                      WebhookProperties properties) {
         this.repository = repository;
         this.urlValidator = urlValidator;
         this.shopAccessService = shopAccessService;
         this.deliveryRepository = deliveryRepository;
+        this.jsonMapper = jsonMapper;
+        this.properties = properties;
     }
 
     public WebhookSubscriptionDto.WithSecret create(CreateWebhookSubscriptionRequest request) {
@@ -166,6 +175,75 @@ public class WebhookSubscriptionService {
                 WebhookDelivery.Status.FAILED, "subscription not active: REVOKED", OffsetDateTime.now());
         log.info("Revoked webhook subscription {} ({} held deliveries failed)", id, failed);
         return toDto(entity);
+    }
+
+    /**
+     * #879 (UXT-122): queue one {@code webhook.test} ping for an ACTIVE endpoint.
+     *
+     * <p>A real {@code webhook_delivery} row, so the ping takes the whole production path: the worker signs the
+     * stored bytes with the subscription's current secret, the SSRF-hardened client POSTs them to the validated
+     * address, and the outcome lands in the delivery log. A green ping therefore means a real event will arrive.
+     * Only ACTIVE endpoints are pinged: the worker does not attempt a paused one, so queueing would only produce a
+     * ping that sits HELD, and a revoked one is dead. The ping carries no tenant data.
+     *
+     * <p>A failed ping is terminal after one attempt and never counts toward auto-pause
+     * ({@code WebhookDeliveryWorker}): the integrator is testing, and a retry schedule measured in hours is for
+     * real events.
+     */
+    public WebhookTestEventView sendTestEvent(UUID id) {
+        shopAccessService.requireGroupAdmin();
+        WebhookSubscription entity = require(id);
+        if (entity.getStatus() != WebhookSubscription.Status.ACTIVE) {
+            throw new WebhookSubscriptionStateException(
+                    "A test event can only be sent to an active endpoint, and this one is "
+                            + entity.getStatus().name() + ". "
+                            + (entity.getStatus() == WebhookSubscription.Status.REVOKED
+                            ? "A revoked endpoint is permanent; register a new one."
+                            : "Resume it first."),
+                    entity.getStatus().name());
+        }
+
+        UUID eventId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        String payload = jsonMapper.writeValueAsString(new WebhookEventEnvelope(
+                eventId, WebhookDelivery.TEST_EVENT_TYPE, entity.getTenantId(), now,
+                properties.getEnvelope().getVersion(),
+                Map.of("subscriptionId", entity.getId().toString(),
+                        "message", "This is a test event from J'Toye. Nothing has happened to any order; "
+                                + "no action is needed.")));
+
+        WebhookDelivery delivery = new WebhookDelivery();
+        delivery.setTenantId(entity.getTenantId());
+        delivery.setSubscriptionId(entity.getId());
+        delivery.setEventId(eventId);
+        delivery.setEventType(WebhookDelivery.TEST_EVENT_TYPE);
+        delivery.setPayload(payload);
+        delivery.setStatus(WebhookDelivery.Status.PENDING);
+        WebhookDelivery saved = deliveryRepository.save(delivery);
+        log.info("event=webhook_test_event_queued subscription={} delivery={}", id, saved.getId());
+        return new WebhookTestEventView(saved.getId(), eventId, saved.getStatus().name());
+    }
+
+    /**
+     * #879 (UXT-122): delete a REVOKED endpoint and its delivery log.
+     *
+     * <p>Revoked is the vendor's own, terminal "I am done with this" (a revoked endpoint can never be delivered
+     * to), so only a revoked one can be deleted; a live or paused endpoint answers a typed 409 naming the step
+     * before. The log goes with it: it is the endpoint's history and holds order payloads, and an endpoint that no
+     * longer exists is no reason to keep them. Both deletes carry an explicit tenant predicate on top of RLS.
+     */
+    public void delete(UUID id) {
+        shopAccessService.requireGroupAdmin();
+        WebhookSubscription entity = require(id);
+        if (entity.getStatus() != WebhookSubscription.Status.REVOKED) {
+            throw new WebhookSubscriptionStateException(
+                    "Only a revoked endpoint can be deleted, and this one is " + entity.getStatus().name()
+                            + ". Revoke it first.",
+                    entity.getStatus().name());
+        }
+        long removed = deliveryRepository.deleteByTenantIdAndSubscriptionId(entity.getTenantId(), id);
+        repository.delete(entity);
+        log.info("Deleted revoked webhook subscription {} ({} delivery log rows removed)", id, removed);
     }
 
     private WebhookSubscription require(UUID id) {

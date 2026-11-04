@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -226,6 +227,24 @@ class WebhookAuthzIntegrationTest {
     @DisplayName("STAFF: POST /{id}/revoke (terminal) is 403")
     void staff_revoke_isDenied() throws Exception {
         expectShopAccessDenied(asStaff(post("/api/v1/webhooks/" + SUB + "/revoke")));
+    }
+
+    @Test
+    @DisplayName("STAFF: POST /{id}/test (#879: a ping to the vendor's endpoint) is 403 and queues nothing")
+    void staff_sendTestEvent_isDenied() throws Exception {
+        int before = jdbc.queryForObject("SELECT count(*) FROM webhook_delivery WHERE subscription_id = ?",
+                Integer.class, SUB);
+        expectShopAccessDenied(asStaff(post("/api/v1/webhooks/" + SUB + "/test")));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM webhook_delivery WHERE subscription_id = ?",
+                Integer.class, SUB)).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("STAFF: DELETE /{id} (#879) is 403 and deletes nothing")
+    void staff_delete_isDenied() throws Exception {
+        expectShopAccessDenied(asStaff(delete("/api/v1/webhooks/" + SUB)));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM webhook_subscription WHERE id = ?",
+                Integer.class, SUB)).isEqualTo(1);
     }
 
     @Test

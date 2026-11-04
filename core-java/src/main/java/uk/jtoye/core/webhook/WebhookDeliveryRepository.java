@@ -157,6 +157,9 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
                  @Param("reason") String reason,
                  @Param("now") OffsetDateTime now);
 
+    /** Delete a subscription's whole delivery log (explicit tenant predicate on top of RLS). */
+    long deleteByTenantIdAndSubscriptionId(UUID tenantId, UUID subscriptionId);
+
     long countByTenantIdAndSubscriptionIdAndStatus(UUID tenantId, UUID subscriptionId, WebhookDelivery.Status status);
 
     /** One grouped count for the subscription list (rows: subscriptionId, count), never one query per row. */
