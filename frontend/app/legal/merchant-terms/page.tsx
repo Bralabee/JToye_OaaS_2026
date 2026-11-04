@@ -14,11 +14,12 @@ import {
   OPERATOR_FBO_LINE,
 } from "@/lib/operator-copy"
 import {
-  formatRate,
   formatSetupLine,
+  planSentence,
   PRICING,
   PRICING_CARD_FEE_LINE,
   PRICING_VAT_BASIS_LINE,
+  pricingPlans,
 } from "@/lib/pricing"
 import { POSITIONING_LINE } from "@/lib/positioning"
 
@@ -187,19 +188,12 @@ export default function MerchantTermsPage() {
         <p>
           {OPERATOR_APPLICATION_REVIEW_LINE} The plans are billed per location:
         </p>
+        {/* The same pricingPlans(PRICING) rows /pricing renders as its table,
+            as sentences by planSentence(): one source, so the two cannot drift. */}
         <ul className="list-disc space-y-2 pl-6">
-          <li>
-            <strong>Standard:</strong> £{PRICING.coreMonthly} per location per
-            month, plus {PRICING.usageLabel} of direct sales.
-          </li>
-          <li>
-            <strong>Flat:</strong> £{PRICING.flatLow}–£{PRICING.flatHigh} per
-            location per month, {formatRate(0)} of sales.
-          </li>
-          <li>
-            <strong>Batch pay-as-you-go:</strong> £0 per month, plus{" "}
-            {PRICING.paygLabel} of direct sales.
-          </li>
+          {pricingPlans(PRICING).map((plan) => (
+            <li key={plan.name}>{planSentence(plan)}</li>
+          ))}
         </ul>
         <p>
           &ldquo;Direct sales&rdquo; are the card payments taken through your
@@ -211,7 +205,7 @@ export default function MerchantTermsPage() {
           &ldquo;Suspension, termination and offboarding&rdquo;).
         </p>
         <p>
-          The same figures, in the same words, are on the{" "}
+          The same plans and figures are shown as a table on the{" "}
           <Link href="/pricing" className={LEGAL_PROSE_LINK_CLASS}>
             pricing page
           </Link>

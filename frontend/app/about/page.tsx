@@ -4,7 +4,6 @@ import { PublicShell } from "@/components/public/public-shell"
 import { LEGAL_LINK_CLASS, LEGAL_PROSE_LINK_CLASS } from "@/components/legal/policy-page"
 import { getCompanyInfo } from "@/lib/company"
 import { LAUNCH_AREA, POSITIONING_LINE } from "@/lib/positioning"
-import { PLATFORM_NOT_SELLER_COPY } from "@/components/storefront/seller-block"
 
 const DESCRIPTION = `About J'Toye: an ordering platform for independent food businesses, run by J'Toye Digital Ltd. ${POSITIONING_LINE}`
 
@@ -33,8 +32,11 @@ export const metadata: Metadata = {
  *    identity is the platform operator's (J'Toye Digital Ltd, by number), never
  *    a vendor's.
  *  - NOTHING ASPIRATIONAL IS STATED AS FACT. The same restraint as /for-operators:
- *    what the platform does is the checkout's own wording (PLATFORM_NOT_SELLER_COPY),
- *    and no customer or vendor count, award or press claim is made.
+ *    what the platform does is stated in the page's own words (J'Toye provides
+ *    the platform; each kitchen is the seller of the food it lists), and no
+ *    customer or vendor count, award or press claim is made. The checkout's
+ *    platform-role sentence is a PER-ORDER one ("the seller named here") and
+ *    is deliberately NOT reused on a company page (review finding, PR 1116).
  *
  * Layout is /contact's and /legal's (PublicShell and the legal link classes):
  * no new visual design.
@@ -66,8 +68,9 @@ export default function AboutPage() {
         </h2>
         <p className="mt-4 text-base leading-relaxed text-slate-600">
           We provide the software: storefronts, ordering, a kitchen display,
-          allergen information and labels, and card payments through Stripe.{" "}
-          {PLATFORM_NOT_SELLER_COPY} The food, its description and its allergen
+          allergen information and labels, and card payments through Stripe.
+          J&apos;Toye provides the platform, and each kitchen is the seller of
+          the food it lists. The food, its description and its allergen
           information are the kitchen&apos;s responsibility.
         </p>
 

@@ -98,6 +98,24 @@ export interface PricingPlan {
   primary: boolean
 }
 
+/**
+ * One plan as a sentence, for prose that lists the plans (the merchant terms).
+ * Built only from a PricingPlan, so the sentence and /pricing's table row come
+ * from the same data and cannot drift (round-1 review of PR 1116, finding 3:
+ * the terms had retyped the list and the wording had already diverged).
+ *
+ *   Standard: £39 per location per month, plus 0.5% of direct sales.
+ *   Flat: £79–£149 per location per month, 0% of sales.
+ *   Batch pay-as-you-go: £0 per month, plus 6% of direct sales.
+ */
+export function planSentence(plan: PricingPlan): string {
+  const [amount, unit] = plan.monthly
+  const monthly = `${amount}${unit ? ` ${unit}` : ""} per month`
+  const [rate, base] = plan.fee
+  const fee = rate === formatRate(0) ? `${rate} ${base}` : `plus ${rate} ${base}`
+  return `${plan.name}: ${monthly}, ${fee}.`
+}
+
 export function pricingPlans(pricing: typeof PRICING = PRICING): readonly PricingPlan[] {
   return [
     { name: "Standard", note: "Most operators start here.", docket: "of your direct sales", monthly: [`£${pricing.coreMonthly}`, "per location"], fee: [pricing.usageLabel, "of direct sales"], primary: true },

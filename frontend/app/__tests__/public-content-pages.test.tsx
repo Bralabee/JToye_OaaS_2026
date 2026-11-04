@@ -29,7 +29,10 @@ import {
   PRICING,
   PRICING_VAT_BASIS_LINE,
   STRIPE_UK_PRICING_URL,
+  planSentence,
+  pricingPlans,
 } from "@/lib/pricing"
+import { PLATFORM_NOT_SELLER_COPY } from "@/components/storefront/seller-block"
 import { LAUNCH_AREA, POSITIONING_LINE } from "@/lib/positioning"
 import { OPERATOR_CONFIDENTIALITY_LINE } from "@/lib/operator-copy"
 import { getCompanyInfo } from "@/lib/company"
@@ -385,5 +388,82 @@ describe("source hygiene: the rulings are cited where the copy lives", () => {
   ])("%s cites the 2026-11-04 owner ruling", (rel) => {
     const src = fs.readFileSync(path.join(process.cwd(), rel), "utf8")
     expect(src).toMatch(/2026-11-04/)
+  })
+})
+
+/**
+ * Round-1 review of PR 1116, finding 2: /about reused PLATFORM_NOT_SELLER_COPY, the checkout's
+ * per-order sentence ("Your contract for this order is with the seller named here."), which
+ * refers to an order and a seller "named here" and means nothing on a company page.
+ */
+describe("/about states the platform's role in its own words (review finding 2)", () => {
+  it("does not render the checkout's per-order sentence", () => {
+    const main = mainOf(<AboutPage />)
+    // Control: the page rendered its body, so the absence is about the page.
+    expect(main.textContent).toContain("About J'Toye")
+    expect(main.textContent).not.toContain(PLATFORM_NOT_SELLER_COPY)
+    expect(main.textContent).not.toMatch(/this order|seller named here/i)
+  })
+
+  it("says J'Toye provides the platform and each kitchen is the seller of the food it lists", () => {
+    const main = mainOf(<AboutPage />)
+    expect(main.textContent).toMatch(/J.Toye provides the platform/i)
+    expect(main.textContent).toMatch(/each kitchen is the seller of the food it lists/i)
+  })
+
+  it("does not import the checkout's copy", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/about/page.tsx"), "utf8")
+    expect(src).not.toMatch(/PLATFORM_NOT_SELLER_COPY|storefront\/seller-block/)
+  })
+})
+
+/**
+ * Round-1 review of PR 1116, finding 3: the merchant terms retyped the plan list and said the same
+ * figures were "in the same words" on /pricing, while the wording already differed. Both pages now
+ * render from pricingPlans(PRICING).
+ */
+describe("the merchant terms and /pricing render the same plans (review finding 3)", () => {
+  const plans = pricingPlans(PRICING)
+
+  function collapse(text: string | null | undefined): string {
+    return (text ?? "").replace(/\s+/g, " ").trim()
+  }
+
+  it("the terms' plan list is exactly planSentence() of each plan, one list item each", () => {
+    const main = mainOf(<MerchantTermsPage />)
+    const items = Array.from(main.querySelectorAll("li")).map((li) => collapse(li.textContent))
+    // Control: the helper produces non-empty sentences for every plan.
+    expect(plans.length).toBe(3)
+    for (const plan of plans) {
+      expect(planSentence(plan).length).toBeGreaterThan(10)
+      expect(items).toContain(planSentence(plan))
+    }
+  })
+
+  it("/pricing renders every token of each plan (name, figures, units) in that plan's row, in order", () => {
+    const main = mainOf(<PricingPage />)
+    const rows = Array.from(main.querySelectorAll("tbody tr")).map((r) => collapse(r.textContent))
+    expect(rows).toHaveLength(plans.length)
+    plans.forEach((plan, i) => {
+      let from = 0
+      for (const token of [plan.name, plan.monthly[0], plan.monthly[1], plan.fee[0], plan.fee[1]]) {
+        if (!token) continue
+        const at = rows[i].indexOf(token, from)
+        expect({ plan: plan.name, token, found: at >= 0 }).toEqual({ plan: plan.name, token, found: true })
+        from = at + token.length
+      }
+    })
+  })
+
+  it("the terms no longer claim the pricing page has the 'same words'", () => {
+    const main = mainOf(<MerchantTermsPage />)
+    expect(main.textContent).not.toMatch(/same words/i)
+    expect(main.querySelector('a[href="/pricing"]')).not.toBeNull()
+  })
+
+  it("the terms page reads the shared helper and types no plan figure of its own", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/legal/merchant-terms/page.tsx"), "utf8")
+    expect(src).toMatch(/pricingPlans\(/)
+    expect(src).not.toMatch(/PRICING\.(coreMonthly|flatLow|flatHigh|usageLabel|paygLabel)/)
   })
 })
