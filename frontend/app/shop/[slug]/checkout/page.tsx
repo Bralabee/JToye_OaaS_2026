@@ -38,6 +38,13 @@ import { ShopAvailabilityNotice } from "@/components/storefront/shop-availabilit
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { markJustPlaced } from "@/lib/just-placed"
+import {
+  clearCheckoutDraft,
+  readCheckoutDraft,
+  readLastDelivery,
+  rememberLastDelivery,
+  writeCheckoutDraft,
+} from "@/lib/checkout-memory"
 import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { describeOrderError } from "@/lib/order-error"
 import { readShopAvailability, readShopClosedProblem, shopClosedRaceCopy } from "@/lib/shop-availability"
@@ -401,6 +408,25 @@ function totalBasisOf(lines: readonly Pick<CartItem, "productId" | "quantity" | 
   return `${fulfilment}|${lines.map((i) => `${i.productId}:${i.quantity}@${i.pricePennies}`).join("|")}`
 }
 
+/**
+ * UXT-105 (#876): every field the checkout validates itself, in the order the page presents them, which
+ * is the order focus goes to and the error summary lists. The delivery address comes first on the page.
+ */
+const CHECKOUT_FIELD_ORDER = ["address1", "city", "postcode", "name", "email", "phone"] as const
+type CheckoutFieldKey = (typeof CHECKOUT_FIELD_ORDER)[number]
+type CheckoutFieldErrors = Partial<Record<CheckoutFieldKey, string>>
+/** The input id each error belongs to (the summary links to it). */
+const CHECKOUT_FIELD_ID: Record<CheckoutFieldKey, string> = {
+  address1: "address1",
+  city: "city",
+  postcode: "postcode",
+  name: "name",
+  email: "email",
+  phone: "phone",
+}
+/** Deliberately plain: it refuses the obviously wrong, and the server's address check stays the authority. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
@@ -422,6 +448,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       setCustomerSignedIn(true)
       setCustomerName((prev) => prev || session.profile.name || "")
       setCustomerEmail((prev) => prev || session.profile.email || "")
+      // #845: this customer's own last delivery address and phone, offered only to exactly them
+      // (lib/checkout-memory.ts), and only into fields still empty: a restored draft or anything the
+      // customer has already typed wins.
+      const last = readLastDelivery()
+      if (last) {
+        setAddress1((prev) => prev || last.address1)
+        setAddress2((prev) => prev || last.address2)
+        setCity((prev) => prev || last.city)
+        setPostcode((prev) => prev || last.postcode)
+        setCustomerPhone((prev) => prev || last.phone)
+      }
     })
     return () => {
       cancelled = true
@@ -500,11 +537,41 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const [address2, setAddress2] = useState("")
   const [city, setCity] = useState("")
   const [postcode, setPostcode] = useState("")
-  const [fieldErrors, setFieldErrors] = useState<{
-    address1?: string
-    city?: string
-    postcode?: string
-  }>({})
+  const [fieldErrors, setFieldErrors] = useState<CheckoutFieldErrors>({})
+
+  // UXT-104 (#876): Back then Forward remounts this page, which used to wipe everything but the basket.
+  // The draft is read ONCE on mount and persisted from then on; persistence is held back until the read
+  // has happened (`draftReady`), or the first render would write the empty form over the draft before
+  // it was restored. Identity stamping and the rules for what may read it: lib/checkout-memory.ts.
+  const [draftReady, setDraftReady] = useState(false)
+  useEffect(() => {
+    const draft = readCheckoutDraft(slug)
+    if (draft) {
+      /* eslint-disable react-hooks/set-state-in-effect -- sessionStorage exists only after mount (DOM API) */
+      setFulfilmentType(draft.fulfilmentType)
+      setAddress1(draft.address1)
+      setAddress2(draft.address2)
+      setCity(draft.city)
+      setPostcode(draft.postcode)
+      setCustomerPhone(draft.phone)
+      setNotes(draft.notes)
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the read above is the reason for this flag
+    setDraftReady(true)
+  }, [slug])
+  useEffect(() => {
+    if (!draftReady) return
+    writeCheckoutDraft(slug, {
+      fulfilmentType,
+      address1,
+      address2,
+      city,
+      postcode,
+      phone: customerPhone,
+      notes,
+    })
+  }, [draftReady, slug, fulfilmentType, address1, address2, city, postcode, customerPhone, notes])
 
   // A11Y-07: a refused submit must move focus to the control that refused, not merely paint it
   // red. These refs are the only focus-management precedent in the app besides the dish modal's
@@ -512,6 +579,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const address1Ref = useRef<HTMLInputElement>(null)
   const cityRef = useRef<HTMLInputElement>(null)
   const postcodeRef = useRef<HTMLInputElement>(null)
+  // UXT-105: the three detail fields get the same treatment as the address ones.
+  const nameRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const phoneRef = useRef<HTMLInputElement>(null)
+  const fieldRefs: Record<CheckoutFieldKey, React.RefObject<HTMLInputElement | null>> = {
+    address1: address1Ref,
+    city: cityRef,
+    postcode: postcodeRef,
+    name: nameRef,
+    email: emailRef,
+    phone: phoneRef,
+  }
   const ackCheckboxRef = useRef<HTMLButtonElement>(null)
 
   // D-02: the pre-submit allergen acknowledgement. Held per ORDER INTENT — see the basket-change
@@ -869,26 +948,30 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     if (cardUnavailable) return
     setError(null)
 
-    // Conditional UK-address validation (Surface E). Collection needs no address.
+    // ONE validation pass over every field this page checks itself (UXT-105, #876). The form is
+    // `noValidate`: with native `required` on three fields only, round 1 was the browser's bubble on
+    // "Full name" and the empty address was met only on round 2, with no summary. Collection needs no
+    // address (Surface E).
+    const errs: CheckoutFieldErrors = {}
     if (fulfilmentType === "DELIVERY") {
-      const errs: { address1?: string; city?: string; postcode?: string } = {}
       if (!address1.trim()) errs.address1 = "Add a delivery address, or switch to Collection."
-      if (!city.trim()) errs.city = "Add a delivery address, or switch to Collection."
+      if (!city.trim()) errs.city = "Enter your town or city."
       if (!isValidUkPostcode(postcode)) {
         errs.postcode = "Enter a valid UK postcode (e.g. SW1A 1AA)"
       }
-      if (Object.keys(errs).length > 0) {
-        setFieldErrors(errs)
-        // A11Y-07: move focus to the FIRST invalid field, in visual order. The guarded shape
-        // (`isConnected` before `focus()`) follows product-detail-modal.tsx:117.
-        const firstInvalid = errs.address1
-          ? address1Ref.current
-          : errs.city
-            ? cityRef.current
-            : postcodeRef.current
-        if (firstInvalid && firstInvalid.isConnected) firstInvalid.focus()
-        return
-      }
+    }
+    if (!customerName.trim()) errs.name = "Enter your full name."
+    if (!customerEmail.trim()) errs.email = "Enter your email address."
+    else if (!EMAIL_SHAPE.test(customerEmail.trim())) errs.email = "Enter a valid email address, like ade@example.com."
+    if (!customerPhone.trim()) errs.phone = "Enter a phone number the shop can reach you on."
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
+      // A11Y-07: move focus to the FIRST invalid field, in the order the page presents them. The
+      // guarded shape (`isConnected` before `focus()`) follows product-detail-modal.tsx:117.
+      const first = CHECKOUT_FIELD_ORDER.find((key) => errs[key])
+      const firstInvalid = first ? fieldRefs[first].current : null
+      if (firstInvalid && firstInvalid.isConnected) firstInvalid.focus()
+      return
     }
     setFieldErrors({})
 
@@ -977,6 +1060,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       )
 
       const confirmation = res.data
+      // The order exists, so the draft has done its job (UXT-104), and a signed-in customer's delivery
+      // details are remembered for their next order (#845). `rememberLastDelivery` writes only for an
+      // identified customer, so a guest's address is never stored.
+      clearCheckoutDraft(slug)
+      if (fulfilmentType === "DELIVERY") {
+        rememberLastDelivery({ address1, address2, city, postcode, phone: customerPhone })
+      }
       // The order exists: whatever the server said about the basket has been acted on. Only when
       // something WAS said — the common path leaves these untouched, as before 37-34.
       if (basketChanged) {
@@ -1406,6 +1496,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const onlyType = onlyOfferedType(shop)
   // #829: the method the Place order icon and the top-of-page note both read.
   const placeOrderMethod = paymentMethodFor(shop, fulfilmentType)
+  // UXT-105: the summary lists what failed in page order, and the address only while it is asked for.
+  const errorSummary = CHECKOUT_FIELD_ORDER.filter(
+    (key) => fieldErrors[key] && (fulfilmentType === "DELIVERY" || !["address1", "city", "postcode"].includes(key))
+  ).map((key) => ({ key, message: fieldErrors[key] as string }))
   // SW-MRC-07: ONE focus style for every field the customer types into. The old amber-200 ring
   // measured about 1.2:1 to 1.7:1 against the white field and the cream page, below the 3:1 that
   // WCAG 1.4.11 / 2.4.11 ask of a focus indicator. brand-700 (#6E1D21) is the ring design/identity.md
@@ -1458,7 +1552,44 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </div>
       )}
 
-      <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
+      {/* noValidate: this page validates every field itself in ONE pass (UXT-105), so the browser's own
+          bubble, which fires on the first of three fields before our checks run, never pre-empts it. */}
+      <form onSubmit={handleCreateOrder} noValidate className="mt-6 space-y-6">
+        {/* UXT-105: every problem at once, as links to their fields. An alert, so it is read when it
+            appears; focus goes to the first invalid field (above) rather than here, which keeps the
+            A11Y-07 contract. Address errors are listed only while Delivery is chosen. */}
+        {errorSummary.length > 0 && (
+          <div
+            role="alert"
+            aria-labelledby="checkout-error-summary-title"
+            data-testid="checkout-error-summary"
+            className="rounded-xl border border-red-300 bg-red-50 p-4"
+          >
+            <h2 id="checkout-error-summary-title" className="text-sm font-semibold text-red-800">
+              {errorSummary.length === 1
+                ? "Please fix this before placing your order"
+                : `Please fix these ${errorSummary.length} things before placing your order`}
+            </h2>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-red-700">
+              {errorSummary.map(({ key, message }) => (
+                <li key={key}>
+                  <a
+                    href={`#${CHECKOUT_FIELD_ID[key]}`}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      const target = fieldRefs[key].current
+                      if (target && target.isConnected) target.focus()
+                    }}
+                    className="rounded-sm underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
+                  >
+                    {message}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* 37-49 (UI-SPEC G1, zero-one-many): a shop that takes ONE type gets a static row naming it;
             one that takes both keeps the segmented control. Zero is refused when the vendor saves. */}
         {onlyType ? (
@@ -1629,42 +1760,60 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <label htmlFor="name" className="block text-xs font-medium text-slate-600">Full name *</label>
             <input
               id="name"
+              ref={nameRef}
               type="text"
               autoComplete="name"
               required
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="e.g., Ade Johnson"
-              className={`${inputBase} border-cream-100`}
+              aria-invalid={fieldErrors.name ? "true" : undefined}
+              aria-describedby={fieldErrors.name ? "name-error" : undefined}
+              className={`${inputBase} ${fieldErrors.name ? "border-red-300" : "border-cream-100"}`}
             />
+            {fieldErrors.name && (
+              <p id="name-error" className="text-xs text-red-600">{fieldErrors.name}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="email" className="block text-xs font-medium text-slate-600">Email address *</label>
             <input
               id="email"
+              ref={emailRef}
               type="email"
               autoComplete="email"
               required
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
               placeholder="e.g., ade@example.com"
-              className={`${inputBase} border-cream-100`}
+              aria-invalid={fieldErrors.email ? "true" : undefined}
+              aria-describedby={fieldErrors.email ? "email-error" : undefined}
+              className={`${inputBase} ${fieldErrors.email ? "border-red-300" : "border-cream-100"}`}
             />
+            {fieldErrors.email && (
+              <p id="email-error" className="text-xs text-red-600">{fieldErrors.email}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="phone" className="block text-xs font-medium text-slate-600">Phone number *</label>
             <input
               id="phone"
+              ref={phoneRef}
               type="tel"
               autoComplete="tel"
               required
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
               placeholder="e.g., 07700 900000"
-              className={`${inputBase} border-cream-100`}
+              aria-invalid={fieldErrors.phone ? "true" : undefined}
+              aria-describedby={fieldErrors.phone ? "phone-error" : undefined}
+              className={`${inputBase} ${fieldErrors.phone ? "border-red-300" : "border-cream-100"}`}
             />
+            {fieldErrors.phone && (
+              <p id="phone-error" className="text-xs text-red-600">{fieldErrors.phone}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">

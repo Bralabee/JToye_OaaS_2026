@@ -43,6 +43,7 @@ import { CART_KEY_PREFIX, CUSTOMER_EXPIRES_KEY, CUSTOMER_ID_KEY, CUSTOMER_LAST_S
 import { CONSENT_CHOICES_KEY, COOKIE_NOTICE_ACK_KEY } from "@/lib/consent"
 import { GUEST_ORDERS_KEY } from "@/lib/order-history"
 import { JUST_PLACED_KEY_PREFIX } from "@/lib/just-placed"
+import { CHECKOUT_DRAFT_KEY_PREFIX, LAST_DELIVERY_KEY } from "@/lib/checkout-memory"
 
 export type StorageArea = "localStorage" | "sessionStorage"
 
@@ -95,6 +96,18 @@ export const CLIENT_STORAGE_KEYS: readonly ClientStorageKey[] = [
       "The email address you last used at that shop's checkout, so it can be filled in for you next time and so you can look up your order.",
     lifetime:
       "Until you sign out or clear your browser storage; no other expiry is set. This one holds an email address.",
+  },
+  {
+    // lib/checkout-memory.ts (#845): written after a delivery order by a signed-in customer.
+    name: LAST_DELIVERY_KEY,
+    match: "exact",
+    area: "localStorage",
+    personal: true,
+    clearedOnSignOut: true,
+    purpose:
+      "The delivery address and phone number from the last order you placed while signed in, so your next checkout can be filled in for you. It is stamped with your opaque customer identifier and is only ever offered to you. Guests' addresses are not saved.",
+    lifetime:
+      "Until you sign out, place another order while signed in (which replaces it), or clear your browser storage. A sign-in that simply expires does not remove it, and it is not offered to anyone else.",
   },
   {
     name: CUSTOMER_ID_KEY,
@@ -212,6 +225,18 @@ export const CLIENT_STORAGE_KEYS: readonly ClientStorageKey[] = [
     purpose:
       "Carries the email address you typed on one order-tracking page across to the next, so you do not type it twice. This one holds an email address.",
     lifetime: "Cleared when you sign out or close the tab.",
+  },
+  {
+    // lib/checkout-memory.ts (UXT-104): written as you fill in the checkout, removed when the order is placed.
+    name: CHECKOUT_DRAFT_KEY_PREFIX,
+    match: "prefix",
+    area: "sessionStorage",
+    personal: true,
+    clearedOnSignOut: true,
+    purpose:
+      "The delivery address, phone number, order notes and delivery-or-collection choice you have typed into one shop's checkout so far, so going Back and then Forward does not wipe them. It never holds your allergy note, your name, your email or anything about payment.",
+    lifetime:
+      "Removed when you place the order or sign out, and in any case when you close the tab.",
   },
   {
     // lib/just-placed.ts (37-37, UI-SPEC C3): written by the cash checkout, removed by the order page.
