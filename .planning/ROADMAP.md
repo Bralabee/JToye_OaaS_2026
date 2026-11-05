@@ -1722,3 +1722,104 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+Recorded by owner ruling 2026-11-05 (persona-test close-out, second set): the leftovers of issues the close-out closed as "completed with a pointer", where the remainder is genuine build work. Phase 999.7 onward; none has a plan. Promote one with `/gsd-review-backlog` when the owner schedules it. The billing UI and payouts surface of issue 102 stay with Phase 30 and have no entry here.
+
+### Phase 999.7: Second-shop onboarding (BACKLOG)
+
+**Goal:** Let a tenant take a second shop live. Onboarding is still one per tenant (`uq_onboarding_tenant UNIQUE (tenant_id)`, V43) and the state machine publishes only the shop its onboarding names, so a second shop stays Draft. The design is in `.planning/quick/261104-vendor-rulings/261104-vendor-rulings-SUMMARY.md` (section "#452 gap 1"): replace the constraint with `(tenant_id, shop_id)`, address every onboarding route by shop (about 20 call sites resolve onboarding by tenant), inherit the tenant-level gates, re-run the shop-level gates, add an "Add another shop" entry. Owner ruling 2026-11-04: Stripe per business (the payment model lives on the tenant). Still to rule: may a second shop inherit the Companies House and trader-identity gates or must it re-verify, and does it need approval like the first. The onboarding page's "Your storefront is live" copy (UXT-024) is keyed to the one onboarding's status and changes with this. Size L. Source: issue 452 (gap 1; gap 2, the staff invite, is built).
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.8: EPOS, Square and delivery-aggregator menu import (BACKLOG)
+
+**Goal:** Import a menu from an EPOS, Square or a delivery aggregator. The CSV import (shop targeting, copy-to-shop and allergen names) is built; no connector, no plan and no owner ruling on the source systems exists. Needs the source and mapping chosen first, and every imported dish must carry its allergen declaration (the V63/V69 rules apply). Source: issue 799.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.9: Review policy and moderation (BACKLOG)
+
+**Goal:** A written review policy (a legal page) and a way to report, hide or flag a review, for the vendor and for J'Toye. Reviews are published straight away under first name and initial; nothing describes the rules and no moderation path exists in `core-java/src/main/java/uk/jtoye/core/review`. The review form must not imply a moderation that does not exist until this is built. Source: issue 813.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.10: Food-hygiene MANUAL_REVIEW adjudicator (BACKLOG)
+
+**Goal:** When the food-hygiene (FHRS) match fails, the check goes to MANUAL_REVIEW and today only the shop's own administrator can resolve it (`OnboardingAdminController`, the interim resolver), so a shop can go live on a failed match approved by its owner. The false "UK food-hygiene verified" claim is already removed. Blocked on an owner decision: with no platform operator identity, who adjudicates. Once ruled, write the acceptance test the issue asks for (no go-live on a failed FSA match without the adjudicator's decision). Source: issue 788 and issue 453.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.11: Distance-based delivery fees and the locality ADR (BACKLOG)
+
+**Goal:** Two parts. (1) Write the decision record the issue asks for, covering its five questions; the decisions already exist in code and rulings (postcode and device location both supported, "near enough" is a vendor-declared radius on `shops`, outside coverage the customer is told to contact the shop) but are not recorded. (2) Make the delivery fee vary by distance (it does not today), and decide per-locality SEO pages (question 4, not built). Known limits to rule on: enforcement fails open for a shop with a radius but no stored coordinate and while the postcode table is empty; Great Britain only, so Northern Ireland postcodes are refused by a radius shop; the tenancy review for V94 on `shops` is still owed. Source: issue 460.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.12: Dish-photo fallback on shop list cards (BACKLOG)
+
+**Goal:** A shop card with no banner photo shows a gradient. Fall back to a photo of one of the kitchen's dishes. Needs a backend design: a new public shop field and a list query, reading `products` under the V89 `products_public_read` policy (anonymous caller, published shops, available dishes). Today the card shows `shop.bannerUrl` when set (pinned by `storefront-polish-closeout.test.tsx`). Source: UXT-109, issue 877.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.13: Reproduce React hydration error 418 (BACKLOG)
+
+**Goal:** A tester saw React error 418 on the customer pages. It was not reproduced: `frontend/app/__tests__/hydration-track-and-orders.test.tsx` server-renders /track and My Orders, hydrates over the markup and finds no mismatch, and its control proves the harness sees one. Needs a capture from a real browser (console text, route, signed-in or guest, time zone) before any fix; if it cannot be reproduced after a capture, drop it. Source: UXT-111, issue 877.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.14: Remove the "Draft" filter from customer orders (BACKLOG)
+
+**Goal:** "Draft" is still offered as a customer order filter (`ORDER_STATUS_OPTIONS` in `frontend/lib/customer-orders.ts`). A draft is an unplaced order, not something a customer chose to track. Remove it and keep the other statuses; the type-level assertion beside that list forces every server status into it, so the exemption for DRAFT must be written there on purpose, with a test on the list. Source: UXT-110, issue 877.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.15: Self-cancelled order page wording (BACKLOG)
+
+**Goal:** A customer who cancels their own order is still shown "If this was unexpected, call the shop" on the order page and /track (`frontend/components/storefront/cancelled-notice.tsx`), which contradicts "cancelled at your request". The cancellation email already handles this (`EmailNotificationService.sendOrderCancelledNotification` drops the sentence for `CUSTOMER_REQUEST`). The public order DTO carries only the reason sentence (`PublicOrderStatus.cancellationReason`), not the category, so the page cannot tell. Add the cancel-reason code (or a boolean) to the public DTO and branch the component; regenerate the OpenAPI snapshot. Source: issue 820, PR 1124 review.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.16: Kitchen board density for wall tablets (BACKLOG)
+
+**Goal:** The board lists the longest-waiting ticket first and counts units, but the wall-tablet findings were never measured or changed: wasted space on a landscape tablet, 14 px item text at arm's length, and tall tickets (one row per line, 834 px for 20 lines). Measure at 1024x768 and 768x1024 in a browser, set a minimum tickets-per-screen with the owner, then change layout and type size. Source: issue 824.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.17: Keycloak theme residual accessibility (BACKLOG)
+
+**Goal:** The register page's profile fields now expose required and name their errors, and the nightly axe gate covers the customer-realm pages. Left: move focus to the first error after a failed submit; an empty sign-in still answers "Invalid username or password"; `login-update-password.ftl` (the reset flow) is stock and has no password rules up front. Any new FTL override is added to the `FTL` list in `scripts/check-keycloak-theme-ftl.sh`. Source: issue 848.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)

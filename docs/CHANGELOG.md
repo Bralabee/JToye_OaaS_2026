@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Roadmap: 999.7 to 999.17 Backlog for the Persona Close-out Leftovers — 2026-11-05
+
+Owner ruling 2026-11-04 (persona-test close-out): every `ux-persona-test` issue is closed, the fixed ones with evidence and the unfinished ones with a pointer to where the remainder is tracked. The build-later remainders are recorded as backlog phases 999.7 to 999.17 in `.planning/ROADMAP.md`, each with a `.planning/phases/999.N-<slug>/.gitkeep` directory: second-shop onboarding (issue 452), EPOS, Square and aggregator menu import (issue 799), review policy and moderation (issue 813), the food-hygiene MANUAL_REVIEW adjudicator (issue 788 and issue 453), distance-based delivery fees and the locality ADR (issue 460), a dish-photo fallback on shop cards (UXT-109), reproducing React error 418 (UXT-111), removing the "Draft" customer order filter (UXT-110), the self-cancelled order page wording (issue 820), kitchen board density for wall tablets (issue 824) and the Keycloak theme leftovers (issue 848). The billing UI and payouts surface of issue 102 stay with Phase 30. Docs only.
+
 ### Persona Wave 2: Accessibility and API Contract Leftovers — 2026-11-04 (#1127)
 
 Issues 877, 848, 878 and 879 (persona close-out leftovers), each fixed test-first. No migration.
