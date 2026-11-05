@@ -2,6 +2,8 @@ package uk.jtoye.core;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -41,6 +43,8 @@ public class CoreApplication {
     }
 
     @GetMapping("/health")
+    @ApiResponse(responseCode = "200", description = "Liveness: the literal text OK",
+            content = @Content(mediaType = "text/plain", schema = @Schema(type = "string", example = "OK")))
     public String health() {
         return "OK";
     }

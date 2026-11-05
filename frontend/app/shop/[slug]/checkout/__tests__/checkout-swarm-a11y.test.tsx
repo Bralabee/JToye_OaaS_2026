@@ -198,6 +198,23 @@ describe("SW-MRC-11 — required delivery fields say they are required", () => {
     expect(screen.getByLabelText(/address line 2/i)).not.toHaveAttribute("aria-required")
   })
 
+  it("every field whose label ends in an asterisk is exposed as required (#878: the statement lists no such defect)", async () => {
+    await renderCheckout()
+    const starred = Array.from(document.querySelectorAll("label")).filter((l) =>
+      /\*\s*$/.test(l.textContent ?? "")
+    )
+    // CONTROL: the six starred fields exist (3 delivery address + name, email, phone), so "none
+    // missing" below is a measurement and not an empty loop.
+    expect(starred.length).toBe(6)
+    const missing = starred
+      .filter((l) => {
+        const control = document.getElementById(l.getAttribute("for") ?? "")
+        return !(control && (control.hasAttribute("required") || control.getAttribute("aria-required") === "true"))
+      })
+      .map((l) => l.textContent)
+    expect(missing).toEqual([])
+  })
+
   it("asks for no address at all once Collection is chosen", async () => {
     await renderCheckout()
     // CONTROL: the attribute is there before the switch, so "none after" is a measurement.

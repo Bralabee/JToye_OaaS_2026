@@ -277,6 +277,43 @@ public class PostcodeGeocoder {
     }
 
     /**
+     * #877 / UXT-112: is this search term SHAPED like a postcode, whether or not the dataset knows it?
+     *
+     * <p>{@link #locateSearchTerm} answers "where is it"; empty covers three different things a customer
+     * should not hear as one: the term is not a postcode at all (a food search), the postcode does not
+     * exist (a typo), or it is real but outside Code-Point Open (Northern Ireland, the Channel Islands).
+     * This separates the first from the other two so the caller can say "we could not find that
+     * postcode" instead of "no kitchens match". It only NOMINATES, exactly as {@link #SEARCH_POSTCODE}
+     * does for {@code locateSearchTerm}: it reads no table and claims no location.
+     *
+     * <p>Same length bound and same both-ends anchored matcher as {@code locateSearchTerm}, so
+     * {@code "SE22 pizza"} is words, not a postcode.
+     *
+     * @return the normalised key (upper-case, space-stripped) and whether a full unit or only an
+     *         outward code was typed; empty for anything that is not postcode-shaped
+     */
+    public Optional<ShapedPostcode> postcodeShapedTerm(String term) {
+        if (term == null || term.isBlank() || term.length() > MAX_SEARCH_TERM_LENGTH) {
+            return Optional.empty();
+        }
+        Matcher matcher = SEARCH_POSTCODE.matcher(term);
+        if (!matcher.matches()) {
+            return Optional.empty();
+        }
+        String outward = matcher.group(1).toUpperCase(Locale.ROOT);
+        String inward = matcher.group(2);
+        String key = inward == null ? outward : (outward + inward).toUpperCase(Locale.ROOT);
+        if (key.length() > MAX_KEY_LENGTH) {
+            return Optional.empty();
+        }
+        return Optional.of(new ShapedPostcode(key, inward == null ? Precision.DISTRICT : Precision.UNIT));
+    }
+
+    /** A postcode-shaped search term: its normalised key and how much of a postcode was typed. */
+    public record ShapedPostcode(String key, Precision precision) {
+    }
+
+    /**
      * Mean centroid of every unit under one outward code, or empty.
      *
      * <p>The bounds are computed here rather than in SQL so the predicate stays a plain

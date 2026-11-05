@@ -261,6 +261,42 @@ class PostcodeGeocoderTest {
     // =====================================================================================
 
     @Nested
+    @DisplayName("postcodeShapedTerm — #877 / UXT-112: a postcode that is not found is not a food search")
+    class PostcodeShapedTermTest {
+
+        @Test
+        @DisplayName("a unit-shaped term is nominated with its space-stripped upper-case key, precision UNIT")
+        void unitShaped() {
+            assertThat(geocoder.postcodeShapedTerm(" bt1 5gs ")).contains(
+                    new PostcodeGeocoder.ShapedPostcode("BT15GS", PostcodeGeocoder.Precision.UNIT));
+        }
+
+        @Test
+        @DisplayName("an outward-only term is nominated with precision DISTRICT")
+        void districtShaped() {
+            assertThat(geocoder.postcodeShapedTerm("zz99")).contains(
+                    new PostcodeGeocoder.ShapedPostcode("ZZ99", PostcodeGeocoder.Precision.DISTRICT));
+        }
+
+        @Test
+        @DisplayName("words, a postcode plus words, a blank and an over-long term are not postcode-shaped")
+        void notPostcodes() {
+            assertThat(geocoder.postcodeShapedTerm("jollof")).isEmpty();
+            assertThat(geocoder.postcodeShapedTerm("SE22 pizza")).isEmpty();
+            assertThat(geocoder.postcodeShapedTerm("  ")).isEmpty();
+            assertThat(geocoder.postcodeShapedTerm(null)).isEmpty();
+            assertThat(geocoder.postcodeShapedTerm("SE15 5BS and more words")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("it reads no table: nominating a term never touches the repository")
+        void readsNoTable() {
+            geocoder.postcodeShapedTerm("BT1 5GS");
+            org.mockito.Mockito.verifyNoInteractions(repository);
+        }
+    }
+
+    @Nested
     @DisplayName("locateSearchTerm — a customer's search box, not a vendor's address line")
     class LocateSearchTermTest {
 

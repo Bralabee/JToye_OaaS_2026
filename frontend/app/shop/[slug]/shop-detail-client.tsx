@@ -348,9 +348,12 @@ function ProductCard({
               it (192px of a 256px card) and the text column wrapped one letter per line. Capped at 35%
               of the card; at 100% text at 320px the rem width (96px) is the smaller, so nothing moves. */}
           <div className="relative w-24 max-w-[35%] sm:w-28 flex-shrink-0">
+            {/* UXT-110 (#877): decorative. The dish's name is the <h3> beside this photo, and an alt equal to
+                it made a screen reader say every dish twice. An empty alt also keeps the placeholder (no
+                photo) from being announced as an image named after the dish. */}
             <SafeImage
               src={primaryImage}
-              alt={product.title}
+              alt=""
               className="absolute inset-0 w-full h-full object-cover"
               fallbackClassName="w-full h-full bg-gradient-to-br from-cream-100 to-cream"
               fallbackIcon={<Store className="h-8 w-8 text-oxblood/25" />}

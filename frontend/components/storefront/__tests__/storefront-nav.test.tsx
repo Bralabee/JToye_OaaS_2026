@@ -25,7 +25,7 @@
  * absent one.
  */
 
-import { render, screen, fireEvent, act } from "@testing-library/react"
+import { render, screen, fireEvent, act, within } from "@testing-library/react"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
 import { customerLogout, getCustomerSession } from "@/lib/customer-auth"
 
@@ -177,6 +177,10 @@ describe("StorefrontNav — the sign-out busy state (WR-06)", () => {
 
     await act(async () => {
       fireEvent.click(button)
+    })
+    // #877 / UXT-107: the icon asks first; the confirm button in the dialog is the sign-out.
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sign out" }))
     })
 
     // The promise has fully settled by here. Pre-fix the `finally` had already

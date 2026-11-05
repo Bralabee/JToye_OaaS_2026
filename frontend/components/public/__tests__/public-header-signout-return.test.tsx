@@ -5,7 +5,7 @@
  * landed on /shop.
  */
 
-import { render, screen, fireEvent, act } from "@testing-library/react"
+import { render, screen, fireEvent, act, within } from "@testing-library/react"
 import { usePathname } from "next/navigation"
 import { PublicHeader } from "@/components/public/public-header"
 import { customerLogout, getCustomerSession } from "@/lib/customer-auth"
@@ -47,6 +47,10 @@ describe("PublicHeader sign-out destination", () => {
     const [button] = await screen.findAllByRole("button", { name: /sign out/i })
     await act(async () => {
       fireEvent.click(button)
+    })
+    // #877 / UXT-107: the icon asks first; the dialog's own Sign out button is the sign-out.
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sign out" }))
     })
     expect(mockedLogout).toHaveBeenCalledTimes(1)
     expect(mockedLogout).toHaveBeenCalledWith(expected)

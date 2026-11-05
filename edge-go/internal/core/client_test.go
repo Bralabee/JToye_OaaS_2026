@@ -155,6 +155,34 @@ func TestClient_SyncBatch_Success(t *testing.T) {
 	}
 }
 
+// #879: core answers the processed count under BOTH spellings (processedCount for existing clients,
+// processed_count as the edge publishes it). The edge reads either, so a core that sends only one is
+// still reported correctly instead of as zero.
+func TestClient_SyncBatch_ReadsEitherSpellingOfProcessedCount(t *testing.T) {
+	for name, body := range map[string]string{
+		"camelCase only":  `{"status":"SUCCESS","processedCount":3,"results":[]}`,
+		"snake_case only": `{"status":"SUCCESS","processed_count":3,"results":[]}`,
+		"both":            `{"status":"SUCCESS","processedCount":3,"processed_count":3,"results":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(body))
+			}))
+			defer server.Close()
+			logger, _ := zap.NewProduction()
+			resp, err := NewClient(server.URL, logger).SyncBatch(context.Background(), "tok", "tenant-1",
+				[]map[string]interface{}{{"id": "1"}})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.ProcessedCount != 3 {
+				t.Errorf("processed count: got %d, want 3", resp.ProcessedCount)
+			}
+		})
+	}
+}
+
 func TestClient_SyncBatch_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

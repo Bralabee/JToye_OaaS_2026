@@ -17,6 +17,15 @@ Quick 261104-runtime-defects. Found by running the delivered stack against main 
 - **`scripts/seed-e2e-fixtures.sh` broken by V90:** `on conflict (tenant_id, sku)` cannot infer V90's partial unique index, so the seed exited 2 and the nightly would void at its seed step, also on a fresh database. The conflict target now carries `where archived_at is null`, Exit 0 twice in a row against the running stack. `DemoDataSeeder.quarantineNonCurated` treated the script's `E2E-*` products as non-curated and moved them to the hidden `unsorted-legacy-items` shop, unavailable, at every core start; an `E2E-` SKU is now curated dev data (integration test, with a control that an unknown product is still quarantined). The script's `shop_id` repair stays only for a dev volume an earlier seeder already moved the row on.
 - **Stale specs:** `storefront-auth-callback.spec.ts` expects the #1110 out-of-band copy and its Sign in button; `storefront-flows.spec.ts` scopes the modal's About and Ingredients to the dialog's headings (`text=About` matched three elements); `csp-no-violations.spec.ts` defaults to `mama-ades-kitchen`, which the seed guarantees.
 
+### Persona Wave 2: Accessibility and API Contract Leftovers — 2026-11-04 (#1127)
+
+Issues 877, 848, 878 and 879 (persona close-out leftovers), each fixed test-first. No migration.
+
+- **Accessibility statement (issue 878):** the "required fields marked visually only" exception is removed: the checkout address fields carry `aria-required`, and a test now holds every starred checkout field to `required` or `aria-required`.
+- **Keycloak register fields (issue 848):** a fourth theme override, `user-profile-commons.ftl`, gives email, first and last name `aria-required` and an `aria-describedby` to their error; `keycloak-login-a11y.verify.mjs` checks both (red on the stock theme, green here) and now runs in the nightly; `check-keycloak-theme-ftl.sh` covers the new file.
+- **OpenAPI contract (issue 879):** responses declare `application/json` (or `text/csv`, `application/pdf`, `text/plain` where that is true) instead of `*/*`; every rate-limited operation documents a 429 with `Retry-After`; paged lists document `page`, `size`, `sort` instead of a `pageable` object; the batch response also answers `processed_count` (the edge reads either); the `orders:write` scope text is corrected. Snapshot regenerated.
+- **Storefront polish (issue 877):** sign-out from the header icon asks first; menu photos are decorative; a postcode that was never found says so (`X-Search-Interpretation: postcode-unrecognised`); the list card's banner photo is pinned. React error 418 was not reproduced; hydration of `/track` and My Orders is pinned.
+
 ### Wave-2 Owner Rulings — 2026-11-04 (#1124)
 
 Issues 827, 858, 825, 820, 846 (persona close-out), each test-first. One migration, V93 (the payment channel on the ledger row).

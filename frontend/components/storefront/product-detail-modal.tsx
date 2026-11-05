@@ -151,7 +151,7 @@ export function ProductDetailModal({
             <AspectFrame
               ratio="4/3"
               src={images[currentImageIndex]}
-              alt={`${product.title} - image ${currentImageIndex + 1}`}
+              alt={hasMultipleImages ? `Photo ${currentImageIndex + 1} of ${images.length}` : ""}
               loading="eager"
               className="bg-cream flex-shrink-0"
             >

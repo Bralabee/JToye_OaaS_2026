@@ -1,5 +1,6 @@
 package uk.jtoye.core.sync.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -34,6 +35,19 @@ public class BatchSyncResponse {
 
     @Schema(description = "Number of items written (CREATED plus UPDATED)", example = "3")
     private int processedCount;
+
+    /**
+     * #879 / UXT-123 (P2-RAV-15): the edge gateway publishes this number as {@code processed_count}; core
+     * answered {@code processedCount}, so one batch had two spellings depending on the door it came through.
+     * Core now answers both, with the same value: {@code processedCount} stays for every existing client and
+     * {@code processed_count} is the edge's name for it. Read-only: a request body never sets it.
+     */
+    @JsonProperty(value = "processed_count", access = JsonProperty.Access.READ_ONLY)
+    @Schema(description = "Same value as processedCount, under the name the edge gateway publishes",
+            example = "3", accessMode = Schema.AccessMode.READ_ONLY)
+    public int getProcessedCountSnakeCase() {
+        return processedCount;
+    }
 
     @Builder.Default
     @Schema(description = "One result per request item, in request order")

@@ -152,9 +152,13 @@ func (e *CoreProblemError) Error() string {
 // contract gate (issue #337); the pre-existing client test could not see it
 // because its stub core encoded the edge's own struct.
 type coreBatchSyncResponse struct {
-	Status         string           `json:"status"`
-	ProcessedCount int              `json:"processedCount"`
-	Results        []SyncItemResult `json:"results"`
+	Status         string `json:"status"`
+	ProcessedCount int    `json:"processedCount"`
+	// ProcessedCountSnake is the same number under the name the edge publishes.
+	// Core answers both spellings since #879; reading either keeps the edge
+	// correct against a core that only sends one of them.
+	ProcessedCountSnake int              `json:"processed_count"`
+	Results             []SyncItemResult `json:"results"`
 }
 
 // SyncBatch sends a batch sync request to the Core API
@@ -229,9 +233,13 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 		// Translate core's camelCase wire shape into the edge's published
 		// snake_case shape. One assignment per field, so a new core field
 		// cannot be silently dropped here without the contract gate noticing.
+		processed := wire.ProcessedCount
+		if processed == 0 {
+			processed = wire.ProcessedCountSnake
+		}
 		resp = &BatchSyncResponse{
 			Status:         wire.Status,
-			ProcessedCount: wire.ProcessedCount,
+			ProcessedCount: processed,
 			Results:        wire.Results,
 			HTTPStatus:     httpResp.StatusCode,
 		}

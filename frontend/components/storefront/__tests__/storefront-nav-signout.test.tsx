@@ -13,7 +13,7 @@
  * customer-auth-signout-* suites'.
  */
 
-import { render, screen, fireEvent, act } from "@testing-library/react"
+import { render, screen, fireEvent, act, within } from "@testing-library/react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
 import { customerLogout, getCustomerSession } from "@/lib/customer-auth"
@@ -78,6 +78,10 @@ describe("SW-JRD-08 — sign-out returns to the public page the customer was on"
     await renderNavAt(pathname)
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
+    })
+    // #877 / UXT-107: the icon asks first; the dialog's own Sign out button is the sign-out.
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sign out" }))
     })
     expect(mockedLogout).toHaveBeenCalledTimes(1)
     expect(mockedLogout).toHaveBeenCalledWith(expected)

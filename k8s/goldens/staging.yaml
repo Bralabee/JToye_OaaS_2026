@@ -2989,6 +2989,111 @@ data:
     import=common/keycloak
 
     styles=css/login.css css/jtoye.css
+  user-profile-commons.ftl: "<#--\n  J'TOYE OVERRIDE of Keycloak 26.8.1 theme/base/login/user-profile-commons.ftl
+    (issue #848, UXT-079, P2-MAR-06).\n  JTOYE-BASE-KEYCLOAK: 26.8.1\n  Everything
+    outside the blocks marked JTOYE below is the stock file byte for byte. When Keycloak
+    is\n  upgraded, re-derive this file from the new base (recipe: infra/keycloak/README.md,
+    \"FTL overrides\")\n  and re-apply the marked blocks; scripts/check-keycloak-theme-ftl.sh
+    refuses to pass until the marker\n  above equals the pinned image version.\n-->\n<#macro
+    userProfileFormFields>\n\t<#assign currentGroup=\"\">\n\t\n\t<#list profile.attributes
+    as attribute>\n\n\t\t<#if attribute.name=='locale' && realm.internationalizationEnabled
+    && locale.currentLanguageTag?has_content>\n\t\t\t<input type=\"hidden\" id=\"${attribute.name}\"
+    name=\"${attribute.name}\" value=\"${locale.currentLanguageTag}\"/>\n\t\t<#else>\n\n\t\t\t<#assign
+    group = (attribute.group)!\"\">\n\t\t\t<#if group != currentGroup>\n\t\t\t\t<#assign
+    currentGroup=group>\n\t\t\t\t<#if currentGroup != \"\">\n\t\t\t\t\t<div class=\"${properties.kcFormGroupClass!}\"\n\t\t\t\t\t<#list
+    group.html5DataAnnotations as key, value>\n\t\t\t\t\t\tdata-${key}=\"${value}\"\n\t\t\t\t\t</#list>\n\t\t\t\t\t>\n\t\n\t\t\t\t\t\t<#assign
+    groupDisplayHeader=group.displayHeader!\"\">\n\t\t\t\t\t\t<#if groupDisplayHeader
+    != \"\">\n\t\t\t\t\t\t\t<#assign groupHeaderText=advancedMsg(groupDisplayHeader)!group>\n\t\t\t\t\t\t<#else>\n\t\t\t\t\t\t\t<#assign
+    groupHeaderText=group.name!\"\">\n\t\t\t\t\t\t</#if>\n\t\t\t\t\t\t<div class=\"${properties.kcContentWrapperClass!}\">\n\t\t\t\t\t\t\t<label
+    id=\"header-${attribute.group.name}\" class=\"${kcFormGroupHeader!}\">${groupHeaderText}</label>\n\t\t\t\t\t\t</div>\n\t\n\t\t\t\t\t\t<#assign
+    groupDisplayDescription=group.displayDescription!\"\">\n\t\t\t\t\t\t<#if groupDisplayDescription
+    != \"\">\n\t\t\t\t\t\t\t<#assign groupDescriptionText=advancedMsg(groupDisplayDescription)!\"\">\n\t\t\t\t\t\t\t<div
+    class=\"${properties.kcLabelWrapperClass!}\">\n\t\t\t\t\t\t\t\t<label id=\"description-${group.name}\"
+    class=\"${properties.kcLabelClass!}\">${groupDescriptionText}</label>\n\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t</#if>\n\t\t\t\t\t</div>\n\t\t\t\t</#if>\n\t\t\t</#if>\n\n\t\t\t<#nested
+    \"beforeField\" attribute>\n\t\t\t<div class=\"${properties.kcFormGroupClass!}\">\n\t\t\t\t<div
+    class=\"${properties.kcLabelWrapperClass!}\">\n\t\t\t\t\t<label for=\"${attribute.name}\"
+    class=\"${properties.kcLabelClass!}\">${advancedMsg(attribute.displayName!'')}</label>\n\t\t\t\t\t<#--
+    JTOYE: the asterisk is the visible cue; the control itself carries aria-required,
+    so it is not read out as \"star\". -->\n\t\t\t\t\t<#if attribute.required><span
+    class=\"required\" aria-hidden=\"true\">*</span></#if>\n\t\t\t\t</div>\n\t\t\t\t<div
+    class=\"${properties.kcInputWrapperClass!}\">\n\t\t\t\t\t<#if attribute.annotations.inputHelperTextBefore??>\n\t\t\t\t\t\t<div
+    class=\"${properties.kcInputHelperTextBeforeClass!}\" id=\"form-help-text-before-${attribute.name}\"
+    aria-live=\"polite\">${kcSanitize(advancedMsg(attribute.annotations.inputHelperTextBefore))?no_esc}</div>\n\t\t\t\t\t</#if>\n\t\t\t\t\t<@inputFieldByType
+    attribute=attribute/>\n\t\t\t\t\t<#if messagesPerField.existsError('${attribute.name}')>\n\t\t\t\t\t\t<span
+    id=\"input-error-${attribute.name}\" class=\"${properties.kcInputErrorMessageClass!}\"
+    aria-live=\"polite\">\n\t\t\t\t\t\t\t${kcSanitize(messagesPerField.get('${attribute.name}'))?no_esc}\n\t\t\t\t\t\t</span>\n\t\t\t\t\t</#if>\n\t\t\t\t\t<#if
+    attribute.annotations.inputHelperTextAfter??>\n\t\t\t\t\t\t<div class=\"${properties.kcInputHelperTextAfterClass!}\"
+    id=\"form-help-text-after-${attribute.name}\" aria-live=\"polite\">${kcSanitize(advancedMsg(attribute.annotations.inputHelperTextAfter))?no_esc}</div>\n\t\t\t\t\t</#if>\n\t\t\t\t</div>\n\t\t\t</div>\n\t\t\t<#nested
+    \"afterField\" attribute>\n\n\t\t</#if>\n\t</#list>\n\n\t<#list profile.html5DataAnnotations?keys
+    as key>\n\t\t<script type=\"module\" src=\"${url.resourcesPath}/js/${key}.js\"></script>\n\t</#list>\n</#macro>\n\n<#--
+    JTOYE: the required state and the ids that describe a control (its error, its
+    helper text). Stock rendered\n     the error span but never tied it to the field,
+    so a screen reader said \"invalid entry\" without the reason. -->\n<#macro jtRequiredAndDescribed
+    attribute>\n\t<#local jtIds = []>\n\t<#if attribute.annotations.inputHelperTextBefore??><#local
+    jtIds = jtIds + [\"form-help-text-before-\" + attribute.name]></#if>\n\t<#if messagesPerField.existsError('${attribute.name}')><#local
+    jtIds = jtIds + [\"input-error-\" + attribute.name]></#if>\n\t<#if attribute.annotations.inputHelperTextAfter??><#local
+    jtIds = jtIds + [\"form-help-text-after-\" + attribute.name]></#if>\n\t<#if attribute.required>aria-required=\"true\"</#if>\n\t<#if
+    jtIds?has_content>aria-describedby=\"${jtIds?join(' ')}\"</#if>\n</#macro>\n\n<#macro
+    inputFieldByType attribute>\n\t<#switch attribute.annotations.inputType!''>\n\t<#case
+    'textarea'>\n\t\t<@textareaTag attribute=attribute/>\n\t\t<#break>\n\t<#case 'select'>\n\t<#case
+    'multiselect'>\n\t\t<@selectTag attribute=attribute/>\n\t\t<#break>\n\t<#case
+    'select-radiobuttons'>\n\t<#case 'multiselect-checkboxes'>\n\t\t<@inputTagSelects
+    attribute=attribute/>\n\t\t<#break>\n\t<#default>\n\t\t<#if attribute.multivalued
+    && attribute.values?has_content>\n\t\t\t<#list attribute.values as value>\n\t\t\t\t<@inputTag
+    attribute=attribute value=value!''/>\n\t\t\t</#list>\n\t\t<#else>\n\t\t\t<@inputTag
+    attribute=attribute value=attribute.value!''/>\n\t\t</#if>\n\t</#switch>\n</#macro>\n\n<#macro
+    inputTag attribute value>\n\t<input type=\"<@inputTagType attribute=attribute/>\"
+    id=\"${attribute.name}\" name=\"${attribute.name}\" value=\"${(value!'')}\" class=\"${properties.kcInputClass!}\"\n\t\taria-invalid=\"<#if
+    messagesPerField.existsError('${attribute.name}')>true</#if>\"\n\t\t<@jtRequiredAndDescribed
+    attribute=attribute/>\n\t\t<#if attribute.readOnly>disabled</#if>\n\t\t<#if attribute.autocomplete??>autocomplete=\"${attribute.autocomplete}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypePlaceholder??>placeholder=\"${advancedMsg(attribute.annotations.inputTypePlaceholder)}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypePattern??>pattern=\"${attribute.annotations.inputTypePattern}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeSize??>size=\"${attribute.annotations.inputTypeSize}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeMaxlength??>maxlength=\"${attribute.annotations.inputTypeMaxlength}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeMinlength??>minlength=\"${attribute.annotations.inputTypeMinlength}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeMax??>max=\"${attribute.annotations.inputTypeMax}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeMin??>min=\"${attribute.annotations.inputTypeMin}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeStep??>step=\"${attribute.annotations.inputTypeStep}\"</#if>\n\t\t<#list
+    attribute.html5DataAnnotations as key, value>\n    \t\tdata-${key}=\"${value}\"\n\t\t</#list>\n\t/>\n</#macro>\n\n<#macro
+    inputTagType attribute>\n\t<#compress>\n\t<#if attribute.annotations.inputType??>\n\t\t<#if
+    attribute.annotations.inputType?starts_with(\"html5-\")>\n\t\t\t${attribute.annotations.inputType[6..]}\n\t\t<#else>\n\t\t\t${attribute.annotations.inputType}\n\t\t</#if>\n\t<#else>\n\ttext\n\t</#if>\n\t</#compress>\n</#macro>\n\n<#macro
+    textareaTag attribute>\n\t<textarea id=\"${attribute.name}\" name=\"${attribute.name}\"
+    class=\"${properties.kcInputClass!}\"\n\t\taria-invalid=\"<#if messagesPerField.existsError('${attribute.name}')>true</#if>\"\n\t\t<@jtRequiredAndDescribed
+    attribute=attribute/>\n\t\t<#if attribute.readOnly>disabled</#if>\n\t\t<#if attribute.annotations.inputTypeCols??>cols=\"${attribute.annotations.inputTypeCols}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeRows??>rows=\"${attribute.annotations.inputTypeRows}\"</#if>\n\t\t<#if
+    attribute.annotations.inputTypeMaxlength??>maxlength=\"${attribute.annotations.inputTypeMaxlength}\"</#if>\n\t>${(attribute.value!'')}</textarea>\n</#macro>\n\n<#macro
+    selectTag attribute>\n\t<select id=\"${attribute.name}\" name=\"${attribute.name}\"
+    class=\"${properties.kcInputClass!}\"\n\t\taria-invalid=\"<#if messagesPerField.existsError('${attribute.name}')>true</#if>\"\n\t\t<@jtRequiredAndDescribed
+    attribute=attribute/>\n\t\t<#if attribute.readOnly>disabled</#if>\n\t\t<#if attribute.annotations.inputType=='multiselect'>multiple</#if>\n\t\t<#if
+    attribute.annotations.inputTypeSize??>size=\"${attribute.annotations.inputTypeSize}\"</#if>\n\t>\n\t<#if
+    attribute.annotations.inputType=='select'>\n\t\t<option value=\"\"></option>\n\t</#if>\n\n\t<#if
+    attribute.annotations.inputOptionsFromValidation?? && attribute.validators[attribute.annotations.inputOptionsFromValidation]??
+    && attribute.validators[attribute.annotations.inputOptionsFromValidation].options??>\n\t\t<#assign
+    options=attribute.validators[attribute.annotations.inputOptionsFromValidation].options>\n\t<#elseif
+    attribute.validators.options?? && attribute.validators.options.options??>\n\t\t<#assign
+    options=attribute.validators.options.options>\n\t<#else>\n\t\t<#assign options=[]>\n\t</#if>\n\n\t<#list
+    options as option>\n\t\t<option value=\"${option}\" <#if attribute.values?seq_contains(option)>selected</#if>><@selectOptionLabelText
+    attribute=attribute option=option/></option>\n\t</#list>\n\n\t</select>\n</#macro>\n\n<#macro
+    inputTagSelects attribute>\n\t<#if attribute.annotations.inputType=='select-radiobuttons'>\n\t\t<#assign
+    inputType='radio'>\n\t\t<#assign classDiv=properties.kcInputClassRadio!>\n\t\t<#assign
+    classInput=properties.kcInputClassRadioInput!>\n\t\t<#assign classLabel=properties.kcInputClassRadioLabel!>\n\t<#else>\n\t\t<#assign
+    inputType='checkbox'>\n\t\t<#assign classDiv=properties.kcInputClassCheckbox!>\n\t\t<#assign
+    classInput=properties.kcInputClassCheckboxInput!>\n\t\t<#assign classLabel=properties.kcInputClassCheckboxLabel!>\n\t</#if>\n\n\t<#if
+    attribute.annotations.inputOptionsFromValidation?? && attribute.validators[attribute.annotations.inputOptionsFromValidation]??
+    && attribute.validators[attribute.annotations.inputOptionsFromValidation].options??>\n\t\t<#assign
+    options=attribute.validators[attribute.annotations.inputOptionsFromValidation].options>\n\t<#elseif
+    attribute.validators.options?? && attribute.validators.options.options??>\n\t\t<#assign
+    options=attribute.validators.options.options>\n\t<#else>\n\t\t<#assign options=[]>\n\t</#if>\n\n\t<#list
+    options as option>\n\t\t<div class=\"${classDiv}\">\n\t\t\t<input type=\"${inputType}\"
+    id=\"${attribute.name}-${option}\" name=\"${attribute.name}\" value=\"${option}\"
+    class=\"${classInput}\"\n\t\t\t\taria-invalid=\"<#if messagesPerField.existsError('${attribute.name}')>true</#if>\"\n\t\t\t\t<#if
+    attribute.readOnly>disabled</#if>\n\t\t\t\t<#if attribute.values?seq_contains(option)>checked</#if>\n\t\t\t/>\n\t\t\t<label
+    for=\"${attribute.name}-${option}\" class=\"${classLabel}<#if attribute.readOnly>
+    ${properties.kcInputClassRadioCheckboxLabelDisabled!}</#if>\"><@selectOptionLabelText
+    attribute=attribute option=option/></label>\n\t\t</div>\n\t</#list>\n</#macro>\n\n<#macro
+    selectOptionLabelText attribute option>\n\t<#compress>\n\t<#if attribute.annotations.inputOptionLabels??>\n\t\t${advancedMsg(attribute.annotations.inputOptionLabels[option]!option)}\n\t<#else>\n\t\t<#if
+    attribute.annotations.inputOptionLabelsI18nPrefix??>\n\t\t\t${msg(attribute.annotations.inputOptionLabelsI18nPrefix
+    + '.' + option)}\n\t\t<#else>\n\t\t\t${option}\n\t\t</#if>\n\t</#if>\n\t</#compress>\n</#macro>\n"
 kind: ConfigMap
 metadata:
   annotations:
@@ -2997,7 +3102,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
-  name: keycloak-theme-dgmg2dc5k6
+  name: keycloak-theme-589c6mt96t
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -5629,7 +5734,9 @@ spec:
             path: login.ftl
           - key: register.ftl
             path: register.ftl
-          name: keycloak-theme-dgmg2dc5k6
+          - key: user-profile-commons.ftl
+            path: user-profile-commons.ftl
+          name: keycloak-theme-589c6mt96t
         name: keycloak-theme
 ---
 apiVersion: apps/v1

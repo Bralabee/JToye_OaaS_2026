@@ -198,6 +198,8 @@ test.describe("#840 browser storage: declared, and personal keys cleared on expl
 
     // ---- the explicit sign-out, through the real nav button and the IdP round-trip ----
     await page.locator('button[title="Sign out"]').first().click()
+    // #877 / UXT-107: the icon asks first; the dialog's own button is the sign-out.
+    await page.getByRole("dialog").getByRole("button", { name: "Sign out" }).click()
     await page.waitForURL((u) => u.origin === origin && /^\/shop/.test(u.pathname), { timeout: 30_000 })
     await page.waitForLoadState("domcontentloaded")
     await expect(

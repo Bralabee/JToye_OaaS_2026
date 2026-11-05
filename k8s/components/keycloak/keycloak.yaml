@@ -269,6 +269,8 @@ spec:
             path: login.ftl
           - key: register.ftl
             path: register.ftl
+          - key: user-profile-commons.ftl
+            path: user-profile-commons.ftl
 ---
 apiVersion: v1
 kind: Service

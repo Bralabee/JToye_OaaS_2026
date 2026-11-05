@@ -28,7 +28,14 @@ import java.util.regex.Pattern;
  * X-Search-Interpretation: text
  * X-Search-Interpretation: proximity; postcode=SE22;    precision=district; radiusKm=5.0
  * X-Search-Interpretation: proximity; postcode=SE155BS; precision=unit;     radiusKm=5.0
+ * X-Search-Interpretation: postcode-unrecognised; postcode=BT11AA; precision=unit
  * </pre>
+ *
+ * <p>{@code postcode-unrecognised} (#877 / UXT-112) is sent only when the term is postcode-shaped, the
+ * dataset has no such postcode (a typo, or Northern Ireland: Code-Point Open is GB only), AND the text
+ * search found nothing either. It lets the page say "we could not find that postcode" instead of "no
+ * kitchens match", which reads as though the postcode were fine and the kitchens were missing. A
+ * postcode-shaped term the text search DID answer stays {@code text}: that is what it was.
  *
  * <p>(Rendered without the alignment padding: single spaces after each {@code ;}.)
  *
@@ -73,7 +80,12 @@ public record SearchInterpretation(Kind kind, String postcode,
         /** The term was answered as text — full-text search, or the LIKE fallback. */
         TEXT,
         /** The term was read as a place, and the results are ordered by distance from it. */
-        PROXIMITY
+        PROXIMITY,
+        /**
+         * #877 / UXT-112: postcode-shaped, not in the dataset, and the text search found nothing. Carries
+         * the key and how much of a postcode was typed, never a radius or a coordinate.
+         */
+        UNRECOGNISED_POSTCODE
     }
 
     /** The term was answered as text. Carries no postcode, precision or radius. */
@@ -94,6 +106,11 @@ public record SearchInterpretation(Kind kind, String postcode,
         return new SearchInterpretation(Kind.PROXIMITY, key, precision, radiusKm);
     }
 
+    /** The term was postcode-shaped but no postcode in the dataset, and the text search was empty too. */
+    public static SearchInterpretation unrecognisedPostcode(String key, PostcodeGeocoder.Precision precision) {
+        return new SearchInterpretation(Kind.UNRECOGNISED_POSTCODE, key, precision, null);
+    }
+
     /**
      * Render this interpretation as the {@value #HEADER} value.
      *
@@ -104,6 +121,13 @@ public record SearchInterpretation(Kind kind, String postcode,
      * contract.
      */
     public String headerValue() {
+        if (kind == Kind.UNRECOGNISED_POSTCODE) {
+            if (postcode == null || precision == null || !SAFE_KEY.matcher(postcode).matches()) {
+                return TEXT_VALUE;
+            }
+            return "postcode-unrecognised; postcode=" + postcode
+                    + "; precision=" + precision.name().toLowerCase(Locale.ROOT);
+        }
         if (kind != Kind.PROXIMITY || postcode == null || precision == null || radiusKm == null) {
             return TEXT_VALUE;
         }

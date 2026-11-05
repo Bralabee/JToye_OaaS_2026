@@ -142,3 +142,89 @@ describe("UXT-112: the result line's live region exists before its text", () => 
     expect(el).toHaveTextContent(/1 kitchen for/i)
   })
 })
+
+// ---- UXT-112 (second half): an unfound postcode, an out-of-area one and a text miss read differently --------
+
+describe("UXT-112: three empty searches, three different lines", () => {
+  const lineFor = (q: string, interpretation: React.ComponentProps<typeof ShopDiscoveryClient>["initialInterpretation"]) => {
+    render(<ShopDiscoveryClient initial={page([])} initialQuery={q} initialInterpretation={interpretation} />)
+    return screen.getByTestId("search-summary-region").textContent ?? ""
+  }
+
+  it("a postcode the server never found: says so, with no 'within N miles' claim and no exclusion note", () => {
+    const line = lineFor("BT1 5GS", { kind: "unrecognised-postcode", postcode: "BT15GS", precision: "unit" })
+    expect(line).toMatch(/We could not find the postcode BT1 5GS/)
+    expect(line).not.toMatch(/within/i)
+    expect(line).not.toMatch(/further away/i)
+  })
+
+  it("the empty-state panel below does not tell the customer to try a postcode they were just told was not found", () => {
+    lineFor("BT1 5GS", { kind: "unrecognised-postcode", postcode: "BT15GS", precision: "unit" })
+    expect(screen.getByRole("heading", { name: "Postcode not found" })).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Try a different dish, cuisine or postcode/)
+    expect(document.body.textContent).toMatch(/Check the postcode/)
+  })
+
+  it("CONTROL: a text miss keeps the generic panel", () => {
+    lineFor("zzzzqq", { kind: "text" })
+    expect(screen.getByRole("heading", { name: "No kitchens found" })).toBeInTheDocument()
+    expect(document.body.textContent).toMatch(/Try a different dish, cuisine or postcode/)
+  })
+
+  it("a real postcode with no kitchen near it: says how far it looked", () => {
+    const line = lineFor("AB10 1AA", { kind: "proximity", postcode: "AB101AA", precision: "unit", radiusKm: 5 })
+    expect(line).toMatch(/No kitchens within 3\.1 miles of AB10 1AA/)
+    expect(line).not.toMatch(/could not find/i)
+  })
+
+  it("a word that matches nothing: 'No kitchens match'", () => {
+    const line = lineFor("zzzzqq", { kind: "text" })
+    expect(line).toMatch(/No kitchens match/)
+    expect(line).not.toMatch(/could not find/i)
+  })
+})
+
+// ---- UXT-110 (alt text) ---------------------------------------------------------------------------------------
+
+describe("UXT-110: a dish photo beside its own heading is decorative", () => {
+  const WITH_PHOTO: PublicProduct = { ...PRODUCT, imageUrl: "https://example.test/peri.webp", imageUrls: ["https://example.test/peri.webp"] }
+
+  it("the menu card's photo has alt='' so the dish name is read once, by its heading", async () => {
+    await act(async () => {
+      render(
+        <ShopDetailClient slug={SLUG} initial={{ shop: SHOP, products: { Mains: [WITH_PHOTO] }, reviews: [], reviewCount: 0, avgRating: 0, announcements: [] }} />
+      )
+    })
+    const img = document.querySelector('article img[src="https://example.test/peri.webp"]')
+    expect(img).not.toBeNull() // CONTROL: the photo is rendered, so "empty alt" is a measurement
+    expect(img).toHaveAttribute("alt", "")
+    expect(screen.queryByAltText("Peri Peri Chicken")).toBeNull()
+    expect(screen.getAllByRole("heading", { name: "Peri Peri Chicken" }).length).toBeGreaterThan(0)
+  })
+
+  it("a dish with no photo draws a placeholder that is not announced as an image named after the dish", async () => {
+    await act(async () => {
+      render(<ShopDetailClient slug={SLUG} initial={detail([], 0, 0)} />)
+    })
+    expect(screen.queryByRole("img", { name: "Peri Peri Chicken" })).toBeNull()
+  })
+})
+
+// ---- UXT-109 (the half that is built): a kitchen with a photo shows it on its list card ----------------------
+
+describe("UXT-109: the list card shows the kitchen's own photo when it has one", () => {
+  const card = (shop: PublicShop) => {
+    render(<ShopDiscoveryClient initial={page([shop])} initialQuery="" initialInterpretation={{ kind: "text" }} />)
+    return document.querySelector(`article[data-shop-name="${shop.name}"]`) as HTMLElement
+  }
+
+  it("with a banner photo the card renders that photo, not only the gradient", () => {
+    const img = card({ ...SHOP, bannerUrl: "https://example.test/banner.webp" }).querySelector("img")
+    expect(img).not.toBeNull()
+    expect(img).toHaveAttribute("src", "https://example.test/banner.webp")
+  })
+
+  it("CONTROL: with no photo there is no image, the gradient is what shows", () => {
+    expect(card({ ...SHOP, bannerUrl: null }).querySelector("img")).toBeNull()
+  })
+})

@@ -206,6 +206,8 @@ try {
   const signOut = page.getByTitle("Sign out").first()
   await signOut.waitFor({ state: "visible", timeout: 30000 })
   await signOut.click()
+  // #877 / UXT-107: the icon asks first; the dialog's own button is the sign-out.
+  await page.getByRole("dialog").getByRole("button", { name: "Sign out" }).click()
   await page.waitForTimeout(4000)
   const landed = page.url()
   const landedText = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ")
