@@ -1736,7 +1736,7 @@ Plans:
 
 ### Phase 999.8: EPOS, Square and delivery-aggregator menu import (BACKLOG)
 
-**Goal:** Import a menu from an EPOS, Square or a delivery aggregator. The CSV import (shop targeting, copy-to-shop and allergen names) is built; no connector, no plan and no owner ruling on the source systems exists. Needs the source and mapping chosen first, and every imported dish must carry its allergen declaration (the V63/V69 rules apply). Source: issue 799.
+**Goal:** Import a menu from an EPOS, Square or a delivery aggregator. The CSV import (shop targeting, copy-to-shop and allergen names) is built; no connector, no plan and no owner ruling on the source systems exists. Needs the source and mapping chosen first, and every imported dish must carry its allergen declaration (the V63/V69 rules apply). The import page's "Columns:" line also does not list the optional `shop_id` column that the template has (`frontend/app/dashboard/products/import/page.tsx`); list it. Source: issue 799.
 **Requirements:** TBD
 **Plans:** 0 plans
 
