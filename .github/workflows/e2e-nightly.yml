@@ -505,6 +505,30 @@ jobs:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
         run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
 
+      # #848 / UXT-079. The Keycloak customer-realm pages (sign-in, register, forgot-password)
+      # are the account journey's first step and are rendered by OUR theme
+      # (infra/keycloak/themes/jtoye), so they are held to the storefront's bar: lang, one main
+      # landmark, no positive tabindex, zero axe violations at WCAG 2.2 AA, every starred field
+      # exposed as required, and every field's error named in aria-describedby. This script was a
+      # manual runbook step (docs/runbooks/keycloak-action-token-lifespan.md) and so could rot
+      # unseen; the nightly is the only workflow with a running Keycloak, and the per-PR lane
+      # holds the static half (scripts/check-keycloak-theme-ftl.sh).
+      #
+      # KC_BASE is `localhost`, not 127.0.0.1: the compose Keycloak is configured with
+      # KC_HOSTNAME=http://localhost:8085, and a session cookie issued for another host makes the
+      # empty-submit check land on "We are sorry..." instead of the form. The script creates no
+      # account. Exit 1 is a failed check, exit 2 is VOID (a page did not load, or axe ran nothing);
+      # both fail the job. The `if:` keys on the seed step for the reason given on the cart-identity
+      # gate above: a red Playwright suite says nothing about these pages, a stack that never came
+      # up must not produce noise about them.
+      - name: Gate - Keycloak customer-realm pages (#848 / UXT-079)
+        if: always() && steps.seed-fixtures.outcome == 'success'
+        working-directory: frontend
+        env:
+          KC_BASE: http://localhost:8085
+          APP_ORIGIN: http://localhost:3000
+        run: node e2e/keycloak-login-a11y.verify.mjs
+
       # Phase 30 plan 30-22 (PAY-01): Phase 2 runs stripe-refund-flow.spec.ts against
       # real Stripe test mode after Phase 1 has proven #793 (cash-checkout-no-stripe)
       # on the cash-only stack.

@@ -30,6 +30,11 @@
  *   X-Search-Interpretation: text
  *   X-Search-Interpretation: proximity; postcode=SE22; precision=district; radiusKm=5.0
  *   X-Search-Interpretation: proximity; postcode=SE220AA; precision=unit; radiusKm=5.0
+ *   X-Search-Interpretation: postcode-unrecognised; postcode=BT11AA; precision=unit
+ *
+ * The last is #877 / UXT-112: the server read `q` as postcode-shaped, has no such postcode (a typo, or
+ * Northern Ireland: the dataset is GB only) and found nothing by text either. It is the server's
+ * statement; this module still has no postcode regex and never decides what a postcode is.
  *
  * Single space after each `;`; `precision` lowercased; `postcode` space-stripped
  * and upper-cased; `radiusKm` is `String.valueOf(double)`, so the platform
@@ -58,6 +63,12 @@ export type SearchInterpretation =
       postcode: string
       precision: "unit" | "district"
       radiusKm: number
+    }
+  | {
+      /** #877 / UXT-112: postcode-shaped, not found, and no kitchen matched it as text either. */
+      kind: "unrecognised-postcode"
+      postcode: string
+      precision: "unit" | "district"
     }
 
 /** The default, and the destination of every degradation. */
@@ -88,6 +99,7 @@ export type SearchSummary =
       text: string
     }
   | { kind: "proximity"; text: string }
+  | { kind: "unrecognised-postcode"; text: string }
 
 /**
  * The server's own emission gate, mirrored.
@@ -123,7 +135,7 @@ export function parseSearchInterpretation(
 
   // `text`, an unknown kind, a differently-cased kind and a value with no kind
   // at all all land here. One return, so a new kind cannot be silently adopted.
-  if (parts[0] !== "proximity") return TEXT_INTERPRETATION
+  if (parts[0] !== "proximity" && parts[0] !== "postcode-unrecognised") return TEXT_INTERPRETATION
 
   const pairs = new Map<string, string>()
   for (const part of parts.slice(1)) {
@@ -137,6 +149,11 @@ export function parseSearchInterpretation(
 
   const precision = pairs.get("precision")
   if (precision !== "unit" && precision !== "district") return TEXT_INTERPRETATION
+
+  // #877 / UXT-112: no radius is claimed, so there is nothing more to validate.
+  if (parts[0] === "postcode-unrecognised") {
+    return { kind: "unrecognised-postcode", postcode, precision }
+  }
 
   // An incomplete disclosure is not a disclosure: without the radius there is no
   // honest way to say what the results were filtered by, so nothing is claimed.
@@ -196,6 +213,18 @@ export function searchSummary(
     return {
       kind: "proximity",
       text: count === null ? `No kitchens ${where}` : `${count} ${where}`,
+    }
+  }
+
+  // #877 / UXT-112: "No kitchens match" reads as though the postcode were fine and the kitchens missing.
+  // The server said it never found the postcode, so the line says that and offers the way forward.
+  if (interpretation.kind === "unrecognised-postcode" && count === null) {
+    const shown = formatPostcodeForDisplay(interpretation.postcode, interpretation.precision)
+    return {
+      kind: "unrecognised-postcode",
+      text:
+        `We could not find the postcode ${shown}. Check it for typing mistakes. ` +
+        "Postcode search covers Great Britain; you can also search by kitchen or dish name.",
     }
   }
 

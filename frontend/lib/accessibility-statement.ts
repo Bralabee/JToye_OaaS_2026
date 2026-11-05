@@ -211,17 +211,10 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     // target is the <main> landmark. The axe gate asserts on every surface it
     // scans that the first link outside the notice host is the skip link, so
     // the defect cannot come back without reddening a PR.
-    {
-      id: "required-fields-marked-visually-only",
-      title: "Some checkout fields are marked required only by a visible asterisk",
-      description:
-        "On the delivery address part of checkout, the address, town and postcode labels end in an asterisk to show they are required, but that requirement is not carried in the page's code. A screen reader will not announce those three fields as required, so the asterisk is meaningless to anyone who cannot see it.",
-      reason:
-        "The name, email and phone fields do carry the requirement correctly; the three delivery address fields were missed when delivery was added.",
-      category: "known-defect",
-      routes: ["/shop/[slug]/checkout"],
-      remediationBy: "2026-11-16",
-    },
+    // "required-fields-marked-visually-only" was removed by #878: the delivery address
+    // fields (#address1, #city, #postcode) now carry aria-required="true" (PR #1109), beside
+    // #name, #email and #phone which carry `required`. `checkout-swarm-a11y.test.tsx` asserts
+    // that every field whose label ends in an asterisk is exposed as required.
     {
       id: "text-contrast-below-minimum",
       title: "Some text does not have enough contrast against its background",

@@ -144,10 +144,13 @@ test("staging storefront renders the vendor's pipeline photo for an anonymous vi
         `budget_lcp_ms=${LCP_BUDGET_MS} budget_cls=${CLS_BUDGET} (throttled ~Fast 3G, 4x CPU)`,
     )
 
-    const img = page.getByRole("img", { name: title, exact: true }).first()
+    // #877 / UXT-110: a menu photo is decorative (alt=""), so it has no accessible name to find it by.
+    // Find it as the <img> inside the card whose heading is the dish, which is what a customer sees.
+    const cardImages = page.locator("article", { has: page.getByRole("heading", { name: title, exact: true }) }).locator("img")
+    const img = cardImages.first()
     expect(
-      await page.getByRole("img", { name: title, exact: true }).count(),
-      `NO_MEDIA_IMG: no <img> named "${title}" — the storefront fell back to its placeholder, so the menu carried no image`,
+      await cardImages.count(),
+      `NO_MEDIA_IMG: no <img> in the "${title}" card — the storefront fell back to its placeholder, so the menu carried no image`,
     ).toBeGreaterThan(0)
 
     const src = (await img.getAttribute("src")) ?? ""

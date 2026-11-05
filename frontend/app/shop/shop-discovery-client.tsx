@@ -721,6 +721,9 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
                 &ldquo;{summary.term}&rdquo;
               </span>
             </>
+          ) : summary.kind === "unrecognised-postcode" ? (
+            // #877 / UXT-112: said as it is, with no proximity claim and no exclusion note.
+            summary.text
           ) : (
             <>
               {summary.text}
@@ -815,12 +818,15 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
         <div className="text-center py-16">
           <Store className="mx-auto h-12 w-12 text-cream-100" />
           <h2 className="mt-4 text-base font-semibold text-oxblood">
-            No kitchens found
+            {interpretation.kind === "unrecognised-postcode" && resultsQuery ? "Postcode not found" : "No kitchens found"}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            {resultsQuery
-              ? "Try a different dish, cuisine or postcode — or browse everything."
-              : "No kitchens are currently available."}
+            {interpretation.kind === "unrecognised-postcode" && resultsQuery
+              ? // The line above already says the postcode was not found: do not then suggest trying a postcode.
+                "Check the postcode, or search by dish, cuisine or kitchen name — or browse everything."
+              : resultsQuery
+                ? "Try a different dish, cuisine or postcode — or browse everything."
+                : "No kitchens are currently available."}
           </p>
           {resultsQuery && (
             // Never a dead end: a zero-result query keeps one tap back to the

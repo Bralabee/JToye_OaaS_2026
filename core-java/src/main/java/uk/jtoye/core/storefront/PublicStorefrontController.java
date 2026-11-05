@@ -141,13 +141,17 @@ public class PublicStorefrontController {
                     + "a 'q' that is not a postcode, or is a postcode the dataset does not know "
                     + "(Code-Point Open is GB only), is answered by the text search exactly as "
                     + "before. The 'X-Search-Interpretation' response header states which reading "
-                    + "was applied.")
+                    + "was applied, including 'postcode-unrecognised' when a postcode-shaped term "
+                    + "found no postcode and no kitchen.")
     @ApiResponse(responseCode = "200", description = "A page of published shops.",
             headers = @Header(name = SearchInterpretation.HEADER,
                     description = "How the server read 'q'. Present on ?q= responses only — absent "
                             + "from the plain listing and from the lat/lon distance path. Either "
                             + "the single token 'text', or "
-                            + "'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>'. "
+                            + "'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>', or "
+                            + "'postcode-unrecognised; postcode=<KEY>; precision=<unit|district>' when the term "
+                            + "is shaped like a postcode, no such postcode is in the dataset (a typo, or "
+                            + "Northern Ireland: the dataset is GB only) and the text search found nothing. "
                             + "Present even when the proximity result is empty, because "
                             + "\"no kitchens within the radius of SE22\" and \"nothing matches "
                             + "'SE22'\" are different answers.",
@@ -281,6 +285,13 @@ public class PublicStorefrontController {
                     + "change, then resubmit under the same Idempotency-Key. An allergen-only change is "
                     + "errors/allergen-acknowledgement-stale, unchanged"),
             @ApiResponse(responseCode = "410", description = "The completed order has been deleted or expired; no replacement is created"),
+            @ApiResponse(responseCode = "429", description = "Two different 429s. (1) errors/rate-limited: the per-IP public "
+                    + "limit; it carries Retry-After and retryAfterSeconds, so wait that long and retry the same request. "
+                    + "(2) errors/order-cap-exceeded (code ORDER_CAP_EXCEEDED, with axis EMAIL | PHONE | IP and cap): this "
+                    + "customer already holds the most OPEN cash orders the shop allows. It carries NO Retry-After because "
+                    + "waiting does not clear it; a slot frees only when an open order completes. Do not retry the same "
+                    + "request; the reservation rolled back, so the same Idempotency-Key succeeds once an order has "
+                    + "completed. Branch on the problem type, never on the status alone"),
             @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload or shop "
                     + "(errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on "
                     + "each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement "

@@ -44,7 +44,7 @@ labels:
 
 # The jtoye login theme, mounted into /opt/keycloak/themes/jtoye/login by the
 # Deployment's volume items. kustomize can read files only INSIDE its own root, so
-# these seven are COMMITTED COPIES of infra/keycloak/themes/jtoye/login/* — the
+# these eight are COMMITTED COPIES of infra/keycloak/themes/jtoye/login/* — the
 # canonical side, which compose mounts. scripts/check-k8s-copy-parity.sh (pairs in
 # k8s/copy-parity.conf) fails CI on any byte of drift; edit the canonical file and
 # copy it here, never the other way round.
@@ -63,3 +63,4 @@ configMapGenerator:
       - theme/template.ftl
       - theme/login.ftl
       - theme/register.ftl
+      - theme/user-profile-commons.ftl

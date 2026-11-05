@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
@@ -1491,6 +1492,99 @@ class PublicStorefrontServiceTest {
             verify(shopRepository, never()).findPublishedNear(
                     anyDouble(), anyDouble(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(), anyDouble(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("searchPublishedShops — #877 / UXT-112: an unfound postcode is said to be unfound")
+    class UnrecognisedPostcodeTier {
+
+        @Test
+        @DisplayName("postcode-shaped, not in the dataset, nothing by text either: UNRECOGNISED_POSTCODE")
+        void unfoundPostcodeIsSaidSo() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("BT1 5GS"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("BT1 5GS"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("BT1 5GS")).thenReturn(Optional.empty());
+            when(postcodeGeocoder.postcodeShapedTerm("BT1 5GS")).thenReturn(
+                    Optional.of(new PostcodeGeocoder.ShapedPostcode("BT15GS", PostcodeGeocoder.Precision.UNIT)));
+            when(postcodeGeocoder.isDatasetLoaded()).thenReturn(true);
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("BT1 5GS", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.UNRECOGNISED_POSTCODE, outcome.interpretation().kind());
+            assertEquals("postcode-unrecognised; postcode=BT15GS; precision=unit",
+                    outcome.interpretation().headerValue());
+            assertTrue(outcome.page().isEmpty());
+        }
+
+        @Test
+        @DisplayName("#1127 review: with postcode_centroid empty or unreadable EVERY postcode is unfound, so the "
+                + "server says nothing about typos: TEXT")
+        void emptyCentroidTableNeverBlamesTheCustomer() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("SE22"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("SE22"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.empty());
+            when(postcodeGeocoder.postcodeShapedTerm("SE22")).thenReturn(
+                    Optional.of(new PostcodeGeocoder.ShapedPostcode("SE22", PostcodeGeocoder.Precision.DISTRICT)));
+            when(postcodeGeocoder.isDatasetLoaded()).thenReturn(false);
+
+            assertEquals(SearchInterpretation.Kind.TEXT,
+                    service.searchPublishedShops("SE22", PageRequest.of(0, 20)).interpretation().kind());
+        }
+
+        @Test
+        @DisplayName("#1127 review: a page PAST the full-text results is not 'the postcode was not found' while "
+                + "page 0 showed kitchens: the FTS total decides, not the page")
+        void pagePastTheResultsStaysText() {
+            Pageable pageTwo = PageRequest.of(2, 20);
+            Page<Shop> pastTheEnd = new PageImpl<>(List.of(), pageTwo, 5);
+            Page<Shop> likeEmpty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("ZZ99"), any())).thenReturn(pastTheEnd);
+            when(shopRepository.searchPublished(eq("ZZ99"), any())).thenReturn(likeEmpty);
+            when(postcodeGeocoder.locateSearchTerm("ZZ99")).thenReturn(Optional.empty());
+
+            assertEquals(SearchInterpretation.Kind.TEXT,
+                    service.searchPublishedShops("ZZ99", pageTwo).interpretation().kind());
+            verify(postcodeGeocoder, never()).postcodeShapedTerm(any()); // the FTS total (5) already settled it
+        }
+
+        @Test
+        @DisplayName("a postcode-shaped term the text search DID answer stays TEXT (a shop named 'SE22 Kitchen')")
+        void answeredByTextStaysText() {
+            when(postcodeGeocoder.locateSearchTerm("ZZ99")).thenReturn(Optional.empty());
+            when(shopRepository.fullTextSearchPublished(eq("ZZ99"), any()))
+                    .thenReturn(new PageImpl<>(List.of(publishedShop)));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    service.searchPublishedShops("ZZ99", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
+            verify(postcodeGeocoder, never()).postcodeShapedTerm(any());
+        }
+
+        @Test
+        @DisplayName("a food search that finds nothing is TEXT, not a postcode complaint")
+        void emptyFoodSearchStaysText() {
+            Page<Shop> empty = new PageImpl<>(List.of());
+            when(shopRepository.fullTextSearchPublished(eq("zzzz"), any())).thenReturn(empty);
+            when(shopRepository.searchPublished(eq("zzzz"), any())).thenReturn(empty);
+            when(postcodeGeocoder.locateSearchTerm("zzzz")).thenReturn(Optional.empty());
+            when(postcodeGeocoder.postcodeShapedTerm("zzzz")).thenReturn(Optional.empty());
+
+            assertEquals(SearchInterpretation.Kind.TEXT,
+                    service.searchPublishedShops("zzzz", PageRequest.of(0, 20)).interpretation().kind());
+        }
+
+        @Test
+        @DisplayName("the grammar: a key outside the safe charset degrades to the text token")
+        void unsafeKeyDegrades() {
+            assertEquals("text", SearchInterpretation
+                    .unrecognisedPostcode("AB;CD", PostcodeGeocoder.Precision.UNIT).headerValue());
+            assertEquals("postcode-unrecognised; postcode=ZZ99; precision=district", SearchInterpretation
+                    .unrecognisedPostcode("ZZ99", PostcodeGeocoder.Precision.DISTRICT).headerValue());
         }
     }
 

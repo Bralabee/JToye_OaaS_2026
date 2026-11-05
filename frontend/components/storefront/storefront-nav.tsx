@@ -13,6 +13,7 @@ import { customerIdpSignOut, customerLogout } from "@/lib/customer-auth"
 import { hasRememberedSignIn } from "@/lib/cart-identity"
 import { signOutReturnPath } from "@/lib/sign-out-return"
 import { safeReturnTo } from "@/lib/safe-return-to"
+import { SignOutConfirmDialog } from "@/components/storefront/sign-out-confirm-dialog"
 import { basketAnnouncement, basketCountPhrase, type BasketEdit } from "@/lib/basket-announcement"
 
 /**
@@ -93,6 +94,8 @@ export function StorefrontNav() {
   // goes away". If a reset is ever wanted for the navigation-was-blocked case,
   // it belongs on `pagehide`/`visibilitychange`, not on promise resolution.
   const [signingOut, setSigningOut] = useState(false)
+  // #877 / UXT-107: the header icon asks before it signs anyone out.
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   // SW-JRD-08: return to the public page the sign-out was made on (/shop or a shop's page), and
   // to /shop from anywhere personal or mid-journey. `pathname` is the hook value declared below;
   // the handler only runs after render, so it is always set by then.
@@ -321,7 +324,8 @@ export function StorefrontNav() {
             </span>
           </Link>
           <button
-            onClick={handleSignOut}
+            type="button"
+            onClick={() => setConfirmingSignOut(true)}
             disabled={signingOut}
             aria-busy={signingOut}
             className="flex h-11 w-11 items-center justify-center gap-1 rounded-full text-slate-600 hover:text-slate-800 transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
@@ -333,6 +337,12 @@ export function StorefrontNav() {
           >
             <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
+          <SignOutConfirmDialog
+            open={confirmingSignOut}
+            onOpenChange={setConfirmingSignOut}
+            onConfirm={handleSignOut}
+            busy={signingOut}
+          />
         </div>
       ) : (
         <div className="flex items-center gap-3">

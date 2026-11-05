@@ -211,3 +211,44 @@ describe("the exclusion disclosure (D-D)", () => {
     expect(PROXIMITY_EXCLUSION_NOTE).not.toMatch(/\d/)
   })
 })
+
+// ---- #877 / UXT-112: a postcode that was never found is said to be unfound ------------------------
+
+describe("postcode-unrecognised — the server's statement that the postcode was not found", () => {
+  const UNRECOGNISED = "postcode-unrecognised; postcode=BT15GS; precision=unit"
+
+  it("parses to its own kind, carrying the key and the precision and no radius", () => {
+    expect(parseSearchInterpretation(UNRECOGNISED)).toEqual({
+      kind: "unrecognised-postcode",
+      postcode: "BT15GS",
+      precision: "unit",
+    })
+  })
+
+  it("degrades to text on a missing key, an unknown precision, or a control character", () => {
+    expect(parseSearchInterpretation("postcode-unrecognised; precision=unit")).toEqual({ kind: "text" })
+    expect(parseSearchInterpretation("postcode-unrecognised; postcode=BT15GS; precision=area")).toEqual({ kind: "text" })
+    expect(parseSearchInterpretation("postcode-unrecognised; postcode=BT15GS; precision=unit\u0007")).toEqual({ kind: "text" })
+    expect(parseSearchInterpretation("postcode-unrecognised; postcode=bt1 5gs; precision=unit")).toEqual({ kind: "text" })
+  })
+
+  it("an empty result says it could not find the postcode, shown as a person would write it, and offers a way on", () => {
+    const summary = searchSummary(parseSearchInterpretation(UNRECOGNISED), 0, "BT1 5GS")
+    expect(summary.kind).toBe("unrecognised-postcode")
+    expect(summary.text).toMatch(/^We could not find the postcode BT1 5GS\./)
+    expect(summary.text).toMatch(/Great Britain/)
+    expect(summary.text).toMatch(/kitchen or dish name/)
+    expect(summary.text).not.toMatch(/No kitchens match/)
+  })
+
+  it("CONTROL: the same typed term as a plain text miss still says 'No kitchens match', so the two differ", () => {
+    const summary = searchSummary(parseSearchInterpretation("text"), 0, "BT1 5GS")
+    expect(summary.kind).toBe("text")
+    expect(summary.text).toBe("No kitchens match “BT1 5GS”")
+  })
+
+  it("if results exist the line is the ordinary text line (the server only sends this on an empty page)", () => {
+    const summary = searchSummary(parseSearchInterpretation(UNRECOGNISED), 2, "BT1 5GS")
+    expect(summary.kind).toBe("text")
+  })
+})

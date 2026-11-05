@@ -28,7 +28,7 @@
  * browser by `e2e/storefront-dish-modal-a11y.spec.ts`. Do not read a green run
  * of this file as evidence that the dialog BEHAVES correctly.
  */
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ProductDetailModal } from "../product-detail-modal"
 import type { PublicProduct } from "@/types/storefront"
@@ -82,7 +82,7 @@ describe("ProductDetailModal image framing", () => {
   it("declares a 4:3 window and takes the image out of flow", () => {
     renderModal(product())
 
-    const img = screen.getByAltText(/party jollof rice - image 1/i)
+    const img = document.body.querySelector("img") as HTMLImageElement
     const frame = img.closest("[data-aspect-frame]") as HTMLElement
     expect(frame.getAttribute("data-aspect-frame")).toBe("4/3")
     expect(frame.className).toMatch(/aspect-\[4\/3\]/)
@@ -106,7 +106,7 @@ describe("ProductDetailModal image framing", () => {
     // Thumbnails live in their own definite-height boxes and must NOT be
     // mistaken for unsound frame images — the contract excludes them.
     expectSoundAspectFrames(document.body, 1)
-    expect(screen.getByAltText(/image 1/i)).toBeTruthy()
+    expect(screen.getByAltText("Photo 1 of 2")).toBeTruthy()
   })
 })
 
@@ -364,5 +364,29 @@ describe("SW-MRC-13 (swarm epic #964): the dish dialog's scroll region and baske
     expect(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Decrease quantity of Party Jollof Rice" })
     ).toBeInTheDocument()
+  })
+})
+
+describe("ProductDetailModal image alt text (#877 / UXT-110)", () => {
+  it("a single photo is decorative: the dialog title already names the dish", () => {
+    renderModal(product())
+    const img = document.body.querySelector('[data-aspect-frame] img')
+    expect(img).not.toBeNull() // CONTROL: the photo is there, so an empty alt is a measurement
+    expect(img).toHaveAttribute("alt", "")
+    expect(document.body.querySelector('img[alt*="image 1"]')).toBeNull()
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(/party jollof rice/i)
+  })
+
+  it("several photos are told apart by position, not by repeating the dish name as '- image N'", () => {
+    renderModal(
+      product({
+        imageUrl: "http://example.test/a.jpg",
+        imageUrls: ["http://example.test/a.jpg", "http://example.test/b.jpg", "http://example.test/c.jpg"],
+      })
+    )
+    const img = document.body.querySelector('[data-aspect-frame] img')
+    expect(img).toHaveAttribute("alt", "Photo 1 of 3")
+    fireEvent.click(screen.getByRole("button", { name: "Next image" }))
+    expect(document.body.querySelector('[data-aspect-frame] img')).toHaveAttribute("alt", "Photo 2 of 3")
   })
 })

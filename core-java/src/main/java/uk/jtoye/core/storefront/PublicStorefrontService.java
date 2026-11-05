@@ -691,6 +691,9 @@ public class PublicStorefrontService {
 
         // TIER 2 + 3 — the text path (tier 2 also matches dishes since V89). Reached by every non-postcode term
         // and by every postcode-shaped term the dataset does not know.
+        // #1127 review: "the term matched nothing at all" means the FTS TOTAL is 0, not that this page is empty.
+        // A page past the last FTS page is empty while the search matched; it must not read as a typo.
+        boolean ftsMatchedNothing = true;
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
             // Use unsorted Pageable for native queries — ts_rank handles ordering
@@ -716,6 +719,7 @@ public class PublicStorefrontService {
             if (results.hasContent()) {
                 return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
+            ftsMatchedNothing = results.getTotalElements() == 0;
         }
 
         if (declaredMask != 0) {
@@ -724,9 +728,20 @@ public class PublicStorefrontService {
                     shopRepository.searchPublishedDeclaring(query, declaredMask, unsorted).map(this::toPublicShopDto),
                     SearchInterpretation.text());
         }
-        return new SearchOutcome(
-                shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
-                SearchInterpretation.text());
+        Page<PublicShopDto> likeResults = shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto);
+        // #877 / UXT-112: nothing found by any tier. If the term was shaped like a postcode the dataset
+        // does not know (a typo, or Northern Ireland), say THAT, so the page does not report "no kitchens
+        // match" about a postcode that was never found. A page that has results was answered as text.
+        // Only when the dataset is known to be loaded: with an empty or unreadable postcode_centroid every REAL
+        // postcode is also "not found", and telling a customer to check for typing mistakes would be false.
+        if (ftsMatchedNothing && likeResults.getTotalElements() == 0) {
+            Optional<PostcodeGeocoder.ShapedPostcode> shaped = postcodeGeocoder.postcodeShapedTerm(query);
+            if (shaped.isPresent() && postcodeGeocoder.isDatasetLoaded()) {
+                return new SearchOutcome(likeResults,
+                        SearchInterpretation.unrecognisedPostcode(shaped.get().key(), shaped.get().precision()));
+            }
+        }
+        return new SearchOutcome(likeResults, SearchInterpretation.text());
     }
 
     /**
