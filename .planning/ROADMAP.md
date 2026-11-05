@@ -1817,7 +1817,7 @@ Plans:
 
 ### Phase 999.17: Keycloak theme residual accessibility (BACKLOG)
 
-**Goal:** The register page's profile fields now expose required and name their errors, and the nightly axe gate covers the customer-realm pages. Left: move focus to the first error after a failed submit; an empty sign-in still answers "Invalid username or password"; `login-update-password.ftl` (the reset flow) is stock and has no password rules up front. Any new FTL override is added to the `FTL` list in `scripts/check-keycloak-theme-ftl.sh`. Source: issue 848.
+**Goal:** The register page's profile fields now expose required and name their errors, and the nightly axe gate covers the customer-realm pages. Left: move focus to the first error after a failed submit; an empty sign-in still answers "Invalid username or password"; `login-update-password.ftl` (the reset flow) is stock and has no password rules up front. Also not done: the verification and reset emails are still Keycloak's stock plain-text, unbranded messages (no branded HTML email theme; SW-JRD-06 in the swarm epic, issue 964). Any new FTL override is added to the `FTL` list in `scripts/check-keycloak-theme-ftl.sh`. Source: issue 848 and issue 964.
 **Requirements:** TBD
 **Plans:** 0 plans
 
