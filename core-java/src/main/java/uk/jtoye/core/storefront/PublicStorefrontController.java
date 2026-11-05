@@ -27,7 +27,6 @@ import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.ClientIpResolver;
 import uk.jtoye.core.security.CustomerJwtVerifier;
-import uk.jtoye.core.review.dto.CreateReviewRequest;
 import uk.jtoye.core.review.dto.OrderReviewRequest;
 import uk.jtoye.core.storefront.dto.ReorderLinesDto;
 import uk.jtoye.core.review.dto.ReviewDto;
@@ -604,20 +603,5 @@ public class PublicStorefrontController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(storefrontService.getReorderLines(slug, orderNumber, email));
-    }
-
-    @PostMapping("/shops/{slug}/reviews")
-    @Operation(summary = "Submit a review (email in the query string)", deprecated = true,
-            description = "Leave a review for a completed order. One review per order. Deprecated because the "
-                    + "customer's email travels in the URL, unauthenticated, where history and access logs keep it "
-                    + "(#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's "
-                    + "identity from their verified token. Kept so existing API clients keep working; the frontend "
-                    + "never called it.")
-    public ResponseEntity<ReviewDto> createReview(
-            @PathVariable String slug,
-            @RequestParam String email,
-            @Valid @RequestBody CreateReviewRequest request) {
-        ReviewDto review = reviewService.createReview(slug, email, request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(review);
     }
 }

@@ -323,7 +323,7 @@ class FinanceShopScopeIntegrationTest {
     // ==================================================================
 
     private static final String EXPORT = "/api/v1/financial-transactions/export.csv";
-    private static final String CSV_HEADER = "date,reference,order_number,entry_kind,amount,vat_rate,vat_amount,shop";
+    private static final String CSV_HEADER = "date,reference,order_number,entry_kind,amount,vat_rate,vat_amount,shop,payment,paid_online_amount";
     private static final java.util.regex.Pattern UK_DATE_TIME =
             java.util.regex.Pattern.compile("\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}");
 
@@ -358,12 +358,13 @@ class FinanceShopScopeIntegrationTest {
                 .noneMatch(r -> r.contains("37-11 Shop B") || r.contains("Cash adjustment"));
         for (String row : rows) {
             assertThat(row.substring(0, 16)).as("UK date-time first: " + row).matches(UK_DATE_TIME);
-            assertThat(row).as("every row names shop A: " + row).endsWith("," + shopAName);
+            assertThat(row).as("every row names shop A, then says it was not paid online (fixture orders are cash): " + row)
+                    .endsWith("," + shopAName + ",Not paid online,0.00");
         }
         assertThat(rows).as(text).anyMatch(r -> r.endsWith(",Order " + voidedNumber + "," + voidedNumber
-                + ",SALE,15.00,STANDARD,2.50," + shopAName));
+                + ",SALE,15.00,STANDARD,2.50," + shopAName + ",Not paid online,0.00"));
         assertThat(rows).as(text).anyMatch(r -> r.endsWith(",Reversal of " + voidedNumber + "," + voidedNumber
-                + ",REVERSAL,-15.00,STANDARD,-2.50," + shopAName));
+                + ",REVERSAL,-15.00,STANDARD,-2.50," + shopAName + ",Not paid online,0.00"));
     }
 
     @Test
@@ -419,7 +420,7 @@ class FinanceShopScopeIntegrationTest {
         List<String> rows = csvLines(result).subList(1, csvLines(result).size());
         assertThat(rows).as("every row of the tenant: 3 standard + 4 formula rows: " + text).hasSize(7);
         assertThat(rows).as("the MANUAL row is exported, with an empty order number and shop: " + text)
-                .anyMatch(r -> r.endsWith(",Cash adjustment,,MANUAL,7.00,ZERO,0.00,"));
+                .anyMatch(r -> r.endsWith(",Cash adjustment,,MANUAL,7.00,ZERO,0.00,,Not paid online,0.00"));
         // Exact text, RFC 4180-quoted because the neutralised cell contains quotes and a comma.
         assertThat(rows).as(text).anyMatch(r -> r.contains(
                 ",\"'=HYPERLINK(\"\"http://evil.example\"\",\"\"click\"\")\",,MANUAL,1.00,ZERO,0.00,"));

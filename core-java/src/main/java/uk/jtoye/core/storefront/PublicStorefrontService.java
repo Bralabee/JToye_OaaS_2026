@@ -928,9 +928,8 @@ public class PublicStorefrontService {
      * {@link #getVerifiedCustomerOrders} adds that, on its own subtype.
      */
     private <T extends PublicOrderStatus> T toCustomerHistoryStatus(T status, Order order) {
-        String shopName = shopRepository.findById(order.getShopId())
-                .map(Shop::getName)
-                .orElse("Unknown shop");
+        Shop shop = shopRepository.findById(order.getShopId()).orElse(null);
+        String shopName = shop == null ? "Unknown shop" : shop.getName();
 
         status.setOrderNumber(order.getOrderNumber());
         status.setStatus(order.getStatus().name());
@@ -965,7 +964,26 @@ public class PublicStorefrontService {
         status.setScheduledWindowLabel(order.getScheduledWindowLabel());
         status.setDepositAmountPennies(order.getDepositAmountPennies());
         status.setBalanceDuePennies(order.getBalanceDuePennies());
+        setCancellationDisclosure(status, order, shop);
         return status;
+    }
+
+    /**
+     * #820 (owner ruling 2026-11-04): a CANCELLED order tells its customer why, in the category's plain English
+     * ({@link uk.jtoye.core.order.CancelReason#customerText()}), and gives the shop's public phone. Only a
+     * cancelled order discloses either; a live order never does. No reason recorded means no reason field,
+     * not a guess.
+     */
+    private static void setCancellationDisclosure(PublicOrderStatus status, Order order, Shop shop) {
+        if (order.getStatus() != OrderStatus.CANCELLED) {
+            return;
+        }
+        if (order.getCancelReasonCode() != null) {
+            status.setCancellationReason(order.getCancelReasonCode().customerText());
+        }
+        if (shop != null && shop.getPhone() != null && !shop.getPhone().isBlank()) {
+            status.setShopPhone(shop.getPhone().strip());
+        }
     }
 
     /**
@@ -992,10 +1010,9 @@ public class PublicStorefrontService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Order not found. Check your order number and email address."));
 
-        // Look up shop name
-        String shopName = shopRepository.findById(order.getShopId())
-                .map(Shop::getName)
-                .orElse("Unknown shop");
+        // Look up shop name (and, for a cancelled order, its public phone)
+        Shop shop = shopRepository.findById(order.getShopId()).orElse(null);
+        String shopName = shop == null ? "Unknown shop" : shop.getName();
 
         PublicOrderStatus status = new PublicOrderStatus();
         status.setOrderNumber(order.getOrderNumber());
@@ -1041,6 +1058,7 @@ public class PublicStorefrontService {
         OrderAllergenSnapshot.OrderAllergenView recorded = OrderAllergenSnapshot.viewOf(order.getItems());
         status.setRecordedAllergens(recorded.declaredNames());
         status.setRecordedAllergenFlags(recorded.flags());
+        setCancellationDisclosure(status, order, shop);
         return status;
     }
 

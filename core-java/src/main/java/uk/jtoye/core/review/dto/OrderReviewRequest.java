@@ -13,7 +13,7 @@ import jakarta.validation.constraints.Size;
  * <p>It carries the rating and the words and NOTHING that identifies anyone: the order is named by the
  * path, and the reviewer is the customer whose verified token the request carries ({@code X-Customer-Token}).
  * There is deliberately no email and no order id here, and no photo list (no upload path writes review
- * photos yet; the older {@link CreateReviewRequest} keeps that field for the API clients that use it).
+ * photos).
  */
 @Schema(description = "A rating and an optional comment for one of the signed-in customer's own completed orders. "
         + "The reviewer and the order are identified by the customer token and the path, never by this body.")

@@ -1181,44 +1181,6 @@
         ],
         "type" : "object"
       },
-      "CreateReviewRequest" : {
-        "properties" : {
-          "comment" : {
-            "maxLength" : 1000,
-            "minLength" : 0,
-            "type" : "string"
-          },
-          "deliveryRating" : {
-            "format" : "int32",
-            "maximum" : 5,
-            "minimum" : 1,
-            "type" : "integer"
-          },
-          "foodRating" : {
-            "format" : "int32",
-            "maximum" : 5,
-            "minimum" : 1,
-            "type" : "integer"
-          },
-          "orderId" : {
-            "format" : "uuid",
-            "type" : "string"
-          },
-          "photoUrls" : {
-            "items" : {
-              "type" : "string"
-            },
-            "maxItems" : 5,
-            "minItems" : 0,
-            "type" : "array"
-          }
-        },
-        "required" : [
-          "foodRating",
-          "orderId"
-        ],
-        "type" : "object"
-      },
       "CreateShopRequest" : {
         "description" : "Shop creation request",
         "properties" : {
@@ -2079,6 +2041,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "cancellationReason" : {
+            "description" : "#820: for a CANCELLED order, why, as a plain-English category sentence (for example \"The shop could not make or deliver this order.\"). Never a code and never free text. Absent when the order is not cancelled or no reason was recorded.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2148,6 +2114,10 @@
             "type" : "string"
           },
           "shopName" : {
+            "type" : "string"
+          },
+          "shopPhone" : {
+            "description" : "#820: for a CANCELLED order, the shop's public phone, so the customer can call. Absent when the order is not cancelled or the shop has no phone.",
             "type" : "string"
           },
           "shopSlug" : {
@@ -2515,6 +2485,21 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "notPaidOnlineRevenuePennies" : {
+            "description" : "#827 (V93): the part of totalRevenuePennies recorded as not taken online: cash, the cash balance of a deposit-split order, MANUAL entries. Not paid online.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paidOnlineRevenuePennies" : {
+            "description" : "#827 (V93): the part of totalRevenuePennies recorded as taken online (card, through the platform) when its ledger row was written: Paid online. The deposit of a deposit-split order counts here, its cash balance does not. paidOnline + notPaidOnline + paymentNotRecorded = totalRevenuePennies.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentNotRecordedRevenuePennies" : {
+            "description" : "V93: the part of totalRevenuePennies on legacy rows whose payment channel was never recorded (the order could not prove it). In neither figure above; 0 on any ledger written from V93 on.",
+            "format" : "int64",
+            "type" : "integer"
+          },
           "scope" : {
             "$ref" : "#/components/schemas/FinanceScopeDto",
             "description" : "The scope these figures were filtered on (Phase 37-11): read it for the \"Showing ...\" banner rather than the shop switcher's own value."
@@ -2574,6 +2559,14 @@
             "description" : "The order this row belongs to; null for a MANUAL row.",
             "format" : "uuid",
             "type" : "string"
+          },
+          "paidOnlinePennies" : {
+            "description" : "#827 (V93): of amountPennies, how many pennies were taken online (card, through the platform), recorded when the row was written. Same sign as amountPennies. 0 = Not paid online (cash, a MANUAL row); equal to amountPennies = Paid online; between = Part paid online (a deposit by card, the balance in cash). null = not recorded (a legacy row the order could not prove).",
+            "format" : "int64",
+            "type" : [
+              "integer",
+              "null"
+            ]
           },
           "reversesTransactionId" : {
             "description" : "For a REVERSAL, the id of the SALE it reverses; null otherwise.",
@@ -4757,12 +4750,20 @@
       },
       "ProductPatchRequest" : {
         "additionalProperties" : false,
-        "description" : "Stock and availability patch for one product. Accepts only available, quantityInStock and trackInventory; any other property (allergen, ingredient, price, ...) is refused with a 400 errors/validation naming it, and nothing is changed. Omitted fields keep their stored value.",
+        "description" : "Stock, availability and price patch for one product. Accepts only available, quantityInStock, trackInventory and pricePennies; any other property (allergen, ingredient, ...) is refused with a 400 errors/validation naming it, and nothing is changed. Omitted fields keep their stored value.",
         "properties" : {
           "available" : {
             "description" : "Whether the product can be ordered. Omit to keep the current value.",
             "example" : false,
             "type" : "boolean"
+          },
+          "pricePennies" : {
+            "description" : "Absolute price in pennies (#858); the bounds are PUT's. Omit to keep the stored price. Orders already placed keep the price they were placed at.",
+            "example" : 1250,
+            "format" : "int64",
+            "maximum" : 1000000000,
+            "minimum" : 0,
+            "type" : "integer"
           },
           "quantityInStock" : {
             "description" : "Absolute quantity in stock; setting it tracks stock. Omit to keep the stored quantity.",
@@ -4871,6 +4872,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "cancellationReason" : {
+            "description" : "#820: for a CANCELLED order, why, as a plain-English category sentence (for example \"The shop could not make or deliver this order.\"). Never a code and never free text. Absent when the order is not cancelled or no reason was recorded.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -4940,6 +4945,10 @@
             "type" : "string"
           },
           "shopName" : {
+            "type" : "string"
+          },
+          "shopPhone" : {
+            "description" : "#820: for a CANCELLED order, the shop's public phone, so the customer can call. Absent when the order is not cancelled or the shop has no phone.",
             "type" : "string"
           },
           "status" : {
@@ -15889,7 +15898,7 @@
         ]
       },
       "patch" : {
-        "description" : "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations that must never touch allergen or ingredient data. Any other property is refused with a 400 naming it and nothing is changed. Omitted fields keep their stored value; values are absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's shop, like PUT.",
+        "description" : "Changes only available, quantityInStock, trackInventory and pricePennies (an absolute price in pennies; orders already placed keep the price they were placed at), for EPOS and agent integrations that must never touch allergen or ingredient data. Any other property is refused with a 400 naming it and nothing is changed. Omitted fields keep their stored value; values are absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's shop, like PUT.",
         "operationId" : "patch",
         "parameters" : [
           {
@@ -15932,7 +15941,7 @@
                 }
               }
             },
-            "description" : "errors/validation: a property other than available, quantityInStock and trackInventory (named in errors), trackInventory true without quantityInStock or false with one, or a negative quantityInStock; errors/unreadable-request: the body is not JSON"
+            "description" : "errors/validation: a property other than available, quantityInStock, trackInventory and pricePennies (named in errors), trackInventory true without quantityInStock or false with one, a negative quantityInStock, or a pricePennies outside 0..1000000000; errors/unreadable-request: the body is not JSON"
           },
           "401" : {
             "content" : {
@@ -16023,7 +16032,7 @@
             "bearer-jwt" : [ ]
           }
         ],
-        "summary" : "Patch product stock and availability",
+        "summary" : "Patch product stock, availability and price",
         "tags" : [
           "Products"
         ]
@@ -20241,95 +20250,6 @@
           }
         },
         "summary" : "Get shop reviews",
-        "tags" : [
-          "Public Storefront"
-        ]
-      },
-      "post" : {
-        "deprecated" : true,
-        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
-        "operationId" : "createReview",
-        "parameters" : [
-          {
-            "in" : "path",
-            "name" : "slug",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          },
-          {
-            "in" : "query",
-            "name" : "email",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          }
-        ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/CreateReviewRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ReviewDto"
-                }
-              }
-            },
-            "description" : "OK"
-          },
-          "429" : {
-            "content" : {
-              "application/problem+json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ProblemDetail"
-                }
-              }
-            },
-            "description" : "Rate limit exceeded (errors/rate-limited). Wait Retry-After seconds, then retry the same request; retryAfterSeconds in the body carries the same number. Authenticated calls draw on the tenant's bucket (a call that carries no tenant claim is not throttled), /public calls on the client address's. This describes errors/rate-limited only: an operation that can answer 429 for another typed reason says so in its own text, and that reason is not retried by waiting.",
-            "headers" : {
-              "Retry-After" : {
-                "description" : "Seconds to wait before retrying (errors/rate-limited only; absent on any other 429)",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              },
-              "X-RateLimit-Limit" : {
-                "description" : "Capacity of the bucket that was exceeded",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              },
-              "X-RateLimit-Remaining" : {
-                "description" : "Tokens left in the bucket (0 on a 429)",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              },
-              "X-RateLimit-Reset" : {
-                "description" : "Unix time, in seconds, at which the bucket has refilled",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              }
-            }
-          }
-        },
-        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]
@@ -27313,95 +27233,6 @@
           }
         },
         "summary" : "Get shop reviews",
-        "tags" : [
-          "Public Storefront"
-        ]
-      },
-      "post" : {
-        "deprecated" : true,
-        "description" : "Leave a review for a completed order. One review per order. Deprecated because the customer's email travels in the URL, unauthenticated, where history and access logs keep it (#846); use POST /public/shops/{slug}/orders/{orderNumber}/review, which takes the customer's identity from their verified token. Kept so existing API clients keep working; the frontend never called it.",
-        "operationId" : "createReview_1",
-        "parameters" : [
-          {
-            "in" : "path",
-            "name" : "slug",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          },
-          {
-            "in" : "query",
-            "name" : "email",
-            "required" : true,
-            "schema" : {
-              "type" : "string"
-            }
-          }
-        ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/CreateReviewRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ReviewDto"
-                }
-              }
-            },
-            "description" : "OK"
-          },
-          "429" : {
-            "content" : {
-              "application/problem+json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ProblemDetail"
-                }
-              }
-            },
-            "description" : "Rate limit exceeded (errors/rate-limited). Wait Retry-After seconds, then retry the same request; retryAfterSeconds in the body carries the same number. Authenticated calls draw on the tenant's bucket (a call that carries no tenant claim is not throttled), /public calls on the client address's. This describes errors/rate-limited only: an operation that can answer 429 for another typed reason says so in its own text, and that reason is not retried by waiting.",
-            "headers" : {
-              "Retry-After" : {
-                "description" : "Seconds to wait before retrying (errors/rate-limited only; absent on any other 429)",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              },
-              "X-RateLimit-Limit" : {
-                "description" : "Capacity of the bucket that was exceeded",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              },
-              "X-RateLimit-Remaining" : {
-                "description" : "Tokens left in the bucket (0 on a 429)",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              },
-              "X-RateLimit-Reset" : {
-                "description" : "Unix time, in seconds, at which the bucket has refilled",
-                "schema" : {
-                  "format" : "int64",
-                  "type" : "integer"
-                }
-              }
-            }
-          }
-        },
-        "summary" : "Submit a review (email in the query string)",
         "tags" : [
           "Public Storefront"
         ]

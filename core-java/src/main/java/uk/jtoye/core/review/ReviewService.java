@@ -6,22 +6,18 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
-import uk.jtoye.core.review.dto.CreateReviewRequest;
 import uk.jtoye.core.review.dto.OrderReviewRequest;
 import uk.jtoye.core.review.dto.ReviewDto;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.security.TenantContext;
-import uk.jtoye.core.storage.StorageService;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,14 +29,12 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final OrderRepository orderRepository;
     private final ShopRepository shopRepository;
-    private final StorageService storageService;
 
     public ReviewService(ReviewRepository reviewRepository, OrderRepository orderRepository,
-                         ShopRepository shopRepository, StorageService storageService) {
+                         ShopRepository shopRepository) {
         this.reviewRepository = reviewRepository;
         this.orderRepository = orderRepository;
         this.shopRepository = shopRepository;
-        this.storageService = storageService;
     }
 
     public Page<ReviewDto> getShopReviews(String shopSlug, Pageable pageable) {
@@ -62,29 +56,6 @@ public class ReviewService {
         return new ShopRatingSummary(count, avgRating != null ? avgRating : 0.0);
     }
 
-    @Transactional
-    public ReviewDto createReview(String shopSlug, String customerEmail, CreateReviewRequest request) {
-        // SEC-01 (Phase 13) — tenant-match gate BEFORE the Review row is written.
-        // High-severity path (WRITE under setTenantId below).
-        Shop shop = resolvePublicShopForSlug(shopSlug);
-
-        UUID tenantId = shop.getTenantId();
-        try {
-            Order order = orderRepository.findById(request.getOrderId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
-
-            // Validate: order belongs to this customer
-            if (!customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
-                throw new IllegalArgumentException("You can only review your own orders");
-            }
-
-            return saveReview(shop, order, customerEmail, request.getFoodRating(), request.getDeliveryRating(),
-                    request.getComment(), request.getPhotoUrls());
-        } finally {
-            TenantContext.clear();
-        }
-    }
-
     /**
      * #846 (persona close-out 2026-11-04): a SIGNED-IN customer reviews one of their own orders, named by its
      * number, with the reviewer identified by the verified customer token and never by a parameter. The
@@ -92,11 +63,11 @@ public class ReviewService {
      *
      * <p>The shop's published slug pins the tenant (SEC-01) before the order is read, so RLS scopes the read.
      * An order that does not exist and an order that is another customer's are the SAME
-     * {@link ResourceNotFoundException}: unlike {@link #createReview} (kept, unchanged, for the API clients that
-     * address an order by id and name the email themselves), this surface is addressed by a guessable
-     * order number, and a 400 "you can only review your own orders" would tell a stranger which numbers exist
-     * (D-05, the VanishedRowStatus contract: never 403, never a distinguishable answer). The remaining gates
-     * (this shop, COMPLETED, one per order) are shared with {@link #createReview} through {@link #saveReview}.
+     * {@link ResourceNotFoundException}: this surface is addressed by a guessable order number, and a 400
+     * "you can only review your own orders" would tell a stranger which numbers exist (D-05, the
+     * VanishedRowStatus contract: never 403, never a distinguishable answer). The old unauthenticated
+     * {@code POST /public/shops/{slug}/reviews?email=} that named the email itself was removed (#846, owner
+     * ruling 2026-11-04); this is the only way to write a review.
      *
      * <p>Idempotent in effect rather than by key: {@code reviews.order_id} is UNIQUE (V27) and
      * {@code saveReview} refuses a second review first, so a replay can never create a second row.
@@ -110,18 +81,19 @@ public class ReviewService {
                     .filter(o -> customerEmail.equalsIgnoreCase(o.getCustomerEmail()))
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
             return saveReview(shop, order, customerEmail, request.foodRating(), request.deliveryRating(),
-                    request.comment(), null);
+                    request.comment());
         } finally {
             TenantContext.clear();
         }
     }
 
     /**
-     * The gates and the write both review endpoints share, run with the tenant already pinned and the
-     * order already shown to belong to {@code customerEmail}.
+     * The gates and the write, run with the tenant already pinned and the order already shown to belong to
+     * {@code customerEmail}. No photo is accepted on a new review: no upload path ever wrote review photos,
+     * and the only endpoint that took a photo list was the removed email-in-URL one (#846).
      */
     private ReviewDto saveReview(Shop shop, Order order, String customerEmail, Integer foodRating,
-                                 Integer deliveryRating, String comment, List<String> photoUrls) {
+                                 Integer deliveryRating, String comment) {
         UUID tenantId = shop.getTenantId();
 
         // 37-26 (D-21, UXT-005 P0): the order must have been placed AT THIS SHOP. RLS scopes
@@ -144,8 +116,6 @@ public class ReviewService {
             throw new IllegalArgumentException("You have already reviewed this order");
         }
 
-        requireOwnReviewPhotos(photoUrls, tenantId, order.getId());
-
         Review review = new Review();
         review.setTenantId(tenantId);
         review.setShopId(shop.getId());
@@ -155,39 +125,12 @@ public class ReviewService {
         review.setFoodRating(foodRating);
         review.setDeliveryRating(deliveryRating);
         review.setComment(comment);
-        review.setPhotoUrls(photoUrls);
 
         review = reviewRepository.save(review);
         log.info("Review created for shop {} order {} — food:{} delivery:{}",
                 shop.getName(), order.getOrderNumber(), foodRating, deliveryRating);
 
         return toDto(review);
-    }
-
-    /**
-     * Issue #771: every {@code photoUrls} entry must be a public storage URL whose key is this
-     * review's own photo key — {@code <shop tenant>/reviews/<orderId>/<one plain name>}, the rule
-     * {@link ReviewPhotoKeys} owns and GDPR erasure applies again. The URL-to-key parse is
-     * {@link StorageService#publicKeyOf}, the same one {@code delete(url)} acts on.
-     *
-     * <p>No upload path writes review photos yet, so in practice only {@code null} or an empty list
-     * is accepted today; the shape is the storage contract for whichever upload path comes first.
-     * Object existence is not checked: a key naming a missing object renders a broken image and can
-     * only ever delete itself. The first null, unparseable or non-conforming entry is refused; the
-     * message names its index and the required shape, never the submitted URL.
-     */
-    private void requireOwnReviewPhotos(List<String> urls, UUID tenantId, UUID orderId) {
-        if (urls == null) {
-            return;
-        }
-        for (int i = 0; i < urls.size(); i++) {
-            String url = urls.get(i);
-            Optional<String> key = url == null ? Optional.empty() : storageService.publicKeyOf(url);
-            if (key.isEmpty() || !ReviewPhotoKeys.isReviewPhotoKey(key.get(), tenantId, orderId)) {
-                throw new InvalidReviewPhotoException("photoUrls[" + i + "] is not a photo of this review: each "
-                        + "entry must be a stored image under <tenant>/reviews/<orderId>/<name>");
-            }
-        }
     }
 
     /**
