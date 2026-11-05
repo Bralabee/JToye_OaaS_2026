@@ -718,6 +718,7 @@ jobs:
             frontend:
               - 'frontend/**'
               - '.github/workflows/ci-cd.yaml'
+              - 'scripts/check-unknown-kitchen-404.sh'
 
       - name: Skip notice (frontend not affected by this PR)
         if: github.event_name == 'pull_request' && steps.filter.outputs.frontend != 'true'
@@ -826,6 +827,15 @@ jobs:
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
+
+      # SW-CLR-17 launch-mode gate (PR #1126). The unknown-kitchen 404 was green in `next dev` and in every
+      # unit test, and on the delivered server (bound to 0.0.0.0) it hung 30 s and answered 500. This starts
+      # the BUILT frontend the way it is delivered (standalone server.js with HOSTNAME=0.0.0.0) and the way
+      # CI starts it above (`next start` with an unrelated HOSTNAME), against a stub core that answers 404,
+      # and requires 404 inside 3 s, plain and behind X-Forwarded-Proto: https. It needs no stack.
+      - name: Run unknown-kitchen 404 launch-mode gate (standalone + next start)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
+        run: bash scripts/check-unknown-kitchen-404.sh
 
       - name: Upload Playwright report on failure
         if: failure()

@@ -949,6 +949,19 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
+     * SKUs the e2e fixture seeder (scripts/seed-e2e-fixtures.sh) owns, e.g. {@code E2E-ZERO-VAT-001}. They are
+     * deliberate dev data on a curated storefront, so this seeder treats them as curated: without it every
+     * core start moved them to the hidden archive shop and made them unavailable, and the zero-VAT specs
+     * failed with nothing pointing here (runtime check of main 7665cabe, PR #1126 review).
+     */
+    static final String E2E_FIXTURE_SKU_PREFIX = "E2E-";
+
+    /** Whether {@code quarantineNonCurated} must leave a product with this SKU where it is. */
+    static boolean isCuratedSku(String sku, Set<String> curatedSkus) {
+        return sku != null && (curatedSkus.contains(sku) || sku.startsWith(E2E_FIXTURE_SKU_PREFIX));
+    }
+
+    /**
      * Move every product whose SKU is not in the curated set — legacy orphans,
      * NULL-shop rows, and anything mis-assigned into a curated shop — into the
      * hidden archive shop. This is what guarantees "no duplicate line items" and
@@ -958,7 +971,7 @@ public class DemoDataSeeder implements ApplicationRunner {
     private void quarantineNonCurated(SeedResult result, Set<String> curatedSkus, UUID archiveId) {
         for (Product p : productRepository.findAll()) {
             String sku = p.getSku();
-            boolean curated = sku != null && curatedSkus.contains(sku);
+            boolean curated = isCuratedSku(sku, curatedSkus);
             if (!curated && !archiveId.equals(p.getShopId())) {
                 p.setShopId(archiveId);
                 p.setFeatured(false);

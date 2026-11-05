@@ -327,7 +327,7 @@ export function OrderAllergenPanel({
         (() => {
           const how = kitchenContactCopy(vendorName, kitchenContact)
           return (
-            <p data-testid="allergen-kitchen-contact" className="mt-3 text-sm text-amber-800">
+            <p data-testid="allergen-kitchen-contact" className="mt-3 text-sm text-amber-800 [overflow-wrap:anywhere]">
               {how.kind === "none" ? (
                 how.text
               ) : (

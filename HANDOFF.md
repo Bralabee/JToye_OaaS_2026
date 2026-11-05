@@ -1229,10 +1229,12 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 65 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 66 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-11-04 (PR #1126): 65 -> 66. check-unknown-kitchen-404 needs `npm run build` in frontend/ and
+# prints rc=2 (VOID, no build) in this bare loop; CI runs it after the build in the Frontend E2E job.
 # 2026-10-31 (agy/30-21-22-refund-e2e, Phase 30 30-21/30-22): 62 -> 63. check-stripe-ci-keys
 # refuses unset, empty, live or swapped CI Stripe sandbox keys unless STRIPE_TEST_SECRET_KEY and
 # CI_STRIPE_PUBLISHABLE_KEY are set; CI runs its --selftest in ops-contracts and the guard in e2e-nightly.

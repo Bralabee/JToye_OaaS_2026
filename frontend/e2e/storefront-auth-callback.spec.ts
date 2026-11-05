@@ -30,7 +30,11 @@ import { test, expect } from "@playwright/test"
 const LIVE = "body > div:not([hidden])"
 
 const NO_CODE = "No authorization code received."
-const AUTH_FAILED = "Authentication failed. Please try again."
+// #1110 (SW-JRD-05 / SW-SAM-13): a code this tab never started a sign-in for (no PKCE verifier, or a
+// different state) is the normal ending of a password-reset or verification link opened in another
+// browser. It is explained as such and offers a fresh sign-in, not "Authentication failed".
+const OTHER_TAB = "This sign-in finished in a different tab or browser."
+const OTHER_TAB_DETAIL = "If you just set a new password, it has been saved. Sign in to continue."
 
 test.describe("OAuth callback error path", () => {
   test("no authorization code lands on an explained error, not a spinner", async ({
@@ -73,11 +77,11 @@ test.describe("OAuth callback error path", () => {
     ).toBeVisible()
   })
 
-  test("a bogus code shows the failure copy rather than hanging", async ({ page }) => {
+  test("a bogus code shows the explained out-of-band copy rather than hanging", async ({ page }) => {
     // `not-a-real-code` is synthetic on purpose: no genuine authorization code
     // is ever written into a trace, a screenshot or this file (T-34-04-04).
     //
-    // MEASURED OUTCOME on the Compose stack: the page reaches AUTH_FAILED
+    // MEASURED OUTCOME on the Compose stack: the page reaches the OTHER_TAB outcome
     // without any network call at all. `customer-auth.ts:262-266` returns null
     // as soon as sessionStorage holds no PKCE verifier — which is exactly the
     // state a shopper is in when they open a callback URL out of band. The
@@ -87,7 +91,9 @@ test.describe("OAuth callback error path", () => {
     await page.goto("/shop/auth/callback?code=not-a-real-code&state=x")
 
     const live = page.locator(LIVE)
-    await expect(live.getByText(AUTH_FAILED)).toBeVisible({ timeout: 15_000 })
+    await expect(live.getByText(OTHER_TAB)).toBeVisible({ timeout: 15_000 })
+    await expect(live.getByText(OTHER_TAB_DETAIL)).toBeVisible()
+    await expect(live.getByRole("button", { name: "Sign in" }), "a fresh sign-in is offered").toBeVisible()
     await expect(live.locator(".animate-spin")).toHaveCount(0)
 
     // The failure path keeps the same way out as the missing-code path.

@@ -24,7 +24,9 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test"
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
-const SHOP_SLUG = process.env.PLAYWRIGHT_SHOP_SLUG || "jollof-express-brixton-900b57a8"
+// mama-ades-kitchen is the storefront the dev seeder and scripts/seed-e2e-fixtures.sh guarantee (the
+// old default, a generated jollof-express-brixton-* slug, exists in no seeded database and answered 404).
+const SHOP_SLUG = process.env.PLAYWRIGHT_SHOP_SLUG || "mama-ades-kitchen"
 
 /**
  * Attach console + pageerror listeners to capture CSP violation reports.

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { buildCsp } from "@/lib/security-headers"
-import { checkShopSlug, isDocumentRequest, shopSlugOf } from "@/lib/shop-slug-gate"
+import {
+  SHOP_SLUG_CHECKED_PARAM,
+  checkShopSlug,
+  fetchKitchenNotFoundPage,
+  isDocumentRequest,
+  shopSlugOf,
+} from "@/lib/shop-slug-gate"
 
 // Per-request Content-Security-Policy with a nonce (issue #89 P1-7 / SEC-02).
 //
@@ -42,9 +48,11 @@ export default auth(async (req) => {
   // because a streamed page has already sent 200 by the time it can call notFound() (see
   // lib/shop-slug-gate.ts). Anything but core's own answer passes through unchanged.
   // Document requests only (review R1): never a prefetch or an RSC navigation.
-  const slug = isDocumentRequest(req.headers, req.nextUrl.searchParams)
-    ? shopSlugOf(req.nextUrl.pathname)
-    : null
+  const slug =
+    isDocumentRequest(req.headers, req.nextUrl.searchParams) &&
+    !req.nextUrl.searchParams.has(SHOP_SLUG_CHECKED_PARAM)
+      ? shopSlugOf(req.nextUrl.pathname)
+      : null
   const verdict = slug ? await checkShopSlug(slug, req.headers) : { kind: "pass" as const }
   if (verdict.kind === "redirect") {
     const target = new URL(`/shop/${encodeURIComponent(verdict.canonicalSlug)}`, req.nextUrl)
@@ -52,10 +60,16 @@ export default auth(async (req) => {
     return NextResponse.redirect(target, 301)
   }
 
-  const response =
-    verdict.kind === "notfound"
-      ? NextResponse.rewrite(req.nextUrl, { status: 404, request: { headers: requestHeaders } })
-      : NextResponse.next({ request: { headers: requestHeaders } })
+  // An unknown kitchen is answered here with the page body and status 404 (see fetchKitchenNotFoundPage
+  // for why this is not a rewrite). The second request is its own pass through this proxy, so the CSP
+  // it carries is the one its HTML was rendered with; null means "could not get it", and the request
+  // passes to the page unchanged.
+  if (verdict.kind === "notfound") {
+    const missing = await fetchKitchenNotFoundPage(req.nextUrl, req.headers)
+    if (missing) return missing
+  }
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
   response.headers.set(
     reportOnly ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
     csp,

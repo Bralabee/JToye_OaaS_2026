@@ -574,10 +574,14 @@ test.describe("Shop Menu & Product Cards", () => {
     await productCard.click()
     await page.waitForTimeout(600)
 
-    // Modal should appear with product details
-    await expect(page.locator("text=About")).toBeVisible({ timeout: 3000 })
-    await expect(page.locator("text=Ingredients")).toBeVisible()
-    await expect(page.locator("text=Add to basket")).toBeVisible()
+    // Modal should appear with product details. Scoped to the dialog and to HEADINGS: the page
+    // behind it and the allergen copy inside it also contain the words "About" and "Ingredients"
+    // (`text=About` matched 3 elements, a strict-mode violation).
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible({ timeout: 3000 })
+    await expect(dialog.getByRole("heading", { name: "About", exact: true })).toBeVisible()
+    await expect(dialog.getByRole("heading", { name: "Ingredients", exact: true })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: /Add to basket/ })).toBeVisible()
   })
 
   test("detail modal shows image carousel when product has images", async ({ page }) => {
