@@ -2013,7 +2013,7 @@ jobs:
           cache: 'gradle'
 
       - name: Submit Gradle dependency graph to GitHub Dependency Graph (R2a / UC-1)
-        uses: gradle/actions/dependency-submission@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-disabled: true
           dependency-graph: ${{ github.event_name == 'push' && 'generate-submit-and-upload' || 'generate-and-upload' }}
