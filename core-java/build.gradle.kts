@@ -283,8 +283,8 @@ dependencies {
     // Explicit latest-GA versions rather than azure-sdk-bom 1.3.8, which lags one patch.
     // Coordinates checked against Maven Central and github.com/Azure/azure-sdk-for-java
     // (36-RESEARCH.md, Package Legitimacy Audit).
-    implementation("com.azure:azure-storage-blob:12.36.0")
-    implementation("com.azure:azure-identity:1.18.7") {
+    implementation("com.azure:azure-storage-blob:12.37.1")
+    implementation("com.azure:azure-identity:1.19.0") {
         // Desktop token-cache persistence only; it pulls jna + jna-platform native libraries that
         // WorkloadIdentityCredential never loads (assumption A1, proven by 36-06's
         // credential-build test).
@@ -303,8 +303,8 @@ dependencies {
     // WebP derivative/thumbnail by delegating to a `cwebp` binary (bundled on
     // glibc hosts; the musl runtime image overrides to the system cwebp via
     // -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin — see Dockerfile).
-    implementation("com.sksamuel.scrimage:scrimage-core:4.6.10")
-    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.10")
+    implementation("com.sksamuel.scrimage:scrimage-core:4.6.11")
+    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.11")
     // Read-only WebP ImageIO plugin — lets ImageReader header-read + decode-VERIFY
     // a WebP *upload* (stock JDK ImageIO cannot read WebP at all). Cannot encode.
     implementation("com.twelvemonkeys.imageio:imageio-webp:3.15.3")
@@ -330,7 +330,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
 
     // Stripe payment processing
-    implementation("com.stripe:stripe-java:34.0.0")
+    implementation("com.stripe:stripe-java:34.1.0")
 
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")
